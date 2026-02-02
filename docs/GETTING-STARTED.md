@@ -1,6 +1,8 @@
 # Getting Started
 
-This guide covers initial AWS account setup for the deployer. After completing this guide, you'll have a secure IAM configuration with least-privilege roles.
+This guide covers one-time AWS account setup for the deployer. After completing this guide, you'll have a secure IAM configuration with least-privilege roles.
+
+For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ## Prerequisites
 
@@ -183,73 +185,6 @@ AWS_PROFILE=deployer-cognito aws sts get-caller-identity
 
 Each should show the assumed role ARN.
 
-## First Environment Deployment
-
-### 1. Create Environment Directory
-
-```bash
-mkdir -p environments/myapp-staging
-cd environments/myapp-staging
-```
-
-### 2. Create terraform.tfvars
-
-```hcl
-project_name    = "myapp"
-environment     = "staging"
-db_name         = "myapp"
-db_username     = "myapp_admin"
-db_password     = "generate-a-strong-password"
-domain_name     = "staging.myapp.com"
-route53_zone_id = "Z..."  # Your hosted zone ID
-
-services = {
-  web = {
-    cpu               = 256
-    memory            = 512
-    replicas          = 1
-    load_balanced     = true
-    port              = 8000
-    health_check_path = "/health/"
-  }
-}
-```
-
-### 3. Create main.tf
-
-```hcl
-# Point to the root module
-module "infrastructure" {
-  source = "../.."
-}
-```
-
-### 4. Initialize and Apply OpenTofu
-
-```bash
-# Use the tofu wrapper (auto-selects correct profile)
-./bin/tofu.sh -chdir=environments/myapp-staging init
-./bin/tofu.sh -chdir=environments/myapp-staging plan
-./bin/tofu.sh -chdir=environments/myapp-staging apply
-```
-
-### 5. Create ECR Repository
-
-```bash
-AWS_PROFILE=deployer-infra aws ecr create-repository \
-  --repository-name myapp-web \
-  --region us-west-2
-```
-
-### 6. Deploy Your Application
-
-```bash
-# Profile is auto-selected from environment's config.toml
-uv run python bin/deploy.py \
-  /path/to/your-app/deploy.toml \
-  myapp-staging
-```
-
 ## Removing Administrator Access
 
 Once you've verified all roles work correctly:
@@ -279,7 +214,7 @@ When you need to add a new project (not just a new environment of an existing pr
    - IAM policies with the new project ARN patterns
    - ECS permissions boundary
 
-3. **Create ECR repository** for the new project
+3. **Create the environment** - ECR repositories are created automatically when you run `tofu apply` (via `ecr_repository_names` in terraform.tfvars)
 
 ## Multi-Account Setup
 
@@ -309,6 +244,8 @@ The deployer scripts automatically read the appropriate profile from the environ
 
 ## Next Steps
 
-- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Full deployment workflow
+Once your AWS account is configured, proceed to deploy your first application:
+
+- **[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md)** - Create environments and deploy applications
 - [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - Configuration options
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues

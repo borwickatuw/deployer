@@ -228,7 +228,6 @@ def cmd_environment(args) -> int:
         print()
         print(f"  {'4' if shared_infra_created else '3'}. Create SSM secrets and deploy:")
         print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
-        print(f"     aws logs create-log-group --log-group-name /ecs/{args.app_name}")
         print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
     else:
         print("Next steps:")
@@ -244,7 +243,6 @@ def cmd_environment(args) -> int:
         print()
         print("  3. Create SSM secrets and deploy:")
         print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
-        print(f"     aws logs create-log-group --log-group-name /ecs/{args.app_name}")
         print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
     return 0
 

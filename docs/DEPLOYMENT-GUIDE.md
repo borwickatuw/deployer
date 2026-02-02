@@ -2,8 +2,11 @@
 
 Complete guide for deploying applications to AWS ECS. Covers initial setup, ongoing deployments, and verification.
 
+For first-time AWS account setup (IAM roles, bootstrap infrastructure), see [GETTING-STARTED.md](GETTING-STARTED.md).
+
 ## Quick Start Checklist
 
+- [ ] AWS account configured ([GETTING-STARTED.md](GETTING-STARTED.md))
 - [ ] Prerequisites completed (Docker, AWS CLI, uv, OpenTofu)
 - [ ] `deploy.toml` created in your app repository
 - [ ] Environment directory created in deployer (`environments/<app>-<env>/`)
@@ -190,17 +193,9 @@ services = {
 ./bin/tofu.sh -chdir=environments/myapp-staging apply
 ```
 
-This creates VPC, RDS, ECS cluster, ALB, and supporting resources. Takes approximately 15-20 minutes.
+This creates VPC, RDS, ECS cluster, ALB, ECR repositories, CloudWatch log groups, and supporting resources.
 
-### 5. Create ECR Repository
-
-```bash
-AWS_PROFILE=deployer-infra aws ecr create-repository \
-  --repository-name myapp-web \
-  --region us-west-2
-```
-
-### 6. Create Secrets in SSM
+### 5. Create Secrets in SSM
 
 ```bash
 # Django/application secret key
@@ -214,12 +209,6 @@ aws ssm put-parameter \
   --name "/myapp/staging/database-url" \
   --type SecureString \
   --value "postgres://user:password@host/dbname"
-```
-
-### 7. Create CloudWatch Log Group
-
-```bash
-aws logs create-log-group --log-group-name /ecs/myapp
 ```
 
 ---
@@ -529,10 +518,8 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
 - [ ] AWS CLI configured and role assumption works
 - [ ] `tofu init` run in environment directory
-- [ ] `tofu apply` completed successfully
-- [ ] ECR repository exists for each image
+- [ ] `tofu apply` completed successfully (creates ECR repos, log groups, etc.)
 - [ ] Secrets created in SSM Parameter Store
-- [ ] CloudWatch log group created
 - [ ] Health check endpoint works locally
 - [ ] Docker image builds locally
 

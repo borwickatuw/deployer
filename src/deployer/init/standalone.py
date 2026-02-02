@@ -203,11 +203,6 @@ uv run python bin/manage-environment.py status {env_name}
    aws ssm put-parameter --name "/{app_name}/{env_type}/secret-key" --value "..." --type SecureString
    ```
 
-3. Create CloudWatch log group:
-   ```bash
-   aws logs create-log-group --log-group-name /ecs/{app_name}
-   ```
-
 ## Notes
 
 - terraform.tfvars contains sensitive data - do not commit to git

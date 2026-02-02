@@ -134,7 +134,7 @@ Framework-specific configuration guides:
 - **CSRF verification failed**: Add `CSRF_TRUSTED_ORIGINS` to Django settings (see docs/frameworks/django.md)
 - **ALLOWED_HOSTS errors**: Check that local_settings.py is excluded via .dockerignore
 - **Static files 404**: Ensure whitenoise is configured in Django settings
-- **CloudWatch log group missing**: Create `/ecs/<app-name>` log group before first deployment
+- **CloudWatch log group missing**: Usually created by tofu; see TROUBLESHOOTING.md if this occurs
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for full troubleshooting guide.
 

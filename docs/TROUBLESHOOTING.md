@@ -233,13 +233,13 @@ The callback URL configured in Cognito must exactly match your domain:
 
 ### Log Group Missing
 
-Create the log group before first deployment:
+OpenTofu creates log groups automatically, but if you see this error, create the log group manually:
 
 ```bash
 aws logs create-log-group --log-group-name /ecs/myapp-staging
 ```
 
-The deploy script expects log groups to exist. Infrastructure usually creates them, but check if deployment predates the log group creation.
+This can happen if deployment was attempted before `tofu apply` completed, or if the environment was created with an older version of the deployer.
 
 ### No Logs Appearing
 
