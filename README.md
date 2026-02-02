@@ -20,240 +20,125 @@ OpenTofu infrastructure and deployment tooling for AWS ECS applications.
 This repository provides:
 
 1. **Shared Infrastructure Modules** - Reusable OpenTofu modules for VPC, ECS, RDS, ElastiCache, S3, and ALB
-2. **Environment Configurations** - Per-environment (staging, production) infrastructure instantiation
-3. **Deploy Script** - A Python script that reads TOML application configs and deploys to ECS
+2. **Deploy Script** - A Python script that reads TOML application configs and deploys to ECS
+3. **Supporting Scripts** - Tools for Cognito user management, secrets, capacity reporting, and more
+
+Environment configurations are stored in a separate directory (configured via `DEPLOYER_ENVIRONMENTS_DIR` in `.env`).
 
 ## Documentation
 
+### Core Guides
 - **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - First-time setup and deployment walkthrough
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Design](docs/DESIGN.md)** - How deployer works and why it's structured this way
 - **[Configuration Reference](docs/CONFIG-REFERENCE.md)** - Complete TOML configuration options
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Architecture & Design
+- **[Design](docs/DESIGN.md)** - How deployer works and why it's structured this way
 - **[Architecture](docs/ARCHITECTURE.md)** - AWS infrastructure details and cost estimates
-- **[Capacity Monitoring](docs/CAPACITY-MONITORING.md)** - ECS right-sizing and cost optimization
-- **[Staging Environments](docs/STAGING-ENVIRONMENTS.md)** - Cognito auth and cost-saving scheduling
 - **[Decisions](docs/DECISIONS.md)** - Architecture decision records
 - **[Supported Architectures](docs/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
 
-## Architecture
+### Topic Guides
+- **[Staging Environments](docs/STAGING-ENVIRONMENTS.md)** - Cognito auth and cost-saving scheduling
+- **[Shared Environments](docs/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
+- **[Multiple AWS Accounts](docs/MULTIPLE-AWS-ACCOUNTS.md)** - Staging/production account separation
+- **[Capacity Monitoring](docs/CAPACITY-MONITORING.md)** - ECS right-sizing and cost optimization
+- **[WAF](docs/WAF.md)** - Web Application Firewall integration
+
+### Framework Guides
+- **[Django](docs/frameworks/django.md)** - Python web framework
+- **[Rails](docs/frameworks/rails.md)** - Ruby web framework
+- **[Generic](docs/frameworks/generic.md)** - Any containerized application
+
+## Repository Structure
 
 ```
 deployer/
-├── modules/                    # Reusable infrastructure modules
-│   ├── vpc/                    # VPC, subnets, NAT gateway
-│   ├── ecs-cluster/            # ECS cluster and security groups
-│   ├── ecs-service/            # Individual ECS service definition
-│   ├── alb/                    # Application Load Balancer
-│   ├── rds/                    # PostgreSQL database
-│   ├── elasticache/            # Redis cache
-│   ├── s3/                     # S3 buckets
-│   ├── acm/                    # SSL/TLS certificates
-│   ├── cognito/                # User authentication for staging
-│   ├── compute-optimizer/      # AWS Compute Optimizer integration
-│   └── staging-scheduler/      # Automatic start/stop scheduling
-├── environments/               # Environment-specific configurations
-│   ├── myapp-staging/
-│   └── myapp-production/
-├── example-deploy.toml         # Example application deploy.toml
-├── example-deployer-environments/  # Example environments directory structure
-├── docs/                       # Documentation
-└── bin/
-    ├── deploy.py               # Application deployment
-    ├── environment.py          # Start/stop environments
-    ├── cognito.py              # Cognito user management
-    ├── secrets.py              # SSM Parameter Store secrets
-    └── capacity-report.py      # ECS right-sizing recommendations
+├── modules/                           # Reusable infrastructure modules
+│   ├── vpc/                           # VPC, subnets, NAT gateway
+│   ├── ecs-cluster/                   # ECS cluster and security groups
+│   ├── ecs-service/                   # Individual ECS service definition
+│   ├── alb/                           # Application Load Balancer
+│   ├── rds/                           # PostgreSQL database
+│   ├── elasticache/                   # Redis cache
+│   ├── s3/                            # S3 buckets
+│   ├── acm/                           # SSL/TLS certificates
+│   ├── cognito/                       # User authentication for staging
+│   ├── waf/                           # Web Application Firewall
+│   ├── compute-optimizer/             # AWS Compute Optimizer integration
+│   └── staging-scheduler/             # Automatic start/stop scheduling
+├── bin/
+│   ├── deploy.py                      # Application deployment
+│   ├── tofu.sh                        # OpenTofu wrapper (auto-selects AWS profile)
+│   ├── init.py                        # Initialize new apps and environments
+│   ├── environment.py                 # Start/stop environments
+│   ├── cognito.py                     # Cognito user management
+│   ├── secrets.py                     # SSM Parameter Store secrets
+│   └── capacity-report.py             # ECS right-sizing recommendations
+├── example-deploy.toml                # Example application deploy.toml
+├── example-deployer-environments/     # Example environments directory structure
+└── docs/                              # Documentation
 ```
 
-## Usage
+**Environment configurations** are stored separately (not in this repo):
+```
+~/code/deployer-environments/          # Set via DEPLOYER_ENVIRONMENTS_DIR
+├── bootstrap/                         # IAM roles and shared resources
+├── myapp-staging/                     # Per-environment config
+│   ├── main.tf
+│   ├── terraform.tfvars
+│   └── config.toml
+└── myapp-production/
+```
 
-### 1. Set Up Infrastructure
+## Quick Start
+
+See [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) for the complete walkthrough.
+
+### Infrastructure
 
 ```bash
-cd environments/myapp-staging
-
-# Copy and edit variables
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-# Initialize and apply
-tofu init
-tofu plan
-tofu apply
+# Use the tofu wrapper (auto-selects correct AWS profile from config.toml)
+./bin/tofu.sh init myapp-staging
+./bin/tofu.sh plan myapp-staging
+./bin/tofu.sh apply myapp-staging
 ```
 
-### 2. Deploy an Application
-
-Create a TOML config for your application (see `example-deploy.toml`), then:
+### Deployment
 
 ```bash
-# Set environment variables from Terraform outputs
-export DATABASE_URL=$(tofu -chdir=environments/myapp-staging output -raw database_url)
-export REDIS_URL=$(tofu -chdir=environments/myapp-staging output -raw redis_url)
-export S3_MEDIA_BUCKET=$(tofu -chdir=environments/myapp-staging output -raw s3_media_bucket)
+# Deploy (config.toml provides infrastructure values automatically)
+uv run python bin/deploy.py /path/to/app/deploy.toml myapp-staging
 
-# Deploy
-uv run bin/deploy.py /path/to/your-app.toml myapp-staging
-
-# Or dry-run first
-uv run bin/deploy.py /path/to/your-app.toml myapp-staging --dry-run
-```
-
-## Application Configuration Format
-
-Applications are configured using TOML files. See `example-deploy.toml` for a complete example.
-
-### Sections
-
-#### `[application]`
-Basic application metadata and source location.
-
-```toml
-[application]
-name = "myapp"
-source = "/path/to/source"
-ecr_prefix = "myapp"
-```
-
-#### `[images.*]`
-Docker images to build and push.
-
-```toml
-[images.web]
-context = "."
-dockerfile = "Dockerfile"
-```
-
-For multi-image builds with dependencies (e.g., base images):
-
-```toml
-[images.myapp-base]
-context = "."
-dockerfile = "docker/myapp-base"
-push = false                       # Local-only, not pushed to ECR
-
-[images.web]
-context = "."
-dockerfile = "docker/myapp"
-depends_on = ["myapp-base"]        # Built after myapp-base
-```
-
-#### `[services.*]`
-ECS services to deploy.
-
-```toml
-[services.web]
-image = "web"              # References [images.web]
-port = 8000
-command = ["gunicorn", "app:application"]
-cpu = 256
-memory = 512
-replicas = 1
-load_balanced = true
-health_check_path = "/health/"
-```
-
-#### `[environment]`
-Environment variables passed to all services.
-
-```toml
-[environment]
-DJANGO_SETTINGS_MODULE = "myapp.settings"
-DATABASE_URL = "${database_url}"    # Resolved at deploy time
-```
-
-#### `[secrets]`
-References to SSM Parameter Store or Secrets Manager.
-
-```toml
-[secrets]
-SECRET_KEY = "ssm:/myapp/staging/secret-key"
-```
-
-#### `[migrations]`
-Database migration configuration.
-
-```toml
-[migrations]
-enabled = true
-service = "web"
-command = ["python", "manage.py", "migrate"]
+# Dry-run first
+uv run python bin/deploy.py /path/to/app/deploy.toml myapp-staging --dry-run
 ```
 
 ## Requirements
 
-### For Infrastructure (OpenTofu)
-
-- OpenTofu >= 1.6.0 (or Terraform >= 1.6.0)
-- AWS CLI configured with appropriate credentials
-
-### For Deploy Script
-
-- [uv](https://docs.astral.sh/uv/) - Python package manager
-- Python 3.11+
-- Docker
-
-Install uv if you don't have it:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# Or: brew install uv
-```
+| Tool | Version | Installation |
+|------|---------|--------------|
+| OpenTofu | >= 1.6.0 | `brew install opentofu` |
+| AWS CLI | v2 | `brew install awscli` |
+| Python | 3.11+ | `brew install python@3.11` |
+| uv | Latest | `brew install uv` |
+| Docker | Latest | `brew install docker` |
 
 Dependencies are managed in `pyproject.toml` and installed automatically when you run `uv run`.
 
-## Adding a New Application
-
-1. Create a TOML config file for your application (copy from `example-deploy.toml`)
-2. Ensure your application has Dockerfiles in the expected locations
-3. Create ECR repositories for your images:
-   ```bash
-   aws ecr create-repository --repository-name myapp-web
-   ```
-4. Run the deploy script
-
 ## Module Reference
 
-### vpc
-
-Creates a VPC with public and private subnets, NAT gateway, and route tables.
-
-### ecs-cluster
-
-Creates an ECS cluster with Fargate capacity providers and a shared security group for tasks.
-
-### ecs-service
-
-Creates an individual ECS service with task definition, IAM roles, and optional ALB integration.
-
-### alb
-
-Creates an Application Load Balancer with HTTP/HTTPS listeners and optional Cognito authentication.
-
-### rds
-
-Creates a PostgreSQL RDS instance in private subnets.
-
-### elasticache
-
-Creates a Redis ElastiCache cluster in private subnets.
-
-### s3
-
-Creates S3 buckets with configurable versioning and public access settings.
-
-### acm
-
-Creates and validates SSL/TLS certificates via AWS Certificate Manager with Route 53 DNS validation.
-
-### cognito
-
-Creates a Cognito User Pool for staging environment authentication.
-
-### compute-optimizer
-
-Enables AWS Compute Optimizer for ECS right-sizing recommendations.
-
-### staging-scheduler
-
-Creates Lambda and EventBridge resources to automatically start/stop staging environments on a schedule.
+| Module | Purpose |
+|--------|---------|
+| **vpc** | VPC with public/private subnets, NAT gateway, route tables |
+| **ecs-cluster** | ECS cluster with Fargate capacity providers |
+| **ecs-service** | ECS service with task definition, IAM roles, optional ALB |
+| **alb** | Application Load Balancer with HTTP/HTTPS and optional Cognito |
+| **rds** | PostgreSQL RDS instance in private subnets |
+| **elasticache** | Redis ElastiCache cluster in private subnets |
+| **s3** | S3 buckets with configurable versioning |
+| **acm** | SSL/TLS certificates via ACM with Route 53 validation |
+| **cognito** | Cognito User Pool for staging authentication |
+| **waf** | Web Application Firewall with managed rules |
+| **compute-optimizer** | AWS Compute Optimizer for right-sizing |
+| **staging-scheduler** | Lambda/EventBridge for automatic start/stop |
