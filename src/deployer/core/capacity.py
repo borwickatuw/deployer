@@ -36,6 +36,8 @@ class ServiceMetrics:
     # OOM detection
     oom_kill_count: int = 0
     oom_events: list | None = None
+    # Deployment info
+    last_deployment_at: str | None = None  # ISO format datetime
 
 
 def calculate_percentile(values: list[float], percentile: float) -> float:

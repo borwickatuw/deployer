@@ -18,6 +18,17 @@ def _format_service(svc: dict) -> dict:
     Returns:
         Formatted service dict with standardized keys.
     """
+    # Get the most recent deployment time (PRIMARY deployment)
+    last_deployment_at = None
+    deployments = svc.get("deployments", [])
+    for deployment in deployments:
+        if deployment.get("status") == "PRIMARY":
+            last_deployment_at = deployment.get("updatedAt")
+            break
+    # Fallback to first deployment if no PRIMARY found
+    if not last_deployment_at and deployments:
+        last_deployment_at = deployments[0].get("updatedAt")
+
     return {
         "name": svc["serviceName"],
         "arn": svc["serviceArn"],
@@ -25,6 +36,7 @@ def _format_service(svc: dict) -> dict:
         "running_count": svc["runningCount"],
         "status": svc["status"],
         "task_definition": svc.get("taskDefinition"),
+        "last_deployment_at": last_deployment_at,
     }
 
 
@@ -380,6 +392,7 @@ def get_oom_events(
     cluster_name: str,
     service_name: str,
     since_hours: int = 168,
+    since_datetime: Any | None = None,
     ecs_client: Any | None = None,
 ) -> list[dict]:
     """Get recent OOM (Out of Memory) kill events for a service.
@@ -392,19 +405,20 @@ def get_oom_events(
     Args:
         cluster_name: Name of the ECS cluster.
         service_name: Name of the service.
-        since_hours: How far back to look (default: 168 = 7 days).
+        since_hours: How far back to look (default: 168 = 7 days). Ignored if since_datetime is provided.
+        since_datetime: Optional datetime cutoff. If provided, only returns events after this time.
         ecs_client: Optional boto3 ECS client. If None, uses AWS CLI.
 
     Returns:
         List of OOM event dicts with task_arn, stopped_at, reason, exit_code.
     """
     if ecs_client:
-        return _get_oom_events_boto3(cluster_name, service_name, since_hours, ecs_client)
-    return _get_oom_events_cli(cluster_name, service_name, since_hours)
+        return _get_oom_events_boto3(cluster_name, service_name, since_hours, since_datetime, ecs_client)
+    return _get_oom_events_cli(cluster_name, service_name, since_hours, since_datetime)
 
 
 def _get_oom_events_cli(
-    cluster_name: str, service_name: str, since_hours: int
+    cluster_name: str, service_name: str, since_hours: int, since_datetime: Any | None = None
 ) -> list[dict]:
     """Get OOM events using AWS CLI."""
     from datetime import datetime, timedelta, timezone
@@ -441,12 +455,16 @@ def _get_oom_events_cli(
     data = json.loads(output)
     tasks = data.get("tasks", [])
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    # Use since_datetime if provided, otherwise calculate from since_hours
+    if since_datetime is not None:
+        cutoff = since_datetime
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
     return _filter_oom_tasks(tasks, cutoff)
 
 
 def _get_oom_events_boto3(
-    cluster_name: str, service_name: str, since_hours: int, ecs_client: Any
+    cluster_name: str, service_name: str, since_hours: int, since_datetime: Any | None, ecs_client: Any
 ) -> list[dict]:
     """Get OOM events using boto3 client."""
     from datetime import datetime, timedelta, timezone
@@ -467,7 +485,11 @@ def _get_oom_events_boto3(
         response = ecs_client.describe_tasks(cluster=cluster_name, tasks=task_arns)
         tasks = response.get("tasks", [])
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+        # Use since_datetime if provided, otherwise calculate from since_hours
+        if since_datetime is not None:
+            cutoff = since_datetime
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
         return _filter_oom_tasks(tasks, cutoff)
 
     except ClientError:

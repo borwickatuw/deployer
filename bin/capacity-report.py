@@ -24,8 +24,8 @@ Usage:
     # Output as JSON
     uv run bin/capacity-report.py myapp-staging --format json
 
-    # Compare against tfvars file
-    uv run bin/capacity-report.py myapp-staging --tfvars environments/myapp-staging/terraform.tfvars
+    # Compare against specific tfvars file (auto-discovers services.auto.tfvars if present)
+    uv run bin/capacity-report.py myapp-staging --tfvars environments/myapp-staging/services.auto.tfvars
 
 Requires:
     - AWS credentials configured
@@ -159,10 +159,27 @@ def _print_zero_utilization_warning(services: list[ServiceMetrics]) -> None:
 def _print_oom_summary(services: list[ServiceMetrics]) -> None:
     """Print OOM detection summary."""
     total_oom = sum(svc.oom_kill_count for svc in services)
+
+    # Show last deployment times
+    print(f"{Colors.BOLD}Last Deployment:{Colors.NC}")
+    for svc in sorted(services, key=lambda s: s.service_name):
+        if svc.last_deployment_at:
+            # Parse and format nicely
+            try:
+                dt = datetime.fromisoformat(svc.last_deployment_at.replace("Z", "+00:00"))
+                formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
+            except (ValueError, AttributeError):
+                formatted = svc.last_deployment_at
+            oom_note = f" ({svc.oom_kill_count} OOM kills since)" if svc.oom_kill_count > 0 else ""
+            print(f"  {svc.service_name}: {formatted}{oom_note}")
+        else:
+            print(f"  {svc.service_name}: unknown")
+    print()
+
     if total_oom > 0:
-        print(f"{Colors.RED}OOM Detection: {total_oom} OOM kill(s) found in ECS stopped tasks{Colors.NC}")
+        print(f"{Colors.RED}OOM Detection: {total_oom} OOM kill(s) since last deployment{Colors.NC}")
     else:
-        print(f"OOM Detection: No recent OOM kills found in ECS (note: ECS only retains stopped tasks for ~1 hour)")
+        print(f"OOM Detection: No OOM kills since last deployment (note: ECS only retains stopped tasks for ~1 hour)")
     print()
 
 
@@ -251,6 +268,7 @@ def print_json_report(
 
         service_data: dict[str, Any] = {
             "name": svc.service_name,
+            "last_deployment_at": svc.last_deployment_at,
             "cpu": {
                 "allocated": svc.cpu_allocated,
                 "avg_percent": round(svc.cpu_avg, 1),
@@ -269,6 +287,7 @@ def print_json_report(
             "oom_kills": {
                 "count": svc.oom_kill_count,
                 "events": svc.oom_events,
+                "note": "Only includes OOM kills since last deployment",
             } if svc.oom_kill_count > 0 else None,
         }
 
@@ -311,6 +330,15 @@ def _collect_service_metrics(
     """Collect metrics for a single service."""
     service_name = service["name"]
     task_def_arn = service["task_definition"]
+    last_deployment_at = service.get("last_deployment_at")
+
+    # Parse deployment time for OOM filtering
+    deployment_cutoff = None
+    if last_deployment_at:
+        if isinstance(last_deployment_at, str):
+            deployment_cutoff = datetime.fromisoformat(last_deployment_at.replace("Z", "+00:00"))
+        else:
+            deployment_cutoff = last_deployment_at
 
     # Get allocated resources
     cpu_allocated, memory_allocated = ecs.get_task_definition_resources(task_def_arn, ecs_client)
@@ -338,10 +366,20 @@ def _collect_service_metrics(
         tfvars_memory = tfvars_config[service_name].memory
         tfvars_replicas = tfvars_config[service_name].replicas
 
-    # Check for OOM kills
-    oom_events = get_oom_events(cluster_name, service_name, since_hours=days * 24, ecs_client=ecs_client)
+    # Check for OOM kills since last deployment
+    oom_events = get_oom_events(
+        cluster_name, service_name,
+        since_hours=days * 24,
+        since_datetime=deployment_cutoff,
+        ecs_client=ecs_client,
+    )
     if oom_events:
-        print(f"  Found {len(oom_events)} OOM event(s) for {service_name} (from ECS stopped tasks)")
+        print(f"  Found {len(oom_events)} OOM event(s) for {service_name} since last deployment")
+
+    # Format deployment time for storage
+    deployment_str = None
+    if deployment_cutoff:
+        deployment_str = deployment_cutoff.isoformat() if hasattr(deployment_cutoff, "isoformat") else str(deployment_cutoff)
 
     metrics = ServiceMetrics(
         service_name=service_name,
@@ -359,6 +397,7 @@ def _collect_service_metrics(
         tfvars_replicas=tfvars_replicas,
         oom_kill_count=len(oom_events),
         oom_events=oom_events if oom_events else None,
+        last_deployment_at=deployment_str,
     )
 
     # Classify and add recommendations
@@ -378,9 +417,12 @@ def _search_cloudwatch_logs_for_oom(
     start_time: datetime,
     end_time: datetime,
 ) -> None:
-    """Search CloudWatch Logs for OOM events and update service metrics in place."""
+    """Search CloudWatch Logs for OOM events and update service metrics in place.
+
+    Uses each service's last_deployment_at as the start time if available,
+    so we only find OOM events that occurred after the last deployment.
+    """
     log_group = f"/ecs/{cluster_name.replace('-cluster', '')}"
-    start_time_ms = int(start_time.timestamp() * 1000)
     end_time_ms = int(end_time.timestamp() * 1000)
 
     print(f"\nSearching CloudWatch Logs for OOM events...")
@@ -392,9 +434,19 @@ def _search_cloudwatch_logs_for_oom(
         if svc.oom_kill_count > 0:
             continue  # Already found OOM events from ECS
 
+        # Use deployment time as start if available, otherwise use global start_time
+        if svc.last_deployment_at:
+            try:
+                deployment_dt = datetime.fromisoformat(svc.last_deployment_at.replace("Z", "+00:00"))
+                svc_start_time_ms = int(deployment_dt.timestamp() * 1000)
+            except (ValueError, AttributeError):
+                svc_start_time_ms = int(start_time.timestamp() * 1000)
+        else:
+            svc_start_time_ms = int(start_time.timestamp() * 1000)
+
         log_stream_prefix = f"{svc.service_name}/"
         service_oom_events = search_logs_for_oom(
-            log_group, start_time_ms, end_time_ms,
+            log_group, svc_start_time_ms, end_time_ms,
             cloudwatch_client=logs_client,
             log_stream_prefix=log_stream_prefix,
         )
@@ -502,7 +554,7 @@ Examples:
   %(prog)s myapp-staging                Show report for specific environment
   %(prog)s myapp-staging --days 14      Analyze 14 days of data
   %(prog)s myapp-staging --format json  Output as JSON
-  %(prog)s myapp-staging --tfvars environments/myapp-staging/terraform.tfvars
+  %(prog)s myapp-staging --tfvars path/to/services.auto.tfvars
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -529,7 +581,7 @@ Examples:
         "--tfvars",
         "-t",
         type=Path,
-        help="Path to terraform.tfvars file to compare against (e.g., environments/myapp-staging/terraform.tfvars)",
+        help="Path to tfvars file with services block (auto-discovers services.auto.tfvars if present)",
     )
     parser.add_argument(
         "--dry-run",
@@ -573,10 +625,14 @@ Examples:
             continue
 
         # Determine tfvars path (auto-discover if not provided)
+        # Prefer services.auto.tfvars (service config) over terraform.tfvars (secrets)
         tfvars_path = args.tfvars
         if not tfvars_path:
+            services_tfvars = env_path / "services.auto.tfvars"
             default_tfvars = env_path / "terraform.tfvars"
-            if default_tfvars.exists():
+            if services_tfvars.exists():
+                tfvars_path = services_tfvars
+            elif default_tfvars.exists():
                 tfvars_path = default_tfvars
 
         print()

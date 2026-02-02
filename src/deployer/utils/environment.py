@@ -48,7 +48,10 @@ def get_environment_path(env_name: str) -> Path:
 
 
 def get_all_environments(environments_dir: Path) -> list[str]:
-    """Find all environment directories.
+    """Find all ECS environment directories.
+
+    An ECS environment is identified by the presence of a config.toml file.
+    This excludes bootstrap directories and other non-ECS infrastructure.
 
     Args:
         environments_dir: Directory containing environment subdirectories.
@@ -63,7 +66,9 @@ def get_all_environments(environments_dir: Path) -> list[str]:
 
     for env_dir in environments_dir.iterdir():
         if env_dir.is_dir() and not env_dir.name.startswith("."):
-            envs.append(env_dir.name)
+            # Only include directories with config.toml (ECS environments)
+            if (env_dir / "config.toml").exists():
+                envs.append(env_dir.name)
 
     return sorted(envs)
 
