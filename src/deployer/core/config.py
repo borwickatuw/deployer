@@ -65,6 +65,9 @@ def get_all_tofu_outputs(env_path: Path) -> dict[str, Any]:
     This is much faster than calling get_tofu_output() for each placeholder,
     as it only runs a single tofu command instead of one per placeholder.
 
+    Note: This function temporarily switches to the infra AWS profile to access
+    the S3 backend where state is stored, then restores the original profile.
+
     Args:
         env_path: Path to environment directory.
 
@@ -74,27 +77,43 @@ def get_all_tofu_outputs(env_path: Path) -> dict[str, Any]:
     Raises:
         RuntimeError: If tofu command fails.
     """
-    success, output = run_command(
-        ["tofu", "output", "-json"],
-        cwd=str(env_path),
-    )
+    import os
+    from ..utils.aws_profile import get_environment_aws_profile, PROFILE_DEFAULTS
 
-    if not success:
-        raise RuntimeError(
-            f"Failed to fetch tofu outputs from {env_path}\n"
-            f"Hint: Run 'tofu init' and 'tofu apply' in {env_path}"
-        )
-
-    if not output.strip():
-        return {}
+    # tofu needs the infra profile to access S3 backend
+    # Save current profile and temporarily switch to infra profile
+    original_profile = os.environ.get("AWS_PROFILE")
+    infra_profile = get_environment_aws_profile(env_path, "infra") or PROFILE_DEFAULTS["infra"]
+    os.environ["AWS_PROFILE"] = infra_profile
 
     try:
-        data = json.loads(output.strip())
-        # Each output is {"value": ..., "type": ..., "sensitive": ...}
-        # Extract just the values
-        return {k: v["value"] for k, v in data.items()}
-    except (json.JSONDecodeError, KeyError) as e:
-        raise RuntimeError(f"Failed to parse tofu outputs: {e}")
+        success, output = run_command(
+            ["tofu", "output", "-json"],
+            cwd=str(env_path),
+        )
+
+        if not success:
+            raise RuntimeError(
+                f"Failed to fetch tofu outputs from {env_path}\n"
+                f"Hint: Run 'tofu init' and 'tofu apply' in {env_path}"
+            )
+
+        if not output.strip():
+            return {}
+
+        try:
+            data = json.loads(output.strip())
+            # Each output is {"value": ..., "type": ..., "sensitive": ...}
+            # Extract just the values
+            return {k: v["value"] for k, v in data.items()}
+        except (json.JSONDecodeError, KeyError) as e:
+            raise RuntimeError(f"Failed to parse tofu outputs: {e}")
+    finally:
+        # Restore original profile
+        if original_profile:
+            os.environ["AWS_PROFILE"] = original_profile
+        elif "AWS_PROFILE" in os.environ:
+            del os.environ["AWS_PROFILE"]
 
 
 def get_tofu_output(env_path: Path, output_name: str) -> Any:
