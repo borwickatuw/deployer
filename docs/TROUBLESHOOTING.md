@@ -4,6 +4,99 @@ Common issues and solutions when deploying applications with deployer.
 
 ---
 
+## Setup Issues
+
+Problems that occur before you can run deployments.
+
+### Python Version Errors
+
+**Error:** `ModuleNotFoundError: No module named 'tomllib'`
+
+Python 3.11+ is required. Check your version:
+
+```bash
+python3 --version
+```
+
+If you have an older version:
+
+```bash
+brew install python@3.11
+# Then ensure you're using the right Python
+python3.11 --version
+```
+
+### DEPLOYER_ENVIRONMENTS_DIR Not Set
+
+**Error:** `RuntimeError: DEPLOYER_ENVIRONMENTS_DIR environment variable is not set`
+
+The deployer needs to know where your environment configurations are stored:
+
+1. Copy the example `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and set the path:
+   ```bash
+   DEPLOYER_ENVIRONMENTS_DIR=~/code/deployer-environments
+   ```
+
+3. Ensure the directory exists:
+   ```bash
+   mkdir -p ~/code/deployer-environments
+   ```
+
+### OpenTofu Not Found
+
+**Error:** `tofu: command not found`
+
+Install OpenTofu:
+
+```bash
+brew install opentofu
+```
+
+Verify installation:
+
+```bash
+tofu --version
+```
+
+### AWS Profile Not Found
+
+**Error:** `The config profile (deployer-app) could not be found`
+
+AWS profiles are configured in `~/.aws/config`. See [GETTING-STARTED.md](GETTING-STARTED.md#6-configure-aws-cli-profiles) for profile setup instructions.
+
+Check what profiles exist:
+
+```bash
+aws configure list-profiles
+```
+
+Test the profile:
+
+```bash
+AWS_PROFILE=deployer-app aws sts get-caller-identity
+```
+
+### Environment Directory Not Found
+
+**Error:** `Environment directory not found: /path/to/environments/myapp-staging`
+
+1. Verify `DEPLOYER_ENVIRONMENTS_DIR` points to the correct location
+2. Check the environment exists:
+   ```bash
+   ls $DEPLOYER_ENVIRONMENTS_DIR
+   ```
+3. Create the environment if needed:
+   ```bash
+   uv run python bin/init.py environment --app-name myapp --env-type staging
+   ```
+
+---
+
 ## Container Startup Issues
 
 ### Container Won't Start

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from botocore.exceptions import ClientError
 
-from ..utils import Colors, log, log_error, log_status, log_success, log_warning
+from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
 
 from .migrations import should_skip_migrations, store_migrations_hash
 from .task_definition import build_task_definition, get_service_sizing
@@ -345,6 +345,7 @@ def deploy_services(
     log("Deploying ECS services...")
 
     services = config.get("services", {})
+    log_debug(f"Services to deploy: {list(services.keys())}")
 
     for service_name, svc_config in services.items():
         # Get merged config (deploy.toml + environment sizing)
@@ -588,6 +589,10 @@ def wait_for_migrations(
 
     if exit_code != 0:
         log_error(f"Migration failed with exit code {exit_code}")
+
+        # Fetch and display CloudWatch logs to help diagnose the failure
+        _display_migration_logs(migration_task)
+
         raise RuntimeError(f"Migration failed with exit code {exit_code}")
 
     log_success("Migrations complete")
@@ -599,6 +604,49 @@ def wait_for_migrations(
             migration_task.environment,
             migration_task.current_hash,
         )
+
+
+def _display_migration_logs(migration_task: MigrationTask, limit: int = 50) -> None:
+    """Fetch and display CloudWatch logs for a failed migration task.
+
+    Args:
+        migration_task: The failed migration task.
+        limit: Maximum number of log lines to display.
+    """
+    from ..aws.cloudwatch import get_task_logs
+
+    # Extract task ID from ARN (last segment)
+    task_id = migration_task.task_arn.split("/")[-1]
+
+    # Log group follows ECS convention: /ecs/{app_name}-{environment}
+    log_group = f"/ecs/{migration_task.app_name}-{migration_task.environment}"
+
+    # Stream prefix is typically the app name
+    stream_prefix = migration_task.app_name
+
+    # Container name is typically "web" for migrations
+    container_name = "web"
+
+    print()
+    log("Fetching migration logs...")
+
+    try:
+        events = get_task_logs(log_group, stream_prefix, container_name, task_id, limit=limit)
+
+        if events:
+            print()
+            print(f"  {Colors.CYAN}--- Migration Logs (last {limit} lines) ---{Colors.NC}")
+            for event in events:
+                message = event.get("message", "").rstrip()
+                print(f"  {message}")
+            print(f"  {Colors.CYAN}--- End of Logs ---{Colors.NC}")
+            print()
+        else:
+            log_warning(f"No logs found. Check CloudWatch log group: {log_group}")
+            print(f"  Stream: {stream_prefix}/{container_name}/{task_id}")
+    except Exception as e:
+        log_warning(f"Could not fetch logs: {e}")
+        print(f"  Check CloudWatch manually: {log_group}")
 
 
 def run_migrations(

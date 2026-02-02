@@ -149,6 +149,16 @@ environments/myapp-staging/
 └── README.md         # Environment-specific notes
 ```
 
+**Environment Naming Convention:**
+
+Environment directories follow the pattern `<app-name>-<env-type>` where:
+- `<app-name>` can contain hyphens (e.g., `my-cool-app`)
+- `<env-type>` must be `staging` or `production` and comes at the end
+
+Valid examples: `myapp-staging`, `my-cool-app-production`, `api-v2-staging`
+
+The deploy scripts parse the environment name by splitting on the *last* hyphen, so multi-hyphen app names work correctly.
+
 **Option B: Manual setup**
 
 ```bash
@@ -296,6 +306,30 @@ uv run python bin/manage-cognito-access.py create myapp-staging \
 ```
 
 See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for full user management documentation.
+
+---
+
+## Managing Environment Lifecycle
+
+Staging environments can be stopped during off-hours to reduce costs (~50-60% savings on compute).
+
+```bash
+# Check environment status
+uv run python bin/manage-environment.py myapp-staging status
+
+# Stop environment (scales ECS to 0, stops RDS)
+uv run python bin/manage-environment.py myapp-staging stop
+
+# Start environment (starts RDS, restores ECS replicas)
+uv run python bin/manage-environment.py myapp-staging start --wait
+```
+
+**Notes:**
+- ElastiCache and ALB cannot be stopped (only deleted), so these continue to incur costs
+- RDS auto-restarts after 7 days if stopped (AWS limitation)
+- Use `--wait` to wait for RDS to be available before scaling ECS back up
+
+See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for automated scheduling to stop/start environments on a schedule.
 
 ---
 

@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 from ..core import topological_sort
 from ..timing import get_timer
-from ..utils import Colors, log, log_error, log_status, log_success
+from ..utils import Colors, log, log_error, log_status, log_success, log_warning
 
 
 def parse_dockerignore(context_path: Path) -> list[str]:
@@ -370,3 +370,73 @@ def build_and_push_images(
             log_status(f"{image_name}", "local only")
 
     return image_uris
+
+
+def validate_ecr_repositories(
+    ecr_client,
+    config: dict,
+    ecr_prefix: str,
+) -> list[str]:
+    """Validate that all required ECR repositories exist.
+
+    Iterates through images defined in deploy.toml that have push=true (default)
+    and checks that the corresponding ECR repository exists.
+
+    Args:
+        ecr_client: boto3 ECR client.
+        config: The deployment configuration dictionary.
+        ecr_prefix: ECR repository prefix.
+
+    Returns:
+        List of missing repository names. Empty list if all exist.
+    """
+    missing = []
+    images = config.get("images", {})
+
+    for image_name, image_config in images.items():
+        # Skip images that won't be pushed
+        if not image_config.get("push", True):
+            continue
+
+        repo_name = f"{ecr_prefix}-{image_name}"
+        try:
+            ecr_client.describe_repositories(repositoryNames=[repo_name])
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "RepositoryNotFoundException":
+                missing.append(repo_name)
+            else:
+                # Re-raise unexpected errors
+                raise
+
+    return missing
+
+
+def format_missing_ecr_error(missing_repos: list[str], environment: str) -> str:
+    """Format an error message for missing ECR repositories with remediation.
+
+    Args:
+        missing_repos: List of missing repository names.
+        environment: The target environment name.
+
+    Returns:
+        Formatted error message with instructions.
+    """
+    repo_list = "\n".join(f"  - {repo}" for repo in missing_repos)
+    create_commands = "\n".join(
+        f"  aws ecr create-repository --repository-name {repo}"
+        for repo in missing_repos
+    )
+
+    return f"""Missing ECR repositories:
+{repo_list}
+
+ECR repositories are typically created by OpenTofu. To fix:
+
+1. Run OpenTofu to create infrastructure (recommended):
+   ./bin/tofu.sh {environment} apply
+
+2. Or create repositories manually:
+{create_commands}
+
+If this is a new environment, ensure you've run 'tofu init' and 'tofu apply'
+in the environment directory first."""

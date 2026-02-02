@@ -4,6 +4,34 @@ import sys
 
 from .colors import Colors
 
+# Global verbose mode flag
+_verbose = False
+
+
+def set_verbose(enabled: bool) -> None:
+    """Enable or disable verbose mode.
+
+    Args:
+        enabled: If True, log_debug() calls will print output.
+    """
+    global _verbose
+    _verbose = enabled
+
+
+def is_verbose() -> bool:
+    """Check if verbose mode is enabled."""
+    return _verbose
+
+
+def log_debug(msg: str) -> None:
+    """Print a debug message (only shown if verbose mode enabled).
+
+    Args:
+        msg: The debug message to print.
+    """
+    if _verbose:
+        print(f"  {Colors.CYAN}[debug]{Colors.NC} {msg}")
+
 
 def log(msg: str) -> None:
     """Print a message in blue."""

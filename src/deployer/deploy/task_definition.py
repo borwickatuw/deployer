@@ -5,6 +5,7 @@ from deployer.modules import (
     ModuleRegistry,
     resolve_service_urls,
 )
+from deployer.utils import log_debug
 
 # Valid Fargate CPU/memory combinations
 # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#task_size
@@ -430,6 +431,10 @@ def build_task_definition(
     service_toml = config.get("services", {}).get(service_name, {})
     task_family = f"{app_name}-{environment}-{service_name}"
 
+    log_debug(f"Building task definition: {task_family}")
+    log_debug(f"  CPU: {service_cfg['cpu']}, Memory: {service_cfg['memory']}")
+    log_debug(f"  Image: {image_uri}")
+
     # Build environment variables (merges modules + [environment] section)
     # Add account_id to infra_config for module context
     infra_with_account = {**infra_config, "account_id": account_id}
@@ -437,11 +442,13 @@ def build_task_definition(
         config, environment, region, service_name, infra_with_account, env_config
     )
     task_env = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+    log_debug(f"  Environment variables: {len(env_vars)}")
 
     # Build secrets (modules + legacy)
     secrets = get_secrets(
         config, environment, region, account_id, service_name, infra_config, env_config
     )
+    log_debug(f"  Secrets: {len(secrets)}")
 
     # Build container definition
     container_def = {

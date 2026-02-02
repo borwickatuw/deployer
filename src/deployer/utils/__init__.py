@@ -16,7 +16,9 @@ from .environment import (
     validate_environment_deployed,
 )
 from .logging import (
+    is_verbose,
     log,
+    log_debug,
     log_error,
     log_error_stderr,
     log_info,
@@ -26,6 +28,7 @@ from .logging import (
     log_success,
     log_warning,
     log_warning_stderr,
+    set_verbose,
 )
 from .subprocess import run_command
 
@@ -40,7 +43,9 @@ __all__ = [
     "get_environment_path",
     "get_environments_dir",
     "get_staging_environments",
+    "is_verbose",
     "log",
+    "log_debug",
     "log_error",
     "log_error_stderr",
     "log_info",
@@ -51,5 +56,6 @@ __all__ = [
     "log_warning",
     "log_warning_stderr",
     "run_command",
+    "set_verbose",
     "validate_environment_deployed",
 ]

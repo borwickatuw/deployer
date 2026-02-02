@@ -2,6 +2,52 @@
 
 Complete reference for deployment configuration.
 
+## Quick Reference
+
+### Three Config Files
+
+| File | Location | Purpose | When to Edit |
+|------|----------|---------|--------------|
+| `deploy.toml` | App repository | What to run: images, commands, env vars | Adding services, changing commands, new env vars |
+| `terraform.tfvars` | Environment directory | How big: cpu, memory, replicas, scaling | Resizing services, changing capacity |
+| `config.toml` | Environment directory | Infrastructure glue: connects deploy to tofu | Rarely (auto-generated) |
+
+### Common Commands
+
+```bash
+# Deploy to staging
+uv run python bin/deploy.py /path/to/deploy.toml myapp-staging
+
+# Dry-run (show what would happen)
+uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
+
+# Infrastructure changes
+./bin/tofu.sh myapp-staging plan
+./bin/tofu.sh myapp-staging apply
+
+# View logs
+aws logs tail /ecs/myapp-staging --follow
+
+# Run Django management commands
+uv run python bin/ecs-run.py myapp-staging manage migrate
+```
+
+### Required OpenTofu Outputs
+
+These outputs must be defined in your environment's OpenTofu configuration for the deploy script to work:
+
+| Output | Description | Used For |
+|--------|-------------|----------|
+| `ecs_cluster_name` | ECS cluster name | Service deployment |
+| `ecs_execution_role_arn` | Task execution role | Pulling images, secrets |
+| `ecs_task_role_arn` | Task role | Application AWS access |
+| `ecs_security_group_id` | Security group ID | Network configuration |
+| `private_subnet_ids` | List of subnet IDs | Task placement |
+| `ecr_prefix` | ECR repository prefix | Image naming |
+| `database_url` | PostgreSQL connection URL | Application config |
+
+---
+
 ## Path Resolution
 
 All paths in `deploy.toml` are resolved relative to the configuration file location:

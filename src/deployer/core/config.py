@@ -16,6 +16,45 @@ except ImportError:
 
 from ..utils import run_command
 
+# Required fields in environment config.toml
+# These are the minimum fields needed for a successful deployment
+REQUIRED_CONFIG_FIELDS = {
+    "infrastructure": [
+        "cluster_name",
+        "ecr_prefix",
+        "execution_role_arn",
+        "task_role_arn",
+        "security_group_id",
+        "private_subnet_ids",
+    ],
+}
+
+
+def validate_environment_config(config: dict) -> list[str]:
+    """Validate that required fields are present in environment config.
+
+    Checks that all required infrastructure fields are present and non-empty.
+    This is a fail-fast check to catch configuration errors early.
+
+    Args:
+        config: The resolved environment configuration dict.
+
+    Returns:
+        List of error messages. Empty list if all required fields are present.
+    """
+    errors = []
+
+    for section, fields in REQUIRED_CONFIG_FIELDS.items():
+        section_data = config.get(section, {})
+        for field in fields:
+            value = section_data.get(field)
+            if not value:
+                errors.append(f"Missing required field: [{section}].{field}")
+            elif isinstance(value, list) and len(value) == 0:
+                errors.append(f"Empty list for required field: [{section}].{field}")
+
+    return errors
+
 # Regex to match ${tofu:output_name} placeholders
 TOFU_PLACEHOLDER_PATTERN = re.compile(r"\$\{tofu:([^}]+)\}")
 

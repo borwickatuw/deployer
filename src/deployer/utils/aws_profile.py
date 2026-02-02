@@ -87,6 +87,7 @@ def configure_aws_profile_for_environment(
     operation: str,
     environment: str | None = None,
     verbose: bool = True,
+    validate: bool = False,
 ) -> None:
     """Configure AWS_PROFILE for an operation, using environment config.
 
@@ -100,34 +101,100 @@ def configure_aws_profile_for_environment(
         environment: Environment name (e.g., "myapp-staging"). Required for
                      looking up the profile in config.toml.
         verbose: If True, log which profile is being used
+        validate: If True, validate the profile credentials work before returning.
+                  Raises RuntimeError if validation fails.
+
+    Raises:
+        RuntimeError: If validate=True and the profile cannot be validated.
     """
+    profile_source = None
+    profile_name = None
+
     # If AWS_PROFILE is explicitly set, use it
     if os.environ.get("AWS_PROFILE"):
+        profile_name = os.environ["AWS_PROFILE"]
+        profile_source = "AWS_PROFILE"
         if verbose:
-            log(f"Using AWS profile: {os.environ['AWS_PROFILE']} (from AWS_PROFILE)")
-        return
+            log(f"Using AWS profile: {profile_name} (from AWS_PROFILE)")
+    else:
+        # Try to get profile from environment's config.toml
+        if environment:
+            from .environment import get_environment_path
 
-    # Try to get profile from environment's config.toml
-    if environment:
-        from .environment import get_environment_path
-
-        env_path = get_environment_path(environment)
-        env_profile = get_environment_aws_profile(env_path, operation)
-        if env_profile:
-            os.environ["AWS_PROFILE"] = env_profile
-            if verbose:
+            env_path = get_environment_path(environment)
+            env_profile = get_environment_aws_profile(env_path, operation)
+            if env_profile:
+                os.environ["AWS_PROFILE"] = env_profile
+                profile_name = env_profile
                 config_key = PROFILE_CONFIG_KEYS.get(operation, operation)
-                log(f"Using AWS profile: {env_profile} (from {environment}/config.toml [aws].{config_key})")
-            return
+                profile_source = f"{environment}/config.toml [aws].{config_key}"
+                if verbose:
+                    log(f"Using AWS profile: {profile_name} (from {profile_source})")
 
-    # Fall back to default
-    default_profile = PROFILE_DEFAULTS.get(operation)
-    if default_profile:
-        os.environ["AWS_PROFILE"] = default_profile
-        if verbose:
-            log(f"Using AWS profile: {default_profile} (default)")
-    elif verbose:
-        log("Using AWS profile: default (no profile configured)")
+        # Fall back to default if no profile set yet
+        if not profile_name:
+            default_profile = PROFILE_DEFAULTS.get(operation)
+            if default_profile:
+                os.environ["AWS_PROFILE"] = default_profile
+                profile_name = default_profile
+                profile_source = "default"
+                if verbose:
+                    log(f"Using AWS profile: {profile_name} (default)")
+            elif verbose:
+                log("Using AWS profile: default (no profile configured)")
+
+    # Validate credentials if requested
+    if validate and profile_name:
+        success, error = validate_aws_profile(profile_name)
+        if not success:
+            raise RuntimeError(error)
+
+
+def validate_aws_profile(profile_name: str) -> tuple[bool, str | None]:
+    """Validate that an AWS profile exists and has working credentials.
+
+    Checks:
+    1. Profile exists in ~/.aws/config or ~/.aws/credentials
+    2. Credentials work by calling STS get_caller_identity()
+
+    Args:
+        profile_name: Name of the AWS profile to validate.
+
+    Returns:
+        Tuple of (success, error_message). If success is True, error_message is None.
+    """
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound
+
+    try:
+        session = boto3.Session(profile_name=profile_name)
+        sts = session.client("sts")
+        sts.get_caller_identity()
+        return True, None
+    except ProfileNotFound:
+        return False, (
+            f"AWS profile '{profile_name}' not found.\n"
+            f"Check your ~/.aws/config and ~/.aws/credentials files.\n"
+            f"See docs/GETTING-STARTED.md for profile setup instructions."
+        )
+    except NoCredentialsError:
+        return False, (
+            f"No credentials found for AWS profile '{profile_name}'.\n"
+            f"Ensure the profile has valid access keys or role configuration."
+        )
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        if error_code == "ExpiredToken":
+            return False, (
+                f"AWS credentials for profile '{profile_name}' have expired.\n"
+                f"Refresh your credentials (e.g., re-run `aws sso login` if using SSO)."
+            )
+        elif error_code == "AccessDenied":
+            return False, (
+                f"AWS credentials for profile '{profile_name}' are invalid or access is denied.\n"
+                f"Check that the credentials have the required permissions."
+            )
+        return False, f"AWS credential error for profile '{profile_name}': {e}"
 
 
 # Legacy function for backward compatibility

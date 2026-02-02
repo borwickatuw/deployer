@@ -2,6 +2,19 @@
 
 OpenTofu infrastructure and deployment tooling for AWS ECS applications.
 
+## Getting Started
+
+**First-time users:** Follow this documentation sequence:
+
+1. **[Getting Started](docs/GETTING-STARTED.md)** - One-time AWS account setup (IAM roles, bootstrap)
+2. **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Create environments and deploy your first app
+3. **[Design](docs/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
+
+**Quick reference:**
+- [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
+- [Architecture](docs/ARCHITECTURE.md) - AWS infrastructure and **cost estimates** (~$150-250/mo staging, ~$1,600-2,100/mo production)
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - When things go wrong
+
 ## Overview
 
 This repository provides:

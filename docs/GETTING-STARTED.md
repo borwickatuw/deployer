@@ -6,10 +6,26 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ## Prerequisites
 
+| Tool | Version | Installation | Purpose |
+|------|---------|--------------|---------|
+| Python | 3.11+ | `brew install python@3.11` | Deploy scripts |
+| uv | Latest | `brew install uv` | Python package manager |
+| OpenTofu | 1.6+ | `brew install opentofu` | Infrastructure as code |
+| AWS CLI | v2 | `brew install awscli` | AWS operations |
+| Docker | Latest | `brew install docker` | Container builds |
+
+**Verify your setup:**
+```bash
+python3 --version    # Should be 3.11 or higher
+uv --version
+tofu --version
+aws --version
+docker --version
+```
+
+**Additional requirements:**
 - AWS account with Administrator access (for initial setup only)
 - AWS CLI configured (`aws configure`)
-- OpenTofu installed (`brew install opentofu`)
-- uv installed for Python (`brew install uv`)
 
 ## Initial Account Setup
 

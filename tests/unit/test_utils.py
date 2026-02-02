@@ -179,3 +179,28 @@ class TestGetStagingEnvironments:
         result = get_staging_environments(tmp_path)
 
         assert result == ["real-staging"]
+
+    def test_staging_in_middle_not_matched(self, tmp_path):
+        """Test that 'staging' in middle of name is not matched."""
+        (tmp_path / "staging-backup").mkdir()
+        (tmp_path / "my-staging-test").mkdir()
+        (tmp_path / "real-staging").mkdir()
+
+        result = get_staging_environments(tmp_path)
+
+        assert "staging-backup" not in result
+        assert "my-staging-test" not in result
+        assert "real-staging" in result
+
+    def test_multi_hyphen_app_names(self, tmp_path):
+        """Test that multi-hyphen app names work correctly."""
+        (tmp_path / "my-cool-app-staging").mkdir()
+        (tmp_path / "api-v2-staging").mkdir()
+        (tmp_path / "simple-staging").mkdir()
+
+        result = get_staging_environments(tmp_path)
+
+        assert "my-cool-app-staging" in result
+        assert "api-v2-staging" in result
+        assert "simple-staging" in result
+        assert len(result) == 3

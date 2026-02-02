@@ -37,6 +37,7 @@ from deployer.core import run_audit
 from deployer.core.config import (
     derive_environment_from_env_name,
     load_environment_config,
+    validate_environment_config,
 )
 from deployer.core.secrets import (
     check_secrets_exist,
@@ -46,8 +47,11 @@ from deployer.deploy import (
     build_and_push_images,
     deploy_services,
     ecr_login,
+    format_missing_ecr_error,
     get_service_sizing,
     start_migrations,
+    validate_ecr_repositories,
+    validate_ecs_cluster,
     wait_for_migrations,
     wait_for_stable,
 )
@@ -57,9 +61,11 @@ from deployer.utils import (
     configure_aws_profile_for_environment,
     get_environments_dir,
     log,
+    log_debug,
     log_error,
     log_success,
     log_warning,
+    set_verbose,
 )
 
 
@@ -161,7 +167,12 @@ class Deployer:
 
         # Get AWS account info
         self.account_id = self.sts.get_caller_identity()["Account"]
-        self.region = boto3.session.Session().region_name or "us-west-2"
+        self.region = boto3.session.Session().region_name
+        if not self.region:
+            raise ValueError(
+                "No AWS region configured. Set AWS_DEFAULT_REGION environment variable "
+                "or configure a default region in your AWS profile."
+            )
 
         # Cluster name from config (supports shared environments) or fallback
         self.cluster_name = infra.get("cluster_name")
@@ -458,6 +469,16 @@ Examples:
         help="Skip the SSM secrets existence check"
     )
     parser.add_argument(
+        "--skip-ecr-check",
+        action="store_true",
+        help="Skip the ECR repository existence check"
+    )
+    parser.add_argument(
+        "--skip-cluster-check",
+        action="store_true",
+        help="Skip the ECS cluster existence check"
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Deploy even if infrastructure is unavailable (database down, etc.)"
@@ -487,12 +508,25 @@ Examples:
         metavar="ID",
         help="Run ID for timing report (auto-generated if not specified)"
     )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed debug information"
+    )
 
     args = parser.parse_args()
 
+    # Enable verbose mode if requested
+    if args.verbose:
+        set_verbose(True)
+
     # Configure AWS profile before any boto3 clients are created
     # Uses environment-specific profile from config.toml if available
-    configure_aws_profile_for_environment("deploy", args.environment)
+    try:
+        configure_aws_profile_for_environment("deploy", args.environment, validate=True)
+    except RuntimeError as e:
+        log_error(str(e))
+        sys.exit(1)
     print()
 
     # Validate config file
@@ -523,6 +557,18 @@ Examples:
         sys.exit(1)
     except Exception as e:
         log_error(f"Failed to load deployment config: {e}")
+        sys.exit(1)
+
+    # Validate required config fields are present
+    config_errors = validate_environment_config(env_config)
+    if config_errors:
+        log_error("Environment config.toml is missing required fields:")
+        for error in config_errors:
+            print(f"    {error}")
+        print()
+        print("  These fields are typically set via ${tofu:...} placeholders.")
+        print("  Run 'tofu apply' in the environment directory to create infrastructure,")
+        print("  then update config.toml with the appropriate placeholders.")
         sys.exit(1)
 
     # Derive environment type (staging/production) from env name
@@ -563,14 +609,41 @@ Examples:
             log_success("Audit passed")
             print()
 
+    # Load deploy.toml for pre-flight checks
+    with open(config_path, "rb") as f:
+        deploy_config = tomllib.load(f)
+
+    # Check ECR repositories exist unless --skip-ecr-check is set
+    if not args.skip_ecr_check:
+        log("Checking ECR repositories...")
+        try:
+            ecr_client = boto3.client("ecr")
+            ecr_prefix = env_config.get("infrastructure", {}).get("ecr_prefix")
+            log_debug(f"ECR prefix: {ecr_prefix}")
+            if not ecr_prefix:
+                log_warning("ecr_prefix not found in config.toml, skipping ECR check")
+            else:
+                images = deploy_config.get("images", {})
+                log_debug(f"Images to check: {list(images.keys())}")
+                missing_repos = validate_ecr_repositories(ecr_client, deploy_config, ecr_prefix)
+                if missing_repos:
+                    log_error(format_missing_ecr_error(missing_repos, args.environment))
+                    sys.exit(1)
+                else:
+                    image_count = len([
+                        img for img, cfg in images.items()
+                        if cfg.get("push", True)
+                    ])
+                    log_success(f"All {image_count} ECR repository(ies) present")
+            print()
+        except Exception as e:
+            log_error(f"Failed to check ECR repositories: {e}")
+            sys.exit(1)
+
     # Check SSM secrets exist unless --skip-secrets-check is set
     if not args.skip_secrets_check:
         log("Checking SSM secrets...")
         try:
-            # Load deploy.toml to check secrets
-            with open(config_path, "rb") as f:
-                deploy_config = tomllib.load(f)
-
             missing, present = check_secrets_exist(
                 deploy_config, environment_type, args.environment, env_config
             )
@@ -587,6 +660,27 @@ Examples:
             log_error(f"Failed to check secrets: {e}")
             sys.exit(1)
 
+    # Check ECS cluster exists unless --skip-cluster-check is set
+    if not args.skip_cluster_check:
+        log("Checking ECS cluster...")
+        try:
+            ecs_client = boto3.client("ecs")
+            cluster_name = env_config.get("infrastructure", {}).get("cluster_name")
+            log_debug(f"Cluster name: {cluster_name}")
+            if not cluster_name:
+                log_warning("cluster_name not found in config.toml, skipping cluster check")
+            else:
+                log_debug(f"Calling describe_clusters for: {cluster_name}")
+                exists, error = validate_ecs_cluster(ecs_client, cluster_name)
+                if not exists:
+                    log_error(error)
+                    sys.exit(1)
+                log_success(f"ECS cluster '{cluster_name}' is active")
+            print()
+        except Exception as e:
+            log_error(f"Failed to check ECS cluster: {e}")
+            sys.exit(1)
+
     # Set up timing if requested
     timer = None
     enable_timing = args.timing or args.timing_output or args.timing_csv
@@ -595,15 +689,19 @@ Examples:
         run_id = args.run_id or f"deploy-{secrets.token_hex(4)}"
         timer = DeploymentTimer(run_id)
 
-    deployer = Deployer(
-        args.config,
-        environment_type,
-        env_config,
-        dry_run=args.dry_run,
-        force=args.force,
-        force_build=args.force_build,
-        timer=timer,
-    )
+    try:
+        deployer = Deployer(
+            args.config,
+            environment_type,
+            env_config,
+            dry_run=args.dry_run,
+            force=args.force,
+            force_build=args.force_build,
+            timer=timer,
+        )
+    except ValueError as e:
+        log_error(str(e))
+        sys.exit(1)
 
     try:
         _, health_failures = deployer.deploy()

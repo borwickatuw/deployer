@@ -1,6 +1,12 @@
 """Deployment module for ECS applications."""
 
-from .images import build_and_push_images, ecr_login, get_build_args
+from .images import (
+    build_and_push_images,
+    ecr_login,
+    format_missing_ecr_error,
+    get_build_args,
+    validate_ecr_repositories,
+)
 from .service import (
     DeploymentError,
     MigrationTask,
@@ -20,12 +26,17 @@ from .task_definition import (
     get_secrets,
     get_service_sizing,
 )
+from .validation import (
+    validate_ecs_cluster,
+)
 
 __all__ = [
     # Images
     "build_and_push_images",
     "ecr_login",
+    "format_missing_ecr_error",
     "get_build_args",
+    "validate_ecr_repositories",
     # Task definition
     "build_task_definition",
     "get_environment_variables",
@@ -43,4 +54,6 @@ __all__ = [
     "start_migrations",
     "wait_for_migrations",
     "wait_for_stable",
+    # Validation
+    "validate_ecs_cluster",
 ]

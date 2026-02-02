@@ -71,13 +71,17 @@ def get_all_environments(environments_dir: Path) -> list[str]:
 def get_staging_environments(environments_dir: Path) -> list[str]:
     """Find all staging environment directories.
 
+    Environment directories follow the pattern <app-name>-<env-type>, where
+    env-type is the last hyphen-separated component. This function returns
+    environments where env-type is "staging".
+
     Args:
         environments_dir: Directory containing environment subdirectories.
 
     Returns:
-        Sorted list of environment names that contain 'staging'.
+        Sorted list of environment names ending with '-staging'.
     """
-    return [env for env in get_all_environments(environments_dir) if "staging" in env]
+    return [env for env in get_all_environments(environments_dir) if env.endswith("-staging")]
 
 
 def validate_environment_deployed(env_name: str) -> tuple[Path | None, str | None]:
