@@ -1,0 +1,339 @@
+# AWS Architecture
+
+This document describes the AWS infrastructure created by the deployer modules.
+
+For information on how deployer is designed and why it separates infrastructure from deployment, see [DESIGN.md](DESIGN.md).
+
+## Architecture Overview
+
+```
+                                    ┌─────────────────────────────────────────────────────────────┐
+                                    │                        CloudFront                           │
+                                    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+                                    │  │ Static/Web  │  │ IIIF Images │  │   Video/Audio       │  │
+                                    │  │ Distribution│  │ Distribution│  │   Distribution      │  │
+                                    │  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
+                                    └─────────┼────────────────┼────────────────────┼─────────────┘
+                                              │                │                    │
+                                              │                │                    │
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                        Public Subnets (2+ AZs)                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              Application Load Balancer                                      │ │
+│  │                    ┌───────────┬───────────┬───────────────┐                                │ │
+│  │                    │ /         │ /iiif/*   │ /api/*        │                                │ │
+│  │                    │ /admin/*  │           │               │                                │ │
+│  │                    └─────┬─────┴─────┬─────┴───────────────┘                                │ │
+│  └──────────────────────────┼───────────┼──────────────────────────────────────────────────────┘ │
+│                             │           │                                                        │
+│  ┌───────────┐              │           │                                                        │
+│  │ NAT GW    │              │           │                                                        │
+│  │ (per AZ)  │              │           │                                                        │
+│  └───────────┘              │           │                                                        │
+└─────────────────────────────┼───────────┼────────────────────────────────────────────────────────┘
+                              │           │
+┌─────────────────────────────┼───────────┼────────────────────────────────────────────────────────┐
+│                             │    Private Subnets (2+ AZs)                                        │
+│                             │           │                                                        │
+│  ┌──────────────────────────┴───────────┴────────────────────────────────────────────────────┐   │
+│  │                                ECS Fargate Cluster                                        │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │   │
+│  │  │   Web       │  │   API       │  │   Worker    │  │   Celery    │  │   Other         │  │   │
+│  │  │   Service   │  │   Service   │  │   Service   │  │   Service   │  │   Services      │  │   │
+│  │  │ (2-10 tasks)│  │ (2-4 tasks) │  │ (2-8 tasks) │  │ (2-4 tasks) │  │                 │  │   │
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └───────┬─────────┘  │   │
+│  └─────────┼────────────────┼────────────────┼────────────────┼─────────────────┼────────────┘   │
+│            │                │                │                │                 │                │
+│            ▼                ▼                ▼                ▼                 ▼                │
+│  ┌───────────────────────────────────────────────────────────────────────────────────────────┐   │
+│  │                                    S3 (via VPC Endpoint)                                  │   │
+│  │                                    ┌──────────────────┐                                   │   │
+│  │                                    │  Media Bucket    │                                   │   │
+│  │                                    └──────────────────┘                                   │   │
+│  └───────────────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                                   │
+│  ┌─────────────────────────┐       ┌─────────────────────────┐                                   │
+│  │   RDS PostgreSQL        │       │   ElastiCache Redis     │                                   │
+│  │   (Multi-AZ)            │       │   (Multi-AZ)            │                                   │
+│  └─────────────────────────┘       └─────────────────────────┘                                   │
+│                                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## AWS Services Used
+
+### Compute
+
+| Service | Purpose | Sizing |
+|---------|---------|--------|
+| **ECS Fargate** | Serverless containers for all application services | Variable per service |
+| **Application Load Balancer** | Request routing, SSL termination, health checks | 1 ALB with multiple target groups |
+
+### Storage
+
+| Service | Purpose | Sizing |
+|---------|---------|--------|
+| **S3 Standard** | Primary media storage (originals, derivatives) | Variable |
+| **S3 Intelligent-Tiering** | Long-term storage for infrequently accessed files | Automatic transition |
+
+### Database
+
+| Service | Purpose | Sizing |
+|---------|---------|--------|
+| **RDS PostgreSQL** | Primary relational database | Staging: db.t4g.micro, Prod: db.r6g.large |
+| **ElastiCache Redis** | Job queues, caching, session storage | Staging: cache.t4g.micro, Prod: cache.r6g.large |
+
+### Networking & CDN
+
+| Service | Purpose | Notes |
+|---------|---------|-------|
+| **CloudFront** | CDN for static assets and media | Optional, recommended for production |
+| **VPC** | Network isolation | /16 CIDR, 2+ AZs |
+| **NAT Gateway** | Outbound internet for private subnets | 1 per AZ |
+| **VPC Endpoints** | Private S3 access | Gateway endpoint (free) |
+
+### Security & Management
+
+| Service | Purpose | Notes |
+|---------|---------|-------|
+| **SSM Parameter Store** | Application secrets | Secure string parameters |
+| **Secrets Manager** | Database credentials | Optional, for rotation |
+| **IAM** | Service roles, task roles | Least privilege |
+| **CloudWatch** | Logs, metrics, alarms | Container Insights enabled |
+| **ACM** | SSL/TLS certificates | For CloudFront and ALB |
+| **ECR** | Container image registry | One repository per image |
+
+## Network Architecture
+
+### VPC Design
+
+```
+VPC CIDR: 10.0.0.0/16
+
+Public Subnets:
+  - 10.0.1.0/24 (AZ-a) - ALB, NAT Gateway
+  - 10.0.2.0/24 (AZ-b) - ALB, NAT Gateway
+
+Private Subnets (Application):
+  - 10.0.10.0/24 (AZ-a) - ECS tasks
+  - 10.0.11.0/24 (AZ-b) - ECS tasks
+
+Private Subnets (Data):
+  - 10.0.20.0/24 (AZ-a) - RDS, ElastiCache
+  - 10.0.21.0/24 (AZ-b) - RDS, ElastiCache
+```
+
+### Security Groups
+
+| Security Group | Inbound Rules | Outbound Rules |
+|----------------|---------------|----------------|
+| `{app}-alb-sg` | 80, 443 from 0.0.0.0/0 | All to `{app}-ecs-sg` |
+| `{app}-ecs-sg` | Ports from `{app}-alb-sg` | 5432 to RDS, 6379 to Redis, 443 to S3 endpoint |
+| `{app}-rds-sg` | 5432 from `{app}-ecs-sg` | None |
+| `{app}-redis-sg` | 6379 from `{app}-ecs-sg` | None |
+
+### VPC Endpoints
+
+| Endpoint | Type | Purpose |
+|----------|------|---------|
+| S3 | Gateway | Free, private S3 access without NAT |
+| ECR (dkr, api) | Interface | Private ECR access (optional, reduces NAT costs) |
+| CloudWatch Logs | Interface | Private logging (optional) |
+
+## Storage Architecture
+
+### S3 Bucket Structure
+
+```
+{app}-media-{environment}/
+├── uploads/                         # User uploads
+│   └── YYYY/MM/
+│       └── {filename}
+├── processed/                       # Processed/derivative files
+│   └── {id}/
+│       └── {filename}
+└── static/                          # Static assets (optional)
+    └── {version}/
+        └── {filename}
+```
+
+### S3 Bucket Configuration
+
+**Lifecycle Rules:**
+
+| Rule | Prefix | Transition |
+|------|--------|------------|
+| Intelligent-Tiering | `processed/` | 30 days → INTELLIGENT_TIERING |
+| Abort incomplete uploads | All | 7 days |
+
+**CORS Configuration:**
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedOrigins": ["https://your-domain.com", "https://*.cloudfront.net"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+## Cost Estimation
+
+### Staging (~$150-250/month)
+
+| Service | Configuration | Monthly Cost |
+|---------|---------------|--------------|
+| **ECS Fargate** | 3-5 small tasks | $50-80 |
+| **RDS PostgreSQL** | db.t4g.micro, 20GB | $15-20 |
+| **ElastiCache Redis** | cache.t4g.micro | $15-20 |
+| **S3** | 100GB storage | $3 |
+| **ALB** | 1 ALB, minimal traffic | $20-25 |
+| **NAT Gateway** | 1 gateway, minimal traffic | $35-50 |
+| **CloudWatch** | Basic logging | $5-10 |
+| **Secrets** | 3-5 parameters | $1-3 |
+| **Total** | | **$150-210** |
+
+### Production (~$1,600-2,100/month)
+
+| Service | Configuration | Monthly Cost |
+|---------|---------------|--------------|
+| **ECS Fargate** | ~20 tasks average (varies by load) | $400-600 |
+| **RDS PostgreSQL** | db.r6g.large Multi-AZ, 100GB GP3 | $350-400 |
+| **ElastiCache Redis** | cache.r6g.large Multi-AZ | $250-300 |
+| **S3 Storage** | 10TB Standard | $230 |
+| **S3 Requests** | ~10M GET, 1M PUT/month | $50-100 |
+| **CloudFront** | 1TB transfer, 50M requests | $100-150 |
+| **ALB** | 1 ALB, ~2000 LCU-hours | $50-100 |
+| **NAT Gateway** | 2 gateways, 500GB processed | $100-150 |
+| **CloudWatch** | Logs, metrics, alarms | $50-100 |
+| **Secrets** | 5-10 parameters | $5-10 |
+| **Total** | | **$1,600-2,100** |
+
+### Cost Optimization
+
+1. **Reserved Instances**: RDS and ElastiCache reserved instances save 30-50%
+2. **Fargate Spot**: Use for interruptible workloads (workers) for 70% savings
+3. **S3 Lifecycle**: Move infrequently accessed files to Intelligent-Tiering
+4. **CloudFront Caching**: Higher cache hit ratio reduces origin requests
+5. **NAT Gateway**: Consider NAT instances for very low traffic
+6. **Right-sizing**: Monitor actual usage and adjust instance sizes
+
+## Security Considerations
+
+### Network Security
+
+- All ECS tasks run in private subnets (no public IPs)
+- Internet access via NAT Gateway only
+- S3 access via VPC Gateway Endpoint (never traverses public internet)
+- ALB terminates TLS; internal traffic within VPC is unencrypted but isolated
+
+### Data Security
+
+- **S3**: Server-side encryption (SSE-S3) enabled by default
+- **RDS**: Encryption at rest (AWS-managed key), encryption in transit
+- **ElastiCache**: Encryption at rest and in transit
+- **Secrets**: Stored in SSM Parameter Store as SecureString
+
+### Access Control
+
+- ECS tasks use IAM roles (no long-lived access keys)
+- S3 bucket policy restricts access to VPC endpoint and CloudFront OAC
+- RDS security group only allows connections from ECS tasks
+- Principle of least privilege for all IAM roles
+
+### Compliance Recommendations
+
+- Enable **CloudTrail** for audit logging of AWS API calls
+- Enable **VPC Flow Logs** for network monitoring
+- Enable **GuardDuty** for threat detection
+- Regular security patching via ECR image updates
+- Enable **AWS Config** for compliance monitoring
+
+## Scaling Strategies
+
+### Auto-Scaling
+
+Configure auto-scaling in your `deploy.toml`:
+
+```toml
+[scaling.web]
+min_replicas = 2
+max_replicas = 10
+cpu_target = 70
+```
+
+| Trigger Type | Description | Use Case |
+|--------------|-------------|----------|
+| CPU Target | Scale when average CPU exceeds target | General workloads |
+| Memory Target | Scale when average memory exceeds target | Memory-intensive apps |
+| Request Count | Scale based on requests per target | Web services |
+
+### Database Scaling
+
+- **Read Replicas**: Add RDS read replicas for read-heavy workloads
+- **Connection Pooling**: Add PgBouncer if connection limits reached
+- **Aurora**: Consider Aurora PostgreSQL Serverless v2 for auto-scaling
+
+### CDN Scaling
+
+CloudFront scales automatically. Consider:
+- **Origin Shield**: Additional caching layer to reduce origin load
+- **Lambda@Edge**: Custom logic at edge locations
+
+## Monitoring and Alerting
+
+### Recommended CloudWatch Alarms
+
+| Alarm | Metric | Threshold |
+|-------|--------|-----------|
+| High ALB 5xx Rate | HTTPCode_ELB_5XX_Count | > 10 in 5 min |
+| High ALB Latency | TargetResponseTime | > 5s p95 for 5 min |
+| RDS High CPU | CPUUtilization | > 80% for 10 min |
+| RDS Low Storage | FreeStorageSpace | < 20GB |
+| ElastiCache High Memory | DatabaseMemoryUsagePercentage | > 80% |
+| ECS Task Failures | RunningTaskCount | < desired for 5 min |
+
+### Log Groups
+
+Services create log groups at `/ecs/{app}-{environment}/{service}`:
+
+```
+/ecs/myapp-staging/web
+/ecs/myapp-staging/celery
+/ecs/myapp-staging/worker
+```
+
+### Log Insights Queries
+
+**Find errors:**
+```
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 100
+```
+
+**Slow requests:**
+```
+fields @timestamp, @message
+| filter @message like /took.*ms/
+| parse @message /took (?<duration>\d+)ms/
+| filter duration > 1000
+| sort duration desc
+```
+
+## Staging vs Production Differences
+
+| Aspect | Staging | Production |
+|--------|---------|------------|
+| Availability | Single-AZ | Multi-AZ |
+| RDS | db.t4g.micro, no Multi-AZ | db.r6g.large, Multi-AZ |
+| Redis | cache.t4g.micro | cache.r6g.large, Multi-AZ |
+| ECS Tasks | 1 per service | 2+ per service with auto-scaling |
+| NAT Gateway | 1 | 1 per AZ |
+| CloudFront | Optional | Recommended |
+| Auto-scaling | Disabled | Enabled |
+| Cost | ~$150-250/month | ~$1,600-2,100/month |

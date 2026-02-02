@@ -1,0 +1,59 @@
+# Sample docker-compose.yml for testing
+version: "3.8"
+
+services:
+  testapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - DEBUG=true
+      - UV_LINK_MODE=copy
+    depends_on:
+      - postgres
+      - redis
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      - postgres
+      - redis
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: testapp
+      POSTGRES_USER: testapp
+      POSTGRES_PASSWORD: testapp
+
+  redis:
+    image: redis:7-alpine
+
+  a11y:
+    build:
+      context: .
+      dockerfile: Dockerfile.a11y
+    profiles:
+      - dev-tools

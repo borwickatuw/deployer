@@ -1,0 +1,174 @@
+# Example Application Deployment Configuration
+#
+# This file describes how to deploy an application to AWS ECS.
+# Copy this file to your application repository and customize it.
+#
+# This file defines WHAT to run (app structure). Service sizing (cpu, memory,
+# replicas, scaling) is configured in OpenTofu tfvars per environment.
+# See docs/DESIGN.md for the philosophy behind this separation.
+#
+# Usage (from deployer directory):
+#   # Get service config from OpenTofu outputs
+#   export SERVICE_CONFIG=$(tofu -chdir=environments/staging output -json service_config)
+#
+#   # Deploy
+#   uv run bin/deploy.py /path/to/deploy.toml myapp-staging
+
+[application]
+name = "myapp"                      # Application name (used for ECS cluster naming)
+description = "My application"       # Human-readable description
+source = "."                         # Source code location (relative to config file)
+ecr_prefix = "myapp"                 # ECR repository prefix
+
+
+# ------------------------------------------------------------------------------
+# Images
+#
+# Define the Docker images that need to be built and pushed.
+# Each image can be used by one or more services.
+# ------------------------------------------------------------------------------
+
+[images.web]
+context = "."                        # Build context relative to source
+dockerfile = "Dockerfile"            # Dockerfile path relative to context
+
+# Example: Additional images
+# [images.worker]
+# context = "worker"
+# dockerfile = "Dockerfile"
+
+# Example: Multi-stage image builds with dependencies
+# Base images are built first and only stored locally (not pushed to ECR).
+# Use this when your Dockerfile uses FROM <image-name> to inherit from a local image.
+#
+# [images.myapp-base]
+# context = "."
+# dockerfile = "docker/myapp-base"   # Dockerfile that creates the base image
+# push = false                       # Don't push to ECR, just build locally
+#
+# [images.web]
+# context = "."
+# dockerfile = "docker/myapp"        # Dockerfile with "FROM myapp-base"
+# depends_on = ["myapp-base"]        # Ensures myapp-base is built first
+
+# Example: Build arguments
+# Pass --build-arg flags to docker build. Useful for configuring build behavior.
+#
+# [images.web]
+# context = "."
+# dockerfile = "Dockerfile"
+#
+# [images.web.build_args]                   # Applied to all environments
+# PYTHON_VERSION = "3.12"
+#
+# [images.web.build_args.staging]           # Staging-specific build args
+# UV_INSTALL_ARGS = "--group dev"
+#
+# [images.web.build_args.production]        # Production-specific build args
+# UV_INSTALL_ARGS = ""
+
+
+# ------------------------------------------------------------------------------
+# Services
+#
+# Define the ECS services to run. Each service references an image
+# and specifies its runtime configuration (commands, ports, health checks).
+#
+# NOTE: Sizing (cpu, memory, replicas) is configured in OpenTofu tfvars,
+# not here. See environments/staging/terraform.tfvars.example
+# ------------------------------------------------------------------------------
+
+[services.web]
+image = "web"                        # References [images.web]
+port = 8000                          # Container port
+command = ["gunicorn", "app:application", "--bind", "0.0.0.0:8000"]
+health_check_path = "/health/"       # ALB health check endpoint
+
+# Example: Background worker service
+# [services.worker]
+# image = "web"                      # Can reuse the web image
+# command = ["celery", "-A", "app", "worker"]
+
+# Example: Service with path-based routing
+# [services.api]
+# image = "web"
+# port = 8000
+# command = ["gunicorn", "api:app"]
+# health_check_path = "/api/health"
+# path_pattern = "/api/*"            # ALB path-based routing
+
+# Example: Resource-intensive service with minimum requirements
+# Use min_cpu/min_memory when the app has baseline requirements from its Dockerfile.
+# Deploy will fail if the environment's terraform.tfvars sets values below these.
+# [services.transcoder]
+# image = "transcoder"
+# min_cpu = 512      # Minimum CPU units (deploy fails if env sets less)
+# min_memory = 1024  # Minimum memory MB (deploy fails if env sets less)
+
+
+# ------------------------------------------------------------------------------
+# Environment Variables
+#
+# Variables passed to all services.
+#
+# Use ${placeholder} syntax for values resolved at deploy time from
+# infrastructure outputs or environment variables.
+#
+# Environment-specific overrides:
+#   [environment.staging]  - applies only to staging deployments
+#   [environment.production] - applies only to production deployments
+#
+# Service-specific overrides:
+#   [services.worker.environment] - base for all environments
+#   [services.worker.environment.staging] - staging-specific for this service
+# ------------------------------------------------------------------------------
+
+[environment]
+ALLOWED_HOSTS = "*"
+
+# Infrastructure references (resolved by deploy script)
+DATABASE_URL = "${database_url}"
+REDIS_URL = "${redis_url}"
+AWS_STORAGE_BUCKET_NAME = "${s3_media_bucket}"
+AWS_REGION = "${aws_region}"
+
+# Staging-specific environment variables
+[environment.staging]
+DEBUG = "true"
+LOG_LEVEL = "DEBUG"
+
+# Production-specific environment variables
+[environment.production]
+DEBUG = "false"
+LOG_LEVEL = "INFO"
+
+
+# ------------------------------------------------------------------------------
+# Secrets
+#
+# Secrets are pulled from AWS SSM Parameter Store or Secrets Manager
+# at container startup. The deploy script does NOT have access to these values.
+#
+# SSM Parameter Store format:
+#   ssm:/path/to/parameter
+#
+# Secrets Manager format:
+#   secretsmanager:secret-name:key
+# ------------------------------------------------------------------------------
+
+[secrets]
+SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
+# DB_PASSWORD = "secretsmanager:myapp/${environment}/db:password"
+
+
+# ------------------------------------------------------------------------------
+# Migrations
+#
+# Configuration for running database migrations before deployment.
+# Migrations run as a one-off ECS task before updating services.
+# ------------------------------------------------------------------------------
+
+[migrations]
+enabled = true
+service = "web"                      # Which service's image to use
+command = ["python", "manage.py", "migrate"]

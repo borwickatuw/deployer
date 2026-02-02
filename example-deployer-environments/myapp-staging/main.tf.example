@@ -1,0 +1,378 @@
+# MyApp Staging Environment
+#
+# This instantiates the infrastructure for a standalone staging environment.
+# Application deployments are handled separately by the deploy.py script.
+#
+# Usage:
+#   cd ~/code/deployer-environments/myapp-staging
+#   ../bin/tofu.sh init
+#   ../bin/tofu.sh plan
+#   ../bin/tofu.sh apply
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # Uncomment and configure for remote state (recommended for team environments)
+  # backend "s3" {
+  #   bucket  = "deployer-terraform-state-123456789012"  # Update with your account ID
+  #   key     = "myapp-staging/terraform.tfstate"
+  #   region  = "us-west-2"
+  #   encrypt = true
+  # }
+}
+
+# ------------------------------------------------------------------------------
+# Data Sources
+# ------------------------------------------------------------------------------
+
+data "aws_caller_identity" "current" {}
+
+# ------------------------------------------------------------------------------
+# Health Check Presets
+# Staging: optimized for fast deployment feedback
+# ------------------------------------------------------------------------------
+
+locals {
+  health_check = {
+    interval             = 10  # 10s between checks
+    timeout              = 5   # 5s timeout
+    healthy_threshold    = 2   # 2 successes = healthy
+    unhealthy_threshold  = 3   # 3 failures = unhealthy
+    deregistration_delay = 15  # 15s drain time
+    grace_period         = 60  # 60s before ECS starts health checking
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Variables
+# ------------------------------------------------------------------------------
+
+variable "project_name" {
+  type        = string
+  description = "Name of the project (used for resource naming)"
+}
+
+variable "db_username" {
+  type      = string
+  sensitive = true
+}
+
+variable "db_password" {
+  type        = string
+  sensitive   = true
+  description = "Database password (min 16 chars, no placeholder values)"
+
+  validation {
+    condition     = length(var.db_password) >= 16
+    error_message = "Database password must be at least 16 characters."
+  }
+
+  validation {
+    condition     = !can(regex("^(password|changeme|example|CHANGE)", lower(var.db_password)))
+    error_message = "Database password cannot be a placeholder value."
+  }
+}
+
+variable "domain_name" {
+  type        = string
+  description = "Domain name for the staging environment (e.g., myapp-staging.example.com)"
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "Route 53 hosted zone ID for automatic certificate creation"
+  default     = null
+}
+
+# Service configuration - sizing that varies by environment
+variable "services" {
+  type = map(object({
+    cpu               = number
+    memory            = number
+    replicas          = number
+    load_balanced     = bool
+    port              = optional(number)
+    health_check_path = optional(string, "/")
+    path_pattern      = optional(string)
+  }))
+  description = "Service sizing configuration (cpu, memory, replicas)"
+}
+
+# Auto-scaling configuration - typically only used in production
+variable "scaling" {
+  type = map(object({
+    min_replicas = number
+    max_replicas = number
+    cpu_target   = optional(number, 70)
+  }))
+  default     = {}
+  description = "Auto-scaling policies per service"
+}
+
+# Health check defaults
+variable "health_check" {
+  type = object({
+    interval            = optional(number, 30)
+    timeout             = optional(number, 10)
+    healthy_threshold   = optional(number, 2)
+    unhealthy_threshold = optional(number, 5)
+    grace_period        = optional(number, 60)
+  })
+  default     = {}
+  description = "Global health check defaults"
+}
+
+# ECR repositories to create
+variable "ecr_repository_names" {
+  type        = list(string)
+  default     = []
+  description = "List of ECR repository names to create (e.g., ['web', 'worker'])"
+}
+
+# WAF Configuration
+variable "waf_enabled" {
+  type        = bool
+  description = "Enable AWS WAF for the ALB"
+  default     = true
+}
+
+variable "waf_rate_limit_requests" {
+  type        = number
+  description = "Maximum requests per IP in a 5-minute window"
+  default     = 2000
+}
+
+# ------------------------------------------------------------------------------
+# Infrastructure Module
+# ------------------------------------------------------------------------------
+
+module "infrastructure" {
+  source = "../"
+
+  project_name = var.project_name
+  environment  = "staging"
+  aws_region   = "us-west-2"
+
+  # VPC
+  vpc_cidr           = "10.0.0.0/16"
+  availability_zones = ["us-west-2a", "us-west-2b"]
+
+  # Database
+  db_instance_class    = "db.t3.micro"
+  db_allocated_storage = 20
+  db_name              = var.project_name
+  db_username          = var.db_username
+  db_password          = var.db_password
+
+  # Cache
+  cache_enabled   = true
+  cache_node_type = "cache.t3.micro"
+
+  # Storage
+  s3_buckets = {
+    "media" = {
+      versioning           = false
+      public               = false
+      cors_allowed_origins = ["https://${var.domain_name}"]
+    }
+  }
+
+  # HTTPS and Authentication
+  domain_name     = var.domain_name
+  route53_zone_id = var.route53_zone_id
+
+  # Enable Cognito authentication for staging
+  cognito_auth_enabled = true
+
+  # Health check settings from staging preset
+  default_health_check_path = "/health/"
+  health_check_interval     = local.health_check.interval
+  health_check_timeout      = local.health_check.timeout
+  healthy_threshold         = local.health_check.healthy_threshold
+  unhealthy_threshold       = local.health_check.unhealthy_threshold
+  deregistration_delay      = local.health_check.deregistration_delay
+
+  # ECR repositories
+  ecr_repository_names = var.ecr_repository_names
+
+  # WAF configuration
+  waf_enabled             = var.waf_enabled
+  waf_rate_limit_requests = var.waf_rate_limit_requests
+
+  # IAM permissions boundary (required for role creation)
+  iam_permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
+}
+
+# ------------------------------------------------------------------------------
+# Outputs for deploy script
+# ------------------------------------------------------------------------------
+
+# Database (detailed format for ECS secrets injection)
+output "db_host" {
+  value       = module.infrastructure.db_host
+  description = "Database host endpoint"
+}
+
+output "db_port" {
+  value       = module.infrastructure.db_port
+  description = "Database port"
+}
+
+output "db_name" {
+  value       = var.project_name
+  description = "Database name"
+}
+
+output "db_password_secret_arn" {
+  value       = module.infrastructure.db_password_secret_arn
+  description = "ARN for database password in Secrets Manager"
+}
+
+output "db_username_secret_arn" {
+  value       = module.infrastructure.db_username_secret_arn
+  description = "ARN for database username in Secrets Manager"
+}
+
+# Legacy database_url output (for backwards compatibility)
+output "database_url" {
+  value     = module.infrastructure.database_url
+  sensitive = true
+}
+
+# Cache
+output "redis_url" {
+  value = module.infrastructure.redis_endpoint != null ? "redis://${module.infrastructure.redis_endpoint}:6379" : ""
+}
+
+# Storage
+output "s3_media_bucket" {
+  value       = module.infrastructure.s3_bucket_names["media"]
+  description = "S3 bucket name for media uploads"
+}
+
+# ECS Infrastructure
+output "ecs_cluster_name" {
+  value = module.infrastructure.ecs_cluster_name
+}
+
+output "ecs_security_group_id" {
+  value       = module.infrastructure.ecs_security_group_id
+  description = "Security group ID for ECS tasks"
+}
+
+output "ecs_execution_role_arn" {
+  value       = module.infrastructure.ecs_execution_role_arn
+  description = "ARN of the ECS task execution role"
+}
+
+output "ecs_task_role_arn" {
+  value       = module.infrastructure.ecs_task_role_arn
+  description = "ARN of the ECS task role"
+}
+
+# ALB
+output "alb_dns_name" {
+  value = module.infrastructure.alb_dns_name
+}
+
+output "alb_target_group_arn" {
+  value       = module.infrastructure.alb_target_group_arn
+  description = "ARN of the default ALB target group"
+}
+
+# Networking
+output "vpc_id" {
+  value = module.infrastructure.vpc_id
+}
+
+output "private_subnet_ids" {
+  value = module.infrastructure.private_subnet_ids
+}
+
+# Domain
+output "domain_name" {
+  value       = var.domain_name
+  description = "Domain name for this environment"
+}
+
+output "https_enabled" {
+  value       = module.infrastructure.https_enabled
+  description = "Whether HTTPS is enabled"
+}
+
+# Cognito
+output "cognito_user_pool_id" {
+  value       = module.infrastructure.cognito_user_pool_id
+  description = "Cognito user pool ID"
+}
+
+output "cognito_user_pool_client_id" {
+  value       = module.infrastructure.cognito_user_pool_client_id
+  description = "Cognito user pool client ID"
+}
+
+# RDS (for scheduler)
+output "rds_instance_id" {
+  value       = module.infrastructure.rds_instance_id
+  description = "RDS instance identifier for scheduling"
+}
+
+# Service configuration outputs
+output "service_config" {
+  value       = var.services
+  description = "Service sizing configuration for deploy.py"
+}
+
+output "scaling_config" {
+  value       = var.scaling
+  description = "Auto-scaling configuration for deploy.py"
+}
+
+output "health_check_config" {
+  value       = local.health_check
+  description = "Health check defaults for deploy.py"
+}
+
+# ECR
+output "ecr_repository_urls" {
+  value       = module.infrastructure.ecr_repository_urls
+  description = "Map of ECR repository names to their URLs"
+}
+
+output "ecr_prefix" {
+  value       = "${var.project_name}-staging"
+  description = "ECR repository prefix"
+}
+
+# ------------------------------------------------------------------------------
+# Automatic Scheduling (optional - stop at night to save costs)
+# ------------------------------------------------------------------------------
+
+module "scheduler" {
+  source = "../modules/staging-scheduler"
+
+  environment_name = "${var.project_name}-staging"
+  ecs_cluster_name = module.infrastructure.ecs_cluster_name
+  ecs_services = {
+    for name, config in var.services : name => {
+      replicas = config.replicas
+    }
+  }
+  rds_instance_id = module.infrastructure.rds_instance_id
+
+  # Schedule (all times in UTC)
+  # Default: Mon-Fri 7am-7pm Pacific
+  stop_schedule  = "cron(0 3 ? * TUE-SAT *)"  # Stop 7pm Pacific (3am UTC next day)
+  start_schedule = "cron(0 15 ? * MON-FRI *)" # Start 7am Pacific (3pm UTC same day)
+
+  # Set to false to disable automatic scheduling
+  enabled = true
+
+  # Required permissions boundary for IAM role creation
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
+}
+
+output "scheduler_enabled" {
+  value       = module.scheduler.scheduling_enabled
+  description = "Whether automatic scheduling is enabled"
+}

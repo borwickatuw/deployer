@@ -1,0 +1,70 @@
+# ------------------------------------------------------------------------------
+# Variables
+# ------------------------------------------------------------------------------
+
+variable "name_prefix" {
+  description = "Prefix for resource names"
+  type        = string
+}
+
+variable "vpc_id" {
+  description = "VPC ID"
+  type        = string
+}
+
+variable "public_subnet_ids" {
+  description = "Public subnet IDs for the ALB"
+  type        = list(string)
+}
+
+variable "certificate_arn" {
+  description = "ACM certificate ARN for HTTPS. If provided, enables HTTPS and redirects HTTP to HTTPS."
+  type        = string
+  default     = null
+}
+
+variable "cognito_auth" {
+  description = "Cognito authentication configuration. If provided, requires authentication before forwarding requests."
+  type = object({
+    user_pool_arn       = string
+    user_pool_client_id = string
+    user_pool_domain    = string
+  })
+  default = null
+}
+
+variable "default_health_check_path" {
+  description = "Health check path for the default target group"
+  type        = string
+  default     = "/"
+}
+
+variable "health_check_interval" {
+  description = "Interval between health checks in seconds"
+  type        = number
+  default     = 30 # Conservative default for production
+}
+
+variable "health_check_timeout" {
+  description = "Health check timeout in seconds"
+  type        = number
+  default     = 10
+}
+
+variable "healthy_threshold" {
+  description = "Number of consecutive successes to mark healthy"
+  type        = number
+  default     = 2
+}
+
+variable "unhealthy_threshold" {
+  description = "Number of consecutive failures to mark unhealthy"
+  type        = number
+  default     = 5
+}
+
+variable "deregistration_delay" {
+  description = "Time to wait for in-flight requests before deregistering (seconds)"
+  type        = number
+  default     = 120 # Conservative default for production
+}

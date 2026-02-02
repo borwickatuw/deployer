@@ -1,0 +1,46 @@
+# Application Load Balancer
+#
+# Creates an ALB with optional HTTPS and Cognito authentication support.
+# - When certificate_arn is provided: HTTPS enabled, HTTP redirects to HTTPS
+# - When cognito_auth is provided: requests require authentication before forwarding
+
+# ------------------------------------------------------------------------------
+# Load Balancer
+# ------------------------------------------------------------------------------
+
+resource "aws_lb" "main" {
+  name               = "${var.name_prefix}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = var.public_subnet_ids
+
+  enable_deletion_protection = false # Set to true for production
+
+  tags = {
+    Name = "${var.name_prefix}-alb"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Default Target Group
+# ------------------------------------------------------------------------------
+
+resource "aws_lb_target_group" "default" {
+  name        = "${var.name_prefix}-default"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  deregistration_delay = var.deregistration_delay
+
+  health_check {
+    path                = var.default_health_check_path
+    healthy_threshold   = var.healthy_threshold
+    unhealthy_threshold = var.unhealthy_threshold
+    timeout             = var.health_check_timeout
+    interval            = var.health_check_interval
+    matcher             = "200-399"
+  }
+}

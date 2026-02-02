@@ -1,0 +1,25 @@
+# Shared Infrastructure - Staging
+# DO NOT commit this file to version control (may contain sensitive data)
+
+# ------------------------------------------------------------------------------
+# Naming
+# ------------------------------------------------------------------------------
+
+name_prefix = "shared-infra-staging"
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "staging.example.com"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# Wildcard certificate for all apps
+certificate_san = ["*.staging.example.com"]
+
+# ------------------------------------------------------------------------------
+# Features
+# ------------------------------------------------------------------------------
+
+cognito_auth_enabled = true   # Enable Cognito for staging authentication
+cache_enabled        = false  # Set to true to enable shared Redis

@@ -1,0 +1,42 @@
+# Bootstrap Instance - Example Account
+# DO NOT commit this file to version control (contains account-specific data)
+
+# ------------------------------------------------------------------------------
+# AWS Region
+# ------------------------------------------------------------------------------
+
+region = "us-west-2"
+
+# ------------------------------------------------------------------------------
+# Project Prefixes
+#
+# Add each project name that will use this deployer setup.
+# These prefixes are used for IAM policy resource patterns.
+# Example: "myapp" allows resources like myapp-staging-*, myapp-production-*
+# ------------------------------------------------------------------------------
+
+project_prefixes = [
+  "myapp",
+  # "otherapp",
+]
+
+# ------------------------------------------------------------------------------
+# Trusted IAM Users
+#
+# ARNs of IAM users that can assume the deployer roles.
+# Replace with your actual IAM user ARN(s).
+# ------------------------------------------------------------------------------
+
+trusted_user_arns = [
+  "arn:aws:iam::123456789012:user/deployer",
+  # "arn:aws:iam::123456789012:user/ci-deploy",
+]
+
+# ------------------------------------------------------------------------------
+# IAM Role Creation
+#
+# Set to false if roles already exist (e.g., created manually or by previous setup)
+# and you only need to manage the state bucket and permissions boundary.
+# ------------------------------------------------------------------------------
+
+create_iam_roles = true

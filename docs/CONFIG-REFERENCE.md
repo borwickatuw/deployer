@@ -1,0 +1,842 @@
+# Configuration Reference
+
+Complete reference for deployment configuration.
+
+## Path Resolution
+
+All paths in `deploy.toml` are resolved relative to the configuration file location:
+
+- `source = "."` - The `source` path is relative to where deploy.toml is located
+- `context = "."` - The build context is relative to the `source` directory
+- `dockerfile = "subdir/Dockerfile"` - The Dockerfile path is relative to the build context
+
+**Example directory structure:**
+```
+my-app/
+├── deploy.toml           # Configuration file
+├── Dockerfile            # Main Dockerfile
+├── src/
+│   └── ...
+└── services/
+    └── worker/
+        └── Dockerfile    # Worker-specific Dockerfile
+```
+
+**Corresponding deploy.toml:**
+```toml
+[application]
+source = "."              # Same directory as deploy.toml
+
+[images.web]
+context = "."             # Same as source (my-app/)
+dockerfile = "Dockerfile" # my-app/Dockerfile
+
+[images.worker]
+context = "services/worker"    # my-app/services/worker/
+dockerfile = "Dockerfile"      # my-app/services/worker/Dockerfile
+```
+
+**Common mistake:** If your app source is in a subdirectory, set `source` appropriately:
+```toml
+# If deploy.toml is at repo root but app code is in ./myapp/
+[application]
+source = "myapp"
+
+[images.web]
+context = "."  # Relative to source, so this is ./myapp/
+```
+
+---
+
+## Overview
+
+Configuration is split between three locations:
+
+| Configuration | Location | Purpose |
+|---------------|----------|---------|
+| **App structure** | `deploy.toml` (app repo) | What to run: images, commands, env vars |
+| **Sizing & capacity** | `terraform.tfvars` (deployer) | How big: cpu, memory, replicas, scaling |
+| **Deployment glue** | `config.toml` (deployer env) | Infrastructure references for deployment |
+
+The `config.toml` in each environment directory bridges the gap between OpenTofu outputs and the deploy script. It uses `${tofu:...}` placeholders that are resolved at deploy time.
+
+See [DESIGN.md](DESIGN.md) for the philosophy behind this separation.
+
+---
+
+## deploy.toml Reference
+
+The `deploy.toml` file lives in your application repository and defines the application's structure. It does **not** contain sizing (cpu, memory, replicas) - those are in OpenTofu tfvars.
+
+### `[application]`
+
+**Required.** Basic application metadata.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Application name. Used for ECS cluster naming (`{name}-{environment}-cluster`). |
+| `description` | string | No | Human-readable description. |
+| `source` | string | Yes | Path to source code. Relative to config file or absolute. Use `.` for same directory. |
+| `ecr_prefix` | string | No | ECR repository prefix. Defaults to `name`. Images are named `{ecr_prefix}-{image_name}`. |
+
+**Example:**
+
+```toml
+[application]
+name = "myapp"
+description = "My web application"
+source = "."
+ecr_prefix = "myapp"
+```
+
+### `[images.*]`
+
+**Required.** Define Docker images to build and push.
+
+Each image is defined as a subsection: `[images.web]`, `[images.worker]`, etc.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `context` | string | Yes | - | Build context path relative to `source`. |
+| `dockerfile` | string | No | `Dockerfile` | Dockerfile path relative to `context`. |
+| `depends_on` | array | No | `[]` | List of image names that must be built before this one. |
+| `push` | boolean | No | `true` | Whether to push to ECR. Set to `false` for local-only base images. |
+
+**Example:**
+
+```toml
+[images.web]
+context = "."
+dockerfile = "Dockerfile"
+
+[images.worker]
+context = "worker"
+dockerfile = "Dockerfile.worker"
+```
+
+The deploy script builds each image and pushes to ECR as:
+`{account}.dkr.ecr.{region}.amazonaws.com/{ecr_prefix}-{image_name}:latest`
+
+#### Image Dependencies
+
+When your Dockerfiles use local base images (e.g., `FROM myapp-base`), use `depends_on` and `push` to control build order:
+
+```toml
+# Base image - built first, not pushed to ECR
+[images.myapp-base]
+context = "."
+dockerfile = "docker/myapp-base"
+push = false
+
+# Main image - depends on base, pushed to ECR
+[images.web]
+context = "."
+dockerfile = "docker/myapp"
+depends_on = ["myapp-base"]
+```
+
+**How it works:**
+
+1. Images are sorted topologically based on `depends_on`
+2. Images with `push = false` are tagged locally as `{image_name}:latest` (e.g., `myapp-base:latest`)
+3. Images with `push = true` (default) are tagged as `{ecr_prefix}-{image_name}:latest` and pushed to ECR
+
+This allows Dockerfiles to use `FROM myapp-base` to inherit from local base images.
+
+**Note:** The image key name (e.g., `myapp-base` in `[images.myapp-base]`) becomes the local tag name. Your Dockerfile's `FROM` statement must match this name.
+
+### `[services.*]`
+
+**Required.** Define ECS services to deploy.
+
+Each service is defined as a subsection: `[services.web]`, `[services.celery]`, etc.
+
+**Note:** Sizing fields (`cpu`, `memory`, `replicas`, `load_balanced`) are configured in OpenTofu tfvars, not here.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `image` | string | Yes | Image name (references `[images.*]`). |
+| `command` | array | No | Container command override. |
+| `port` | integer | No | Container port (for load-balanced services). |
+| `health_check_path` | string | No | ALB health check endpoint. |
+| `path_pattern` | string | No | ALB path-based routing pattern (e.g., `/api/*`). |
+| `min_cpu` | integer | No | Minimum CPU units required. Deploy fails if environment sets less. |
+| `min_memory` | integer | No | Minimum memory (MB) required. Deploy fails if environment sets less. |
+
+**Examples:**
+
+```toml
+# Web service
+[services.web]
+image = "web"
+port = 8000
+command = ["gunicorn", "app:application", "--bind", "0.0.0.0:8000"]
+health_check_path = "/health/"
+
+# Background worker (no ALB)
+[services.celery]
+image = "web"
+command = ["celery", "-A", "app", "worker", "--loglevel=info"]
+
+# IIIF server with path-based routing
+[services.api]
+image = "api"
+port = 8182
+health_check_path = "/health"
+path_pattern = "/iiif/*"
+
+# Resource-intensive service with minimum requirements
+[services.transcoder]
+image = "transcoder"
+min_cpu = 512      # Deployment fails if environment sets cpu < 512
+min_memory = 1024  # Deployment fails if environment sets memory < 1024
+```
+
+### `[environment]`
+
+**Optional.** Environment variables passed to all services.
+
+Values can be:
+- **Static strings**: `DEBUG = "false"`
+- **Placeholders**: `DATABASE_URL = "${database_url}"` (resolved at deploy time)
+
+#### Environment-Specific Overrides
+
+Use `[environment.staging]` and `[environment.production]` sections to override base values per environment:
+
+```toml
+# Base - applies to all environments
+[environment]
+DJANGO_SETTINGS_MODULE = "myapp.settings"
+ALLOWED_HOSTS = "*"
+DATABASE_URL = "${database_url}"
+
+# Staging overrides
+[environment.staging]
+DEBUG = "true"
+LOG_LEVEL = "DEBUG"
+
+# Production overrides
+[environment.production]
+DEBUG = "false"
+LOG_LEVEL = "INFO"
+```
+
+**Merge order** (later values override earlier):
+1. `[environment]` - base values
+2. `[environment.{env}]` - environment-specific overrides
+
+The environment name comes from the `environment` argument passed to the deploy script (e.g., `uv run bin/deploy.py deploy.toml myapp-staging`).
+
+#### Service-Specific Environment Variables
+
+Services can have their own environment variables that override the global ones:
+
+```toml
+[environment]
+LOG_LEVEL = "INFO"
+
+# Celery workers need different concurrency
+[services.celery.environment]
+CELERY_CONCURRENCY = "4"
+
+# Staging celery uses fewer workers
+[services.celery.environment.staging]
+CELERY_CONCURRENCY = "2"
+```
+
+**Full merge order** (for a service in a specific environment):
+1. `[environment]` - global base
+2. `[environment.{env}]` - global environment override
+3. `[services.{name}.environment]` - service-specific base
+4. `[services.{name}.environment.{env}]` - service + environment override
+
+#### Available Placeholders
+
+These placeholders are resolved at deploy time from the environment's `config.toml`:
+
+| Placeholder | Source (config.toml) | Description |
+|-------------|---------------------|-------------|
+| `${database_url}` | `[database].url` | PostgreSQL connection URL |
+| `${redis_url}` | `[redis].url` | Redis connection URL |
+| `${s3_media_bucket}` | `[storage].media_bucket` | S3 bucket name |
+| `${aws_region}` | AWS SDK | Current AWS region |
+| `${environment}` | `environment` argument | Deployment environment (staging/production) |
+| `${iiif_server_url}` | `[services].iiif_server_url` | IIIF server base URL |
+| `${video_server_url}` | `[services].video_server_url` | Video/media server URL |
+
+For service URL references like `${services.api.url}`, see [MODULES.md](MODULES.md#service-url-references).
+
+**Example:**
+
+```toml
+[environment]
+ALLOWED_HOSTS = "*"
+DATABASE_URL = "${database_url}"
+REDIS_URL = "${redis_url}"
+AWS_STORAGE_BUCKET_NAME = "${s3_media_bucket}"
+AWS_REGION = "${aws_region}"
+
+[environment.staging]
+DEBUG = "true"
+
+[environment.production]
+DEBUG = "false"
+```
+
+### `[secrets]`
+
+**Optional.** References to secrets in SSM Parameter Store or Secrets Manager.
+
+Secrets are injected into containers at runtime. The deploy script never sees secret values.
+
+#### SSM Parameter Store
+
+Format: `ssm:/path/to/parameter`
+
+```toml
+[secrets]
+SECRET_KEY = "ssm:/myapp/staging/secret-key"
+API_KEY = "ssm:/myapp/staging/external-api-key"
+```
+
+#### Secrets Manager
+
+Format: `secretsmanager:secret-name:json-key`
+
+```toml
+[secrets]
+DB_PASSWORD = "secretsmanager:myapp-staging-db:password"
+DB_USERNAME = "secretsmanager:myapp-staging-db:username"
+```
+
+#### Environment Substitution
+
+Use `${environment}` in paths to share config across environments:
+
+```toml
+[secrets]
+SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
+# Resolves to:
+#   staging:    ssm:/myapp/staging/secret-key
+#   production: ssm:/myapp/production/secret-key
+```
+
+### `[commands]`
+
+**Optional.** Framework-agnostic command definitions for use with `ecs-run.py run`.
+
+This section defines named commands that can be run in ECS containers, making the deployer framework-agnostic. If not specified, Django defaults are used for backward compatibility.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `<name>` | array | Command and arguments as a list of strings |
+
+**Example (Django):**
+
+```toml
+[commands]
+migrate = ["python", "manage.py", "migrate"]
+shell = ["python", "manage.py", "shell"]
+createsuperuser = ["python", "manage.py", "createsuperuser"]
+collectstatic = ["python", "manage.py", "collectstatic", "--noinput"]
+```
+
+**Example (Rails):**
+
+```toml
+[commands]
+migrate = ["bundle", "exec", "rake", "db:migrate"]
+console = ["bundle", "exec", "rails", "console"]
+dbconsole = ["bundle", "exec", "rails", "dbconsole"]
+```
+
+**Example (Node.js):**
+
+```toml
+[commands]
+migrate = ["npm", "run", "migrate"]
+seed = ["npm", "run", "seed"]
+```
+
+**Usage:**
+
+```bash
+# Run a named command
+python bin/ecs-run.py myapp-staging run migrate --deploy-toml ../app/deploy.toml
+
+# Django 'manage' shortcut (backward compatible, falls back to defaults)
+python bin/ecs-run.py myapp-staging manage migrate
+```
+
+### `[migrations]`
+
+**Optional.** Database migration configuration.
+
+Migrations run as a one-off ECS task before updating services.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | boolean | No | false | Whether to run migrations. |
+| `service` | string | No | `web` | Which service's image to use for migrations. |
+| `command` | array | Yes (if enabled) | - | Migration command. |
+
+**Example:**
+
+```toml
+[migrations]
+enabled = true
+service = "web"
+command = ["python", "manage.py", "migrate"]
+```
+
+For Django with uv:
+
+```toml
+[migrations]
+enabled = true
+service = "web"
+command = ["uv", "run", "python", "manage.py", "migrate"]
+```
+
+---
+
+## Environment config.toml Reference
+
+Each environment directory contains a `config.toml` that provides deployment configuration. Values can use `${tofu:output_name}` placeholders that are resolved at deploy time by fetching OpenTofu outputs.
+
+**Example files:**
+- Standalone environments: [example-deployer-environments/myapp-staging/config.toml.example](../example-deployer-environments/myapp-staging/config.toml.example)
+- Shared environments: [example-deployer-environments/app-on-shared-staging/config.toml.example](../example-deployer-environments/app-on-shared-staging/config.toml.example)
+
+> **Maintainer note:** When updating the config.toml structure, update both this documentation and the example files in `example-deployer-environments/`.
+
+### Location
+
+```
+environments/
+├── myapp-staging/
+│   ├── config.toml        # Deployment configuration
+│   ├── main.tf
+│   └── terraform.tfvars
+└── myapp-production/
+    ├── config.toml
+    └── ...
+```
+
+### Structure
+
+```toml
+# environments/myapp-staging/config.toml
+
+[environment]
+type = "staging"  # or "production"
+domain_name = "${tofu:domain_name}"  # For constructing URLs
+
+[aws]
+deploy_profile = "deployer-app"      # for deploy.py
+infra_profile = "deployer-infra"     # for tofu.sh
+cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+
+[infrastructure]
+cluster_name = "${tofu:ecs_cluster_name}"
+security_group_id = "${tofu:ecs_security_group_id}"
+private_subnet_ids = "${tofu:private_subnet_ids}"
+execution_role_arn = "${tofu:ecs_execution_role_arn}"
+task_role_arn = "${tofu:ecs_task_role_arn}"
+target_group_arn = "${tofu:alb_target_group_arn}"
+alb_dns_name = "${tofu:alb_dns_name}"  # Fallback URL
+rds_instance_id = "${tofu:rds_instance_id}"  # Staging only - for start/stop
+
+[services]
+config = "${tofu:service_config}"
+scaling = "${tofu:scaling_config}"
+health_check = "${tofu:health_check_config}"
+
+[database]
+url = "${tofu:database_url}"
+
+[redis]
+url = "${tofu:redis_url}"
+
+[storage]
+media_bucket = "${tofu:s3_media_bucket}"  # Optional
+
+[cognito]
+enabled = true  # or false for production
+user_pool_id = "${tofu:cognito_user_pool_id}"
+client_id = "${tofu:cognito_user_pool_client_id}"
+# Test account for automated access (staging only)
+test_username = "deployer@test.local"
+test_password_ssm = "/deployer/myapp-staging/cognito-test-password"
+```
+
+### Sections
+
+#### `[environment]`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Environment type: `"staging"` or `"production"` |
+| `domain_name` | string | Domain name for this environment (e.g., `staging.myapp.com`) |
+
+#### `[aws]`
+
+AWS profile configuration. Each script reads the appropriate profile for its operation.
+
+| Field | Used By | Description |
+|-------|---------|-------------|
+| `deploy_profile` | `deploy.py` | AWS profile for deployment operations (ECS, ECR, SSM) |
+| `infra_profile` | `tofu.sh` | AWS profile for infrastructure operations (OpenTofu) |
+| `cognito_profile` | `manage-cognito-access.py` | AWS profile for Cognito user management |
+
+**Example:**
+```toml
+[aws]
+deploy_profile = "deployer-app"      # for deploy.py
+infra_profile = "deployer-infra"     # for tofu.sh
+cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+```
+
+Scripts automatically read the appropriate profile. You can override with `AWS_PROFILE=...` if needed.
+
+For multi-account setups (e.g., staging and production in different AWS accounts), use different profiles per environment. See [MULTIPLE-AWS-ACCOUNTS.md](MULTIPLE-AWS-ACCOUNTS.md) for detailed setup instructions.
+
+#### `[infrastructure]`
+
+Core ECS infrastructure references.
+
+| Field | Tofu Output | Description |
+|-------|-------------|-------------|
+| `cluster_name` | `ecs_cluster_name` | ECS cluster name |
+| `security_group_id` | `ecs_security_group_id` | Security group for ECS tasks |
+| `private_subnet_ids` | `private_subnet_ids` | List of private subnet IDs |
+| `execution_role_arn` | `ecs_execution_role_arn` | ECS task execution role ARN |
+| `task_role_arn` | `ecs_task_role_arn` | ECS task role ARN |
+| `target_group_arn` | `alb_target_group_arn` | ALB target group ARN |
+| `alb_dns_name` | `alb_dns_name` | ALB DNS name (fallback URL) |
+| `rds_instance_id` | `rds_instance_id` | RDS instance ID for start/stop (staging only) |
+
+#### `[services]`
+
+Service configuration from OpenTofu.
+
+| Field | Tofu Output | Description |
+|-------|-------------|-------------|
+| `config` | `service_config` | JSON map of service sizing (cpu, memory, replicas) |
+| `scaling` | `scaling_config` | JSON map of auto-scaling config |
+| `health_check` | `health_check_config` | JSON health check defaults |
+
+#### `[database]`
+
+| Field | Tofu Output | Description |
+|-------|-------------|-------------|
+| `url` | `database_url` | PostgreSQL connection URL |
+
+#### `[redis]`
+
+| Field | Tofu Output | Description |
+|-------|-------------|-------------|
+| `url` | `redis_url` | Redis connection URL |
+
+#### `[storage]`
+
+Optional storage configuration.
+
+| Field | Tofu Output | Description |
+|-------|-------------|-------------|
+| `media_bucket` | `s3_media_bucket` | S3 bucket name for media files |
+
+#### `[cognito]`
+
+Cognito authentication configuration. Required for staging environments with Cognito protection.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | boolean | Whether Cognito auth is enabled |
+| `user_pool_id` | string | Cognito user pool ID (from tofu) |
+| `client_id` | string | Cognito client ID (from tofu) |
+| `test_username` | string | Username for automated test account |
+| `test_password_ssm` | string | SSM path to test account password |
+
+#### `[deployment]`
+
+ECS deployment configuration. Optional - controls how ECS deploys new task revisions.
+
+**Important:** These settings significantly impact deployment behavior. Staging environments can use aggressive settings for faster deployments. Production environments should use conservative defaults (or omit this section entirely).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `minimum_healthy_percent` | number | 100 | Minimum percentage of healthy tasks to maintain during deployment. Use 0 for staging (faster), 100 for production (safer). |
+| `maximum_percent` | number | 200 | Maximum percentage of tasks during deployment. Use 100 for staging (no extra capacity), 200 for production (rolling). |
+| `circuit_breaker_enabled` | boolean | false | Enable deployment circuit breaker for faster failure detection. |
+| `circuit_breaker_rollback` | boolean | true | Automatically rollback on deployment failure (requires circuit breaker). |
+
+**Staging example (faster deployments):**
+```toml
+[deployment]
+minimum_healthy_percent = 0     # Allow 0 running tasks during deployment
+maximum_percent = 100           # Don't run extra capacity
+circuit_breaker_enabled = true  # Fast-fail on errors
+circuit_breaker_rollback = true # Auto-rollback on failure
+```
+
+**Production example (safe deployments):**
+```toml
+# Omit [deployment] section entirely to use safe defaults:
+# minimum_healthy_percent = 100 (always maintain availability)
+# maximum_percent = 200 (allow rolling deployments)
+# circuit_breaker_enabled = false
+```
+
+### Placeholder Resolution
+
+The `${tofu:output_name}` syntax tells the deploy script to run `tofu output -json output_name` (or `-raw` for simple values) in the environment directory and substitute the result.
+
+**Complex types** (lists, maps) are preserved as Python objects when the entire value is a placeholder:
+```toml
+private_subnet_ids = "${tofu:private_subnet_ids}"  # Returns a list
+```
+
+**Embedded placeholders** are converted to strings:
+```toml
+connection = "host=${tofu:db_host} port=5432"  # String interpolation
+```
+
+---
+
+## OpenTofu tfvars Reference
+
+Service sizing and scaling are configured in `terraform.tfvars` files in the deployer repository, one per environment.
+
+### `services` Variable
+
+Map of service configurations. Each service needs sizing information.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `cpu` | number | Yes | CPU units (256 = 0.25 vCPU, 1024 = 1 vCPU). |
+| `memory` | number | Yes | Memory in MB. Must be compatible with CPU. |
+| `replicas` | number | Yes | Desired task count. |
+| `load_balanced` | bool | Yes | Whether to receive traffic from ALB. |
+| `port` | number | No | Container port. Required if `load_balanced = true`. |
+| `health_check_path` | string | No | ALB health check path. Default: `/`. |
+| `path_pattern` | string | No | ALB path-based routing pattern. |
+
+#### CPU/Memory Combinations
+
+Fargate requires specific CPU/memory combinations:
+
+| CPU (units) | Memory (MB) options |
+|-------------|---------------------|
+| 256 | 512, 1024, 2048 |
+| 512 | 1024, 2048, 3072, 4096 |
+| 1024 | 2048, 3072, 4096, 5120, 6144, 7168, 8192 |
+| 2048 | 4096, 5120, 6144, 7168, 8192, 9216, 10240, 11264, 12288, 13312, 14336, 15360, 16384 |
+| 4096 | 8192 - 30720 (in 1024 increments) |
+
+**Example (staging - minimal):**
+
+```hcl
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  celery = {
+    cpu           = 256
+    memory        = 512
+    replicas      = 1
+    load_balanced = false
+  }
+}
+```
+
+**Example (production - larger):**
+
+```hcl
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  celery = {
+    cpu           = 512
+    memory        = 1024
+    replicas      = 2
+    load_balanced = false
+  }
+}
+```
+
+### `scaling` Variable
+
+Map of auto-scaling configurations. Only define for services that should auto-scale.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `min_replicas` | number | Yes | Minimum task count. |
+| `max_replicas` | number | Yes | Maximum task count. |
+| `cpu_target` | number | No | Target CPU utilization percentage. Default: 70. |
+
+**Example:**
+
+```hcl
+# Staging - no auto-scaling
+scaling = {}
+
+# Production - auto-scale web and api
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+  api = {
+    min_replicas = 2
+    max_replicas = 8
+    cpu_target   = 80
+  }
+}
+```
+
+### `health_check` Variable
+
+Global health check defaults. Optional - uses sensible defaults if not specified.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `interval` | number | 30 | Seconds between health checks. |
+| `timeout` | number | 10 | Seconds to wait for a response. |
+| `healthy_threshold` | number | 2 | Consecutive successes to consider healthy. |
+| `unhealthy_threshold` | number | 5 | Consecutive failures to consider unhealthy. |
+
+**Example:**
+
+```hcl
+health_check = {
+  interval            = 30
+  timeout             = 10
+  healthy_threshold   = 2
+  unhealthy_threshold = 5
+}
+```
+
+---
+
+## Complete Examples
+
+### deploy.toml (in app repo)
+
+```toml
+[application]
+name = "myapp"
+description = "My web application"
+source = "."
+ecr_prefix = "myapp"
+
+[images.web]
+context = "."
+dockerfile = "Dockerfile"
+
+[services.web]
+image = "web"
+port = 8000
+command = ["gunicorn", "app:application", "--bind", "0.0.0.0:8000"]
+health_check_path = "/health/"
+
+[services.celery]
+image = "web"
+command = ["celery", "-A", "app", "worker", "--loglevel=info"]
+
+# Base environment variables (all environments)
+[environment]
+DJANGO_SETTINGS_MODULE = "myapp.settings"
+ALLOWED_HOSTS = "*"
+DATABASE_URL = "${database_url}"
+REDIS_URL = "${redis_url}"
+
+# Staging-specific overrides
+[environment.staging]
+DEBUG = "true"
+
+# Production-specific overrides
+[environment.production]
+DEBUG = "false"
+
+[secrets]
+SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
+
+[migrations]
+enabled = true
+service = "web"
+command = ["python", "manage.py", "migrate"]
+```
+
+### terraform.tfvars (staging)
+
+```hcl
+project_name = "myapp"
+db_username  = "myapp_admin"
+db_password  = "CHANGE_THIS"
+
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  celery = {
+    cpu           = 256
+    memory        = 512
+    replicas      = 1
+    load_balanced = false
+  }
+}
+
+scaling = {}
+```
+
+### terraform.tfvars (production)
+
+```hcl
+project_name = "myapp"
+db_username  = "myapp_admin"
+db_password  = "CHANGE_THIS"
+
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  celery = {
+    cpu           = 512
+    memory        = 1024
+    replicas      = 2
+    load_balanced = false
+  }
+}
+
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}
+```

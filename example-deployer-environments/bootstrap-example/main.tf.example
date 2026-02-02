@@ -1,0 +1,75 @@
+# Bootstrap Instance - Example Account
+#
+# This instantiates the bootstrap module for a specific AWS account.
+# Copy this directory and customize for each AWS account you manage.
+#
+# Usage:
+#   cd ~/code/deployer-environments/bootstrap-example
+#   AWS_PROFILE=admin tofu init
+#   AWS_PROFILE=admin tofu plan
+#   AWS_PROFILE=admin tofu apply
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # Uncomment and configure for remote state (after initial apply creates the bucket)
+  # backend "s3" {
+  #   bucket         = "deployer-terraform-state-123456789012"  # Update with your account ID
+  #   key            = "bootstrap/terraform.tfstate"
+  #   region         = "us-west-2"
+  #   encrypt        = true
+  # }
+}
+
+module "bootstrap" {
+  source = "../bootstrap"
+
+  region            = var.region
+  project_prefixes  = var.project_prefixes
+  trusted_user_arns = var.trusted_user_arns
+  create_iam_roles  = var.create_iam_roles
+}
+
+# Pass through variables
+variable "region" {
+  type    = string
+  default = "us-west-2"
+}
+
+variable "project_prefixes" {
+  type = list(string)
+}
+
+variable "trusted_user_arns" {
+  type = list(string)
+}
+
+variable "create_iam_roles" {
+  type    = bool
+  default = true
+}
+
+# Pass through outputs
+output "state_bucket_name" {
+  value = module.bootstrap.state_bucket_name
+}
+
+output "ecs_role_boundary_arn" {
+  value = module.bootstrap.ecs_role_boundary_arn
+}
+
+output "account_id" {
+  value = module.bootstrap.account_id
+}
+
+output "app_deploy_role_arn" {
+  value = module.bootstrap.app_deploy_role_arn
+}
+
+output "infra_admin_role_arn" {
+  value = module.bootstrap.infra_admin_role_arn
+}
+
+output "cognito_admin_role_arn" {
+  value = module.bootstrap.cognito_admin_role_arn
+}

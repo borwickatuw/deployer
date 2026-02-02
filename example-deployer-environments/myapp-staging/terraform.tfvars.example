@@ -1,0 +1,69 @@
+# MyApp Staging - Configuration
+# DO NOT commit this file to version control (may contain sensitive data)
+#
+# Copy to terraform.tfvars and fill in values:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Generate a secure password:
+#   openssl rand -base64 24
+
+# ------------------------------------------------------------------------------
+# Project Settings
+# ------------------------------------------------------------------------------
+
+project_name = "myapp"
+
+# ------------------------------------------------------------------------------
+# Database Credentials (sensitive)
+# ------------------------------------------------------------------------------
+
+db_username = "myapp_admin"
+db_password = "CHANGE_THIS_PASSWORD"  # Generate with: openssl rand -base64 24
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "myapp-staging.example.com"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# ------------------------------------------------------------------------------
+# Service Configuration
+# ------------------------------------------------------------------------------
+
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  # Example: background worker
+  # worker = {
+  #   cpu           = 256
+  #   memory        = 512
+  #   replicas      = 1
+  #   load_balanced = false
+  # }
+}
+
+# ------------------------------------------------------------------------------
+# Auto-Scaling (disabled in staging)
+# ------------------------------------------------------------------------------
+
+scaling = {}
+
+# ------------------------------------------------------------------------------
+# ECR Repositories
+# ------------------------------------------------------------------------------
+
+ecr_repository_names = ["web"]
+
+# ------------------------------------------------------------------------------
+# WAF Configuration
+# ------------------------------------------------------------------------------
+
+waf_enabled             = true  # Enable AWS WAF for the ALB
+waf_rate_limit_requests = 2000  # Max requests per IP per 5 minutes

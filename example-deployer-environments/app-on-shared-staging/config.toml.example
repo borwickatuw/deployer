@@ -1,0 +1,105 @@
+# Environment Configuration - MyApp Staging (Shared Infrastructure)
+#
+# This app uses shared infrastructure from shared-infra-staging.
+# Values with ${tofu:...} placeholders are resolved at deploy time
+# by running `tofu output` in this directory.
+
+# ------------------------------------------------------------------------------
+# AWS Configuration
+# ------------------------------------------------------------------------------
+
+[aws]
+deploy_profile = "deployer-app"      # for deploy.py
+infra_profile = "deployer-infra"     # for tofu.sh
+cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+
+# ------------------------------------------------------------------------------
+# Environment Metadata
+# ------------------------------------------------------------------------------
+
+[environment]
+type = "staging"
+domain_name = "${tofu:domain_name}"
+
+# ------------------------------------------------------------------------------
+# Infrastructure (mix of shared and per-app)
+# ------------------------------------------------------------------------------
+
+[infrastructure]
+# Shared infrastructure
+cluster_name = "${tofu:ecs_cluster_name}"
+security_group_id = "${tofu:ecs_security_group_id}"
+private_subnet_ids = "${tofu:private_subnet_ids}"
+alb_dns_name = "${tofu:alb_dns_name}"
+
+# Per-app resources
+execution_role_arn = "${tofu:ecs_execution_role_arn}"
+task_role_arn = "${tofu:ecs_task_role_arn}"
+target_group_arn = "${tofu:alb_target_group_arn}"
+rds_instance_id = "${tofu:rds_instance_id}"
+ecr_prefix = "${tofu:ecr_prefix}"
+
+# ------------------------------------------------------------------------------
+# Services
+# ------------------------------------------------------------------------------
+
+[services]
+config = "${tofu:service_config}"
+scaling = "${tofu:scaling_config}"
+health_check = "${tofu:health_check_config}"
+
+# ------------------------------------------------------------------------------
+# Database (per-app RDS instance)
+# ------------------------------------------------------------------------------
+
+[database]
+host = "${tofu:db_host}"
+port = "${tofu:db_port}"
+name = "${tofu:db_name}"
+credentials = "secretsmanager"
+username_secret = "${tofu:db_username_secret_arn}"
+password_secret = "${tofu:db_password_secret_arn}"
+
+# ------------------------------------------------------------------------------
+# Cache (from shared infrastructure, if enabled)
+# ------------------------------------------------------------------------------
+
+[cache]
+url = "${tofu:redis_url}"
+
+# ------------------------------------------------------------------------------
+# Secrets
+# ------------------------------------------------------------------------------
+
+[secrets]
+provider = "ssm"
+path_prefix = "/myapp/staging"
+
+# ------------------------------------------------------------------------------
+# Cognito (from shared infrastructure)
+# ------------------------------------------------------------------------------
+
+[cognito]
+enabled = true
+user_pool_id = "${tofu:cognito_user_pool_id}"
+client_id = "${tofu:cognito_user_pool_client_id}"
+test_username = "deployer@test.local"
+test_password_ssm = "/deployer/myapp-staging/cognito-test-password"
+
+# ------------------------------------------------------------------------------
+# Deployment (Staging Optimization)
+# ------------------------------------------------------------------------------
+
+[deployment]
+minimum_healthy_percent = 0
+maximum_percent = 100
+circuit_breaker_enabled = true
+circuit_breaker_rollback = true
+
+# ------------------------------------------------------------------------------
+# Scheduler (Staging Only)
+# ------------------------------------------------------------------------------
+
+[scheduler]
+enabled = true
+description = "Mon-Fri 7am-7pm Pacific"
