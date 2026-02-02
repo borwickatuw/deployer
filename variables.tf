@@ -161,6 +161,12 @@ variable "deregistration_delay" {
   default     = 120 # Conservative default for production
 }
 
+variable "alb_idle_timeout" {
+  description = "ALB idle timeout in seconds. Increase for large file uploads (default 60, max 4000)."
+  type        = number
+  default     = 60
+}
+
 # Container configuration
 
 variable "container_port" {

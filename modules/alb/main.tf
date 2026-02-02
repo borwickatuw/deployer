@@ -17,6 +17,9 @@ resource "aws_lb" "main" {
 
   enable_deletion_protection = false # Set to true for production
 
+  # Idle timeout - increase for large file uploads (default 60, max 4000)
+  idle_timeout = var.idle_timeout
+
   tags = {
     Name = "${var.name_prefix}-alb"
   }

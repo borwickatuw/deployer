@@ -68,3 +68,9 @@ variable "deregistration_delay" {
   type        = number
   default     = 120 # Conservative default for production
 }
+
+variable "idle_timeout" {
+  description = "Idle timeout in seconds. Increase for large file uploads (default 60, max 4000)."
+  type        = number
+  default     = 60
+}

@@ -90,6 +90,9 @@ module "alb" {
   unhealthy_threshold       = var.unhealthy_threshold
   deregistration_delay      = var.deregistration_delay
 
+  # Idle timeout - increase for large file uploads
+  idle_timeout = var.alb_idle_timeout
+
   # Cognito authentication (optional)
   cognito_auth = var.cognito_auth_enabled ? {
     user_pool_arn       = module.cognito[0].user_pool_arn
