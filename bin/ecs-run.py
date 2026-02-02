@@ -4,28 +4,34 @@ Run commands in ECS containers for staging environments.
 
 Usage:
     # List services in environment
-    python bin/ecs-run.py myapp-staging list
+    python bin/ecs-run.py list myapp-staging
 
     # Run named commands from deploy.toml [commands] section
-    python bin/ecs-run.py myapp-staging run migrate --deploy-toml ../app/deploy.toml
-    python bin/ecs-run.py myapp-staging run shell --deploy-toml ../app/deploy.toml
+    python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
+    python bin/ecs-run.py run myapp-staging shell --deploy-toml ../app/deploy.toml
 
     # Run Django management commands (backward compatible, falls back to Django defaults)
-    python bin/ecs-run.py myapp-staging manage createsuperuser
-    python bin/ecs-run.py myapp-staging manage migrate
+    python bin/ecs-run.py manage myapp-staging migrate
+    python bin/ecs-run.py manage myapp-staging check
 
     # Run arbitrary commands
-    python bin/ecs-run.py myapp-staging exec uv run python -c "print('hi')"
+    python bin/ecs-run.py exec myapp-staging uv run python -c "print('hi')"
 
     # Specify a different service (default: web)
-    python bin/ecs-run.py myapp-staging -s celery exec python -c "print('hello')"
+    python bin/ecs-run.py exec myapp-staging -s celery python -c "print('hello')"
+
+    # Create a Django superuser (generates password automatically)
+    python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com
+    python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com -p  # prompt for password
 """
 
 import argparse
+import getpass
 import sys
 from pathlib import Path
 
 from deployer.aws import cloudwatch, ecs
+from deployer.core import generate_temp_password
 from deployer.core.config import (
     get_manage_command,
     get_run_command,
@@ -291,7 +297,7 @@ def cmd_manage(args, base_path: Path) -> int:
     # Get the first argument as the management command, rest as extra args
     if not args.command_args:
         print("Error: No management command specified", file=sys.stderr)
-        print("Example: ecs-run.py <env> manage migrate", file=sys.stderr)
+        print("Example: ecs-run.py manage <env> migrate", file=sys.stderr)
         return 1
 
     management_command = args.command_args[0]
@@ -333,39 +339,67 @@ def cmd_exec(args, base_path: Path) -> int:
     )
 
 
+def cmd_createsuperuser(args, base_path: Path) -> int:
+    """Create a Django superuser in ECS."""
+    result = resolve_environment(args.environment)
+    if not result:
+        return 1
+
+    env_path, cluster_name = result
+
+    # Handle password
+    print(f"Creating superuser in {args.environment}")
+    print(f"  Email: {args.email}")
+    if args.username:
+        print(f"  Username: {args.username}")
+
+    if args.prompt_password:
+        print()
+        password = getpass.getpass("Password: ")
+        if not password:
+            print("Error: Password is required", file=sys.stderr)
+            return 1
+        password_confirm = getpass.getpass("Password (again): ")
+        if password != password_confirm:
+            print("Error: Passwords do not match", file=sys.stderr)
+            return 1
+    else:
+        password = generate_temp_password()
+        print(f"  Password: {password}")
+
+    print()
+
+    # Build the command
+    command = [
+        "uv", "run", "python", "manage.py", "createsuperuser",
+        "--no-input",
+        "--email", args.email,
+    ]
+    if args.username:
+        command.extend(["--username", args.username])
+
+    environment = [{"name": "DJANGO_SUPERUSER_PASSWORD", "value": password}]
+
+    return run_ecs_command(
+        cluster_name=cluster_name,
+        service_name=args.service,
+        container_name=args.container,
+        command=command,
+        environment=environment,
+        wait=True,
+        timeout=args.timeout,
+        show_logs=True,
+    )
+
+
 # =============================================================================
 # Main
 # =============================================================================
 
 
-def main():
-    # Load .env and configure AWS profile
-    configure_aws_profile("deploy")
-
-    parser = argparse.ArgumentParser(
-        description="Run commands in ECS containers for staging environments",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s myapp-staging list
-  %(prog)s myapp-staging run migrate --deploy-toml ../app/deploy.toml
-  %(prog)s myapp-staging manage check
-  %(prog)s myapp-staging manage migrate
-  %(prog)s myapp-staging exec uv run python -c "print('hello')"
-  %(prog)s myapp-staging -s celery exec python -c "print('worker')"
-  %(prog)s myapp-staging manage showmigrations --no-wait
-
-The 'run' command uses named commands from deploy.toml's [commands] section.
-The 'manage' command is a Django-specific shortcut (backward compatible).
-
-For creating superusers, use create-superuser.py instead.
-        """,
-    )
-
-    # Positional argument for environment
+def add_common_args(parser: argparse.ArgumentParser) -> None:
+    """Add common arguments to a subparser."""
     parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
-
-    # Optional arguments
     parser.add_argument("-s", "--service", default="web", help="Service name (default: web)")
     parser.add_argument("-c", "--container", help="Container name override (default: first container)")
     parser.add_argument("--no-wait", action="store_true", help="Don't wait for task completion")
@@ -377,16 +411,42 @@ For creating superusers, use create-superuser.py instead.
         help="Path to deploy.toml for [commands] section (optional, falls back to Django defaults)"
     )
 
+
+def main():
+    # Load .env and configure AWS profile
+    configure_aws_profile("deploy")
+
+    parser = argparse.ArgumentParser(
+        description="Run commands in ECS containers for staging environments",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s list myapp-staging
+  %(prog)s run myapp-staging migrate --deploy-toml ../app/deploy.toml
+  %(prog)s manage myapp-staging check
+  %(prog)s manage myapp-staging migrate
+  %(prog)s exec myapp-staging uv run python -c "print('hello')"
+  %(prog)s exec myapp-staging -s celery python -c "print('worker')"
+  %(prog)s createsuperuser myapp-staging --email admin@example.com
+
+The 'run' command uses named commands from deploy.toml's [commands] section.
+The 'manage' command is a Django-specific shortcut (backward compatible).
+The 'createsuperuser' command creates a Django superuser with a generated password.
+        """,
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # list
-    subparsers.add_parser("list", help="List services and containers in an environment")
+    list_parser = subparsers.add_parser("list", help="List services and containers in an environment")
+    list_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
 
     # run (new generic command)
     run_parser = subparsers.add_parser(
         "run",
         help="Run a named command from deploy.toml [commands] section"
     )
+    add_common_args(run_parser)
     run_parser.add_argument(
         "command_name",
         help="Command name defined in [commands] section (e.g., migrate, shell)"
@@ -402,6 +462,7 @@ For creating superusers, use create-superuser.py instead.
         "manage",
         help="Run Django management command (backward compatible)"
     )
+    add_common_args(manage_parser)
     manage_parser.add_argument(
         "command_args",
         nargs=argparse.REMAINDER,
@@ -410,7 +471,21 @@ For creating superusers, use create-superuser.py instead.
 
     # exec
     exec_parser = subparsers.add_parser("exec", help="Run arbitrary command")
+    add_common_args(exec_parser)
     exec_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command and arguments")
+
+    # createsuperuser (Django-specific)
+    superuser_parser = subparsers.add_parser(
+        "createsuperuser",
+        help="Create a Django superuser"
+    )
+    superuser_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
+    superuser_parser.add_argument("--email", required=True, help="Email address for the superuser")
+    superuser_parser.add_argument("--username", help="Username (defaults to email)")
+    superuser_parser.add_argument("-p", "--prompt-password", action="store_true", help="Prompt for password (default: generate random)")
+    superuser_parser.add_argument("-s", "--service", default="web", help="Service name (default: web)")
+    superuser_parser.add_argument("-c", "--container", help="Container name override (default: first container)")
+    superuser_parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
 
     args = parser.parse_args()
 
@@ -424,6 +499,7 @@ For creating superusers, use create-superuser.py instead.
         "run": cmd_run,
         "manage": cmd_manage,
         "exec": cmd_exec,
+        "createsuperuser": cmd_createsuperuser,
     }
 
     handler = commands.get(args.command)

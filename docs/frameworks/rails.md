@@ -121,10 +121,10 @@ With the `[commands]` section configured, use the `run` subcommand:
 
 ```bash
 # Run migrations
-python bin/ecs-run.py myapp-staging run migrate --deploy-toml ../myapp/deploy.toml
+python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../myapp/deploy.toml
 
 # Open Rails console (interactive - use --no-wait)
-python bin/ecs-run.py myapp-staging run console --deploy-toml ../myapp/deploy.toml --no-wait
+python bin/ecs-run.py run myapp-staging console --deploy-toml ../myapp/deploy.toml --no-wait
 ```
 
 ## Common Issues

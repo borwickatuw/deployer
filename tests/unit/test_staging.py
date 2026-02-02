@@ -1,4 +1,4 @@
-"""Tests for manage-environment.py and manage-cognito-access.py functions."""
+"""Tests for environment.py and cognito.py functions."""
 
 import string
 import sys
@@ -10,18 +10,14 @@ import pytest
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
-# Import using importlib since filenames have hyphens
+# Import using importlib for bin scripts
 from importlib.util import spec_from_file_location, module_from_spec
 
-_access_spec = spec_from_file_location(
-    "manage_cognito_access", bin_dir / "manage-cognito-access.py"
-)
+_access_spec = spec_from_file_location("cognito", bin_dir / "cognito.py")
 access = module_from_spec(_access_spec)
 _access_spec.loader.exec_module(access)
 
-_env_spec = spec_from_file_location(
-    "manage_environment", bin_dir / "manage-environment.py"
-)
+_env_spec = spec_from_file_location("environment", bin_dir / "environment.py")
 env_mgr = module_from_spec(_env_spec)
 _env_spec.loader.exec_module(env_mgr)
 
@@ -238,10 +234,10 @@ class TestStagingRunCommand:
 
 
 class TestEnvironmentGetAllEnvironments:
-    """Test get_all_environments in manage-environment.py."""
+    """Test get_all_environments in environment.py."""
 
     def test_function_exists_and_works(self, tmp_path):
-        """Verify the function exists in manage-environment.py and works."""
+        """Verify the function exists in environment.py and works."""
         (tmp_path / "test-staging").mkdir()
         (tmp_path / "test-production").mkdir()
 

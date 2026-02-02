@@ -9,7 +9,7 @@ The repository has a clean separation between generic infrastructure code and en
 **Generic (could be open-sourced or shared):**
 - Root `.tf` files (main.tf, variables.tf, outputs.tf, versions.tf)
 - `modules/` directory
-- `bin/` (deploy.py, manage-environment.py, etc.)
+- `bin/` (deploy.py, environment.py, etc.)
 - `example-deploy.toml`
 - `example-deployer-environments/`
 - `docs/`

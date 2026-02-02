@@ -7,16 +7,16 @@ ElastiCache and ALB continue running (cannot be stopped without deletion).
 
 Usage:
     # Show current state of all environments
-    python bin/manage-environment.py status
+    python bin/environment.py status
 
     # Show status of a specific environment
-    python bin/manage-environment.py myapp-staging status
+    python bin/environment.py myapp-staging status
 
     # Stop an environment (scale ECS to 0, stop RDS)
-    python bin/manage-environment.py myapp-staging stop
+    python bin/environment.py myapp-staging stop
 
     # Start an environment (start RDS, restore ECS replicas)
-    python bin/manage-environment.py myapp-staging start
+    python bin/environment.py myapp-staging start
 """
 
 import argparse

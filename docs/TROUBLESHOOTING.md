@@ -316,7 +316,7 @@ The callback URL configured in Cognito must exactly match your domain:
 
 3. If status is `FORCE_CHANGE_PASSWORD`, user needs to complete first login or set a permanent password:
    ```bash
-   uv run python bin/manage-cognito-access.py reset-password \
+   uv run python bin/cognito.py reset-password \
      myapp-staging --username user@example.com --permanent
    ```
 

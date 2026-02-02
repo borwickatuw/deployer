@@ -293,14 +293,17 @@ aws logs filter-log-events \
 ### Create Admin User (Django)
 
 ```bash
-# Use ecs-run.py for management commands
-uv run python bin/ecs-run.py myapp-staging manage createsuperuser
+# Creates superuser with auto-generated password
+uv run python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com
+
+# Or prompt for password
+uv run python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com -p
 ```
 
 ### Create Cognito User (if using authentication)
 
 ```bash
-uv run python bin/manage-cognito-access.py create myapp-staging \
+uv run python bin/cognito.py create myapp-staging \
   --username user@example.com \
   --clipboard
 ```
@@ -315,13 +318,13 @@ Staging environments can be stopped during off-hours to reduce costs (~50-60% sa
 
 ```bash
 # Check environment status
-uv run python bin/manage-environment.py myapp-staging status
+uv run python bin/environment.py myapp-staging status
 
 # Stop environment (scales ECS to 0, stops RDS)
-uv run python bin/manage-environment.py myapp-staging stop
+uv run python bin/environment.py myapp-staging stop
 
 # Start environment (starts RDS, restores ECS replicas)
-uv run python bin/manage-environment.py myapp-staging start --wait
+uv run python bin/environment.py myapp-staging start --wait
 ```
 
 **Notes:**

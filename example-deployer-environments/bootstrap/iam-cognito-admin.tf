@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 # deployer-cognito-admin Role
-# Used by: manage-cognito-access.py
+# Used by: cognito.py
 # ------------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "cognito_admin" {

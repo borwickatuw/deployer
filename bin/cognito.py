@@ -6,31 +6,31 @@ Each Cognito-enabled environment has its own user pool, so access is managed sep
 
 Usage:
     # List users across all Cognito-enabled environments
-    python bin/manage-cognito-access.py list
+    python bin/cognito.py list
 
     # List users for a specific environment
-    python bin/manage-cognito-access.py list myapp-staging
+    python bin/cognito.py list myapp-staging
 
     # Create a user
-    python bin/manage-cognito-access.py create myapp-staging --username alice@example.com
+    python bin/cognito.py create myapp-staging --username alice@example.com
 
     # Create a user and copy welcome message to clipboard
-    python bin/manage-cognito-access.py create myapp-staging --username alice@example.com --clipboard
+    python bin/cognito.py create myapp-staging --username alice@example.com --clipboard
 
     # Create a user with a specific password
-    python bin/manage-cognito-access.py create myapp-staging --username alice@example.com -p "SecurePass123"
+    python bin/cognito.py create myapp-staging --username alice@example.com -p "SecurePass123"
 
     # Disable a user (prevents login but keeps account)
-    python bin/manage-cognito-access.py disable myapp-staging --username alice@example.com
+    python bin/cognito.py disable myapp-staging --username alice@example.com
 
     # Enable a previously disabled user
-    python bin/manage-cognito-access.py enable myapp-staging --username alice@example.com
+    python bin/cognito.py enable myapp-staging --username alice@example.com
 
     # Delete a user
-    python bin/manage-cognito-access.py delete myapp-staging --username alice@example.com
+    python bin/cognito.py delete myapp-staging --username alice@example.com
 
     # Reset a user's password
-    python bin/manage-cognito-access.py reset-password myapp-staging --username alice@example.com -p "NewPass123"
+    python bin/cognito.py reset-password myapp-staging --username alice@example.com -p "NewPass123"
 """
 
 import argparse
@@ -256,32 +256,38 @@ def cmd_create(args) -> int:
 
     print("\nUser created successfully.")
 
-    # Handle clipboard notification
-    if args.clipboard:
-        url = get_staging_url_from_config(config)
-        message = format_welcome_message(
-            environment=args.environment,
-            username=username,
-            password=password,
-            url=url,
-            is_temporary=is_temporary,
-        )
+    # Build welcome message
+    url = get_staging_url_from_config(config)
+    message = format_welcome_message(
+        environment=args.environment,
+        username=username,
+        password=password,
+        url=url,
+        is_temporary=is_temporary,
+    )
 
-        print("\n--- Welcome message ---")
-        print(message)
-        print("--- End message ---\n")
+    print("\n--- Welcome message ---")
+    print(message)
+    print("--- End message ---\n")
 
+    if is_temporary:
+        print("The user will be prompted to change their password on first login.\n")
+
+    # Handle clipboard
+    should_copy = args.clipboard
+    if not should_copy:
+        try:
+            response = input("Copy to clipboard? [Y/n] ").strip().lower()
+            should_copy = response in ("", "y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            should_copy = False
+
+    if should_copy:
         if copy_to_clipboard(message):
             print("Copied to clipboard!")
         else:
             print("(Could not copy to clipboard - please copy manually)", file=sys.stderr)
-    else:
-        # Standard output
-        if is_temporary:
-            print(f"Temporary password: {password}")
-            print("\nThe user will be prompted to change their password on first login.")
-        else:
-            print("Password set as provided.")
 
     return 0
 

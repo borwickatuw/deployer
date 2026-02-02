@@ -217,7 +217,7 @@ The shared infrastructure must be deployed first:
 uv run python bin/deploy.py /path/to/{app_name}/deploy.toml {env_name}
 
 # Check status
-uv run python bin/manage-environment.py status {env_name}
+uv run python bin/environment.py status {env_name}
 ```
 
 ## Configuration Files

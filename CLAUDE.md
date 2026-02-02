@@ -7,8 +7,8 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `bin/deploy.py` - Main deployment script (auto-selects AWS profile from config.toml)
 - `bin/init.py` - Initialize new apps: generate deploy.toml and environment directories
 - `bin/tofu.sh` - OpenTofu wrapper (auto-selects AWS profile from config.toml)
-- `bin/manage-cognito-access.py` - Cognito user management (auto-selects AWS profile from config.toml)
-- `bin/manage-secrets.py` - SSM Parameter Store secrets management (auto-selects AWS profile from config.toml)
+- `bin/cognito.py` - Cognito user management (auto-selects AWS profile from config.toml)
+- `bin/secrets.py` - SSM Parameter Store secrets management (auto-selects AWS profile from config.toml)
 - `modules/` - Reusable Terraform/OpenTofu modules
 - `DEPLOYER_ENVIRONMENTS_DIR` - Per-environment configurations (set in `.env`, each env has a `config.toml`)
 - `example-deployer-environments/` - Example environments directory structure
@@ -71,7 +71,7 @@ AWS profiles are configured per-environment in each `config.toml`. See [docs/CON
 [aws]
 deploy_profile = "deployer-app"      # for deploy.py
 infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+cognito_profile = "deployer-cognito" # for cognito.py
 ```
 
 The scripts automatically read the appropriate profile from the environment's config.toml:
@@ -81,10 +81,10 @@ The scripts automatically read the appropriate profile from the environment's co
 uv run python bin/deploy.py ../app/deploy.toml myapp-staging
 
 # Infrastructure - reads [aws].infra_profile from config.toml
-./bin/tofu.sh myapp-staging plan
+./bin/tofu.sh plan myapp-staging
 
 # Cognito - reads [aws].cognito_profile from config.toml
-uv run python bin/manage-cognito-access.py list myapp-staging
+uv run python bin/cognito.py list myapp-staging
 ```
 
 You can override with `AWS_PROFILE=... ` if needed.

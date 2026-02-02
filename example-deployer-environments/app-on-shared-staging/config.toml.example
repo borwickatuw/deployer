@@ -11,7 +11,7 @@
 [aws]
 deploy_profile = "deployer-app"      # for deploy.py
 infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+cognito_profile = "deployer-cognito" # for cognito.py
 
 # ------------------------------------------------------------------------------
 # Environment Metadata

@@ -8,7 +8,7 @@ in config.toml:
     [aws]
     deploy_profile = "deployer-app"      # for deploy.py
     infra_profile = "deployer-infra"     # for tofu.sh
-    cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+    cognito_profile = "deployer-cognito" # for cognito.py
 
 Priority order:
 1. AWS_PROFILE environment variable (explicit override)
@@ -21,7 +21,7 @@ Usage:
     # At the start of deploy.py
     configure_aws_profile_for_environment("deploy", environment)
 
-    # At the start of manage-cognito-access.py
+    # At the start of cognito.py
     configure_aws_profile_for_environment("cognito", environment)
 """
 

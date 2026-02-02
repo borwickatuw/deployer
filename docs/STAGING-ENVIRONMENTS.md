@@ -26,25 +26,25 @@ Apply the changes:
 
 ```bash
 # List users
-uv run python bin/manage-cognito-access.py list myapp-staging
+uv run python bin/cognito.py list myapp-staging
 
 # Create user (copies welcome message to clipboard)
-uv run python bin/manage-cognito-access.py create myapp-staging \
+uv run python bin/cognito.py create myapp-staging \
   --username alice@example.com --clipboard
 
 # Create with specific password
-uv run python bin/manage-cognito-access.py create myapp-staging \
+uv run python bin/cognito.py create myapp-staging \
   --username alice@example.com -p "SecurePass123!"
 
 # Disable/enable user
-uv run python bin/manage-cognito-access.py disable myapp-staging --username alice@example.com
-uv run python bin/manage-cognito-access.py enable myapp-staging --username alice@example.com
+uv run python bin/cognito.py disable myapp-staging --username alice@example.com
+uv run python bin/cognito.py enable myapp-staging --username alice@example.com
 
 # Reset password
-uv run python bin/manage-cognito-access.py reset-password myapp-staging --username alice@example.com
+uv run python bin/cognito.py reset-password myapp-staging --username alice@example.com
 
 # Delete user
-uv run python bin/manage-cognito-access.py delete myapp-staging --username alice@example.com
+uv run python bin/cognito.py delete myapp-staging --username alice@example.com
 ```
 
 **Password requirements:** Minimum 12 characters, at least one uppercase, lowercase, and number.
@@ -58,7 +58,7 @@ For automated health checks of Cognito-protected environments, create a dedicate
 PASSWORD=$(python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))")
 
 # Create user
-uv run python bin/manage-cognito-access.py create myapp-staging \
+uv run python bin/cognito.py create myapp-staging \
   --username deployer@test.local -p "$PASSWORD"
 
 # Store in SSM
@@ -97,13 +97,13 @@ Staging environments can be stopped during off-hours to reduce costs.
 
 ```bash
 # Check status
-./bin/manage-environment.py status myapp-staging
+./bin/environment.py status myapp-staging
 
 # Stop (scales ECS to 0, stops RDS)
-./bin/manage-environment.py stop myapp-staging
+./bin/environment.py stop myapp-staging
 
 # Start (starts RDS, waits for it, scales ECS back up)
-./bin/manage-environment.py start myapp-staging --wait
+./bin/environment.py start myapp-staging --wait
 ```
 
 ### Automatic Scheduling
@@ -171,7 +171,7 @@ aws logs tail /aws/lambda/myapp-staging-scheduler --follow
 **User can't log in**
 ```bash
 # Check user status
-uv run python bin/manage-cognito-access.py list myapp-staging
+uv run python bin/cognito.py list myapp-staging
 ```
 If status is `FORCE_CHANGE_PASSWORD`, user needs to complete first login or reset password with `--permanent`.
 
@@ -188,8 +188,8 @@ aws logs tail /aws/lambda/myapp-staging-scheduler --since 1h
 Common cause: RDS in transitional state.
 
 **Environment won't start**
-1. Check if RDS is stopped: `./bin/manage-environment.py status myapp-staging`
-2. Try manual start: `./bin/manage-environment.py start myapp-staging --wait`
+1. Check if RDS is stopped: `./bin/environment.py status myapp-staging`
+2. Try manual start: `./bin/environment.py start myapp-staging --wait`
 
 **Health checks failing after start**
 Normal - ECS services fail health checks while RDS is starting (5-10 minutes). Use `--wait` flag to start RDS before scaling ECS.

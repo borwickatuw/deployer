@@ -59,8 +59,9 @@ deployer/
 ├── docs/                       # Documentation
 └── bin/
     ├── deploy.py               # Application deployment
-    ├── manage-environment.py   # Start/stop environments
-    ├── manage-cognito-access.py # Cognito user management
+    ├── environment.py          # Start/stop environments
+    ├── cognito.py              # Cognito user management
+    ├── secrets.py              # SSM Parameter Store secrets
     └── capacity-report.py      # ECS right-sizing recommendations
 ```
 

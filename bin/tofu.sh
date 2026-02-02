@@ -4,13 +4,13 @@
 # and resolves environment names to directory paths.
 #
 # Usage:
-#   ./bin/tofu.sh <environment> <command> [args...]
+#   ./bin/tofu.sh <command> <environment> [args...]
 #
 # Examples:
-#   ./bin/tofu.sh myapp-staging init
-#   ./bin/tofu.sh myapp-staging plan
-#   ./bin/tofu.sh myapp-staging apply
-#   ./bin/tofu.sh myapp-staging output database_url
+#   ./bin/tofu.sh init myapp-staging
+#   ./bin/tofu.sh plan myapp-staging
+#   ./bin/tofu.sh apply myapp-staging
+#   ./bin/tofu.sh output myapp-staging database_url
 #
 # AWS Profile (checked in order):
 #   1. AWS_PROFILE - if already set, use it
@@ -23,15 +23,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 show_help() {
-    echo "Usage: $0 <environment> <command> [args...]"
+    echo "Usage: $0 <command> <environment> [args...]"
     echo ""
     echo "Wrapper for OpenTofu that auto-selects AWS profile and environment directory."
     echo ""
     echo "Examples:"
-    echo "  $0 myapp-staging init"
-    echo "  $0 myapp-staging plan"
-    echo "  $0 myapp-staging apply"
-    echo "  $0 myapp-staging output database_url"
+    echo "  $0 init myapp-staging"
+    echo "  $0 plan myapp-staging"
+    echo "  $0 apply myapp-staging"
+    echo "  $0 output myapp-staging database_url"
     echo ""
     echo "Available environments:"
 
@@ -108,17 +108,20 @@ if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
-# First argument must be environment name
-ENV_NAME="$1"
+# First argument is the tofu command
+TOFU_CMD="$1"
 shift
 
-# Check for tofu command
+# Second argument must be environment name
 if [[ $# -eq 0 ]]; then
-    echo "Error: Missing tofu command" >&2
-    echo "Usage: $0 <environment> <command> [args...]" >&2
+    echo "Error: Missing environment name" >&2
+    echo "Usage: $0 <command> <environment> [args...]" >&2
     echo "Run '$0 --help' for more information." >&2
     exit 1
 fi
+
+ENV_NAME="$1"
+shift
 
 # Function to resolve environment name to directory path
 resolve_env_dir() {
@@ -176,9 +179,6 @@ echo ""
 PLANS_DIR="$DEPLOYER_ROOT/plans"
 PLAN_FILE="$PLANS_DIR/$ENV_NAME.tfplan"
 
-# Get the tofu command (first argument after environment)
-TOFU_CMD="$1"
-
 case "$TOFU_CMD" in
     plan)
         # Create plans directory if needed
@@ -191,14 +191,13 @@ case "$TOFU_CMD" in
         fi
 
         # Run plan with -out, passing through any additional arguments
-        shift  # Remove 'plan' from arguments
         tofu "-chdir=$ENV_DIR" plan -out="$PLAN_FILE" "$@"
         PLAN_EXIT=$?
 
         if [[ $PLAN_EXIT -eq 0 ]]; then
             echo ""
             echo "Or run:"
-            echo "    bin/tofu.sh $ENV_NAME apply"
+            echo "    bin/tofu.sh apply $ENV_NAME"
         fi
 
         exit $PLAN_EXIT
@@ -220,12 +219,11 @@ case "$TOFU_CMD" in
             exit $APPLY_EXIT
         else
             # No saved plan - run apply normally (will prompt for confirmation)
-            shift  # Remove 'apply' from arguments
             exec tofu "-chdir=$ENV_DIR" apply "$@"
         fi
         ;;
     *)
         # All other commands pass through unchanged
-        exec tofu "-chdir=$ENV_DIR" "$@"
+        exec tofu "-chdir=$ENV_DIR" "$TOFU_CMD" "$@"
         ;;
 esac

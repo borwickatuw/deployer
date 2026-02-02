@@ -118,8 +118,8 @@ console = ["./bin/console.sh"]
 Run commands with:
 
 ```bash
-python bin/ecs-run.py myapp-staging run migrate --deploy-toml ../myapp/deploy.toml
-python bin/ecs-run.py myapp-staging run console --deploy-toml ../myapp/deploy.toml
+python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../myapp/deploy.toml
+python bin/ecs-run.py run myapp-staging console --deploy-toml ../myapp/deploy.toml
 ```
 
 ## Dockerfile Guidelines

@@ -182,7 +182,7 @@ def generate_readme(app_name: str, env_type: str) -> str:
 uv run python bin/deploy.py /path/to/{app_name}/deploy.toml {env_name}
 
 # Check status
-uv run python bin/manage-environment.py status {env_name}
+uv run python bin/environment.py status {env_name}
 ```
 
 ## Configuration Files

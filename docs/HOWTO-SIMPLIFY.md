@@ -426,8 +426,8 @@ For Cognito user management details, see [STAGING-ENVIRONMENTS.md](STAGING-ENVIR
 
 # Bad: Partial duplication
 For Cognito user management, see STAGING-ENVIRONMENTS.md. The main commands are:
-- manage-cognito-access.py create
-- manage-cognito-access.py list
+- cognito.py create
+- cognito.py list
 [...repeating what's in the other doc...]
 ```
 
@@ -473,7 +473,7 @@ These are known areas that could benefit from simplification:
 |------|-------|-------|
 | `bin/deploy.py` | 827 | Could extract Docker/ECR/ECS logic to library |
 | `tests/unit/test_audit.py` | 452 | Large but may be appropriate for coverage |
-| `bin/manage-cognito-access.py` | 446 | Could share patterns with manage-environment.py |
+| `bin/cognito.py` | 446 | Could share patterns with environment.py |
 
 ### Terraform - Potential Opportunities
 

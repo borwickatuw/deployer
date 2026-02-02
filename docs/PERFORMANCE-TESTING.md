@@ -37,9 +37,8 @@ Note: With migrations skipped (no changes), total time is ~75s.
 
 ```bash
 # Test myapp-staging
-uv run python bin/deployment-speed-test.py ../myapp/deploy.toml myapp-staging \
-    --output local/results/test-XXX.json \
-    --csv local/results/summary.csv
+uv run python bin/deploy.py speed-test ../myapp/deploy.toml myapp-staging \
+    --output local/results/test-XXX.json
 ```
 
 ### Arguments
@@ -50,9 +49,9 @@ uv run python bin/deployment-speed-test.py ../myapp/deploy.toml myapp-staging \
 
 **Optional flags:**
 - `--output`: Path for JSON results file
-- `--csv`: Path for CSV summary (appends if exists)
 - `--dry-run`: Skip actual deployment, test infrastructure only
 - `--skip-auth`: Skip Cognito authentication (for debugging)
+- `--poll-interval`: Seconds between health check polls (default: 2.0)
 
 ## Results
 

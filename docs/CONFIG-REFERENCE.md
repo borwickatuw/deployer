@@ -22,14 +22,14 @@ uv run python bin/deploy.py /path/to/deploy.toml myapp-staging
 uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
 
 # Infrastructure changes
-./bin/tofu.sh myapp-staging plan
-./bin/tofu.sh myapp-staging apply
+./bin/tofu.sh plan myapp-staging
+./bin/tofu.sh apply myapp-staging
 
 # View logs
 aws logs tail /ecs/myapp-staging --follow
 
 # Run Django management commands
-uv run python bin/ecs-run.py myapp-staging manage migrate
+uv run python bin/ecs-run.py manage myapp-staging migrate
 ```
 
 ### Required OpenTofu Outputs
@@ -409,10 +409,10 @@ seed = ["npm", "run", "seed"]
 
 ```bash
 # Run a named command
-python bin/ecs-run.py myapp-staging run migrate --deploy-toml ../app/deploy.toml
+python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
 
 # Django 'manage' shortcut (backward compatible, falls back to defaults)
-python bin/ecs-run.py myapp-staging manage migrate
+python bin/ecs-run.py manage myapp-staging migrate
 ```
 
 ### `[migrations]`
@@ -482,7 +482,7 @@ domain_name = "${tofu:domain_name}"  # For constructing URLs
 [aws]
 deploy_profile = "deployer-app"      # for deploy.py
 infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+cognito_profile = "deployer-cognito" # for cognito.py
 
 [infrastructure]
 cluster_name = "${tofu:ecs_cluster_name}"
@@ -534,14 +534,14 @@ AWS profile configuration. Each script reads the appropriate profile for its ope
 |-------|---------|-------------|
 | `deploy_profile` | `deploy.py` | AWS profile for deployment operations (ECS, ECR, SSM) |
 | `infra_profile` | `tofu.sh` | AWS profile for infrastructure operations (OpenTofu) |
-| `cognito_profile` | `manage-cognito-access.py` | AWS profile for Cognito user management |
+| `cognito_profile` | `cognito.py` | AWS profile for Cognito user management |
 
 **Example:**
 ```toml
 [aws]
 deploy_profile = "deployer-app"      # for deploy.py
 infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+cognito_profile = "deployer-cognito" # for cognito.py
 ```
 
 Scripts automatically read the appropriate profile. You can override with `AWS_PROFILE=...` if needed.

@@ -228,10 +228,10 @@ uv run python bin/deploy.py ../myapp/deploy.toml myapp-staging
 uv run python bin/deploy.py ../myapp/deploy.toml myapp-production
 
 # Infrastructure changes to staging account
-./bin/tofu.sh myapp-staging plan
+./bin/tofu.sh plan myapp-staging
 
 # Infrastructure changes to production account
-./bin/tofu.sh myapp-production plan
+./bin/tofu.sh plan myapp-production
 ```
 
 ## Single Account Setup
