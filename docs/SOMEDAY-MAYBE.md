@@ -2,27 +2,6 @@
 
 Ideas for future improvements that aren't urgent.
 
-## Separate Generic Framework from Environment-Specific Config
-
-The repository has a clean separation between generic infrastructure code and environment-specific configurations:
-
-**Generic (could be open-sourced or shared):**
-- Root `.tf` files (main.tf, variables.tf, outputs.tf, versions.tf)
-- `modules/` directory
-- `bin/` (deploy.py, environment.py, etc.)
-- `example-deploy.toml`
-- `example-deployer-environments/`
-- `docs/`
-
-**Environment-specific:**
-- `environments/` (myapp-staging, myapp-production, etc.)
-
-Possible restructuring options:
-1. Publish generic parts as an open-source "ECS deployer" template
-2. Move environments to a separate private repo that references this one
-3. Use Git submodules to keep framework and environments separate
-4. Keep as-is but gitignore environments/ for public sharing
-
 ## Advanced WAF Features
 
 The `modules/waf` module provides baseline protection. Future enhancements could include:
