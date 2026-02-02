@@ -24,20 +24,42 @@ db_password = "CHANGE_THIS_PASSWORD"  # Generate with: openssl rand -base64 24
 # Domain Configuration
 # ------------------------------------------------------------------------------
 
-domain_name     = "{{domain}}"
+domain_name     = "{{app_name}}.example.com"
 route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 
 # ------------------------------------------------------------------------------
 # Service Configuration
 # ------------------------------------------------------------------------------
 
-{{services_block}}
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  # Example: background worker
+  # worker = {
+  #   cpu           = 512
+  #   memory        = 1024
+  #   replicas      = 2
+  #   load_balanced = false
+  # }
+}
 
 # ------------------------------------------------------------------------------
-# Auto-Scaling (disabled in staging)
+# Auto-Scaling (enabled for production)
 # ------------------------------------------------------------------------------
 
-{{scaling_block}}
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}
 
 # ------------------------------------------------------------------------------
 # ECR Repositories

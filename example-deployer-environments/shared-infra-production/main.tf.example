@@ -1,14 +1,13 @@
 # Shared Infrastructure - {{env_type | title}}
 #
-# This creates shared infrastructure for multiple {{env_type}} apps:
+# This creates shared infrastructure for multiple production apps:
 # - VPC with NAT Gateway
 # - ECS Cluster
 # - Application Load Balancer
-# - Optional: Cognito authentication
 # - Optional: Shared ElastiCache
 #
 # Per-app resources (RDS, target groups, etc.) are created separately.
-# See app-on-shared-{{env_type}}/ for an example per-app environment.
+# See app-on-shared-production/ for an example per-app environment.
 
 terraform {
   required_version = ">= 1.6.0"
@@ -34,7 +33,7 @@ variable "name_prefix" {
 
 variable "domain_name" {
   type        = string
-  description = "Primary domain name (e.g., {{env_type}}.example.com)"
+  description = "Primary domain name (e.g., example.com)"
 }
 
 variable "route53_zone_id" {
@@ -45,14 +44,14 @@ variable "route53_zone_id" {
 
 variable "certificate_san" {
   type        = list(string)
-  description = "Additional domain names for the certificate (e.g., ['*.{{env_type}}.example.com'])"
+  description = "Additional domain names for the certificate (e.g., ['*.example.com'])"
   default     = []
 }
 
 variable "cognito_auth_enabled" {
   type        = bool
-  description = "Enable Cognito authentication"
-  default     = true
+  description = "Enable Cognito authentication (typically disabled for production)"
+  default     = false
 }
 
 variable "cache_enabled" {
@@ -110,12 +109,12 @@ module "shared_infra" {
   vpc_cidr           = "10.0.0.0/16"
   availability_zones = ["us-west-2a", "us-west-2b"]
 
-  # Health check settings (staging-optimized)
-  health_check_interval = 10
-  health_check_timeout  = 5
+  # Health check settings (production-conservative)
+  health_check_interval = 30
+  health_check_timeout  = 10
   healthy_threshold     = 2
-  unhealthy_threshold   = 3
-  deregistration_delay  = 15
+  unhealthy_threshold   = 5
+  deregistration_delay  = 120
 
   # WAF configuration
   waf_enabled              = var.waf_enabled
@@ -188,7 +187,7 @@ output "https_enabled" {
   value = module.shared_infra.https_enabled
 }
 
-# Cognito
+# Cognito (disabled for production by default)
 output "cognito_user_pool_id" {
   value = module.shared_infra.cognito_user_pool_id
 }

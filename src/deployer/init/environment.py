@@ -8,7 +8,6 @@ This module provides entry points for generating different types of environments
 
 import re
 from pathlib import Path
-from typing import Optional
 
 try:
     import tomllib
@@ -16,6 +15,7 @@ except ImportError:
     import tomli as tomllib
 
 from deployer.utils import get_environments_dir
+from .template import load_template, substitute
 
 # Import generators
 from . import standalone
@@ -66,10 +66,10 @@ def get_next_listener_priority(env_type: str) -> int:
 def generate_environment(
     app_name: str,
     env_type: str,
-    deploy_toml_path: Optional[Path] = None,
-    domain: Optional[str] = None,
+    deploy_toml_path: Path | None = None,
+    domain: str | None = None,
     shared: bool = False,
-    listener_priority: Optional[int] = None,
+    listener_priority: int | None = None,
 ) -> dict[str, str]:
     """Generate environment directory structure.
 
@@ -109,7 +109,7 @@ def generate_environment(
     files[str(env_dir / "main.tf")] = standalone.generate_main_tf(app_name, env_type, domain)
 
     # Generate config.toml
-    files[str(env_dir / "config.toml")] = generate_config_toml(app_name, env_type, domain)
+    files[str(env_dir / "config.toml")] = generate_config_toml(app_name, env_type, domain, shared=False)
 
     # Generate terraform.tfvars
     files[str(env_dir / "terraform.tfvars")] = standalone.generate_tfvars(
@@ -124,7 +124,7 @@ def generate_environment(
 
 def generate_shared_infrastructure(
     env_type: str,
-    domain_base: Optional[str] = None,
+    domain_base: str | None = None,
 ) -> dict[str, str]:
     """Generate files for shared infrastructure environment.
 
@@ -148,8 +148,8 @@ def generate_shared_infrastructure(
 def generate_shared_app_environment(
     app_name: str,
     env_type: str,
-    deploy_config: Optional[dict] = None,
-    domain: Optional[str] = None,
+    deploy_config: dict | None = None,
+    domain: str | None = None,
     listener_priority: int = 100,
 ) -> dict[str, str]:
     """Generate lightweight environment that uses shared infrastructure.
@@ -175,8 +175,8 @@ def generate_shared_app_environment(
         app_name, env_type, shared_infra_name, listener_priority
     )
 
-    # Generate config.toml (same structure, just different cluster_name source)
-    files[str(env_dir / "config.toml")] = generate_config_toml(app_name, env_type, domain)
+    # Generate config.toml
+    files[str(env_dir / "config.toml")] = generate_config_toml(app_name, env_type, domain, shared=True)
 
     # Generate terraform.tfvars
     files[str(env_dir / "terraform.tfvars")] = shared_app.generate_tfvars(
@@ -189,7 +189,12 @@ def generate_shared_app_environment(
     return files
 
 
-def generate_config_toml(app_name: str, env_type: str, domain: Optional[str] = None) -> str:
+def generate_config_toml(
+    app_name: str,
+    env_type: str,
+    domain: str | None = None,
+    shared: bool = False,
+) -> str:
     """Generate config.toml for an environment.
 
     This is used by both standalone and shared app environments.
@@ -198,80 +203,20 @@ def generate_config_toml(app_name: str, env_type: str, domain: Optional[str] = N
         app_name: Application name.
         env_type: Environment type ('staging' or 'production').
         domain: Optional domain name.
+        shared: Whether this is a shared app environment.
 
     Returns:
         config.toml content as string.
     """
     env_name = f"{app_name}-{env_type}"
 
-    # Cognito section varies by environment type
-    if env_type == "staging":
-        cognito_section = f'''# Cognito authentication for staging
-[cognito]
-enabled = true
-user_pool_id = "${{tofu:cognito_user_pool_id}}"
-client_id = "${{tofu:cognito_user_pool_client_id}}"
-test_username = "deployer@test.local"
-test_password_ssm = "/deployer/{env_name}/cognito-test-password"'''
-        deployment_section = '''# Staging deployment settings (faster, allows brief downtime)
-[deployment]
-minimum_healthy_percent = 0
-maximum_percent = 100
-circuit_breaker_enabled = true
-circuit_breaker_rollback = true'''
-    else:
-        cognito_section = '''# Cognito disabled for production
-[cognito]
-enabled = false'''
-        deployment_section = '''# Production deployment settings (maintain availability)
-# These are defaults, so the section can be omitted
-# [deployment]
-# minimum_healthy_percent = 100
-# maximum_percent = 200
-# circuit_breaker_enabled = true
-# circuit_breaker_rollback = true'''
+    # Use shared-app template for shared environments, standalone for others
+    template_type = "shared-app" if shared else "standalone"
 
-    # Build rds_instance_id line separately to avoid f-string backslash issue
-    if env_type == "staging":
-        rds_line = 'rds_instance_id = "${tofu:rds_instance_id}"'
-    else:
-        rds_line = "# rds_instance_id omitted - production RDS should not be stopped"
-
-    return f'''# {app_name.title()} {env_type.title()} Environment Configuration
-#
-# Values with ${{tofu:...}} placeholders are resolved at deploy time
-# by running `tofu output` in this directory.
-
-[environment]
-type = "{env_type}"
-domain_name = "${{tofu:domain_name}}"
-
-[infrastructure]
-cluster_name = "${{tofu:ecs_cluster_name}}"
-security_group_id = "${{tofu:ecs_security_group_id}}"
-private_subnet_ids = "${{tofu:private_subnet_ids}}"
-execution_role_arn = "${{tofu:ecs_execution_role_arn}}"
-task_role_arn = "${{tofu:ecs_task_role_arn}}"
-target_group_arn = "${{tofu:alb_target_group_arn}}"
-alb_dns_name = "${{tofu:alb_dns_name}}"
-{rds_line}
-
-[services]
-config = "${{tofu:service_config}}"
-scaling = "${{tofu:scaling_config}}"
-health_check = "${{tofu:health_check_config}}"
-
-[database]
-url = "${{tofu:database_url}}"
-
-[redis]
-url = "${{tofu:redis_url}}"
-
-# Uncomment if your app uses S3 for media storage
-# [storage]
-# media_bucket = "${{tofu:s3_media_bucket}}"
-
-{cognito_section}
-
-{deployment_section}
-'''
+    template = load_template(template_type, env_type, "config.toml.example")
+    return substitute(
+        template,
+        app_name=app_name,
+        env_type=env_type,
+        env_name=env_name,
+    )

@@ -22,9 +22,9 @@
 # configure different profiles per environment.
 
 [aws]
-deploy_profile = "deployer-app"      # for deploy.py
-infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+deploy_profile = "deployer-app-production"      # for deploy.py
+infra_profile = "deployer-infra-production"     # for tofu.sh
+cognito_profile = "deployer-cognito-production" # for manage-cognito-access.py
 
 # ------------------------------------------------------------------------------
 # Environment Metadata
@@ -35,7 +35,7 @@ cognito_profile = "deployer-cognito" # for manage-cognito-access.py
 # Used to derive environment-specific settings in deploy.toml
 type = "{{env_type}}"
 
-# Domain name for this environment (e.g., {{app_name}}-staging.example.com)
+# Domain name for this environment (e.g., {{app_name}}.example.com)
 # Used for constructing URLs in scripts
 domain_name = "${tofu:domain_name}"
 
@@ -63,9 +63,7 @@ target_group_arn = "${tofu:alb_target_group_arn}"
 # ALB DNS name (fallback URL when domain_name not available)
 alb_dns_name = "${tofu:alb_dns_name}"
 
-# RDS instance ID for start/stop operations (staging only)
-# Omit for production environments that don't support stopping
-rds_instance_id = "${tofu:rds_instance_id}"
+# rds_instance_id omitted - production RDS should not be stopped
 
 # ECR repository prefix (required for deployments)
 # Repositories are named {ecr_prefix}-{image_name}
@@ -127,58 +125,30 @@ provider = "ssm"
 path_prefix = "/{{app_name}}/{{env_type}}"
 
 # ------------------------------------------------------------------------------
-# Cognito Authentication (Staging Only)
+# Cognito Authentication (Disabled for Production)
 # ------------------------------------------------------------------------------
 
-# For staging environments with Cognito protection
 [cognito]
-# Set to true for staging environments with Cognito, false for production
-enabled = true
-
-# Cognito user pool configuration (from tofu outputs)
-user_pool_id = "${tofu:cognito_user_pool_id}"
-client_id = "${tofu:cognito_user_pool_client_id}"
-
-# Test account for automated access (health checks, CI/CD)
-# The password is stored in SSM Parameter Store
-test_username = "deployer@test.local"
-test_password_ssm = "/deployer/{{env_name}}/cognito-test-password"
+enabled = false
 
 # ------------------------------------------------------------------------------
-# Deployment Configuration (Staging Optimization)
+# Deployment Configuration (Production)
 # ------------------------------------------------------------------------------
 
-# These settings control ECS service deployment behavior.
-# Staging environments can use aggressive settings for faster deployments.
-# Production environments should use conservative defaults (or omit this section).
-#
-# IMPORTANT: Only use aggressive settings for staging - production needs
-# minimum_healthy_percent = 100 to maintain availability during deployments.
+# Production deployment settings maintain availability during deployments.
+# These are the defaults, so this section can be omitted.
 
 [deployment]
 # Minimum percentage of healthy tasks during deployment
-# - Staging: Use 0 for fastest deployment (allows brief downtime)
-# - Production: Use 100 to maintain availability (default if not specified)
-minimum_healthy_percent = 0
+# Use 100 to maintain availability (no downtime)
+minimum_healthy_percent = 100
 
 # Maximum percentage of tasks during deployment
-# - Staging: Use 100 (no extra capacity needed)
-# - Production: Use 200 to allow rolling deployments (default if not specified)
-maximum_percent = 100
+# Use 200 to allow rolling deployments with extra capacity
+maximum_percent = 200
 
 # Enable deployment circuit breaker for faster failure detection
 circuit_breaker_enabled = true
 
 # Automatically rollback on deployment failure
 circuit_breaker_rollback = true
-
-# ------------------------------------------------------------------------------
-# Scheduler (Staging Only)
-#
-# Automatic start/stop to save costs outside business hours.
-# ------------------------------------------------------------------------------
-
-[scheduler]
-enabled = true
-# Human-readable description shown in warnings when environment is stopped
-description = "Mon-Fri 7am-7pm Pacific"

@@ -4,9 +4,8 @@ These lightweight environments reference shared VPC, NAT Gateway, ALB, and ECS c
 but create their own RDS, target groups, and other per-app resources.
 """
 
-from typing import Optional
-
 from deployer.utils import get_environments_dir
+from .template import load_template, substitute
 
 # Default service sizing by environment type
 STAGING_DEFAULTS = {
@@ -40,226 +39,67 @@ def generate_main_tf(
         main.tf content as string.
     """
     env_name = f"{app_name}-{env_type}"
-    title = f"{app_name.title()} {env_type.title()} Environment (Shared)"
-    shared_infra_dir = get_environments_dir() / shared_infra_name
 
-    return f'''# {title}
-#
-# This app uses shared infrastructure from {shared_infra_name}.
-# Only per-app resources are created here: RDS, target group, listener rule, ECR, IAM.
+    template = load_template("shared-app", env_type, "main.tf.example")
+    return substitute(
+        template,
+        app_name=app_name,
+        env_type=env_type,
+        env_name=env_name,
+        listener_priority=listener_priority,
+    )
 
-terraform {{
-  required_version = ">= 1.6.0"
 
-  # Uncomment and configure for remote state
-  # backend "s3" {{
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "{env_name}/terraform.tfstate"
-  #   region         = "us-west-2"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }}
-}}
+def _format_services_block(services: dict) -> str:
+    """Format the services block for terraform.tfvars.
 
-# ------------------------------------------------------------------------------
-# Variables
-# ------------------------------------------------------------------------------
+    Args:
+        services: Dictionary of service configurations.
 
-variable "app_name" {{
-  type    = string
-  default = "{app_name}"
-}}
+    Returns:
+        Formatted HCL services block.
+    """
+    lines = ["services = {"]
+    for name, config in services.items():
+        lines.append(f"  {name} = {{")
+        lines.append(f"    cpu               = {config['cpu']}")
+        lines.append(f"    memory            = {config['memory']}")
+        lines.append(f"    replicas          = {config['replicas']}")
+        lines.append(f"    load_balanced     = {'true' if config['load_balanced'] else 'false'}")
+        if config.get("port"):
+            lines.append(f"    port              = {config['port']}")
+            lines.append(f'    health_check_path = "{config.get("health_check_path", "/health/")}"')
+        lines.append("  }")
+    lines.append("}")
+    return "\n".join(lines)
 
-variable "environment" {{
-  type    = string
-  default = "{env_type}"
-}}
 
-variable "domain_name" {{
-  type        = string
-  description = "Domain name for this app (e.g., {app_name}.{env_type}.example.com)"
-}}
+def _format_scaling_block(env_type: str) -> str:
+    """Format the scaling block for terraform.tfvars.
 
-variable "db_username" {{
-  type      = string
-  sensitive = true
-}}
+    Args:
+        env_type: Environment type ('staging' or 'production').
 
-variable "db_password" {{
-  type      = string
-  sensitive = true
-}}
-
-variable "listener_rule_priority" {{
-  type        = number
-  description = "ALB listener rule priority (must be unique per app)"
-  default     = {listener_priority}
-}}
-
-variable "route53_zone_id" {{
-  type        = string
-  description = "Route53 zone ID for creating DNS record (optional)"
-  default     = null
-}}
-
-# Service configuration
-variable "services" {{
-  type = map(object({{
-    cpu               = number
-    memory            = number
-    replicas          = number
-    load_balanced     = bool
-    port              = optional(number)
-    health_check_path = optional(string, "/")
-  }}))
-  description = "Service sizing configuration"
-}}
-
-variable "scaling" {{
-  type = map(object({{
-    min_replicas = number
-    max_replicas = number
-    cpu_target   = optional(number, 70)
-  }}))
-  default     = {{}}
-  description = "Auto-scaling policies per service"
-}}
-
-variable "health_check" {{
-  type = object({{
-    interval            = optional(number, 30)
-    timeout             = optional(number, 10)
-    healthy_threshold   = optional(number, 2)
-    unhealthy_threshold = optional(number, 5)
-  }})
-  default     = {{}}
-  description = "Global health check defaults"
-}}
-
-# ------------------------------------------------------------------------------
-# App Module (uses shared infrastructure)
-# ------------------------------------------------------------------------------
-
-module "app" {{
-  source = "../modules/app-in-shared-env"
-
-  app_name    = var.app_name
-  environment = var.environment
-  domain_name = var.domain_name
-
-  # Reference shared infrastructure state
-  shared_state_backend = "local"
-  shared_state_path    = "{shared_infra_dir}/terraform.tfstate"
-
-  # Database
-  db_username = var.db_username
-  db_password = var.db_password
-
-  # ALB routing
-  listener_rule_priority = var.listener_rule_priority
-  route53_zone_id        = var.route53_zone_id
-
-  # Service config (passed through for outputs)
-  services     = var.services
-  scaling      = var.scaling
-  health_check = var.health_check
-}}
-
-# ------------------------------------------------------------------------------
-# Outputs for deploy script
-# ------------------------------------------------------------------------------
-
-# Infrastructure (from shared)
-output "vpc_id" {{
-  value = module.app.vpc_id
-}}
-
-output "private_subnet_ids" {{
-  value = module.app.private_subnet_ids
-}}
-
-output "ecs_cluster_name" {{
-  value = module.app.ecs_cluster_name
-}}
-
-output "ecs_security_group_id" {{
-  value = module.app.ecs_security_group_id
-}}
-
-output "alb_dns_name" {{
-  value = module.app.alb_dns_name
-}}
-
-output "https_enabled" {{
-  value = module.app.https_enabled
-}}
-
-# Per-app resources
-output "alb_target_group_arn" {{
-  value = module.app.alb_target_group_arn
-}}
-
-output "ecs_execution_role_arn" {{
-  value = module.app.ecs_execution_role_arn
-}}
-
-output "ecs_task_role_arn" {{
-  value = module.app.ecs_task_role_arn
-}}
-
-output "domain_name" {{
-  value = module.app.domain_name
-}}
-
-# Database
-output "database_url" {{
-  value     = module.app.database_url
-  sensitive = true
-}}
-
-output "rds_instance_id" {{
-  value = module.app.rds_instance_id
-}}
-
-# ECR
-output "ecr_prefix" {{
-  value = module.app.ecr_prefix
-}}
-
-# Redis (from shared, if enabled)
-output "redis_url" {{
-  value = module.app.redis_url
-}}
-
-# Cognito (from shared, if enabled)
-output "cognito_user_pool_id" {{
-  value = module.app.cognito_user_pool_id
-}}
-
-output "cognito_user_pool_client_id" {{
-  value = module.app.cognito_user_pool_client_id
-}}
-
-# Service config (for deploy.py)
-output "service_config" {{
-  value = module.app.service_config
-}}
-
-output "scaling_config" {{
-  value = module.app.scaling_config
-}}
-
-output "health_check_config" {{
-  value = module.app.health_check_config
-}}
-'''
+    Returns:
+        Formatted HCL scaling block.
+    """
+    if env_type == "production":
+        return """scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}"""
+    else:
+        return "# Auto-scaling disabled in staging\nscaling = {}"
 
 
 def generate_tfvars(
     app_name: str,
     env_type: str,
-    deploy_config: Optional[dict] = None,
-    domain: Optional[str] = None,
+    deploy_config: dict | None = None,
+    domain: str | None = None,
     listener_priority: int = 100,
 ) -> str:
     """Generate terraform.tfvars for an app using shared infrastructure.
@@ -275,6 +115,7 @@ def generate_tfvars(
         terraform.tfvars content as string.
     """
     defaults = STAGING_DEFAULTS if env_type == "staging" else PRODUCTION_DEFAULTS
+    env_name = f"{app_name}-{env_type}"
 
     # Extract services from deploy.toml if provided
     services = {}
@@ -304,78 +145,21 @@ def generate_tfvars(
             "health_check_path": "/health/",
         }
 
-    # Format services block
-    services_lines = ["services = {"]
-    for name, config in services.items():
-        services_lines.append(f"  {name} = {{")
-        services_lines.append(f"    cpu               = {config['cpu']}")
-        services_lines.append(f"    memory            = {config['memory']}")
-        services_lines.append(f"    replicas          = {config['replicas']}")
-        services_lines.append(f"    load_balanced     = {'true' if config['load_balanced'] else 'false'}")
-        if config.get("port"):
-            services_lines.append(f"    port              = {config['port']}")
-            services_lines.append(f'    health_check_path = "{config.get("health_check_path", "/health/")}"')
-        services_lines.append("  }")
-    services_lines.append("}")
-    services_block = "\n".join(services_lines)
-
-    # Scaling configuration
-    if env_type == "production":
-        scaling_block = '''# Auto-scaling for production
-scaling = {
-  web = {
-    min_replicas = 2
-    max_replicas = 10
-    cpu_target   = 70
-  }
-}'''
-    else:
-        scaling_block = "# Auto-scaling disabled in staging\nscaling = {}"
-
+    services_block = _format_services_block(services)
+    scaling_block = _format_scaling_block(env_type)
     domain_value = domain or f"{app_name}.{env_type}.example.com"
 
-    return f'''# {app_name.title()} {env_type.title()} Environment (Shared Infrastructure)
-# DO NOT commit this file to version control (contains sensitive data)
-
-# ------------------------------------------------------------------------------
-# App Identity
-# ------------------------------------------------------------------------------
-
-app_name    = "{app_name}"
-environment = "{env_type}"
-
-# ------------------------------------------------------------------------------
-# Database Credentials
-# ------------------------------------------------------------------------------
-
-db_username = "{app_name}_admin"
-db_password = "CHANGE-ME-generate-a-secure-password"
-
-# ------------------------------------------------------------------------------
-# Domain Configuration
-# ------------------------------------------------------------------------------
-
-domain_name     = "{domain_value}"
-route53_zone_id = null  # Set to your Route53 zone ID
-
-# ------------------------------------------------------------------------------
-# ALB Routing
-# ------------------------------------------------------------------------------
-
-listener_rule_priority = {listener_priority}
-
-# ------------------------------------------------------------------------------
-# Service Configuration
-# ------------------------------------------------------------------------------
-
-{services_block}
-
-# ------------------------------------------------------------------------------
-# Auto-Scaling
-# ------------------------------------------------------------------------------
-
-{scaling_block}
-'''
+    template = load_template("shared-app", env_type, "terraform.tfvars.example")
+    return substitute(
+        template,
+        app_name=app_name,
+        env_type=env_type,
+        env_name=env_name,
+        domain=domain_value,
+        listener_priority=listener_priority,
+        services_block=services_block,
+        scaling_block=scaling_block,
+    )
 
 
 def generate_readme(app_name: str, env_type: str, shared_infra_name: str) -> str:

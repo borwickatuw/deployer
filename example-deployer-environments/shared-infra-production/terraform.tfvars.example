@@ -11,17 +11,17 @@ name_prefix = "shared-infra-{{env_type}}"
 # Domain Configuration
 # ------------------------------------------------------------------------------
 
-domain_name     = "{{domain}}"
+domain_name     = "example.com"
 route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 
 # Wildcard certificate for all apps
-certificate_san = ["*.{{domain}}"]
+certificate_san = ["*.example.com"]
 
 # ------------------------------------------------------------------------------
 # Features
 # ------------------------------------------------------------------------------
 
-cognito_auth_enabled = true   # Enable Cognito for staging authentication
+cognito_auth_enabled = false  # Cognito disabled for production
 cache_enabled        = false  # Set to true to enable shared Redis
 
 # ------------------------------------------------------------------------------

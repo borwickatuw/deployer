@@ -19,7 +19,7 @@ db_password = "CHANGE-ME-generate-a-secure-password"  # Generate with: openssl r
 # Domain Configuration
 # ------------------------------------------------------------------------------
 
-domain_name     = "{{domain}}"
+domain_name     = "{{app_name}}.example.com"
 route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 
 # ------------------------------------------------------------------------------
@@ -34,10 +34,25 @@ listener_rule_priority = {{listener_priority}}
 # Service Configuration
 # ------------------------------------------------------------------------------
 
-{{services_block}}
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
 
 # ------------------------------------------------------------------------------
-# Auto-Scaling
+# Auto-Scaling (enabled for production)
 # ------------------------------------------------------------------------------
 
-{{scaling_block}}
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}

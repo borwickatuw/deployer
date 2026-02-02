@@ -9,9 +9,9 @@
 # ------------------------------------------------------------------------------
 
 [aws]
-deploy_profile = "deployer-app"      # for deploy.py
-infra_profile = "deployer-infra"     # for tofu.sh
-cognito_profile = "deployer-cognito" # for manage-cognito-access.py
+deploy_profile = "deployer-app-production"      # for deploy.py
+infra_profile = "deployer-infra-production"     # for tofu.sh
+cognito_profile = "deployer-cognito-production" # for manage-cognito-access.py
 
 # ------------------------------------------------------------------------------
 # Environment Metadata
@@ -36,8 +36,9 @@ alb_dns_name = "${tofu:alb_dns_name}"
 execution_role_arn = "${tofu:ecs_execution_role_arn}"
 task_role_arn = "${tofu:ecs_task_role_arn}"
 target_group_arn = "${tofu:alb_target_group_arn}"
-rds_instance_id = "${tofu:rds_instance_id}"
 ecr_prefix = "${tofu:ecr_prefix}"
+
+# rds_instance_id omitted - production RDS should not be stopped
 
 # ------------------------------------------------------------------------------
 # Services
@@ -76,30 +77,18 @@ provider = "ssm"
 path_prefix = "/{{app_name}}/{{env_type}}"
 
 # ------------------------------------------------------------------------------
-# Cognito (from shared infrastructure)
+# Cognito (disabled for production)
 # ------------------------------------------------------------------------------
 
 [cognito]
-enabled = true
-user_pool_id = "${tofu:cognito_user_pool_id}"
-client_id = "${tofu:cognito_user_pool_client_id}"
-test_username = "deployer@test.local"
-test_password_ssm = "/deployer/{{env_name}}/cognito-test-password"
+enabled = false
 
 # ------------------------------------------------------------------------------
-# Deployment (Staging Optimization)
+# Deployment (Production)
 # ------------------------------------------------------------------------------
 
 [deployment]
-minimum_healthy_percent = 0
-maximum_percent = 100
+minimum_healthy_percent = 100
+maximum_percent = 200
 circuit_breaker_enabled = true
 circuit_breaker_rollback = true
-
-# ------------------------------------------------------------------------------
-# Scheduler (Staging Only)
-# ------------------------------------------------------------------------------
-
-[scheduler]
-enabled = true
-description = "Mon-Fri 7am-7pm Pacific"
