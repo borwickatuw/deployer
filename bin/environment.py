@@ -10,13 +10,13 @@ Usage:
     python bin/environment.py status
 
     # Show status of a specific environment
-    python bin/environment.py myapp-staging status
+    python bin/environment.py status myapp-staging
 
     # Stop an environment (scale ECS to 0, stop RDS)
-    python bin/environment.py myapp-staging stop
+    python bin/environment.py stop myapp-staging
 
     # Start an environment (waits for RDS, then scales ECS)
-    python bin/environment.py myapp-staging start
+    python bin/environment.py start myapp-staging
 """
 
 import argparse
@@ -273,9 +273,9 @@ def main():
         epilog="""
 Examples:
   %(prog)s status                       Show status of all environments
-  %(prog)s myapp-staging status         Show status of specific environment
-  %(prog)s myapp-staging stop           Stop the environment
-  %(prog)s myapp-staging start          Start the environment
+  %(prog)s status myapp-staging         Show status of specific environment
+  %(prog)s stop myapp-staging           Stop the environment
+  %(prog)s start myapp-staging          Start the environment
 
 Notes:
   - Stopping scales ECS to 0 and stops RDS (data preserved)
@@ -285,37 +285,35 @@ Notes:
         """,
     )
 
-    # First positional argument: either "status" (for all) or environment name
-    parser.add_argument(
-        "environment_or_command",
-        metavar="environment|status",
-        help="Environment name (e.g., myapp-staging) or 'status' for all environments",
-    )
+    subparsers = parser.add_subparsers(dest="command")
 
-    # Second positional argument: command (optional if first arg is "status")
-    parser.add_argument(
-        "command",
+    # status command
+    status_parser = subparsers.add_parser("status", help="Show environment status")
+    status_parser.add_argument(
+        "environment",
         nargs="?",
-        choices=["start", "stop", "status"],
-        help="Command to run: start, stop, or status",
+        help="Environment name (optional, shows all if omitted)",
     )
 
+    # start command
+    start_parser = subparsers.add_parser("start", help="Start an environment")
+    start_parser.add_argument(
+        "environment",
+        help="Environment name (e.g., myapp-staging)",
+    )
+
+    # stop command
+    stop_parser = subparsers.add_parser("stop", help="Stop an environment")
+    stop_parser.add_argument(
+        "environment",
+        help="Environment name (e.g., myapp-staging)",
+    )
 
     args = parser.parse_args()
 
-    # Handle the two usage patterns:
-    # 1. "status [--staging]" - show all/staging environments
-    # 2. "<environment> <command>" - operate on specific environment
-    if args.environment_or_command == "status":
-        # Global status command
-        args.environment = None
-        args.command = "status"
-    elif args.command is None:
-        # No command specified after environment
-        parser.error(f"Missing command. Usage: {parser.prog} {args.environment_or_command} start|stop|status")
-    else:
-        # Environment + command
-        args.environment = args.environment_or_command
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
 
     # Dispatch to command handler
     commands = {
