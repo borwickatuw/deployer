@@ -150,6 +150,7 @@ module "s3" {
   versioning           = each.value.versioning
   public               = each.value.public
   cors_allowed_origins = each.value.cors_allowed_origins
+  cors_allowed_methods = each.value.cors_allowed_methods
 }
 
 # ACM Certificate (when using Route 53)

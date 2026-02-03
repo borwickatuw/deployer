@@ -91,6 +91,7 @@ variable "s3_buckets" {
     versioning           = optional(bool, false)
     public               = optional(bool, false)
     cors_allowed_origins = optional(list(string), [])
+    cors_allowed_methods = optional(list(string), ["GET", "HEAD"])
   }))
   default = {}
 }
