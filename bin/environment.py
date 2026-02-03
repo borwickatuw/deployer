@@ -15,7 +15,7 @@ Usage:
     # Stop an environment (scale ECS to 0, stop RDS)
     python bin/environment.py myapp-staging stop
 
-    # Start an environment (start RDS, restore ECS replicas)
+    # Start an environment (waits for RDS, then scales ECS)
     python bin/environment.py myapp-staging start
 """
 
@@ -203,40 +203,48 @@ def cmd_start(args) -> int:
     def rds_status_callback(status: str) -> None:
         print(f"  RDS status: {status}...")
 
-    # Step 1: Start RDS instance
+    # Step 1: Start RDS instance and wait for it to be available
     print("\n1. Starting RDS instance...")
     rds_status = rds.get_status(rds_id)
     if rds_status:
         if rds_status["status"] == "available":
             print("   RDS instance already running")
-        elif rds_status["status"] == "stopped":
-            if rds.start(rds_id):
-                print("   RDS start initiated...")
-                if args.wait:
-                    print("   Waiting for RDS to become available (this may take 5-10 minutes)...")
+        elif rds_status["status"] == "stopping":
+            print("   RDS is currently stopping, waiting for it to stop first...")
+            if rds.wait_for_status(rds_id, "stopped", status_callback=rds_status_callback):
+                print("   RDS stopped, now starting...")
+                if rds.start(rds_id):
+                    print("   Waiting for RDS to become available...")
                     if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
                         print("   RDS is now available")
                     else:
                         print("   Warning: Timeout waiting for RDS", file=sys.stderr)
+                else:
+                    print("   Warning: Failed to start RDS instance", file=sys.stderr)
+            else:
+                print("   Warning: Timeout waiting for RDS to stop", file=sys.stderr)
+        elif rds_status["status"] == "stopped":
+            if rds.start(rds_id):
+                print("   RDS start initiated...")
+                print("   Waiting for RDS to become available...")
+                if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
+                    print("   RDS is now available")
+                else:
+                    print("   Warning: Timeout waiting for RDS", file=sys.stderr)
             else:
                 print("   Warning: Failed to start RDS instance", file=sys.stderr)
         else:
-            print(f"   RDS in state: {rds_status['status']} - waiting...")
-            if args.wait:
-                if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
-                    print("   RDS is now available")
+            print(f"   RDS in state: {rds_status['status']}, waiting for available...")
+            if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
+                print("   RDS is now available")
+            else:
+                print("   Warning: Timeout waiting for RDS", file=sys.stderr)
     else:
         print("   Warning: Unable to get RDS status", file=sys.stderr)
 
     # Step 2: Scale ECS services back up
     print("\n2. Scaling ECS services...")
     services = ecs.get_services(cluster_name)
-
-    if not args.wait:
-        rds_status = rds.get_status(rds_id)
-        if rds_status and rds_status["status"] != "available":
-            print(f"   Warning: RDS is not yet available ({rds_status['status']})")
-            print("   ECS services may fail health checks until RDS is ready")
 
     for svc in services:
         # Use configured replicas if available, otherwise default to 1
@@ -247,9 +255,7 @@ def cmd_start(args) -> int:
         else:
             print(f"   Scaled {svc['name']} to {target_replicas}")
 
-    print(f"\nEnvironment {args.environment} start initiated.")
-    if not args.wait:
-        print("Note: Use --wait to wait for RDS before scaling ECS services.")
+    print(f"\nEnvironment {args.environment} started.")
     return 0
 
 
@@ -270,10 +276,10 @@ Examples:
   %(prog)s myapp-staging status         Show status of specific environment
   %(prog)s myapp-staging stop           Stop the environment
   %(prog)s myapp-staging start          Start the environment
-  %(prog)s myapp-staging start --wait   Start and wait for RDS before scaling ECS
 
 Notes:
   - Stopping scales ECS to 0 and stops RDS (data preserved)
+  - Starting waits for RDS to be available before scaling ECS
   - ElastiCache and ALB cannot be stopped (only deleted)
   - RDS auto-restarts after 7 days if stopped (AWS limitation)
         """,
@@ -294,12 +300,6 @@ Notes:
         help="Command to run: start, stop, or status",
     )
 
-    # Options
-    parser.add_argument(
-        "--wait", "-w",
-        action="store_true",
-        help="Wait for RDS to become available before scaling ECS (with 'start' command)",
-    )
 
     args = parser.parse_args()
 
