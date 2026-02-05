@@ -11,7 +11,7 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `bin/deploy.py` - Main deployment script (auto-selects AWS profile from config.toml)
 - `bin/init.py` - Initialize new apps: generate deploy.toml and environment directories
 - `bin/tofu.sh` - OpenTofu wrapper (auto-selects AWS profile from config.toml)
-- `bin/ecs-run.py` - Run commands in ECS containers (migrations, shell, etc.)
+- `bin/ecs-run.py` - Run commands in ECS containers (uses [commands] from deploy.toml)
 - `bin/environment.py` - Start/stop staging environments
 - `bin/ops.py` - Production monitoring (status, health, logs, maintenance, ecr, audit)
 - `bin/emergency.py` - Emergency operations that modify production (rollback, scale, snapshot, restore)
@@ -33,8 +33,8 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 # Deployment
 uv run python bin/deploy.py ../app/deploy.toml myapp-staging
 
-# Run commands in containers
-uv run python bin/ecs-run.py manage myapp-staging migrate
+# Run commands in containers (from deploy.toml [commands] section)
+uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
 
 # Production monitoring (read-only)
 uv run python bin/ops.py myapp-production audit    # Run all health/security checks

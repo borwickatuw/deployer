@@ -7,36 +7,25 @@ Usage:
     python bin/ecs-run.py list myapp-staging
 
     # List available commands from deploy.toml
-    python bin/ecs-run.py run myapp-staging --list-commands --deploy-toml ../app/deploy.toml
+    python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
 
     # Run named commands from deploy.toml [commands] section
     python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
     python bin/ecs-run.py run myapp-staging collectstatic --deploy-toml ../app/deploy.toml
 
-    # Run Django management commands (backward compatible, falls back to Django defaults)
-    python bin/ecs-run.py manage myapp-staging migrate
-    python bin/ecs-run.py manage myapp-staging check
-
     # Run arbitrary commands
-    python bin/ecs-run.py exec myapp-staging uv run python -c "print('hi')"
+    python bin/ecs-run.py exec myapp-staging python -c "print('hi')"
 
     # Specify a different service (default: web)
     python bin/ecs-run.py exec myapp-staging -s celery python -c "print('hello')"
-
-    # Create a Django superuser (generates password automatically)
-    python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com
-    python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com -p  # prompt for password
 """
 
 import argparse
-import getpass
 import sys
 from pathlib import Path
 
 from deployer.aws import cloudwatch, ecs
-from deployer.core import generate_temp_password
 from deployer.core.config import (
-    get_manage_command,
     get_run_command,
     load_deploy_toml,
 )
@@ -241,21 +230,20 @@ def cmd_list(args, base_path: Path) -> int:
 
 def cmd_run(args, base_path: Path) -> int:
     """Run a named command from deploy.toml [commands] section."""
-    # Load deploy.toml if specified
-    deploy_toml = None
-    if args.deploy_toml:
-        deploy_toml_path = Path(args.deploy_toml).resolve()
-        try:
-            deploy_toml = load_deploy_toml(deploy_toml_path)
-        except FileNotFoundError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+    # Load deploy.toml (required for run command)
+    if not args.deploy_toml:
+        print("Error: --deploy-toml is required for the run command", file=sys.stderr)
+        return 1
 
-    # Handle --list-commands flag
+    deploy_toml_path = Path(args.deploy_toml).resolve()
+    try:
+        deploy_toml = load_deploy_toml(deploy_toml_path)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    # Handle --list-commands flag (doesn't require environment)
     if args.list_commands:
-        if not deploy_toml:
-            print("Error: --list-commands requires --deploy-toml", file=sys.stderr)
-            return 1
         commands = deploy_toml.get("commands", {})
         if not commands:
             print("No commands defined in [commands] section", file=sys.stderr)
@@ -266,7 +254,11 @@ def cmd_run(args, base_path: Path) -> int:
             print(f"  {name}: {cmd_str}")
         return 0
 
-    # Require command_name when not listing
+    # For running commands, we need environment and command_name
+    if not args.environment:
+        print("Error: environment is required (or use --list-commands)", file=sys.stderr)
+        return 1
+
     if not args.command_name:
         print("Error: command_name is required (or use --list-commands)", file=sys.stderr)
         return 1
@@ -283,50 +275,6 @@ def cmd_run(args, base_path: Path) -> int:
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-
-    return run_ecs_command(
-        cluster_name=cluster_name,
-        service_name=args.service,
-        container_name=args.container,
-        command=command,
-        wait=not args.no_wait,
-        timeout=args.timeout,
-        show_logs=not args.no_logs,
-    )
-
-
-def cmd_manage(args, base_path: Path) -> int:
-    """Run a Django management command (backward compatible).
-
-    Uses [commands].manage from deploy.toml if specified, otherwise falls back
-    to Django defaults (uv run python manage.py).
-    """
-    result = resolve_environment(args.environment)
-    if not result:
-        return 1
-
-    env_path, cluster_name = result
-
-    # Load deploy.toml if specified
-    deploy_toml = None
-    if args.deploy_toml:
-        deploy_toml_path = Path(args.deploy_toml).resolve()
-        try:
-            deploy_toml = load_deploy_toml(deploy_toml_path)
-        except FileNotFoundError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-
-    # Get the first argument as the management command, rest as extra args
-    if not args.command_args:
-        print("Error: No management command specified", file=sys.stderr)
-        print("Example: ecs-run.py manage <env> migrate", file=sys.stderr)
-        return 1
-
-    management_command = args.command_args[0]
-    extra_args = args.command_args[1:] if len(args.command_args) > 1 else None
-
-    command = get_manage_command(deploy_toml, management_command, extra_args)
 
     return run_ecs_command(
         cluster_name=cluster_name,
@@ -362,59 +310,6 @@ def cmd_exec(args, base_path: Path) -> int:
     )
 
 
-def cmd_createsuperuser(args, base_path: Path) -> int:
-    """Create a Django superuser in ECS."""
-    result = resolve_environment(args.environment)
-    if not result:
-        return 1
-
-    env_path, cluster_name = result
-
-    # Handle password
-    print(f"Creating superuser in {args.environment}")
-    print(f"  Email: {args.email}")
-    if args.username:
-        print(f"  Username: {args.username}")
-
-    if args.prompt_password:
-        print()
-        password = getpass.getpass("Password: ")
-        if not password:
-            print("Error: Password is required", file=sys.stderr)
-            return 1
-        password_confirm = getpass.getpass("Password (again): ")
-        if password != password_confirm:
-            print("Error: Passwords do not match", file=sys.stderr)
-            return 1
-    else:
-        password = generate_temp_password()
-        print(f"  Password: {password}")
-
-    print()
-
-    # Build the command
-    command = [
-        "uv", "run", "python", "manage.py", "createsuperuser",
-        "--no-input",
-        "--email", args.email,
-    ]
-    if args.username:
-        command.extend(["--username", args.username])
-
-    environment = [{"name": "DJANGO_SUPERUSER_PASSWORD", "value": password}]
-
-    return run_ecs_command(
-        cluster_name=cluster_name,
-        service_name=args.service,
-        container_name=args.container,
-        command=command,
-        environment=environment,
-        wait=True,
-        timeout=args.timeout,
-        show_logs=True,
-    )
-
-
 # =============================================================================
 # Main
 # =============================================================================
@@ -422,17 +317,11 @@ def cmd_createsuperuser(args, base_path: Path) -> int:
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to a subparser."""
-    parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
     parser.add_argument("-s", "--service", default="web", help="Service name (default: web)")
     parser.add_argument("-c", "--container", help="Container name override (default: first container)")
     parser.add_argument("--no-wait", action="store_true", help="Don't wait for task completion")
     parser.add_argument("--no-logs", action="store_true", help="Don't fetch and display logs after completion")
     parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
-    parser.add_argument(
-        "--deploy-toml",
-        metavar="PATH",
-        help="Path to deploy.toml for [commands] section (optional, falls back to Django defaults)"
-    )
 
 
 def main():
@@ -445,16 +334,13 @@ def main():
         epilog="""
 Examples:
   %(prog)s list myapp-staging
+  %(prog)s run --list-commands --deploy-toml ../app/deploy.toml
   %(prog)s run myapp-staging migrate --deploy-toml ../app/deploy.toml
-  %(prog)s manage myapp-staging check
-  %(prog)s manage myapp-staging migrate
-  %(prog)s exec myapp-staging uv run python -c "print('hello')"
+  %(prog)s exec myapp-staging python -c "print('hello')"
   %(prog)s exec myapp-staging -s celery python -c "print('worker')"
-  %(prog)s createsuperuser myapp-staging --email admin@example.com
 
 The 'run' command uses named commands from deploy.toml's [commands] section.
-The 'manage' command is a Django-specific shortcut (backward compatible).
-The 'createsuperuser' command creates a Django superuser with a generated password.
+Use 'run --list-commands' to see available commands for an application.
         """,
     )
 
@@ -464,16 +350,26 @@ The 'createsuperuser' command creates a Django superuser with a generated passwo
     list_parser = subparsers.add_parser("list", help="List services and containers in an environment")
     list_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
 
-    # run (new generic command)
+    # run
     run_parser = subparsers.add_parser(
         "run",
         help="Run a named command from deploy.toml [commands] section"
     )
-    add_common_args(run_parser)
+    run_parser.add_argument(
+        "--deploy-toml",
+        metavar="PATH",
+        required=True,
+        help="Path to deploy.toml (required)"
+    )
     run_parser.add_argument(
         "--list-commands",
         action="store_true",
         help="List available commands from deploy.toml instead of running one"
+    )
+    run_parser.add_argument(
+        "environment",
+        nargs="?",  # Optional when using --list-commands
+        help="Environment name (e.g., myapp-staging)"
     )
     run_parser.add_argument(
         "command_name",
@@ -485,36 +381,13 @@ The 'createsuperuser' command creates a Django superuser with a generated passwo
         nargs=argparse.REMAINDER,
         help="Additional arguments to pass to the command"
     )
-
-    # manage (backward compatible Django shortcut)
-    manage_parser = subparsers.add_parser(
-        "manage",
-        help="Run Django management command (backward compatible)"
-    )
-    add_common_args(manage_parser)
-    manage_parser.add_argument(
-        "command_args",
-        nargs=argparse.REMAINDER,
-        help="Management command and arguments (e.g., migrate, shell)"
-    )
+    add_common_args(run_parser)
 
     # exec
     exec_parser = subparsers.add_parser("exec", help="Run arbitrary command")
-    add_common_args(exec_parser)
+    exec_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
     exec_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command and arguments")
-
-    # createsuperuser (Django-specific)
-    superuser_parser = subparsers.add_parser(
-        "createsuperuser",
-        help="Create a Django superuser"
-    )
-    superuser_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
-    superuser_parser.add_argument("--email", required=True, help="Email address for the superuser")
-    superuser_parser.add_argument("--username", help="Username (defaults to email)")
-    superuser_parser.add_argument("-p", "--prompt-password", action="store_true", help="Prompt for password (default: generate random)")
-    superuser_parser.add_argument("-s", "--service", default="web", help="Service name (default: web)")
-    superuser_parser.add_argument("-c", "--container", help="Container name override (default: first container)")
-    superuser_parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
+    add_common_args(exec_parser)
 
     args = parser.parse_args()
 
@@ -526,9 +399,7 @@ The 'createsuperuser' command creates a Django superuser with a generated passwo
     commands = {
         "list": cmd_list,
         "run": cmd_run,
-        "manage": cmd_manage,
         "exec": cmd_exec,
-        "createsuperuser": cmd_createsuperuser,
     }
 
     handler = commands.get(args.command)

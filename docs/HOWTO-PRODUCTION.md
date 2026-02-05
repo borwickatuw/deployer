@@ -156,7 +156,7 @@ scaling = {
 
 5. **Run migrations**:
    ```bash
-   uv run python bin/ecs-run.py manage myapp-production migrate
+   uv run python bin/ecs-run.py run myapp-production migrate --deploy-toml ../myapp/deploy.toml
    ```
 
 6. **Verify deployment**:

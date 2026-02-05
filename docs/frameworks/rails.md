@@ -45,11 +45,11 @@ SECRET_KEY_BASE = "ssm:/myapp/${environment}/secret-key-base"
 DATABASE_URL = "ssm:/myapp/${environment}/database-url"
 REDIS_URL = "ssm:/myapp/${environment}/redis-url"
 
-# Framework-agnostic commands
+# Non-interactive commands only (interactive commands like console can't run via ecs-run.py)
 [commands]
 migrate = ["bundle", "exec", "rake", "db:migrate"]
-console = ["bundle", "exec", "rails", "console"]
-dbconsole = ["bundle", "exec", "rails", "dbconsole"]
+assets = ["bundle", "exec", "rake", "assets:precompile"]
+db_seed = ["bundle", "exec", "rake", "db:seed"]
 
 [migrations]
 enabled = true
@@ -120,11 +120,17 @@ CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-p", "3000"]
 With the `[commands]` section configured, use the `run` subcommand:
 
 ```bash
+# List available commands
+python bin/ecs-run.py run --list-commands --deploy-toml ../myapp/deploy.toml
+
 # Run migrations
 python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../myapp/deploy.toml
+```
 
-# Open Rails console (interactive - use --no-wait)
-python bin/ecs-run.py run myapp-staging console --deploy-toml ../myapp/deploy.toml --no-wait
+**Note:** Only non-interactive commands are supported via `ecs-run.py run`. For interactive commands like Rails console, use `ecs-run.py exec`:
+
+```bash
+python bin/ecs-run.py exec myapp-staging bundle exec rails console
 ```
 
 ## Common Issues

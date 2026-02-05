@@ -290,14 +290,26 @@ aws logs filter-log-events \
 
 ## Post-Deployment Tasks
 
-### Create Admin User (Django)
+### Run Commands in ECS
+
+Use `ecs-run.py run` to execute commands defined in your deploy.toml's `[commands]` section:
 
 ```bash
-# Creates superuser with auto-generated password
-uv run python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com
+# List available commands
+uv run python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
 
-# Or prompt for password
-uv run python bin/ecs-run.py createsuperuser myapp-staging --email admin@example.com -p
+# Run migrations
+uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
+
+# Run Django deployment checks
+uv run python bin/ecs-run.py run myapp-staging check --deploy-toml ../app/deploy.toml
+```
+
+**Note:** Only non-interactive commands can be run via ecs-run.py. For interactive commands (shell, createsuperuser), use `ecs-run.py exec` with ECS Exec enabled:
+
+```bash
+# Run arbitrary command (requires ECS Exec)
+uv run python bin/ecs-run.py exec myapp-staging python manage.py createsuperuser --email admin@example.com
 ```
 
 ### Create Cognito User (if using authentication)

@@ -220,7 +220,7 @@ DB_PASSWORD = "secretsmanager:myapp-db:password"
 
 ## 2026-01-24: Framework-Agnostic Commands via [commands] Section
 
-**Decision:** Remove Django assumptions by adding a `[commands]` section to deploy.toml for framework-specific CLI commands.
+**Decision:** Remove Django assumptions by requiring a `[commands]` section in deploy.toml for framework-specific CLI commands.
 
 **Alternatives considered:**
 - Keep Django-specific `manage` command, add separate commands for other frameworks
@@ -230,21 +230,33 @@ DB_PASSWORD = "secretsmanager:myapp-db:password"
 **Reasoning:**
 - **Explicit over implicit**: Configuration-driven commands are clearer than auto-detection magic.
 - **Framework flexibility**: Works for Django, Rails, Node.js, or any framework with CLI commands.
-- **Backward compatible**: If no `[commands]` section exists, fall back to Django defaults.
+- **No magic defaults**: Each app explicitly declares its commands rather than relying on Django defaults.
 - **Simple model**: Named commands map to arrays of command arguments - no complex DSL.
+- **Non-interactive only**: Commands run without a TTY, so only non-interactive commands are supported.
 
 **Example usage:**
 
 ```toml
-# Django
+# Django (non-interactive commands only)
 [commands]
 migrate = ["python", "manage.py", "migrate"]
-shell = ["python", "manage.py", "shell"]
+collectstatic = ["python", "manage.py", "collectstatic", "--noinput"]
+check = ["python", "manage.py", "check", "--deploy"]
 
 # Rails
 [commands]
 migrate = ["bundle", "exec", "rake", "db:migrate"]
-console = ["bundle", "exec", "rails", "console"]
+assets = ["bundle", "exec", "rake", "assets:precompile"]
+```
+
+**ecs-run.py usage:**
+
+```bash
+# List available commands
+python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
+
+# Run a command
+python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
 ```
 
 ---

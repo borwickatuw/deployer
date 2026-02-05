@@ -28,8 +28,11 @@ uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
 # View logs
 aws logs tail /ecs/myapp-staging --follow
 
-# Run Django management commands
-uv run python bin/ecs-run.py manage myapp-staging migrate
+# Run commands from deploy.toml [commands] section
+uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml /path/to/deploy.toml
+
+# List available commands
+uv run python bin/ecs-run.py run --list-commands --deploy-toml /path/to/deploy.toml
 ```
 
 ### Required OpenTofu Outputs
@@ -418,22 +421,24 @@ SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
 
 ### `[commands]`
 
-**Optional.** Framework-agnostic command definitions for use with `ecs-run.py run`.
+**Required for ecs-run.py.** Framework-agnostic command definitions for use with `ecs-run.py run`.
 
-This section defines named commands that can be run in ECS containers, making the deployer framework-agnostic. If not specified, Django defaults are used for backward compatibility.
+This section defines named commands that can be run in ECS containers, making the deployer framework-agnostic.
 
 | Key | Type | Description |
 |-----|------|-------------|
 | `<name>` | array | Command and arguments as a list of strings |
+
+**Important:** Only include non-interactive commands. Interactive commands (shell, dbshell, createsuperuser) cannot run via ecs-run.py since there's no TTY attached.
 
 **Example (Django):**
 
 ```toml
 [commands]
 migrate = ["python", "manage.py", "migrate"]
-shell = ["python", "manage.py", "shell"]
-createsuperuser = ["python", "manage.py", "createsuperuser"]
 collectstatic = ["python", "manage.py", "collectstatic", "--noinput"]
+check = ["python", "manage.py", "check", "--deploy"]
+showmigrations = ["python", "manage.py", "showmigrations"]
 ```
 
 **Example (Rails):**
@@ -441,8 +446,7 @@ collectstatic = ["python", "manage.py", "collectstatic", "--noinput"]
 ```toml
 [commands]
 migrate = ["bundle", "exec", "rake", "db:migrate"]
-console = ["bundle", "exec", "rails", "console"]
-dbconsole = ["bundle", "exec", "rails", "dbconsole"]
+assets = ["bundle", "exec", "rake", "assets:precompile"]
 ```
 
 **Example (Node.js):**
@@ -456,11 +460,11 @@ seed = ["npm", "run", "seed"]
 **Usage:**
 
 ```bash
+# List available commands from deploy.toml
+python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
+
 # Run a named command
 python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
-
-# Django 'manage' shortcut (backward compatible, falls back to defaults)
-python bin/ecs-run.py manage myapp-staging migrate
 ```
 
 ### `[migrations]`

@@ -51,11 +51,11 @@ DEBUG = "false"
 API_KEY = "ssm:/myapp/${environment}/api-key"
 DATABASE_URL = "ssm:/myapp/${environment}/database-url"
 
-# Custom commands for your framework
+# Non-interactive commands only (interactive commands can't run via ecs-run.py)
 [commands]
 migrate = ["./run-migrations.sh"]
-console = ["./console.sh"]
 setup = ["./setup.sh"]
+healthcheck = ["./healthcheck.sh"]
 
 [migrations]
 enabled = true
@@ -97,14 +97,14 @@ Body: "OK" (or JSON: {"status": "healthy"})
 
 ## Custom Commands
 
-The `[commands]` section lets you define named commands for your framework:
+The `[commands]` section lets you define named non-interactive commands for your framework:
 
 ```toml
 [commands]
 # Node.js example
 migrate = ["npm", "run", "migrate"]
 seed = ["npm", "run", "seed"]
-console = ["node", "--experimental-repl-await", "-e", "require('./console')"]
+check = ["npm", "run", "lint"]
 
 # Go example
 migrate = ["./app", "migrate"]
@@ -112,15 +112,22 @@ seed = ["./app", "seed"]
 
 # Generic shell scripts
 migrate = ["./bin/migrate.sh"]
-console = ["./bin/console.sh"]
+healthcheck = ["./bin/healthcheck.sh"]
 ```
+
+**Note:** Only non-interactive commands are supported. Interactive commands cannot run via ecs-run.py since there's no TTY attached.
 
 Run commands with:
 
 ```bash
+# List available commands
+python bin/ecs-run.py run --list-commands --deploy-toml ../myapp/deploy.toml
+
+# Run a command
 python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../myapp/deploy.toml
-python bin/ecs-run.py run myapp-staging console --deploy-toml ../myapp/deploy.toml
 ```
+
+**Note:** Only non-interactive commands are supported. For interactive commands, use `ecs-run.py exec`.
 
 ## Dockerfile Guidelines
 
