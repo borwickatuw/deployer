@@ -6,9 +6,12 @@ Usage:
     # List services in environment
     python bin/ecs-run.py list myapp-staging
 
+    # List available commands from deploy.toml
+    python bin/ecs-run.py run myapp-staging --list-commands --deploy-toml ../app/deploy.toml
+
     # Run named commands from deploy.toml [commands] section
     python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
-    python bin/ecs-run.py run myapp-staging shell --deploy-toml ../app/deploy.toml
+    python bin/ecs-run.py run myapp-staging collectstatic --deploy-toml ../app/deploy.toml
 
     # Run Django management commands (backward compatible, falls back to Django defaults)
     python bin/ecs-run.py manage myapp-staging migrate
@@ -238,12 +241,6 @@ def cmd_list(args, base_path: Path) -> int:
 
 def cmd_run(args, base_path: Path) -> int:
     """Run a named command from deploy.toml [commands] section."""
-    result = resolve_environment(args.environment)
-    if not result:
-        return 1
-
-    env_path, cluster_name = result
-
     # Load deploy.toml if specified
     deploy_toml = None
     if args.deploy_toml:
@@ -253,6 +250,32 @@ def cmd_run(args, base_path: Path) -> int:
         except FileNotFoundError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
+
+    # Handle --list-commands flag
+    if args.list_commands:
+        if not deploy_toml:
+            print("Error: --list-commands requires --deploy-toml", file=sys.stderr)
+            return 1
+        commands = deploy_toml.get("commands", {})
+        if not commands:
+            print("No commands defined in [commands] section", file=sys.stderr)
+            return 1
+        print("Available commands:")
+        for name, cmd in commands.items():
+            cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+            print(f"  {name}: {cmd_str}")
+        return 0
+
+    # Require command_name when not listing
+    if not args.command_name:
+        print("Error: command_name is required (or use --list-commands)", file=sys.stderr)
+        return 1
+
+    result = resolve_environment(args.environment)
+    if not result:
+        return 1
+
+    env_path, cluster_name = result
 
     # Get the command
     try:
@@ -448,8 +471,14 @@ The 'createsuperuser' command creates a Django superuser with a generated passwo
     )
     add_common_args(run_parser)
     run_parser.add_argument(
+        "--list-commands",
+        action="store_true",
+        help="List available commands from deploy.toml instead of running one"
+    )
+    run_parser.add_argument(
         "command_name",
-        help="Command name defined in [commands] section (e.g., migrate, shell)"
+        nargs="?",  # Optional when using --list-commands
+        help="Command name defined in [commands] section (e.g., migrate, collectstatic)"
     )
     run_parser.add_argument(
         "extra_args",
