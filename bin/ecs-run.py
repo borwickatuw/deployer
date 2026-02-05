@@ -238,6 +238,12 @@ def cmd_list(args, base_path: Path) -> int:
 
 def cmd_run(args, base_path: Path) -> int:
     """Run a named command from deploy.toml [commands] section."""
+    # Handle --list-commands that may have been captured by REMAINDER
+    # (argparse REMAINDER grabs flags that appear after positional args)
+    if hasattr(args, 'extra_args') and '--list-commands' in args.extra_args:
+        args.list_commands = True
+        args.extra_args = [a for a in args.extra_args if a != '--list-commands']
+
     # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
     deploy_toml_path = None
     used_explicit_flag = False
