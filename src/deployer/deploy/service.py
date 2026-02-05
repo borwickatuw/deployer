@@ -171,6 +171,7 @@ def register_task_definition(
     account_id: str,
     dry_run: bool = False,
     env_config: dict | None = None,
+    credential_mode: str = "app",
 ) -> str:
     """Register a new task definition revision.
 
@@ -187,13 +188,16 @@ def register_task_definition(
         account_id: AWS account ID.
         dry_run: If True, only print what would be done.
         env_config: Environment configuration (config.toml, for modules).
+        credential_mode: For database credentials - "app" for runtime services
+            (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
         The task definition ARN.
     """
     task_def = build_task_definition(
         service_name, image_uri, config, service_config, infra_config,
-        app_name, environment, region, account_id, env_config
+        app_name, environment, region, account_id, env_config,
+        credential_mode=credential_mode
     )
 
     if dry_run:
@@ -491,11 +495,12 @@ def start_migrations(
         log_error(f"No image URI for migration service {migration_service} (image: {image_name})")
         return None
 
-    # Register task definition with the new image BEFORE running migrations
-    # This ensures migrations run with the correct image
+    # Register task definition with migrate credentials (DDL + DML)
+    # This ensures migrations have the necessary permissions to create/alter tables
+    # Use a separate task family "migrate" to avoid affecting the service's task definition
     task_def_arn = register_task_definition(
         ecs_client,
-        migration_service,
+        "migrate",  # Use "migrate" as task family name
         image_uri,
         config,
         service_config,
@@ -506,6 +511,7 @@ def start_migrations(
         account_id,
         dry_run,
         env_config,
+        credential_mode="migrate",  # Use migrate credentials (DDL + DML)
     )
 
     if dry_run:
@@ -530,6 +536,7 @@ def start_migrations(
         return None
 
     # Run the migration task using the newly registered task definition
+    # The container name is "migrate" (same as the task family/service name)
     response = ecs_client.run_task(
         cluster=cluster_name,
         taskDefinition=task_def_arn,
@@ -537,7 +544,7 @@ def start_migrations(
         networkConfiguration=network_config,
         overrides={
             "containerOverrides": [{
-                "name": "web",
+                "name": "migrate",  # Container name matches task family
                 "command": command
             }]
         }
@@ -621,11 +628,11 @@ def _display_migration_logs(migration_task: MigrationTask, limit: int = 50) -> N
     # Log group follows ECS convention: /ecs/{app_name}-{environment}
     log_group = f"/ecs/{migration_task.app_name}-{migration_task.environment}"
 
-    # Stream prefix is typically the app name
-    stream_prefix = migration_task.app_name
+    # Stream prefix is "migrate" for migration tasks
+    stream_prefix = "migrate"
 
-    # Container name is typically "web" for migrations
-    container_name = "web"
+    # Container name is "migrate" for migration tasks
+    container_name = "migrate"
 
     print()
     log("Fetching migration logs...")

@@ -561,7 +561,16 @@ scaling = "${tofu:scaling_config}"
 health_check = "${tofu:health_check_config}"
 
 [database]
-url = "${tofu:database_url}"
+host = "${tofu:db_host}"
+port = "${tofu:db_port}"
+name = "${tofu:db_name}"
+credentials = "secretsmanager"
+# App credentials (DML only - for runtime services)
+app_username_secret = "${tofu:db_app_username_secret_arn}"
+app_password_secret = "${tofu:db_app_password_secret_arn}"
+# Migrate credentials (DDL + DML - for migrations only)
+migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
+migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
 
 [redis]
 url = "${tofu:redis_url}"
@@ -636,9 +645,24 @@ Service configuration from OpenTofu.
 
 #### `[database]`
 
+The database module uses a **two-account model** for security:
+- **App credentials**: Used by runtime services. The app user has DML privileges only (SELECT, INSERT, UPDATE, DELETE).
+- **Migrate credentials**: Used by migrations. The migrate user has DDL privileges (CREATE, ALTER, DROP tables).
+
+This reduces blast radius if the application is compromised - attackers cannot drop tables or alter schema.
+
 | Field | Tofu Output | Description |
 |-------|-------------|-------------|
-| `url` | `database_url` | PostgreSQL connection URL |
+| `host` | `db_host` | Database hostname |
+| `port` | `db_port` | Database port (default: 5432) |
+| `name` | `db_name` | Database name |
+| `credentials` | - | Credential source: `secretsmanager` or `ssm` |
+| `app_username_secret` | `db_app_username_secret_arn` | App user username ARN (DML only) |
+| `app_password_secret` | `db_app_password_secret_arn` | App user password ARN |
+| `migrate_username_secret` | `db_migrate_username_secret_arn` | Migrate user username ARN (DDL + DML) |
+| `migrate_password_secret` | `db_migrate_password_secret_arn` | Migrate user password ARN |
+
+When running `ecs-run.py run <env> migrate`, the migrate task definition is used automatically, which has the migrate credentials.
 
 #### `[redis]`
 

@@ -377,6 +377,36 @@ deployer-environments/
 
 ---
 
+## 2026-02-05: Two-Account Database Model for Django Deployments
+
+**Decision:** All Django deployments use two database users:
+- **App user**: DML only (SELECT, INSERT, UPDATE, DELETE) - used by runtime services
+- **Migrate user**: DDL + DML (CREATE, ALTER, DROP, etc.) - used by migrations
+
+This is always enabled - no opt-in flag.
+
+**Alternatives considered:**
+- Single user for all operations (previous approach)
+- Opt-in dual-user mode with backward compatibility
+- Manual user creation documented but not automated
+
+**Reasoning:**
+- **Reduced blast radius**: If the application is compromised, attackers cannot drop tables or alter schema - only corrupt data.
+- **Principle of least privilege**: Runtime services don't need DDL access, so they shouldn't have it.
+- **Always enabled**: No configuration complexity. Every Django deployment follows the same security pattern.
+- **Automated setup**: Lambda function creates users at RDS provisioning time - no manual SQL to run.
+
+**Implementation:**
+- New `modules/db-users/` terraform module with Lambda that creates PostgreSQL users
+- Separate ECS task definition for migrations (`{app}-{env}-migrate`)
+- `ecs-run.py` automatically uses migrate credentials for `migrate` command
+- Service task definitions use app credentials (DML only)
+
+**AWS ECS Constraint:**
+AWS ECS does not support overriding secrets in `containerOverrides` when calling `run-task`. This means we need a **separate task definition** with migrate credentials for migrations, rather than just overriding credentials at runtime.
+
+---
+
 ## Template for New Decisions
 
 ```markdown

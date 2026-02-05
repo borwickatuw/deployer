@@ -116,6 +116,7 @@ def get_environment_variables(
     service_name: str | None = None,
     infra_config: dict | None = None,
     env_config: dict | None = None,
+    credential_mode: str = "app",
 ) -> dict[str, str]:
     """Get merged environment variables for a service.
 
@@ -132,6 +133,8 @@ def get_environment_variables(
         service_name: Optional service name for service-specific overrides.
         infra_config: Infrastructure configuration (legacy, for backward compat).
         env_config: Environment configuration (config.toml, for modules).
+        credential_mode: For database credentials - "app" for runtime services
+            (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
         Merged and resolved environment variables dictionary.
@@ -160,7 +163,9 @@ def get_environment_variables(
         )
 
         # Collect from modules
-        module_output = ModuleRegistry.collect_all(config, env_config, context)
+        module_output = ModuleRegistry.collect_all(
+            config, env_config, context, credential_mode=credential_mode
+        )
 
         # Add module environment variables
         for env_var in module_output.environment:
@@ -266,6 +271,7 @@ def get_secrets(
     service_name: str | None = None,
     infra_config: dict | None = None,
     env_config: dict | None = None,
+    credential_mode: str = "app",
 ) -> list[dict[str, str]]:
     """Get secrets configuration for a service.
 
@@ -282,6 +288,8 @@ def get_secrets(
         service_name: Optional service name (unused, for future extension).
         infra_config: Infrastructure configuration (legacy, for backward compat).
         env_config: Environment configuration (config.toml, for modules).
+        credential_mode: For database credentials - "app" for runtime services
+            (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
         List of secrets in ECS format: [{"name": "X", "valueFrom": "arn:..."}]
@@ -310,7 +318,9 @@ def get_secrets(
         )
 
         # Collect from modules (includes secrets module if names are declared)
-        module_output = ModuleRegistry.collect_all(config, env_config, context)
+        module_output = ModuleRegistry.collect_all(
+            config, env_config, context, credential_mode=credential_mode
+        )
 
         # Add module secrets
         for secret in module_output.secrets:
@@ -409,6 +419,7 @@ def build_task_definition(
     region: str,
     account_id: str,
     env_config: dict | None = None,
+    credential_mode: str = "app",
 ) -> dict:
     """Build an ECS task definition for a service.
 
@@ -423,6 +434,8 @@ def build_task_definition(
         region: AWS region.
         account_id: AWS account ID.
         env_config: Environment configuration (config.toml, for modules).
+        credential_mode: For database credentials - "app" for runtime services
+            (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
         Task definition dictionary ready for register_task_definition.
@@ -439,14 +452,16 @@ def build_task_definition(
     # Add account_id to infra_config for module context
     infra_with_account = {**infra_config, "account_id": account_id}
     env_vars = get_environment_variables(
-        config, environment, region, service_name, infra_with_account, env_config
+        config, environment, region, service_name, infra_with_account, env_config,
+        credential_mode=credential_mode
     )
     task_env = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
     log_debug(f"  Environment variables: {len(env_vars)}")
 
     # Build secrets (modules + legacy)
     secrets = get_secrets(
-        config, environment, region, account_id, service_name, infra_config, env_config
+        config, environment, region, account_id, service_name, infra_config, env_config,
+        credential_mode=credential_mode
     )
     log_debug(f"  Secrets: {len(secrets)}")
 

@@ -44,6 +44,12 @@ path_prefix = "/myapp/staging"
 
 ### Database Module
 
+The database module uses a **two-account model** for security:
+- **App user**: DML only (SELECT, INSERT, UPDATE, DELETE) - used by runtime services
+- **Migrate user**: DDL + DML (CREATE, ALTER, DROP, etc.) - used by migrations
+
+This reduces blast radius if the application is compromised - attackers cannot drop tables or alter schema.
+
 **Application declares** (`deploy.toml`):
 ```toml
 [database]
@@ -56,12 +62,22 @@ type = "postgresql"
 host = "${tofu:db_host}"
 port = "${tofu:db_port}"
 name = "${tofu:db_name}"
-credentials = "secretsmanager"  # or "ssm"
-username_secret = "${tofu:db_username_secret_arn}"
-password_secret = "${tofu:db_password_secret_arn}"
+credentials = "secretsmanager"
+# App credentials (DML only - for runtime services)
+app_username_secret = "${tofu:db_app_username_secret_arn}"
+app_password_secret = "${tofu:db_app_password_secret_arn}"
+# Migrate credentials (DDL + DML - for migrations only)
+migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
+migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
 ```
 
 **Injects**: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME` (secret), `DB_PASSWORD` (secret)
+
+**Credential Selection:**
+- **Runtime services** use app credentials (DML only) via `credential_mode="app"`
+- **Migrations** use migrate credentials (DDL+DML) via `credential_mode="migrate"`
+
+When running `ecs-run.py run <env> migrate`, the migrate task definition is automatically selected, which has the migrate credentials configured
 
 ### Cache Module
 
@@ -164,8 +180,34 @@ Validation errors are shown before deployment starts, helping catch configuratio
 
 | Module | App Declares | Environment Provides | Injects |
 |--------|--------------|---------------------|---------|
-| database | `type = "postgresql"` | host, port, name, credentials | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
+| database | `type = "postgresql"` | host, port, name, credentials (app + migrate) | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
 | cache | `type = "redis"` | url | REDIS_URL |
 | storage | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3_{NAME}_BUCKET |
 | cdn | `type = "cloudfront"` | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
 | secrets | `names = [...]` | provider, path_prefix | Each named secret |
+
+## Terraform Modules
+
+### db-users Module
+
+Creates database users with appropriate privileges using a Lambda function.
+
+**Usage:**
+```hcl
+module "db_users" {
+  source = "../modules/db-users"
+
+  name_prefix          = local.name_prefix
+  db_host              = module.rds.address
+  db_port              = module.rds.port
+  db_name              = var.database_name
+  master_secret_arn    = module.db_secrets.master_secret_arn
+  vpc_id               = var.vpc_id
+  subnet_ids           = var.private_subnet_ids
+  db_security_group_id = module.rds.security_group_id
+}
+```
+
+**Outputs:**
+- `app_username_arn` / `app_password_arn` - For runtime services (DML only)
+- `migrate_username_arn` / `migrate_password_arn` - For migrations (DDL + DML)

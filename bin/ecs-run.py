@@ -109,10 +109,25 @@ def run_ecs_command(
     wait: bool = True,
     timeout: int = 300,
     show_logs: bool = True,
+    use_migrate_credentials: bool = False,
 ) -> int:
     """Run a command in an ECS container.
 
-    Returns exit code (0 on success).
+    Args:
+        cluster_name: Name of the ECS cluster.
+        service_name: Name of the service to get network config from.
+        container_name: Container name to run command in. If None, uses first container.
+        command: Command to execute as list of strings.
+        environment: Optional environment variable overrides.
+        wait: Whether to wait for task completion.
+        timeout: Timeout in seconds for waiting.
+        show_logs: Whether to fetch and display logs after completion.
+        use_migrate_credentials: If True, use the migrate task definition
+            with DDL+DML database credentials instead of the service's task
+            definition. Use this for migration commands.
+
+    Returns:
+        Exit code (0 on success).
     """
     import boto3
 
@@ -122,7 +137,7 @@ def run_ecs_command(
 
     # Get network config and task definition in a single API call
     print(f"Getting service configuration for '{service_name}'...")
-    network_config, task_definition = ecs.get_service_info(
+    network_config, service_task_def = ecs.get_service_info(
         cluster_name, service_name, ecs_client=ecs_client
     )
 
@@ -131,9 +146,21 @@ def run_ecs_command(
         print("Is the service running?", file=sys.stderr)
         return 1
 
-    if not task_definition:
+    if not service_task_def:
         print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
         return 1
+
+    # Determine which task definition to use
+    if use_migrate_credentials:
+        # Use the migrate task definition for migration commands
+        # Derive from service task def: "myapp-staging-web:123" -> "myapp-staging-migrate"
+        task_family = service_task_def.split("/")[-1].rsplit(":", 1)[0]  # "myapp-staging-web"
+        base = task_family.rsplit("-", 1)[0]  # "myapp-staging"
+        task_definition = f"{base}-migrate"
+        container_name = "migrate"  # Migrate task uses "migrate" as container name
+        print(f"Using migrate credentials (DDL+DML) for migration command")
+    else:
+        task_definition = service_task_def
 
     # Get container definitions (cached for later use with logs location)
     containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
@@ -333,6 +360,10 @@ def cmd_run(args, base_path: Path) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    # Use migrate credentials for migration commands
+    # These commands need DDL privileges (CREATE, ALTER, DROP tables)
+    use_migrate = args.command_name in ("migrate", "makemigrations")
+
     return run_ecs_command(
         cluster_name=cluster_name,
         service_name=args.service,
@@ -341,6 +372,7 @@ def cmd_run(args, base_path: Path) -> int:
         wait=not args.no_wait,
         timeout=args.timeout,
         show_logs=not args.no_logs,
+        use_migrate_credentials=use_migrate,
     )
 
 
