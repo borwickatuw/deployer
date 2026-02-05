@@ -128,6 +128,28 @@ module "db_secrets" {
   db_name     = var.db_name
 }
 
+# Database Users (app with DML-only, migrate with DDL+DML)
+#
+# Creates two database users with different privilege levels:
+# - App user: DML only (SELECT, INSERT, UPDATE, DELETE) - for runtime services
+# - Migrate user: DDL + DML (CREATE, ALTER, DROP) - for migrations only
+#
+# This reduces blast radius if the application is compromised.
+module "db_users" {
+  source = "./modules/db-users"
+
+  name_prefix          = local.name_prefix
+  db_host              = module.rds.address
+  db_port              = module.rds.port
+  db_name              = var.db_name
+  master_secret_arn    = module.db_secrets.master_secret_arn
+  vpc_id               = module.vpc.vpc_id
+  subnet_ids           = module.vpc.private_subnet_ids
+  db_security_group_id = module.rds.security_group_id
+
+  depends_on = [module.rds, module.db_secrets]
+}
+
 # ElastiCache Redis (optional)
 module "elasticache" {
   source = "./modules/elasticache"

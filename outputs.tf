@@ -47,13 +47,35 @@ output "db_secret_arn" {
 }
 
 output "db_password_secret_arn" {
-  description = "ARN for database password (for ECS secrets)"
+  description = "DEPRECATED: ARN for master database password (use db_app_password_secret_arn instead)"
   value       = module.db_secrets.password_arn
 }
 
 output "db_username_secret_arn" {
-  description = "ARN for database username (for ECS secrets)"
+  description = "DEPRECATED: ARN for master database username (use db_app_username_secret_arn instead)"
   value       = module.db_secrets.username_arn
+}
+
+# App credentials (DML only - for runtime services)
+output "db_app_username_secret_arn" {
+  description = "ARN for app database username (DML only, for runtime services)"
+  value       = module.db_users.app_username_arn
+}
+
+output "db_app_password_secret_arn" {
+  description = "ARN for app database password (DML only, for runtime services)"
+  value       = module.db_users.app_password_arn
+}
+
+# Migrate credentials (DDL + DML - for migrations only)
+output "db_migrate_username_secret_arn" {
+  description = "ARN for migrate database username (DDL + DML, for migrations)"
+  value       = module.db_users.migrate_username_arn
+}
+
+output "db_migrate_password_secret_arn" {
+  description = "ARN for migrate database password (DDL + DML, for migrations)"
+  value       = module.db_users.migrate_password_arn
 }
 
 output "db_host" {
@@ -64,6 +86,11 @@ output "db_host" {
 output "db_port" {
   description = "Database port"
   value       = module.rds.port
+}
+
+output "rds_security_group_id" {
+  description = "Security group ID for the RDS instance"
+  value       = module.rds.security_group_id
 }
 
 output "redis_endpoint" {
