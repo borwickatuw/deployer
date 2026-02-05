@@ -92,3 +92,13 @@ To add a new project:
 2. Run `AWS_PROFILE=admin tofu apply`
 
 For multi-account setups, see [MULTIPLE-AWS-ACCOUNTS.md](docs/MULTIPLE-AWS-ACCOUNTS.md).
+
+## Cross-Repository Ideas
+
+When you discover a pattern or practice that would benefit other repositories, capture it:
+
+```bash
+claude-idea deployer "Description of the idea"
+```
+
+Ideas are collected in `~/code/claude-meta/docs/IDEAS.md` for cross-project review.
