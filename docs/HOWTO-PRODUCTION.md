@@ -136,8 +136,8 @@ scaling = {
    # Check environment status (ECS services, RDS)
    uv run python bin/environment.py status myapp-production
 
-   # Or use emergency.py for more detail (task definitions, snapshots)
-   uv run python bin/emergency.py myapp-production status
+   # Or use ops.py for more detail (task definitions, snapshots)
+   uv run python bin/ops.py myapp-production status
 
    # Check ElastiCache
    aws elasticache describe-cache-clusters --cache-cluster-id myapp-production-cache \
@@ -162,10 +162,10 @@ scaling = {
 6. **Verify deployment**:
    ```bash
    # Check ECS services, task definitions, and RDS status
-   uv run python bin/emergency.py myapp-production status
+   uv run python bin/ops.py myapp-production status
 
    # Check ALB target health
-   uv run python bin/emergency.py myapp-production health
+   uv run python bin/ops.py myapp-production health
    ```
 
 ---
@@ -176,7 +176,7 @@ scaling = {
 
 | Task | Command/Action |
 |------|----------------|
-| Run full audit | `uv run python bin/emergency.py myapp-production audit` |
+| Run full audit | `uv run python bin/ops.py myapp-production audit` |
 | Review CloudWatch alarms | AWS Console > CloudWatch > Alarms > In alarm |
 | Check for OOM kills | `uv run python bin/capacity-report.py myapp-production --days 1` |
 
@@ -187,7 +187,7 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 | Task | Description |
 |------|-------------|
 | Run capacity report | `uv run python bin/capacity-report.py myapp-production --days 7` |
-| Check RDS/snapshots status | `uv run python bin/emergency.py myapp-production status` (shows recent snapshots) |
+| Check RDS/snapshots status | `uv run python bin/ops.py myapp-production status` (shows recent snapshots) |
 | Review WAF blocked requests | AWS Console > WAF > Web ACLs > Sampled requests |
 | Check ECR image count | `aws ecr describe-images --repository-name myapp-production-web --query 'length(imageDetails)'` |
 
@@ -198,7 +198,7 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 | Test RDS backup restore | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing) |
 | Review CloudWatch Logs costs | AWS Console > Cost Explorer > Filter by CloudWatch |
 | Apply capacity recommendations | Review `capacity-report.py` output and update `terraform.tfvars` |
-| Check pending maintenance | `uv run python bin/emergency.py myapp-production maintenance` |
+| Check pending maintenance | `uv run python bin/ops.py myapp-production maintenance` |
 
 ### Quarterly
 
@@ -227,10 +227,10 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 **Maintenance commands**:
 ```bash
 # Check vulnerability findings (CRITICAL/HIGH) for all repositories
-uv run python bin/emergency.py myapp-production ecr
+uv run python bin/ops.py myapp-production ecr
 
 # Detailed findings with CVE names
-uv run python bin/emergency.py myapp-production ecr --verbose
+uv run python bin/ops.py myapp-production ecr --verbose
 ```
 
 <details>
@@ -338,7 +338,7 @@ aws elasticache describe-replication-groups \
 **Maintenance commands**:
 ```bash
 # Check target health
-uv run python bin/emergency.py myapp-production health
+uv run python bin/ops.py myapp-production health
 ```
 
 <details>
@@ -518,29 +518,37 @@ fields @timestamp, @message
 
 ## Emergency Procedures
 
-The `bin/emergency.py` tool provides safe abstractions for common emergency procedures with automatic checkpointing and audit logging. All actions are logged to `local/emergency.log`.
+Production operations are split into two tools:
+- **`bin/ops.py`** - Read-only monitoring commands (safe to run anytime)
+- **`bin/emergency.py`** - Commands that modify production state (use with care)
+
+All emergency actions are logged to `local/emergency.log`.
 
 ### Quick Reference
 
+**Monitoring (read-only - ops.py):**
 ```bash
 # Run full audit (status, health, logs, maintenance, ECR vulnerabilities)
-uv run python bin/emergency.py myapp-production audit
+uv run python bin/ops.py myapp-production audit
 
 # View current state (services, task definitions, RDS, snapshots)
-uv run python bin/emergency.py myapp-production status
+uv run python bin/ops.py myapp-production status
 
 # Check ALB target health
-uv run python bin/emergency.py myapp-production health
+uv run python bin/ops.py myapp-production health
 
 # Scan recent logs for errors
-uv run python bin/emergency.py myapp-production logs --minutes 60
+uv run python bin/ops.py myapp-production logs --minutes 60
 
 # Check pending maintenance (RDS, ElastiCache)
-uv run python bin/emergency.py myapp-production maintenance
+uv run python bin/ops.py myapp-production maintenance
 
 # Check ECR vulnerability findings
-uv run python bin/emergency.py myapp-production ecr
+uv run python bin/ops.py myapp-production ecr
+```
 
+**Emergency operations (modifies production - emergency.py):**
+```bash
 # Roll back to previous task definition (creates checkpoint first)
 uv run python bin/emergency.py myapp-production rollback --service web
 
@@ -569,7 +577,7 @@ If a deployment causes issues, roll back to a previous task definition:
 
 ```bash
 # View current state and recent revisions
-uv run python bin/emergency.py myapp-production status
+uv run python bin/ops.py myapp-production status
 
 # Interactive rollback (shows services, then revisions, prompts for selection)
 uv run python bin/emergency.py myapp-production rollback
@@ -723,7 +731,7 @@ Monthly procedure to verify backups are restorable:
 
 ```bash
 # 1. View available snapshots
-uv run python bin/emergency.py myapp-production status
+uv run python bin/ops.py myapp-production status
 # Look at the "Recent Snapshots" section
 
 # 2. Restore from a snapshot (creates myapp-production-db-restore instance)
