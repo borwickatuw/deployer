@@ -259,11 +259,16 @@ def cmd_run(args, base_path: Path) -> int:
         return 1
 
     if not deploy_toml_path:
-        print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
-        print(f"\nTo link this environment to its deploy.toml:", file=sys.stderr)
-        print(f"  python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
-        print(f"\nOr specify --deploy-toml explicitly:", file=sys.stderr)
-        print(f"  ecs-run.py run {args.environment} <command> --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+        if not args.environment:
+            print("Error: environment is required", file=sys.stderr)
+            print("\nUsage: ecs-run.py run <environment> <command>", file=sys.stderr)
+            print("       ecs-run.py run <environment> --list-commands", file=sys.stderr)
+        else:
+            print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
+            print(f"\nTo link this environment to its deploy.toml:", file=sys.stderr)
+            print(f"  python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
+            print(f"\nOr specify --deploy-toml explicitly:", file=sys.stderr)
+            print(f"  ecs-run.py run {args.environment} <command> --deploy-toml /path/to/deploy.toml", file=sys.stderr)
         return 1
 
     # Load deploy.toml
