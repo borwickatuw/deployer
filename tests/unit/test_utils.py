@@ -138,8 +138,11 @@ class TestGetStagingEnvironments:
     def test_find_staging_environments(self, tmp_path):
         """Test finding staging environment directories."""
         (tmp_path / "app-staging").mkdir()
+        (tmp_path / "app-staging" / "config.toml").write_text("")
         (tmp_path / "other-staging").mkdir()
+        (tmp_path / "other-staging" / "config.toml").write_text("")
         (tmp_path / "production").mkdir()
+        (tmp_path / "production" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 
@@ -164,8 +167,11 @@ class TestGetStagingEnvironments:
     def test_results_are_sorted(self, tmp_path):
         """Test that results are returned in sorted order."""
         (tmp_path / "z-staging").mkdir()
+        (tmp_path / "z-staging" / "config.toml").write_text("")
         (tmp_path / "a-staging").mkdir()
+        (tmp_path / "a-staging" / "config.toml").write_text("")
         (tmp_path / "m-staging").mkdir()
+        (tmp_path / "m-staging" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 
@@ -174,6 +180,7 @@ class TestGetStagingEnvironments:
     def test_only_directories(self, tmp_path):
         """Test that only directories are returned, not files."""
         (tmp_path / "real-staging").mkdir()
+        (tmp_path / "real-staging" / "config.toml").write_text("")
         (tmp_path / "fake-staging.txt").write_text("not a dir")
 
         result = get_staging_environments(tmp_path)
@@ -183,8 +190,11 @@ class TestGetStagingEnvironments:
     def test_staging_in_middle_not_matched(self, tmp_path):
         """Test that 'staging' in middle of name is not matched."""
         (tmp_path / "staging-backup").mkdir()
+        (tmp_path / "staging-backup" / "config.toml").write_text("")
         (tmp_path / "my-staging-test").mkdir()
+        (tmp_path / "my-staging-test" / "config.toml").write_text("")
         (tmp_path / "real-staging").mkdir()
+        (tmp_path / "real-staging" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 
@@ -195,8 +205,11 @@ class TestGetStagingEnvironments:
     def test_multi_hyphen_app_names(self, tmp_path):
         """Test that multi-hyphen app names work correctly."""
         (tmp_path / "my-cool-app-staging").mkdir()
+        (tmp_path / "my-cool-app-staging" / "config.toml").write_text("")
         (tmp_path / "api-v2-staging").mkdir()
+        (tmp_path / "api-v2-staging" / "config.toml").write_text("")
         (tmp_path / "simple-staging").mkdir()
+        (tmp_path / "simple-staging" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 

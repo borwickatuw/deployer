@@ -45,12 +45,12 @@ from datetime import datetime
 from pathlib import Path
 
 from deployer.aws import ssm
-from deployer.core.secrets import (
+from deployer.core.ssm_secrets import (
     get_parameter_path,
     get_path_prefix,
     get_secrets_from_deploy_toml,
 )
-from deployer.core.secrets import parse_environment as _parse_environment
+from deployer.core.ssm_secrets import parse_environment as _parse_environment
 from deployer.utils import configure_aws_profile, configure_aws_profile_for_environment
 
 

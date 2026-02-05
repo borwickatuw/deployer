@@ -68,8 +68,11 @@ class TestGetStagingEnvironments:
         from deployer.utils import get_staging_environments
 
         (tmp_path / "myapp-staging").mkdir()
+        (tmp_path / "myapp-staging" / "config.toml").write_text("")
         (tmp_path / "other-staging").mkdir()
+        (tmp_path / "other-staging" / "config.toml").write_text("")
         (tmp_path / "production").mkdir()
+        (tmp_path / "production" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 
@@ -90,6 +93,7 @@ class TestGetStagingEnvironments:
         from deployer.utils import get_staging_environments
 
         (tmp_path / "production").mkdir()
+        (tmp_path / "production" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
         assert result == []
@@ -99,8 +103,11 @@ class TestGetStagingEnvironments:
         from deployer.utils import get_staging_environments
 
         (tmp_path / "z-staging").mkdir()
+        (tmp_path / "z-staging" / "config.toml").write_text("")
         (tmp_path / "a-staging").mkdir()
+        (tmp_path / "a-staging" / "config.toml").write_text("")
         (tmp_path / "m-staging").mkdir()
+        (tmp_path / "m-staging" / "config.toml").write_text("")
 
         result = get_staging_environments(tmp_path)
 
@@ -239,7 +246,9 @@ class TestEnvironmentGetAllEnvironments:
     def test_function_exists_and_works(self, tmp_path):
         """Verify the function exists in environment.py and works."""
         (tmp_path / "test-staging").mkdir()
+        (tmp_path / "test-staging" / "config.toml").write_text("")
         (tmp_path / "test-production").mkdir()
+        (tmp_path / "test-production" / "config.toml").write_text("")
 
         result = env_mgr.get_all_environments(tmp_path)
 

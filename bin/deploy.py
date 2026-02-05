@@ -44,7 +44,7 @@ from deployer.core.config import (
     load_environment_config,
     validate_environment_config,
 )
-from deployer.core.secrets import (
+from deployer.core.ssm_secrets import (
     check_secrets_exist,
     format_missing_secrets_error,
 )

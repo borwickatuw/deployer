@@ -39,7 +39,7 @@ from .config import (
     load_environment_config,
 )
 from .deploy import topological_sort
-from .secrets import (
+from .ssm_secrets import (
     check_secrets_exist,
     format_missing_secrets_error,
     get_parameter_path,
