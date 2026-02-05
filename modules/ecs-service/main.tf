@@ -11,7 +11,7 @@ data "aws_region" "current" {}
 
 resource "aws_cloudwatch_log_group" "main" {
   name              = var.log_group_name
-  retention_in_days = 30
+  retention_in_days = var.log_retention_days
 
   tags = {
     Name = "${var.name_prefix}-${var.service_name}-logs"
