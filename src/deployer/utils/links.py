@@ -94,6 +94,37 @@ def set_linked_deploy_toml(environment: str, deploy_toml_path: Path) -> None:
         tomli_w.dump(links, f)
 
 
+def unlink_deploy_toml(environment: str) -> bool:
+    """Remove the link for an environment.
+
+    Args:
+        environment: Environment name (e.g., 'myapp-staging').
+
+    Returns:
+        True if link was removed, False if it didn't exist.
+    """
+    links_file = get_links_file()
+    if not links_file.exists():
+        return False
+
+    try:
+        with open(links_file, "rb") as f:
+            links = tomllib.load(f)
+    except Exception:
+        return False
+
+    if environment not in links:
+        return False
+
+    del links[environment]
+
+    # Write back
+    with open(links_file, "wb") as f:
+        tomli_w.dump(links, f)
+
+    return True
+
+
 def get_all_links() -> dict[str, str]:
     """Get all environment to deploy.toml links.
 

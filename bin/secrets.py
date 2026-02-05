@@ -51,7 +51,11 @@ from deployer.core.ssm_secrets import (
     get_secrets_from_deploy_toml,
 )
 from deployer.core.ssm_secrets import parse_environment as _parse_environment
-from deployer.utils import configure_aws_profile, configure_aws_profile_for_environment
+from deployer.utils import (
+    configure_aws_profile,
+    configure_aws_profile_for_environment,
+    get_linked_deploy_toml,
+)
 
 
 def parse_environment(env_name: str) -> tuple[str, str]:
@@ -92,10 +96,32 @@ def generate_random_secret(length: int = 32) -> str:
 
 def cmd_check(args) -> int:
     """Check which secrets from deploy.toml are missing in SSM, and which SSM secrets are unused."""
-    deploy_toml_path = Path(args.deploy_toml)
+    # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
+    deploy_toml_path = None
+    used_explicit_flag = False
+
+    if args.deploy_toml:
+        deploy_toml_path = Path(args.deploy_toml).expanduser().resolve()
+        used_explicit_flag = True
+    else:
+        linked_path = get_linked_deploy_toml(args.environment)
+        if linked_path:
+            deploy_toml_path = linked_path
+            print(f"Using linked deploy.toml: {deploy_toml_path}")
+        else:
+            print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
+            print(f"\nTo link: python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
+            print(f"Or specify: secrets.py check {args.environment} --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+            return 1
+
     if not deploy_toml_path.exists():
         print(f"Error: File not found: {deploy_toml_path}", file=sys.stderr)
         return 1
+
+    # Print tip if --deploy-toml was explicitly provided
+    if used_explicit_flag:
+        print(f"Tip: Run 'python bin/link-environments.py {args.environment} {deploy_toml_path}'")
+        print(f"     to check with just: secrets.py check {args.environment}\n")
 
     # Parse environment name
     project, environment = parse_environment(args.environment)
@@ -342,7 +368,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s check ../app/deploy.toml myapp-staging  Check which secrets are missing
+  %(prog)s check myapp-staging                     Check which secrets are missing (uses linked deploy.toml)
+  %(prog)s check myapp-staging --deploy-toml ../app/deploy.toml
   %(prog)s put myapp-staging SECRET_KEY            Set a secret (prompts or random)
   %(prog)s put myapp-staging SECRET_KEY --random   Generate random 32-char value
   %(prog)s put myapp-staging SECRET_KEY -r 64      Generate random 64-char value
@@ -366,8 +393,12 @@ In deploy.toml, reference secrets using:
 
     # check
     check_parser = subparsers.add_parser("check", help="Check for missing or extra secrets")
-    check_parser.add_argument("deploy_toml", help="Path to deploy.toml file")
     check_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
+    check_parser.add_argument(
+        "--deploy-toml",
+        metavar="PATH",
+        help="Path to deploy.toml (optional if environment is linked)"
+    )
 
     # put
     put_parser = subparsers.add_parser("put", help="Create or update a secret")

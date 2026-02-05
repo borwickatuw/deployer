@@ -20,6 +20,7 @@ from .links import (
     get_linked_deploy_toml,
     get_links_file,
     set_linked_deploy_toml,
+    unlink_deploy_toml,
 )
 from .logging import (
     is_verbose,
@@ -67,5 +68,6 @@ __all__ = [
     "run_command",
     "set_linked_deploy_toml",
     "set_verbose",
+    "unlink_deploy_toml",
     "validate_environment_deployed",
 ]

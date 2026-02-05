@@ -66,6 +66,7 @@ from deployer.utils import (
     configure_aws_profile_for_environment,
     get_environment_path,
     get_environments_dir,
+    get_linked_deploy_toml,
     log,
     log_debug,
     log_error,
@@ -921,18 +922,24 @@ def main():
         description="Deploy an application to AWS ECS using a TOML configuration file.",
         epilog="""
 Examples:
-  python deploy.py ~/code/myapp/deploy.toml myapp-staging
-  python deploy.py ~/code/myapp/deploy.toml myapp-staging --dry-run
-  python deploy.py ../app/deploy.toml myapp-production --timing-output timing.json
+  python deploy.py myapp-staging                     (uses linked deploy.toml)
+  python deploy.py myapp-staging --dry-run
+  python deploy.py myapp-staging --deploy-toml ~/code/myapp/deploy.toml
   python deploy.py audit ~/code/myapp  (standalone audit)
   python deploy.py speed-test ~/code/myapp/deploy.toml myapp-staging  (visibility test)
+
+Link environments to deploy.toml with: python bin/link-environments.py <env> <path>
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("config", help="Path to the application's deploy.toml file")
     parser.add_argument(
         "environment",
         help="Environment name (e.g., myapp-staging, myapp-production)"
+    )
+    parser.add_argument(
+        "--deploy-toml",
+        metavar="PATH",
+        help="Path to deploy.toml (optional if environment is linked)"
     )
     parser.add_argument(
         "--dry-run",
@@ -991,17 +998,42 @@ Examples:
     if args.verbose:
         set_verbose(True)
 
+    # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
+    environment = args.environment
+    config_path = None
+    used_explicit_flag = False
+
+    if args.deploy_toml:
+        # User provided --deploy-toml explicitly
+        config_path = Path(args.deploy_toml).expanduser().resolve()
+        used_explicit_flag = True
+    else:
+        # Try to look up from links
+        linked_path = get_linked_deploy_toml(environment)
+        if linked_path:
+            config_path = linked_path
+            log(f"Using linked deploy.toml: {config_path}")
+        else:
+            log_error(f"No deploy.toml linked for '{environment}'")
+            log_error(f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml")
+            log_error(f"Or specify: deploy.py {environment} --deploy-toml /path/to/deploy.toml")
+            sys.exit(1)
+
+    # Print tip if --deploy-toml was explicitly provided
+    if used_explicit_flag:
+        print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
+        print(f"     to deploy with just: deploy.py {environment}\n")
+
     # Configure AWS profile before any boto3 clients are created
     # Uses environment-specific profile from config.toml if available
     try:
-        configure_aws_profile_for_environment("deploy", args.environment, validate=True)
+        configure_aws_profile_for_environment("deploy", environment, validate=True)
     except RuntimeError as e:
         log_error(str(e))
         sys.exit(1)
     print()
 
-    # Validate config file
-    config_path = Path(args.config)
+    # Validate config file (config_path already resolved above)
     if config_path.is_dir():
         log_error(f"Config path is a directory, expected a .toml file: {config_path}")
         sys.exit(1)
@@ -1013,7 +1045,7 @@ Examples:
         sys.exit(1)
 
     # Validate environment directory exists
-    env_path = get_environments_dir() / args.environment
+    env_path = get_environments_dir() / environment
     if not env_path.exists():
         log_error(f"Environment directory not found: {env_path}")
         sys.exit(1)
@@ -1044,19 +1076,14 @@ Examples:
 
     # Derive environment type (staging/production) from env name
     try:
-        environment_type = derive_environment_from_env_name(args.environment)
+        environment_type = derive_environment_from_env_name(environment)
         log(f"Environment type: {environment_type}")
     except ValueError as e:
         log_error(str(e))
         sys.exit(1)
     print()
 
-    if not os.path.exists(args.config):
-        log_error(f"Config file not found: {args.config}")
-        sys.exit(1)
-
     # Run audit check unless --ignore-audit is set
-    config_path = Path(args.config).resolve()
     project_dir = config_path.parent
 
     if not args.ignore_audit:
@@ -1098,7 +1125,7 @@ Examples:
                 log_debug(f"Images to check: {list(images.keys())}")
                 missing_repos = validate_ecr_repositories(ecr_client, deploy_config, ecr_prefix)
                 if missing_repos:
-                    log_error(format_missing_ecr_error(missing_repos, args.environment))
+                    log_error(format_missing_ecr_error(missing_repos, environment))
                     sys.exit(1)
                 else:
                     image_count = len([
@@ -1116,11 +1143,11 @@ Examples:
         log("Checking SSM secrets...")
         try:
             missing, present = check_secrets_exist(
-                deploy_config, environment_type, args.environment, env_config
+                deploy_config, environment_type, environment, env_config
             )
 
             if missing:
-                log_error(format_missing_secrets_error(missing, args.environment))
+                log_error(format_missing_secrets_error(missing, environment))
                 sys.exit(1)
             elif present:
                 log_success(f"All {len(present)} secret(s) present")
@@ -1160,7 +1187,7 @@ Examples:
 
     try:
         deployer = Deployer(
-            args.config,
+            config_path,
             environment_type,
             env_config,
             dry_run=args.dry_run,

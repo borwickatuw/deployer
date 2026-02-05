@@ -21,8 +21,10 @@ from pathlib import Path
 
 from deployer.utils import (
     get_all_links,
+    get_linked_deploy_toml,
     get_links_file,
     set_linked_deploy_toml,
+    unlink_deploy_toml,
     validate_environment_deployed,
 )
 
@@ -86,6 +88,24 @@ def cmd_show_file(args) -> int:
     return 0
 
 
+def cmd_unlink(args) -> int:
+    """Remove link for an environment."""
+    environment = args.environment
+
+    # Show current link before removing
+    current = get_linked_deploy_toml(environment)
+    if not current:
+        print(f"No link found for '{environment}'", file=sys.stderr)
+        return 1
+
+    if unlink_deploy_toml(environment):
+        print(f"Unlinked: {environment} (was -> {current})")
+        return 0
+    else:
+        print(f"Failed to unlink '{environment}'", file=sys.stderr)
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Link environments to deploy.toml files",
@@ -94,6 +114,7 @@ def main():
 Examples:
   %(prog)s myapp-staging ~/code/myapp/deploy.toml
   %(prog)s otherapp-staging ../otherapp/deploy.toml
+  %(prog)s --unlink myapp-staging
   %(prog)s --list
   %(prog)s --show-file
 
@@ -114,6 +135,12 @@ Once linked, you can omit --deploy-toml from ecs-run.py, deploy.py, etc.
         help="Show the links file location",
     )
     parser.add_argument(
+        "--unlink",
+        "-u",
+        action="store_true",
+        help="Remove link for an environment",
+    )
+    parser.add_argument(
         "environment",
         nargs="?",
         help="Environment name (e.g., myapp-staging)",
@@ -121,7 +148,7 @@ Once linked, you can omit --deploy-toml from ecs-run.py, deploy.py, etc.
     parser.add_argument(
         "deploy_toml",
         nargs="?",
-        help="Path to deploy.toml file",
+        help="Path to deploy.toml file (not needed with --unlink)",
     )
 
     args = parser.parse_args()
@@ -132,6 +159,12 @@ Once linked, you can omit --deploy-toml from ecs-run.py, deploy.py, etc.
 
     if args.show_file:
         return cmd_show_file(args)
+
+    if args.unlink:
+        if not args.environment:
+            print("Error: environment is required with --unlink", file=sys.stderr)
+            return 1
+        return cmd_unlink(args)
 
     # Handle link command
     if not args.environment or not args.deploy_toml:
