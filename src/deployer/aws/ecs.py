@@ -4,9 +4,15 @@ import json
 import sys
 from typing import Any
 
+import boto3
 from botocore.exceptions import ClientError
 
 from ..utils import AWS_REGION, run_command
+
+
+def _get_ecs_client() -> Any:
+    """Get a boto3 ECS client using the current AWS profile."""
+    return boto3.client("ecs", region_name=AWS_REGION)
 
 
 def _format_service(svc: dict) -> dict:
@@ -245,27 +251,15 @@ def get_service_task_definition(cluster_name: str, service_name: str) -> str | N
     return services[0].get("taskDefinition")
 
 
-def get_task_containers(task_definition: str) -> list[dict]:
-    """Get container names and info from a task definition.
+def _format_container_definitions(containers: list[dict]) -> list[dict]:
+    """Format raw container definitions into a consistent structure.
 
     Args:
-        task_definition: Task definition ARN or family:revision.
+        containers: List of container definitions from AWS API.
 
     Returns:
-        List of dicts with name, image, essential, and logConfiguration.
+        List of formatted container dicts.
     """
-    cmd = [
-        "aws", "ecs", "describe-task-definition",
-        "--task-definition", task_definition,
-        "--region", AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    if not success:
-        return []
-
-    data = json.loads(output)
-    containers = data.get("taskDefinition", {}).get("containerDefinitions", [])
-
     return [
         {
             "name": c["name"],
@@ -277,6 +271,29 @@ def get_task_containers(task_definition: str) -> list[dict]:
     ]
 
 
+def get_task_containers(
+    task_definition: str, ecs_client: Any | None = None
+) -> list[dict]:
+    """Get container names and info from a task definition.
+
+    Args:
+        task_definition: Task definition ARN or family:revision.
+        ecs_client: Optional boto3 ECS client. If None, creates one.
+
+    Returns:
+        List of dicts with name, image, essential, and logConfiguration.
+    """
+    if ecs_client is None:
+        ecs_client = _get_ecs_client()
+
+    try:
+        response = ecs_client.describe_task_definition(taskDefinition=task_definition)
+        containers = response.get("taskDefinition", {}).get("containerDefinitions", [])
+        return _format_container_definitions(containers)
+    except ClientError:
+        return []
+
+
 def run_task(
     cluster_name: str,
     task_definition: str,
@@ -284,6 +301,7 @@ def run_task(
     container_name: str,
     command: list[str],
     environment: list[dict] | None = None,
+    ecs_client: Any | None = None,
 ) -> str | None:
     """Run a one-off task with command override.
 
@@ -294,10 +312,14 @@ def run_task(
         container_name: Name of the container to override.
         command: Command to run as list of strings.
         environment: Optional list of {"name": str, "value": str} env var overrides.
+        ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
         Task ARN if successful, None otherwise.
     """
+    if ecs_client is None:
+        ecs_client = _get_ecs_client()
+
     override = {
         "containerOverrides": [
             {
@@ -310,81 +332,104 @@ def run_task(
     if environment:
         override["containerOverrides"][0]["environment"] = environment
 
-    cmd = [
-        "aws", "ecs", "run-task",
-        "--cluster", cluster_name,
-        "--task-definition", task_definition,
-        "--launch-type", "FARGATE",
-        "--network-configuration", json.dumps(network_config),
-        "--overrides", json.dumps(override),
-        "--region", AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    if not success:
+    try:
+        response = ecs_client.run_task(
+            cluster=cluster_name,
+            taskDefinition=task_definition,
+            launchType="FARGATE",
+            networkConfiguration=network_config,
+            overrides=override,
+        )
+
+        tasks = response.get("tasks", [])
+        if not tasks:
+            failures = response.get("failures", [])
+            if failures:
+                for f in failures:
+                    print(f"  Task failure: {f.get('reason', 'Unknown')}", file=sys.stderr)
+            return None
+
+        return tasks[0].get("taskArn")
+
+    except ClientError as e:
+        print(f"  Failed to run task: {e}", file=sys.stderr)
         return None
 
-    data = json.loads(output)
-    tasks = data.get("tasks", [])
-    if not tasks:
-        failures = data.get("failures", [])
-        if failures:
-            for f in failures:
-                print(f"  Task failure: {f.get('reason', 'Unknown')}", file=sys.stderr)
-        return None
 
-    return tasks[0].get("taskArn")
-
-
-def wait_for_task(cluster_name: str, task_arn: str, timeout: int = 300) -> int:
+def wait_for_task(
+    cluster_name: str,
+    task_arn: str,
+    timeout: int = 300,
+    ecs_client: Any | None = None,
+) -> int:
     """Wait for a task to complete and return its exit code.
+
+    Uses AWS waiter for efficient polling instead of manual polling.
 
     Args:
         cluster_name: Name of the ECS cluster.
         task_arn: ARN of the task to wait for.
         timeout: Maximum seconds to wait (default: 300).
+        ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
         Exit code of the main container, or -1 on error/timeout.
     """
-    import time
+    from botocore.config import Config as BotoConfig
+    from botocore.exceptions import WaiterError
 
-    start_time = time.time()
-    poll_interval = 5
+    if ecs_client is None:
+        ecs_client = _get_ecs_client()
 
-    while time.time() - start_time < timeout:
-        cmd = [
-            "aws", "ecs", "describe-tasks",
-            "--cluster", cluster_name,
-            "--tasks", task_arn,
-            "--region", AWS_REGION,
-        ]
-        success, output = run_command(cmd)
-        if not success:
-            return -1
+    try:
+        # Use AWS waiter for efficient polling
+        # Configure waiter with custom delay and max attempts based on timeout
+        waiter = ecs_client.get_waiter("tasks_stopped")
 
-        data = json.loads(output)
-        tasks = data.get("tasks", [])
+        # Calculate max attempts: start with 2s delay, then use exponential backoff
+        # Default waiter config is delay=6, max_attempts=100
+        # We'll use delay=2 for faster initial response
+        delay = 2
+        max_attempts = max(1, timeout // delay)
+
+        waiter.wait(
+            cluster=cluster_name,
+            tasks=[task_arn],
+            WaiterConfig={
+                "Delay": delay,
+                "MaxAttempts": max_attempts,
+            },
+        )
+
+        # Task stopped, now get the exit code
+        response = ecs_client.describe_tasks(
+            cluster=cluster_name,
+            tasks=[task_arn],
+        )
+
+        tasks = response.get("tasks", [])
         if not tasks:
             return -1
 
         task = tasks[0]
-        status = task.get("lastStatus")
 
-        if status == "STOPPED":
-            # Find the exit code from containers
-            for container in task.get("containers", []):
-                exit_code = container.get("exitCode")
-                if exit_code is not None:
-                    return exit_code
-            # If no exit code found, check stop reason
-            stop_reason = task.get("stoppedReason", "")
-            if stop_reason:
-                print(f"  Task stopped: {stop_reason}", file=sys.stderr)
-            return -1
+        # Find the exit code from containers
+        for container in task.get("containers", []):
+            exit_code = container.get("exitCode")
+            if exit_code is not None:
+                return exit_code
 
-        time.sleep(poll_interval)
+        # If no exit code found, check stop reason
+        stop_reason = task.get("stoppedReason", "")
+        if stop_reason:
+            print(f"  Task stopped: {stop_reason}", file=sys.stderr)
+        return -1
 
-    print("  Task timed out", file=sys.stderr)
+    except WaiterError as e:
+        print(f"  Task timed out or failed: {e}", file=sys.stderr)
+        return -1
+    except ClientError as e:
+        print(f"  Error waiting for task: {e}", file=sys.stderr)
     return -1
 
 
@@ -567,19 +612,117 @@ def _filter_oom_tasks(tasks: list[dict], cutoff) -> list[dict]:
 
 
 def get_task_logs_location(
-    task_definition: str, container_name: str
+    task_definition: str,
+    container_name: str,
+    ecs_client: Any | None = None,
 ) -> tuple[str, str] | None:
     """Get CloudWatch log group and stream prefix for a container.
 
     Args:
         task_definition: Task definition ARN or family:revision.
         container_name: Name of the container.
+        ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
         Tuple of (log_group, stream_prefix), or None if not configured.
     """
-    containers = get_task_containers(task_definition)
+    containers = get_task_containers(task_definition, ecs_client=ecs_client)
 
+    for container in containers:
+        if container["name"] == container_name:
+            log_config = container.get("logConfiguration")
+            if log_config and log_config.get("logDriver") == "awslogs":
+                options = log_config.get("options", {})
+                log_group = options.get("awslogs-group")
+                prefix = options.get("awslogs-stream-prefix", "")
+                if log_group:
+                    return (log_group, prefix)
+
+    return None
+
+
+# =============================================================================
+# Combined operations to reduce API calls
+# =============================================================================
+
+
+def _extract_service_info(service: dict) -> tuple[dict | None, str | None]:
+    """Extract network config and task definition from a service response.
+
+    Args:
+        service: Service dict from describe-services response.
+
+    Returns:
+        Tuple of (network_config, task_definition_arn).
+    """
+    # Extract network config
+    network_config = None
+    net_config = service.get("networkConfiguration", {}).get("awsvpcConfiguration")
+    if net_config:
+        network_config = {
+            "awsvpcConfiguration": {
+                "subnets": net_config.get("subnets", []),
+                "securityGroups": net_config.get("securityGroups", []),
+                "assignPublicIp": net_config.get("assignPublicIp", "DISABLED"),
+            }
+        }
+
+    # Extract task definition
+    task_definition = service.get("taskDefinition")
+
+    return network_config, task_definition
+
+
+def get_service_info(
+    cluster_name: str, service_name: str, ecs_client: Any | None = None
+) -> tuple[dict | None, str | None]:
+    """Get network configuration and task definition from a service in one call.
+
+    This combines get_service_network_config and get_service_task_definition
+    to avoid redundant describe-services API calls.
+
+    Args:
+        cluster_name: Name of the ECS cluster.
+        service_name: Name of the service.
+        ecs_client: Optional boto3 ECS client. If None, creates one.
+
+    Returns:
+        Tuple of (network_config, task_definition_arn).
+        Either or both may be None if not found.
+    """
+    if ecs_client is None:
+        ecs_client = _get_ecs_client()
+
+    try:
+        response = ecs_client.describe_services(
+            cluster=cluster_name,
+            services=[service_name],
+        )
+        services = response.get("services", [])
+        if not services:
+            return None, None
+
+        return _extract_service_info(services[0])
+
+    except ClientError:
+        return None, None
+
+
+def get_logs_location_from_containers(
+    containers: list[dict], container_name: str
+) -> tuple[str, str] | None:
+    """Get CloudWatch log location from already-fetched container definitions.
+
+    Use this when you already have the container list from get_task_containers()
+    to avoid redundant describe-task-definition API calls.
+
+    Args:
+        containers: List of container dicts from get_task_containers().
+        container_name: Name of the container.
+
+    Returns:
+        Tuple of (log_group, stream_prefix), or None if not configured.
+    """
     for container in containers:
         if container["name"] == container_name:
             log_config = container.get("logConfiguration")

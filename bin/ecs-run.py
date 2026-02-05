@@ -114,23 +114,32 @@ def run_ecs_command(
 
     Returns exit code (0 on success).
     """
-    # Get network config from running service
-    print(f"Getting network configuration from service '{service_name}'...")
-    network_config = ecs.get_service_network_config(cluster_name, service_name)
+    import boto3
+
+    # Create a single ECS client to reuse across all operations
+    # This eliminates connection overhead for each API call
+    ecs_client = boto3.client("ecs")
+
+    # Get network config and task definition in a single API call
+    print(f"Getting service configuration for '{service_name}'...")
+    network_config, task_definition = ecs.get_service_info(
+        cluster_name, service_name, ecs_client=ecs_client
+    )
+
     if not network_config:
         print(f"Error: Could not get network config for service '{service_name}'", file=sys.stderr)
         print("Is the service running?", file=sys.stderr)
         return 1
 
-    # Get task definition
-    task_definition = ecs.get_service_task_definition(cluster_name, service_name)
     if not task_definition:
         print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
         return 1
 
+    # Get container definitions (cached for later use with logs location)
+    containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
+
     # Get container name if not specified
     if not container_name:
-        containers = ecs.get_task_containers(task_definition)
         if not containers:
             print("Error: No containers found in task definition", file=sys.stderr)
             return 1
@@ -151,6 +160,7 @@ def run_ecs_command(
         container_name=container_name,
         command=command,
         environment=environment,
+        ecs_client=ecs_client,
     )
 
     if not task_arn:
@@ -162,8 +172,8 @@ def run_ecs_command(
     print(f"Task ARN: {task_arn}")
     print(f"Task ID: {task_id}")
 
-    # Show logs location
-    logs_info = ecs.get_task_logs_location(task_definition, container_name)
+    # Get logs location from cached containers (no additional API call)
+    logs_info = ecs.get_logs_location_from_containers(containers, container_name)
     if logs_info:
         log_group, stream_prefix = logs_info
         log_stream = f"{stream_prefix}/{container_name}/{task_id}"
@@ -174,7 +184,7 @@ def run_ecs_command(
         return 0
 
     print("\nWaiting for task to complete...")
-    exit_code = ecs.wait_for_task(cluster_name, task_arn, timeout)
+    exit_code = ecs.wait_for_task(cluster_name, task_arn, timeout, ecs_client=ecs_client)
 
     if exit_code == 0:
         print("\nTask completed successfully")
