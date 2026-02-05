@@ -31,8 +31,8 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 ./bin/tofu.sh plan myapp-staging
 ./bin/tofu.sh apply myapp-staging
 
-# Deployment
-uv run python bin/deploy.py ../app/deploy.toml myapp-staging
+# Deployment (uses linked deploy.toml)
+uv run python bin/deploy.py myapp-staging
 
 # Link environment to deploy.toml (one-time setup)
 uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml

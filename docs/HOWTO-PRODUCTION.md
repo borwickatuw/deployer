@@ -149,9 +149,10 @@ scaling = {
    uv run python bin/secrets.py set myapp-production SECRET_KEY "$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
    ```
 
-4. **Deploy application**:
+4. **Link and deploy application**:
    ```bash
-   uv run python bin/deploy.py ../myapp/deploy.toml myapp-production
+   uv run python bin/link-environments.py myapp-production ../myapp/deploy.toml
+   uv run python bin/deploy.py myapp-production
    ```
 
 5. **Run migrations** (assumes environment is linked via `link-environments.py`):

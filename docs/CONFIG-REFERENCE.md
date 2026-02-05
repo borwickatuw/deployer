@@ -15,11 +15,14 @@ Complete reference for deployment configuration.
 ### Common Commands
 
 ```bash
-# Deploy to staging
-uv run python bin/deploy.py /path/to/deploy.toml myapp-staging
+# Link environment to deploy.toml (one-time setup)
+uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+
+# Deploy to staging (uses linked deploy.toml)
+uv run python bin/deploy.py myapp-staging
 
 # Dry-run (show what would happen)
-uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
+uv run python bin/deploy.py myapp-staging --dry-run
 
 # Infrastructure changes
 ./bin/tofu.sh plan myapp-staging
@@ -326,7 +329,7 @@ LOG_LEVEL = "INFO"
 1. `[environment]` - base values
 2. `[environment.{env}]` - environment-specific overrides
 
-The environment name comes from the `environment` argument passed to the deploy script (e.g., `uv run bin/deploy.py deploy.toml myapp-staging`).
+The environment name comes from the first argument passed to the deploy script (e.g., `uv run python bin/deploy.py myapp-staging`).
 
 #### Service-Specific Environment Variables
 

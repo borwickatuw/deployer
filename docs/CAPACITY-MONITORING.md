@@ -222,7 +222,7 @@ The capacity report creates a tight feedback loop between CloudWatch metrics and
 
 5. Deploy to pick up new task definitions:
    ```bash
-   uv run bin/deploy.py deploy.toml myapp-production
+   uv run python bin/deploy.py myapp-production
    ```
 
 6. Wait a few days and re-run the capacity report to verify the changes had the expected effect.

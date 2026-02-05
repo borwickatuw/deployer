@@ -221,11 +221,15 @@ AWS_PROFILE=deployer-infra-production aws sts get-caller-identity
 Once configured, the deployer scripts automatically use the correct profile for each environment:
 
 ```bash
+# Link environments to deploy.toml (one-time)
+uv run python bin/link-environments.py myapp-staging ../myapp/deploy.toml
+uv run python bin/link-environments.py myapp-production ../myapp/deploy.toml
+
 # Deploys to staging account
-uv run python bin/deploy.py ../myapp/deploy.toml myapp-staging
+uv run python bin/deploy.py myapp-staging
 
 # Deploys to production account
-uv run python bin/deploy.py ../myapp/deploy.toml myapp-production
+uv run python bin/deploy.py myapp-production
 
 # Infrastructure changes to staging account
 ./bin/tofu.sh plan myapp-staging

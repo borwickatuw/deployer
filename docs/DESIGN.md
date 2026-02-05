@@ -209,8 +209,11 @@ When you need to deploy new code:
 ```bash
 cd deployer
 
-# Deploy - config is automatically loaded from environments/myapp-staging/config.toml
-uv run bin/deploy.py /path/to/app/deploy.toml myapp-staging
+# Link environment to deploy.toml (one-time, stored in local/environments.toml)
+uv run python bin/link-environments.py myapp-staging /path/to/app/deploy.toml
+
+# Deploy (uses linked deploy.toml)
+uv run python bin/deploy.py myapp-staging
 ```
 
 The environment's `config.toml` contains `${tofu:...}` placeholders that are resolved at deploy time by fetching outputs from OpenTofu. This eliminates the need to manually export environment variables.

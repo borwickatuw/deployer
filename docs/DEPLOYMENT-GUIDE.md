@@ -228,7 +228,7 @@ aws ssm put-parameter \
 ### Dry Run First
 
 ```bash
-uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
+uv run python bin/deploy.py myapp-staging --dry-run
 ```
 
 This shows:
@@ -239,8 +239,10 @@ This shows:
 ### Deploy
 
 ```bash
-uv run python bin/deploy.py /path/to/deploy.toml myapp-staging
+uv run python bin/deploy.py myapp-staging
 ```
+
+Note: Requires environment to be linked via `link-environments.py`, or use `--deploy-toml` flag.
 
 The script will:
 1. Log into ECR

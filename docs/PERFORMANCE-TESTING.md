@@ -36,8 +36,13 @@ Note: With migrations skipped (no changes), total time is ~75s.
 ### Running the Test
 
 ```bash
-# Test myapp-staging
-uv run python bin/deploy.py speed-test ../myapp/deploy.toml myapp-staging \
+# Test myapp-staging (requires linked deploy.toml or --deploy-toml flag)
+uv run python bin/deploy.py speed-test myapp-staging \
+    --output local/results/test-XXX.json
+
+# Or with explicit deploy.toml path
+uv run python bin/deploy.py speed-test myapp-staging \
+    --deploy-toml ../myapp/deploy.toml \
     --output local/results/test-XXX.json
 ```
 

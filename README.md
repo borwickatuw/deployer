@@ -107,11 +107,14 @@ See [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) for the complete walkthrough
 ### Deployment
 
 ```bash
-# Deploy (config.toml provides infrastructure values automatically)
-uv run python bin/deploy.py /path/to/app/deploy.toml myapp-staging
+# Link environment to deploy.toml (one-time setup)
+uv run python bin/link-environments.py myapp-staging /path/to/app/deploy.toml
+
+# Deploy (uses linked deploy.toml)
+uv run python bin/deploy.py myapp-staging
 
 # Dry-run first
-uv run python bin/deploy.py /path/to/app/deploy.toml myapp-staging --dry-run
+uv run python bin/deploy.py myapp-staging --dry-run
 ```
 
 ## Requirements

@@ -118,8 +118,11 @@ Created: environments/otherapp-staging/main.tf
 ./bin/tofu.sh -chdir=environments/myapp-staging init
 ./bin/tofu.sh -chdir=environments/myapp-staging apply
 
-# 3. Deploy application
-uv run python bin/deploy.py /path/to/myapp/deploy.toml myapp-staging
+# 3. Link environment to deploy.toml (one-time)
+uv run python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
+
+# 4. Deploy application
+uv run python bin/deploy.py myapp-staging
 ```
 
 ## Configuration
@@ -239,10 +242,13 @@ To migrate an existing standalone environment to shared infrastructure:
    ./bin/tofu.sh -chdir=environments/existingapp-staging apply
    ```
 
-5. **Update DNS and deploy app**
+5. **Link and deploy app**
    ```bash
-   # Update DNS to point to shared ALB
-   uv run python bin/deploy.py /path/to/existingapp/deploy.toml existingapp-staging
+   # Link environment to deploy.toml
+   uv run python bin/link-environments.py existingapp-staging /path/to/existingapp/deploy.toml
+
+   # Update DNS to point to shared ALB and deploy
+   uv run python bin/deploy.py existingapp-staging
    ```
 
 6. **Decommission old infrastructure**
