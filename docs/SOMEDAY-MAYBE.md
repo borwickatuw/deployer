@@ -464,3 +464,8 @@ To add ideas to this list:
 3. Outline implementation approach
 4. Estimate complexity (Low/Medium/High/Very High)
 5. Note any dependencies or prerequisites
+
+---
+
+We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert
+when there are unused secrets
