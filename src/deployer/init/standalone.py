@@ -3,8 +3,6 @@
 Standalone environments include their own VPC, NAT Gateway, ALB, and ECS cluster.
 """
 
-from typing import Optional
-
 from deployer.utils import get_environments_dir
 from .template import load_template, substitute
 

@@ -1,7 +1,6 @@
 """Framework detection utilities."""
 
 from pathlib import Path
-from typing import Optional
 
 
 # Framework detection patterns based on environment variables
@@ -44,9 +43,9 @@ DEFAULT_PORTS = {
 
 
 def detect_framework(
-    env_vars: Optional[list[str]] = None,
-    dockerfile_content: Optional[str] = None,
-) -> Optional[str]:
+    env_vars: list[str] | None = None,
+    dockerfile_content: str | None = None,
+) -> str | None:
     """Detect application framework from environment variables and Dockerfile.
 
     Args:
@@ -85,7 +84,7 @@ def detect_framework(
     return None
 
 
-def get_migration_command(framework: Optional[str]) -> Optional[list[str]]:
+def get_migration_command(framework: str | None) -> list[str] | None:
     """Get the migration command for a framework.
 
     Args:
@@ -99,7 +98,7 @@ def get_migration_command(framework: Optional[str]) -> Optional[list[str]]:
     return None
 
 
-def get_default_port(framework: Optional[str]) -> int:
+def get_default_port(framework: str | None) -> int:
     """Get the default port for a framework.
 
     Args:
@@ -113,7 +112,7 @@ def get_default_port(framework: Optional[str]) -> int:
     return 8000
 
 
-def detect_framework_from_dockerfile(dockerfile_path: Path) -> Optional[str]:
+def detect_framework_from_dockerfile(dockerfile_path: Path) -> str | None:
     """Detect framework from a Dockerfile.
 
     Args:

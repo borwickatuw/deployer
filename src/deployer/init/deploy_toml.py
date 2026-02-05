@@ -1,7 +1,7 @@
 """Generate deploy.toml from docker-compose.yml or interactively."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tomllib
@@ -91,7 +91,7 @@ def is_likely_secret(var_name: str) -> bool:
     return any(pattern in var_upper for pattern in SECRET_PATTERNS)
 
 
-def extract_port_from_ports(ports: list) -> Optional[int]:
+def extract_port_from_ports(ports: list) -> int | None:
     """Extract container port from docker-compose ports configuration."""
     for port in ports:
         if isinstance(port, str):
@@ -144,7 +144,7 @@ def _var_to_ssm_name(var_name: str) -> str:
 # ------------------------------------------------------------------------------
 
 
-def _read_dockerfile_content(compose_path: Path, services: dict) -> Optional[str]:
+def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
     """Try to read Dockerfile content for framework detection."""
     for svc in services.values():
         if svc.get("has_build"):
@@ -232,7 +232,7 @@ def _build_environment_config(all_env_vars: set, app_name: str) -> tuple[dict, d
 
 def _build_migrations_config(
     framework: str, deploy_services: dict, app_name: str
-) -> Optional[dict]:
+) -> dict | None:
     """Build the migrations section if framework detected."""
     migration_cmd = get_migration_command(framework)
     if not migration_cmd:
@@ -260,9 +260,9 @@ def _build_migrations_config(
 
 
 def generate_deploy_toml(
-    compose_path: Optional[Path] = None,
-    app_name: Optional[str] = None,
-    compose_data: Optional[dict] = None,
+    compose_path: Path | None = None,
+    app_name: str | None = None,
+    compose_data: dict | None = None,
 ) -> dict[str, Any]:
     """Generate deploy.toml configuration from docker-compose.yml."""
     if compose_data is None:
