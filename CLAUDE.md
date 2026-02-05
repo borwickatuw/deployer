@@ -9,6 +9,7 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `bin/tofu.sh` - OpenTofu wrapper (auto-selects AWS profile from config.toml)
 - `bin/ecs-run.py` - Run commands in ECS containers (migrations, shell, etc.)
 - `bin/environment.py` - Start/stop staging environments
+- `bin/emergency.py` - Emergency operations (audit, health, rollback, scale, snapshots, restore)
 - `bin/cognito.py` - Cognito user management (auto-selects AWS profile from config.toml)
 - `bin/secrets.py` - SSM Parameter Store secrets management
 - `bin/capacity-report.py` - ECS right-sizing recommendations
@@ -29,14 +30,21 @@ uv run python bin/deploy.py ../app/deploy.toml myapp-staging
 
 # Run commands in containers
 uv run python bin/ecs-run.py manage myapp-staging migrate
+
+# Emergency operations
+uv run python bin/emergency.py myapp-production audit    # Run all health/security checks
+uv run python bin/emergency.py myapp-production status   # View current state
+uv run python bin/emergency.py myapp-production rollback --service web
 ```
 
 ## Key Documentation
 - [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) - Complete deployment walkthrough
 - [CONFIG-REFERENCE.md](docs/CONFIG-REFERENCE.md) - All configuration options
 - [DESIGN.md](docs/DESIGN.md) - Architecture and three-layer config separation
+- [HOWTO-PRODUCTION.md](docs/HOWTO-PRODUCTION.md) - Production operations and maintenance
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
+- [SOMEDAY-MAYBE.md](docs/SOMEDAY-MAYBE.md) - Future improvement ideas
 - Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
 
 ## Design Principles

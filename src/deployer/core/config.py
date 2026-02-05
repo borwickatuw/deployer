@@ -398,6 +398,30 @@ def get_service_replicas_from_config(resolved_config: dict) -> dict[str, int]:
     return {name: cfg.get("replicas", 1) for name, cfg in service_config.items()}
 
 
+def get_target_group_arn_from_config(resolved_config: dict) -> str | None:
+    """Get ALB target group ARN from resolved config.
+
+    Args:
+        resolved_config: Fully resolved config from load_environment_config().
+
+    Returns:
+        Target group ARN string, or None if not configured.
+    """
+    return resolved_config.get("infrastructure", {}).get("target_group_arn")
+
+
+def get_ecr_prefix_from_config(resolved_config: dict) -> str | None:
+    """Get ECR prefix from resolved config.
+
+    Args:
+        resolved_config: Fully resolved config from load_environment_config().
+
+    Returns:
+        ECR prefix string, or None if not configured.
+    """
+    return resolved_config.get("infrastructure", {}).get("ecr_prefix")
+
+
 def get_cognito_user_pool_id_from_config(resolved_config: dict) -> str | None:
     """Get Cognito user pool ID from resolved config.
 
