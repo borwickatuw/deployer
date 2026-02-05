@@ -3,6 +3,10 @@
 ## Project Overview
 Infrastructure and deployment tooling for containerized applications on AWS ECS Fargate. Supports any framework that runs in Docker (Django, Rails, Node.js, etc.).
 
+## Related Projects
+
+- **deployer-environments** (`~/code/deployer-environments`) - Per-environment tofu configurations that use this repo's modules
+
 ## Key Files
 - `bin/deploy.py` - Main deployment script (auto-selects AWS profile from config.toml)
 - `bin/init.py` - Initialize new apps: generate deploy.toml and environment directories
@@ -92,6 +96,15 @@ To add a new project:
 2. Run `AWS_PROFILE=admin tofu apply`
 
 For multi-account setups, see [MULTIPLE-AWS-ACCOUNTS.md](docs/MULTIPLE-AWS-ACCOUNTS.md).
+
+## Security
+
+This is infrastructure code. Security focus areas:
+
+- **IAM policies**: Managed in `deployer-environments/bootstrap/`. Use service-level wildcards with resource restrictions.
+- **Secrets**: Never hardcode. Use SSM Parameter Store (`bin/secrets.py`) or Secrets Manager.
+- **AWS profiles**: Scripts auto-select profiles from config.toml. Never use `--profile admin` in deployed code.
+- **Code review**: No automated security scanning. Review changes manually, especially IAM policy modifications.
 
 ## Cross-Repository Ideas
 
