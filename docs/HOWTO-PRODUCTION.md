@@ -154,9 +154,9 @@ scaling = {
    uv run python bin/deploy.py ../myapp/deploy.toml myapp-production
    ```
 
-5. **Run migrations**:
+5. **Run migrations** (assumes environment is linked via `link-environments.py`):
    ```bash
-   uv run python bin/ecs-run.py run myapp-production migrate --deploy-toml ../myapp/deploy.toml
+   uv run python bin/ecs-run.py run myapp-production migrate
    ```
 
 6. **Verify deployment**:

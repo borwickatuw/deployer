@@ -28,11 +28,14 @@ uv run python bin/deploy.py /path/to/deploy.toml myapp-staging --dry-run
 # View logs
 aws logs tail /ecs/myapp-staging --follow
 
-# Run commands from deploy.toml [commands] section
-uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml /path/to/deploy.toml
+# Link environment to deploy.toml (one-time setup)
+uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+
+# Run commands (uses linked deploy.toml)
+uv run python bin/ecs-run.py run myapp-staging migrate
 
 # List available commands
-uv run python bin/ecs-run.py run --list-commands --deploy-toml /path/to/deploy.toml
+uv run python bin/ecs-run.py run myapp-staging --list-commands
 ```
 
 ### Required OpenTofu Outputs
@@ -460,11 +463,14 @@ seed = ["npm", "run", "seed"]
 **Usage:**
 
 ```bash
-# List available commands from deploy.toml
-python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
+# Link environment to deploy.toml (one-time, stored in local/environments.toml)
+python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+
+# List available commands (uses linked deploy.toml)
+python bin/ecs-run.py run myapp-staging --list-commands
 
 # Run a named command
-python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
+python bin/ecs-run.py run myapp-staging migrate
 ```
 
 ### `[migrations]`

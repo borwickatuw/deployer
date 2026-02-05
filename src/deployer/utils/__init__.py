@@ -15,6 +15,12 @@ from .environment import (
     get_staging_environments,
     validate_environment_deployed,
 )
+from .links import (
+    get_all_links,
+    get_linked_deploy_toml,
+    get_links_file,
+    set_linked_deploy_toml,
+)
 from .logging import (
     is_verbose,
     log,
@@ -39,9 +45,12 @@ __all__ = [
     "configure_aws_profile_for_environment",
     "ensure_environments_symlinks",
     "get_all_environments",
+    "get_all_links",
     "get_deployer_root",
     "get_environment_path",
     "get_environments_dir",
+    "get_linked_deploy_toml",
+    "get_links_file",
     "get_staging_environments",
     "is_verbose",
     "log",
@@ -56,6 +65,7 @@ __all__ = [
     "log_warning",
     "log_warning_stderr",
     "run_command",
+    "set_linked_deploy_toml",
     "set_verbose",
     "validate_environment_deployed",
 ]

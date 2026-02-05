@@ -290,19 +290,37 @@ aws logs filter-log-events \
 
 ## Post-Deployment Tasks
 
+### Link Environment to deploy.toml (One-Time Setup)
+
+Link your environment to its deploy.toml so you don't have to specify `--deploy-toml` on every command:
+
+```bash
+# Link environment to deploy.toml (stored locally, gitignored)
+uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+
+# List all links
+uv run python bin/link-environments.py --list
+```
+
 ### Run Commands in ECS
 
 Use `ecs-run.py run` to execute commands defined in your deploy.toml's `[commands]` section:
 
 ```bash
 # List available commands
-uv run python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
+uv run python bin/ecs-run.py run myapp-staging --list-commands
 
 # Run migrations
-uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
+uv run python bin/ecs-run.py run myapp-staging migrate
 
 # Run Django deployment checks
-uv run python bin/ecs-run.py run myapp-staging check --deploy-toml ../app/deploy.toml
+uv run python bin/ecs-run.py run myapp-staging check
+```
+
+If the environment isn't linked, you can still specify `--deploy-toml` explicitly:
+
+```bash
+uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
 ```
 
 **Note:** Only non-interactive commands can be run via ecs-run.py. For interactive commands (shell, createsuperuser), use `ecs-run.py exec` with ECS Exec enabled:

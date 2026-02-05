@@ -6,18 +6,21 @@ Usage:
     # List services in environment
     python bin/ecs-run.py list myapp-staging
 
-    # List available commands from deploy.toml
-    python bin/ecs-run.py run --list-commands --deploy-toml ../app/deploy.toml
+    # List available commands from deploy.toml (uses linked path or --deploy-toml)
+    python bin/ecs-run.py run myapp-staging --list-commands
 
     # Run named commands from deploy.toml [commands] section
-    python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
-    python bin/ecs-run.py run myapp-staging collectstatic --deploy-toml ../app/deploy.toml
+    python bin/ecs-run.py run myapp-staging migrate
+    python bin/ecs-run.py run myapp-staging collectstatic
 
     # Run arbitrary commands
     python bin/ecs-run.py exec myapp-staging python -c "print('hi')"
 
     # Specify a different service (default: web)
     python bin/ecs-run.py exec myapp-staging -s celery python -c "print('hello')"
+
+    # Link environment to deploy.toml (one-time setup)
+    python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
 """
 
 import argparse
@@ -29,7 +32,12 @@ from deployer.core.config import (
     get_run_command,
     load_deploy_toml,
 )
-from deployer.utils import configure_aws_profile, run_command, validate_environment_deployed
+from deployer.utils import (
+    configure_aws_profile,
+    get_linked_deploy_toml,
+    run_command,
+    validate_environment_deployed,
+)
 
 
 def get_cluster_name(env_path: Path) -> str | None:
@@ -230,19 +238,47 @@ def cmd_list(args, base_path: Path) -> int:
 
 def cmd_run(args, base_path: Path) -> int:
     """Run a named command from deploy.toml [commands] section."""
-    # Load deploy.toml (required for run command)
-    if not args.deploy_toml:
-        print("Error: --deploy-toml is required for the run command", file=sys.stderr)
+    # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
+    deploy_toml_path = None
+    used_explicit_flag = False
+
+    if args.deploy_toml:
+        # User provided --deploy-toml explicitly
+        deploy_toml_path = Path(args.deploy_toml).expanduser().resolve()
+        used_explicit_flag = True
+    elif args.environment:
+        # Try to look up from links
+        linked_path = get_linked_deploy_toml(args.environment)
+        if linked_path:
+            deploy_toml_path = linked_path
+            print(f"Using linked deploy.toml: {deploy_toml_path}")
+
+    # For --list-commands without environment, we need --deploy-toml
+    if args.list_commands and not deploy_toml_path:
+        print("Error: --deploy-toml is required when using --list-commands without environment", file=sys.stderr)
         return 1
 
-    deploy_toml_path = Path(args.deploy_toml).resolve()
+    if not deploy_toml_path:
+        print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
+        print(f"\nTo link this environment to its deploy.toml:", file=sys.stderr)
+        print(f"  python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
+        print(f"\nOr specify --deploy-toml explicitly:", file=sys.stderr)
+        print(f"  ecs-run.py run {args.environment} <command> --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+        return 1
+
+    # Load deploy.toml
     try:
         deploy_toml = load_deploy_toml(deploy_toml_path)
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    # Handle --list-commands flag (doesn't require environment)
+    # Print suggestion if --deploy-toml was used explicitly
+    if used_explicit_flag and args.environment:
+        print(f"Tip: Run 'python bin/link-environments.py {args.environment} {deploy_toml_path}'")
+        print(f"     to avoid specifying --deploy-toml next time.\n")
+
+    # Handle --list-commands flag
     if args.list_commands:
         commands = deploy_toml.get("commands", {})
         if not commands:
@@ -334,8 +370,19 @@ def main():
         epilog="""
 Examples:
   %(prog)s list myapp-staging
-  %(prog)s run --list-commands --deploy-toml ../app/deploy.toml
+
+  # Link environment to deploy.toml (one-time setup)
+  python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+
+  # After linking, --deploy-toml is not needed
+  %(prog)s run myapp-staging --list-commands
+  %(prog)s run myapp-staging migrate
+  %(prog)s run myapp-staging collectstatic
+
+  # Or specify --deploy-toml explicitly
   %(prog)s run myapp-staging migrate --deploy-toml ../app/deploy.toml
+
+  # Run arbitrary commands
   %(prog)s exec myapp-staging python -c "print('hello')"
   %(prog)s exec myapp-staging -s celery python -c "print('worker')"
 
@@ -358,8 +405,7 @@ Use 'run --list-commands' to see available commands for an application.
     run_parser.add_argument(
         "--deploy-toml",
         metavar="PATH",
-        required=True,
-        help="Path to deploy.toml (required)"
+        help="Path to deploy.toml (optional if environment is linked)"
     )
     run_parser.add_argument(
         "--list-commands",
@@ -368,7 +414,7 @@ Use 'run --list-commands' to see available commands for an application.
     )
     run_parser.add_argument(
         "environment",
-        nargs="?",  # Optional when using --list-commands
+        nargs="?",  # Optional when using --list-commands with --deploy-toml
         help="Environment name (e.g., myapp-staging)"
     )
     run_parser.add_argument(
