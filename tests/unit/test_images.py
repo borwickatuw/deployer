@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from botocore.exceptions import ClientError
 
-from deployer.deploy.images import validate_ecr_repositories, format_missing_ecr_error
+from deployer.deploy.images import validate_ecr_repositories, format_missing_ecr_error, get_target
 
 
 class TestValidateEcrRepositories:
@@ -161,3 +161,35 @@ class TestFormatMissingEcrError:
         assert "myapp-web" in message
         assert "myapp-worker" in message
         assert message.count("aws ecr create-repository") == 2
+
+
+class TestGetTarget:
+    """Tests for get_target function."""
+
+    def test_no_target_returns_none(self):
+        """Test that missing target returns None."""
+        config = {"context": "."}
+        assert get_target(config, "staging") is None
+
+    def test_string_target_returns_value(self):
+        """Test that string target returns the value for any environment."""
+        config = {"context": ".", "target": "prod"}
+        assert get_target(config, "staging") == "prod"
+        assert get_target(config, "production") == "prod"
+
+    def test_dict_target_returns_environment_value(self):
+        """Test that dict target returns environment-specific value."""
+        config = {
+            "context": ".",
+            "target": {"staging": "dev", "production": "prod"},
+        }
+        assert get_target(config, "staging") == "dev"
+        assert get_target(config, "production") == "prod"
+
+    def test_dict_target_missing_environment_returns_none(self):
+        """Test that dict target returns None for undefined environment."""
+        config = {
+            "context": ".",
+            "target": {"staging": "dev"},
+        }
+        assert get_target(config, "production") is None

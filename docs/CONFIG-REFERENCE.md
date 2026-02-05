@@ -145,6 +145,7 @@ Each image is defined as a subsection: `[images.web]`, `[images.worker]`, etc.
 |-------|------|----------|---------|-------------|
 | `context` | string | Yes | - | Build context path relative to `source`. |
 | `dockerfile` | string | No | `Dockerfile` | Dockerfile path relative to `context`. |
+| `target` | string | No | - | Docker build target for multi-stage builds. |
 | `depends_on` | array | No | `[]` | List of image names that must be built before this one. |
 | `push` | boolean | No | `true` | Whether to push to ECR. Set to `false` for local-only base images. |
 
@@ -190,6 +191,53 @@ depends_on = ["myapp-base"]
 This allows Dockerfiles to use `FROM myapp-base` to inherit from local base images.
 
 **Note:** The image key name (e.g., `myapp-base` in `[images.myapp-base]`) becomes the local tag name. Your Dockerfile's `FROM` statement must match this name.
+
+#### Multi-Stage Build Targets
+
+For Dockerfiles with multiple stages, use the `target` field to specify which stage to build.
+
+**Same target for all environments:**
+
+```toml
+[images.web]
+context = "."
+dockerfile = "Dockerfile"
+target = "prod"
+```
+
+**Different targets per environment:**
+
+```toml
+[images.web]
+context = "."
+dockerfile = "Dockerfile"
+
+# Environment-specific targets
+[images.web.target]
+staging = "dev"
+production = "prod"
+```
+
+**Example Dockerfile:**
+
+```dockerfile
+FROM python:3.12-slim AS base
+# ... base setup ...
+
+FROM base AS dev
+RUN uv sync --frozen --group dev
+# dev dependencies included (debug toolbar, etc.)
+
+FROM base AS prod
+RUN uv sync --frozen --no-dev
+# production only
+```
+
+With the environment-specific configuration above:
+- **Staging** builds the `dev` stage (includes dev dependencies)
+- **Production** builds the `prod` stage (minimal production image)
+
+The target affects the content hash, so changing targets triggers a rebuild.
 
 ### `[services.*]`
 

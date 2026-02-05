@@ -219,6 +219,28 @@ def get_build_args(image_config: dict, environment: str) -> dict[str, str]:
     return merged
 
 
+def get_target(image_config: dict, environment: str) -> str | None:
+    """Get the Docker build target for an image.
+
+    Supports environment-specific override via target.{environment}.
+
+    Args:
+        image_config: The image configuration dictionary.
+        environment: The target environment (staging, production).
+
+    Returns:
+        Target name or None if not specified.
+    """
+    target_config = image_config.get("target")
+
+    # If target is a dict, look for environment-specific value
+    if isinstance(target_config, dict):
+        return target_config.get(environment)
+
+    # Otherwise it's a string (or None)
+    return target_config
+
+
 def build_and_push_images(
     config: dict,
     source_dir: Path,
@@ -275,11 +297,19 @@ def build_and_push_images(
         # Compute content hash for cache key
         content_hash = compute_context_hash(context, dockerfile)
 
-        # Include build args in hash (they affect the image)
+        # Include build args and target in hash (they affect the image)
         build_args = get_build_args(image_config, environment)
+        target = get_target(image_config, environment)
+
+        hash_modifiers = []
         if build_args:
             args_str = ",".join(f"{k}={v}" for k, v in sorted(build_args.items()))
-            combined = f"{content_hash}:{args_str}"
+            hash_modifiers.append(f"args:{args_str}")
+        if target:
+            hash_modifiers.append(f"target:{target}")
+
+        if hash_modifiers:
+            combined = f"{content_hash}:{';'.join(hash_modifiers)}"
             content_hash = hashlib.sha256(combined.encode()).hexdigest()[:12]
 
         tag = content_hash
@@ -311,6 +341,10 @@ def build_and_push_images(
             "-t", local_tag,
             "-f", str(context / dockerfile),
         ]
+
+        # Add target if specified (for multi-stage builds)
+        if target:
+            build_cmd.extend(["--target", target])
 
         # Add build arguments
         for key, value in build_args.items():

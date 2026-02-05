@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "deployer"
 version = "0.1.0"
@@ -10,11 +14,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    # Formatting
+    # Formatting (local only)
     "black>=24.0",
     "isort>=5.13",
     "ruff",
-    # Security
+    # Security scanning (local only)
     "bandit>=1.7",
     "pip-audit>=2.6",
     # Code analysis
@@ -27,6 +31,10 @@ test = [
     "pytest-cov>=4.1",
     "moto[ecs,ecr,rds,cloudwatch]>=5.0",
 ]
+
+[tool.uv]
+# Don't auto-include dev dependencies in uv run
+default-groups = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
