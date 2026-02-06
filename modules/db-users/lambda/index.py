@@ -139,6 +139,54 @@ def update_user_password(conn, username: str, password: str) -> None:
     logger.info(f"Updated password for user '{username}'")
 
 
+def transfer_ownership(conn, migrate_username: str) -> None:
+    """Transfer ownership of existing tables and sequences to the migrate user.
+
+    This is needed when migrating existing databases to the two-account model.
+    Tables created by the old master user need to be owned by the migrate user
+    so that migrations can ALTER them.
+    """
+    # Get tables not owned by migrate user
+    tables = conn.run(
+        """
+        SELECT tablename, tableowner
+        FROM pg_tables
+        WHERE schemaname = 'public' AND tableowner != :username
+        """,
+        username=migrate_username
+    )
+
+    for table_row in tables:
+        tablename = table_row[0]
+        old_owner = table_row[1]
+        conn.run(f'ALTER TABLE public."{tablename}" OWNER TO {migrate_username}')
+        logger.info(f"Transferred ownership of table '{tablename}' from '{old_owner}' to '{migrate_username}'")
+
+    if tables:
+        logger.info(f"Transferred ownership of {len(tables)} table(s) to '{migrate_username}'")
+    else:
+        logger.info("No tables need ownership transfer")
+
+    # Get sequences not owned by migrate user
+    sequences = conn.run(
+        """
+        SELECT sequencename, sequenceowner
+        FROM pg_sequences
+        WHERE schemaname = 'public' AND sequenceowner != :username
+        """,
+        username=migrate_username
+    )
+
+    for seq_row in sequences:
+        seqname = seq_row[0]
+        old_owner = seq_row[1]
+        conn.run(f'ALTER SEQUENCE public."{seqname}" OWNER TO {migrate_username}')
+        logger.info(f"Transferred ownership of sequence '{seqname}' from '{old_owner}' to '{migrate_username}'")
+
+    if sequences:
+        logger.info(f"Transferred ownership of {len(sequences)} sequence(s) to '{migrate_username}'")
+
+
 def handler(event, context):
     """Lambda handler to create database users.
 
@@ -181,6 +229,10 @@ def handler(event, context):
             update_user_password(conn, migrate["username"], migrate["password"])
         else:
             create_migrate_user(conn, migrate["username"], migrate["password"], db_name)
+
+        # Transfer ownership of existing tables/sequences to migrate user
+        # This handles migration from single-user to two-account model
+        transfer_ownership(conn, migrate["username"])
 
         return {
             "status": "success",

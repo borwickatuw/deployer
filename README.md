@@ -102,6 +102,9 @@ See [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) for the complete walkthrough
 ./bin/tofu.sh init myapp-staging
 ./bin/tofu.sh plan myapp-staging
 ./bin/tofu.sh apply myapp-staging
+
+# Or use rollout to run init, plan, and apply in sequence
+./bin/tofu.sh rollout myapp-staging
 ```
 
 ### Deployment

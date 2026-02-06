@@ -27,10 +27,15 @@ show_help() {
     echo ""
     echo "Wrapper for OpenTofu that auto-selects AWS profile and environment directory."
     echo ""
+    echo "Commands:"
+    echo "  init, plan, apply, output, ...  - Standard tofu commands"
+    echo "  rollout                         - Run init && plan && apply in sequence"
+    echo ""
     echo "Examples:"
     echo "  $0 init myapp-staging"
     echo "  $0 plan myapp-staging"
     echo "  $0 apply myapp-staging"
+    echo "  $0 rollout myapp-staging        # init + plan + apply"
     echo "  $0 output myapp-staging database_url"
     echo ""
     echo "Available environments:"
@@ -180,6 +185,34 @@ PLANS_DIR="$DEPLOYER_ROOT/plans"
 PLAN_FILE="$PLANS_DIR/$ENV_NAME.tfplan"
 
 case "$TOFU_CMD" in
+    rollout)
+        # Run init, plan, and apply in sequence
+        echo "=== Running init ==="
+        tofu "-chdir=$ENV_DIR" init "$@"
+        INIT_EXIT=$?
+        if [[ $INIT_EXIT -ne 0 ]]; then
+            echo "Init failed with exit code $INIT_EXIT" >&2
+            exit $INIT_EXIT
+        fi
+
+        echo ""
+        echo "=== Running plan ==="
+        mkdir -p "$PLANS_DIR"
+        tofu "-chdir=$ENV_DIR" plan -out="$PLAN_FILE"
+        PLAN_EXIT=$?
+        if [[ $PLAN_EXIT -ne 0 ]]; then
+            echo "Plan failed with exit code $PLAN_EXIT" >&2
+            exit $PLAN_EXIT
+        fi
+
+        echo ""
+        echo "=== Running apply ==="
+        tofu "-chdir=$ENV_DIR" apply "$PLAN_FILE"
+        APPLY_EXIT=$?
+        rm -f "$PLAN_FILE"
+
+        exit $APPLY_EXIT
+        ;;
     plan)
         # Create plans directory if needed
         mkdir -p "$PLANS_DIR"

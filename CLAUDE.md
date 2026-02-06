@@ -30,6 +30,7 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 # Infrastructure (use tofu.sh wrapper - auto-selects AWS profile)
 ./bin/tofu.sh plan myapp-staging
 ./bin/tofu.sh apply myapp-staging
+./bin/tofu.sh rollout myapp-staging  # init + plan + apply in one command
 
 # Deployment (uses linked deploy.toml)
 uv run python bin/deploy.py myapp-staging

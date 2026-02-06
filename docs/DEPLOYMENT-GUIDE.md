@@ -198,12 +198,26 @@ services = {
 
 ```bash
 # Use the tofu wrapper (auto-selects correct AWS profile)
-./bin/tofu.sh -chdir=environments/myapp-staging init
-./bin/tofu.sh -chdir=environments/myapp-staging plan
-./bin/tofu.sh -chdir=environments/myapp-staging apply
+./bin/tofu.sh init myapp-staging
+./bin/tofu.sh plan myapp-staging
+./bin/tofu.sh apply myapp-staging
+
+# Or use rollout to run init, plan, and apply in sequence
+./bin/tofu.sh rollout myapp-staging
 ```
 
 This creates VPC, RDS, ECS cluster, ALB, ECR repositories, CloudWatch log groups, and supporting resources.
+
+**Note: Lambda timeout on first apply**
+
+The infrastructure includes a Lambda function that creates database users. On the first `tofu apply`, this Lambda may timeout while AWS creates its VPC network interface (ENI). If you see a timeout error like:
+
+```
+module.infrastructure.module.db_users.aws_lambda_invocation.create_users: Still creating... [5m0s elapsed]
+Error: invocation failed: timeout
+```
+
+Simply run `tofu apply` again. The second run typically succeeds in seconds because the ENI is already created. This is a one-time issue that only affects the initial infrastructure setup.
 
 ### 5. Create Secrets in SSM
 
