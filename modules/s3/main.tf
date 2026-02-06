@@ -6,6 +6,9 @@ variable "bucket_name" {
   type = string
 }
 
+# Get AWS account ID for globally unique bucket naming
+data "aws_caller_identity" "current" {}
+
 variable "versioning" {
   type    = bool
   default = false
@@ -46,11 +49,16 @@ variable "cors_max_age_seconds" {
   default     = 3600
 }
 
+locals {
+  # Include account ID for globally unique bucket names
+  bucket_name = "${var.name_prefix}-${var.bucket_name}-${data.aws_caller_identity.current.account_id}"
+}
+
 resource "aws_s3_bucket" "main" {
-  bucket = "${var.name_prefix}-${var.bucket_name}"
+  bucket = local.bucket_name
 
   tags = {
-    Name = "${var.name_prefix}-${var.bucket_name}"
+    Name = local.bucket_name
   }
 }
 

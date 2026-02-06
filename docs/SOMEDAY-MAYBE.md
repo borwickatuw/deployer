@@ -469,3 +469,31 @@ To add ideas to this list:
 
 We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert
 when there are unused secrets
+
+---
+
+## Remove Django Default Commands Fallback
+
+**Current state**: `src/deployer/core/config.py` has two hardcoded fallbacks for backward compatibility:
+
+1. `DJANGO_DEFAULT_COMMANDS` dict (lines 636-644) - provides default commands for `migrate`, `shell`, `dbshell`, `createsuperuser`, `collectstatic`, `check`, `showmigrations` when not defined in deploy.toml
+
+2. Hardcoded DDL check (lines 619, 632) - assumes `migrate` and `makemigrations` need DDL credentials even if deploy.toml doesn't specify `ddl = true`
+
+**Problem**: These fallbacks:
+- Create "magic" behavior that's not explicit in deploy.toml
+- Mix available commands from two sources (deploy.toml + hardcoded defaults)
+- Could mask missing command definitions
+
+**Enhancement**: Remove fallbacks and require explicit command definitions:
+- All commands must be defined in deploy.toml's `[commands]` section
+- DDL requirements must be explicit via `ddl = true`
+- Fail fast with clear error if command not found
+
+**Migration path**:
+1. Audit all deploy.toml files to ensure they define all needed commands
+2. Add `shell`, `dbshell`, `createsuperuser` to deploy.toml files that use them
+3. Remove `DJANGO_DEFAULT_COMMANDS` and hardcoded DDL checks
+4. Update error messages to suggest adding missing commands to deploy.toml
+
+**Complexity**: Low - straightforward code removal and config updates.
