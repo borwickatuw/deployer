@@ -407,6 +407,30 @@ AWS ECS does not support overriding secrets in `containerOverrides` when calling
 
 ---
 
+## 2026-02-05: pg8000 for Lambda PostgreSQL Driver (Bundled Dependencies)
+
+**Decision:** Use pg8000 (pure Python PostgreSQL driver) bundled directly in the Lambda zip, rather than psycopg2 with external Lambda layers.
+
+**Alternatives considered:**
+- psycopg2 with public Lambda Layer (e.g., Klayers project)
+- psycopg2 with self-managed Lambda Layer
+- psycopg2-binary compiled for Amazon Linux
+
+**Reasoning:**
+- **No external dependencies**: Public Lambda layers can disappear, change versions, or have access issues. We encountered permission errors trying to use a third-party psycopg2 layer.
+- **Pure Python**: pg8000 has no C extensions, so it works on any platform without compilation. No need to build for Amazon Linux specifically.
+- **Self-contained**: Dependencies are installed via `pip install -r requirements.txt -t .` at terraform apply time and bundled in the zip.
+- **Small footprint**: pg8000 with dependencies is ~200KB, well under Lambda's 50MB limit.
+- **Reliability**: No cross-account layer access, no version drift, no external service dependencies.
+
+**Trade-offs:**
+- pg8000 is slightly slower than psycopg2 (pure Python vs C extension)
+- Less common than psycopg2 in tutorials/documentation
+
+For a Lambda that runs once at infrastructure provisioning time, the performance difference is irrelevant.
+
+---
+
 ## Template for New Decisions
 
 ```markdown

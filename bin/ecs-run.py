@@ -29,6 +29,7 @@ from pathlib import Path
 
 from deployer.aws import cloudwatch, ecs
 from deployer.core.config import (
+    command_requires_ddl,
     get_run_command,
     load_deploy_toml,
 )
@@ -360,9 +361,9 @@ def cmd_run(args, base_path: Path) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    # Use migrate credentials for migration commands
-    # These commands need DDL privileges (CREATE, ALTER, DROP tables)
-    use_migrate = args.command_name in ("migrate", "makemigrations")
+    # Check if this command needs DDL privileges (CREATE, ALTER, DROP tables)
+    # This is configured in deploy.toml with ddl=true on the command
+    use_migrate = command_requires_ddl(deploy_toml, args.command_name)
 
     return run_ecs_command(
         cluster_name=cluster_name,

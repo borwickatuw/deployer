@@ -67,6 +67,20 @@ dockerfile = "Dockerfile"            # Dockerfile path relative to context
 # [images.web.build_args.production]        # Production-specific build args
 # UV_INSTALL_ARGS = ""
 
+# Example: Multi-stage Dockerfile with target
+# Build a specific stage from a multi-stage Dockerfile.
+#
+# [images.web]
+# context = "."
+# dockerfile = "Dockerfile"
+# target = "production"                # Build the "production" stage
+#
+# Environment-specific targets:
+# [images.web]
+# context = "."
+# dockerfile = "Dockerfile"
+# target = { staging = "development", production = "production" }
+
 
 # ------------------------------------------------------------------------------
 # Services

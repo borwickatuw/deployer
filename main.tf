@@ -146,6 +146,7 @@ module "db_users" {
   vpc_id               = module.vpc.vpc_id
   subnet_ids           = module.vpc.private_subnet_ids
   db_security_group_id = module.rds.security_group_id
+  permissions_boundary = var.iam_permissions_boundary
 
   depends_on = [module.rds, module.db_secrets]
 }

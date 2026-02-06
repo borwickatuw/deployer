@@ -213,6 +213,92 @@ If migrations fail with "database does not exist":
    CREATE DATABASE myapp;
    ```
 
+### Permission Denied on DDL Operations
+
+**Error:** `permission denied for schema public` or `must be owner of table`
+
+The deployer uses a **two-account database model** for security:
+- **App user** (runtime): DML only (SELECT, INSERT, UPDATE, DELETE)
+- **Migrate user** (migrations): DDL + DML (CREATE, ALTER, DROP)
+
+If you see permission errors when running migrations:
+
+1. **Verify you're using the migrate task definition**:
+
+   Commands marked with `ddl = true` in deploy.toml automatically use migrate credentials:
+   ```toml
+   [commands]
+   migrate = { command = ["python", "manage.py", "migrate"], ddl = true }
+   ```
+
+2. **Check the command is recognized**:
+   ```bash
+   # Should use migrate credentials (DDL)
+   uv run python bin/ecs-run.py run myapp-staging migrate
+
+   # Uses app credentials (DML only)
+   uv run python bin/ecs-run.py run myapp-staging showmigrations
+   ```
+
+3. **Verify migrate task definition exists**:
+   ```bash
+   aws ecs list-task-definitions --family-prefix myapp-staging-migrate
+   ```
+
+   If missing, run a deployment to register it:
+   ```bash
+   uv run python bin/deploy.py myapp-staging
+   ```
+
+4. **Test credentials manually**:
+   ```bash
+   # Get migrate credentials from Secrets Manager
+   aws secretsmanager get-secret-value \
+     --secret-id myapp-staging/db-migrate-credentials \
+     --query 'SecretString' --output text | jq .
+
+   # Connect and test DDL
+   psql "postgresql://migrate_user:password@host/dbname" \
+     -c "CREATE TABLE test_ddl (id int); DROP TABLE test_ddl;"
+   ```
+
+### Permission Denied on DML Operations
+
+**Error:** `permission denied for table` on SELECT, INSERT, UPDATE, or DELETE
+
+This can happen if tables were created before the Lambda user-creation ran, or if the app user wasn't granted permissions on existing tables.
+
+1. **Re-run the db-users Lambda** (requires OpenTofu):
+   ```bash
+   # Taint the Lambda invocation to force re-run
+   cd $DEPLOYER_ENVIRONMENTS_DIR/myapp-staging
+   tofu taint 'module.db_users.aws_lambda_invocation.create_users'
+   tofu apply
+   ```
+
+2. **Manually grant permissions** (emergency fix):
+   ```sql
+   -- As master/admin user
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO myapp_staging_app;
+   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO myapp_staging_app;
+   ```
+
+### Tables Created by Wrong User
+
+If migrate user creates tables but app user can't access them:
+
+The Lambda automatically sets `ALTER DEFAULT PRIVILEGES` so new tables get correct permissions. If tables were created manually or before this was configured:
+
+```sql
+-- As master/admin user, grant permissions on existing tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO myapp_staging_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO myapp_staging_app;
+
+-- Also grant to migrate user (needs DML too)
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO myapp_staging_migrate;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO myapp_staging_migrate;
+```
+
 ---
 
 ## Image Build Failures

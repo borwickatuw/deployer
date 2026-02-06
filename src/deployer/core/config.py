@@ -547,11 +547,13 @@ def get_commands_from_deploy_toml(deploy_toml: dict) -> dict[str, list[str]]:
     """Extract the [commands] section from a deploy.toml config.
 
     The [commands] section defines framework-agnostic commands that can be run
-    in ECS containers. Each command maps a name to a list of command arguments.
+    in ECS containers. Each command maps a name to either:
+    - A list of command arguments (simple format)
+    - A dict with 'command' (required) and 'ddl' (optional) keys
 
     Example deploy.toml:
         [commands]
-        migrate = ["python", "manage.py", "migrate"]
+        migrate = { command = ["python", "manage.py", "migrate"], ddl = true }
         shell = ["python", "manage.py", "shell"]
 
     Args:
@@ -563,20 +565,71 @@ def get_commands_from_deploy_toml(deploy_toml: dict) -> dict[str, list[str]]:
     """
     commands = deploy_toml.get("commands", {})
 
-    # Validate that all commands are lists of strings
+    # Validate and normalize commands (support both list and dict formats)
     result = {}
-    for name, args in commands.items():
-        if not isinstance(args, list):
+    for name, value in commands.items():
+        if isinstance(value, list):
+            # Simple format: command = ["python", "manage.py", "migrate"]
+            if not all(isinstance(arg, str) for arg in value):
+                raise ValueError(
+                    f"Command '{name}' must be a list of strings"
+                )
+            result[name] = value
+        elif isinstance(value, dict):
+            # Extended format: command = { command = [...], ddl = true }
+            if "command" not in value:
+                raise ValueError(
+                    f"Command '{name}' in dict format must have a 'command' key"
+                )
+            args = value["command"]
+            if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+                raise ValueError(
+                    f"Command '{name}' must have a list of strings as 'command'"
+                )
+            result[name] = args
+        else:
             raise ValueError(
-                f"Command '{name}' must be a list of strings, got {type(args).__name__}"
+                f"Command '{name}' must be a list of strings or a dict with 'command' key, "
+                f"got {type(value).__name__}"
             )
-        if not all(isinstance(arg, str) for arg in args):
-            raise ValueError(
-                f"Command '{name}' must be a list of strings"
-            )
-        result[name] = args
 
     return result
+
+
+def command_requires_ddl(deploy_toml: dict | None, command_name: str) -> bool:
+    """Check if a command requires DDL database privileges.
+
+    Commands that modify database schema (migrations) need DDL privileges
+    (CREATE, ALTER, DROP). This is indicated by ddl=true in the command config.
+
+    Example deploy.toml:
+        [commands]
+        migrate = { command = ["python", "manage.py", "migrate"], ddl = true }
+        shell = ["python", "manage.py", "shell"]  # No DDL needed
+
+    Args:
+        deploy_toml: Parsed deploy.toml config, or None.
+        command_name: Name of the command to check.
+
+    Returns:
+        True if the command requires DDL privileges, False otherwise.
+    """
+    if not deploy_toml:
+        # Fall back to hardcoded list for backward compatibility
+        return command_name in ("migrate", "makemigrations")
+
+    commands = deploy_toml.get("commands", {})
+    value = commands.get(command_name)
+
+    if isinstance(value, dict):
+        return value.get("ddl", False)
+
+    # Simple list format or command not found - check fallback
+    if command_name in commands:
+        return False  # Explicit command without ddl flag
+
+    # Command not in deploy.toml, use fallback for known DDL commands
+    return command_name in ("migrate", "makemigrations")
 
 
 # Default Django commands for backward compatibility

@@ -25,6 +25,15 @@ venv/
 
 # Lambda build artifacts
 **/handler.zip
+**/lambda.zip
+
+# Lambda pip dependencies (installed at build time)
+modules/db-users/lambda/pg8000/
+modules/db-users/lambda/scramp/
+modules/db-users/lambda/asn1crypto/
+modules/db-users/lambda/dateutil/
+modules/db-users/lambda/*.dist-info/
+modules/db-users/lambda/six.py
 
 # IDE
 .idea/

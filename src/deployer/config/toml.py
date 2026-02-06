@@ -33,6 +33,7 @@ KNOWN_KEYS = {
         # Per-image keys
         "context",
         "dockerfile",
+        "target",
         "push",
         "depends_on",
         "build_args",

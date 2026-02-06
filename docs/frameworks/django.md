@@ -91,7 +91,16 @@ DEBUG = "true"
 DEBUG = "false"
 ```
 
-### DATABASE_URL
+### Database Configuration
+
+The deployer uses a **two-account database model** for security:
+
+- **App user** (DML only): `SELECT`, `INSERT`, `UPDATE`, `DELETE` - used by runtime services
+- **Migrate user** (DDL + DML): `CREATE`, `ALTER`, `DROP` - used only for migrations
+
+This reduces blast radius if the application is compromised - attackers cannot drop tables or alter schema.
+
+#### Settings Configuration
 
 Use `dj-database-url` for database configuration:
 
@@ -114,11 +123,28 @@ else:
     }
 ```
 
-In `deploy.toml`:
+The deployer automatically injects `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` environment variables based on the credential mode. Your settings should construct `DATABASE_URL` from these or use the module system.
+
+#### Commands Requiring DDL
+
+Commands that modify the database schema (like `migrate` and `makemigrations`) need DDL privileges. Mark these in your `deploy.toml` with `ddl = true`:
 
 ```toml
-[secrets]
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
+[commands]
+migrate = { command = ["python", "manage.py", "migrate"], ddl = true }
+makemigrations = { command = ["python", "manage.py", "makemigrations"], ddl = true }
+showmigrations = ["python", "manage.py", "showmigrations"]  # No DDL needed
+collectstatic = ["python", "manage.py", "collectstatic", "--noinput"]
+```
+
+When you run a DDL command via `ecs-run.py`, it automatically uses the migrate task definition with DDL+DML credentials:
+
+```bash
+# Uses migrate credentials (DDL + DML)
+ecs-run.py run myapp-staging migrate
+
+# Uses app credentials (DML only)
+ecs-run.py run myapp-staging collectstatic
 ```
 
 ## Static Files with WhiteNoise

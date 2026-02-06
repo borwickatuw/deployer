@@ -13,10 +13,20 @@ import os
 import logging
 
 import boto3
-import psycopg2
+import pg8000.native
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+def escape_literal(value: str) -> str:
+    """Escape a string for use as a PostgreSQL literal.
+
+    PostgreSQL DDL statements (CREATE USER, ALTER USER) don't support
+    parameterized queries, so we must escape values manually.
+    """
+    # Replace single quotes with two single quotes, wrap in quotes
+    return "'" + value.replace("'", "''") + "'"
 
 
 def get_secret(secret_arn: str) -> dict:
@@ -26,16 +36,16 @@ def get_secret(secret_arn: str) -> dict:
     return json.loads(response["SecretString"])
 
 
-def user_exists(cursor, username: str) -> bool:
+def user_exists(conn, username: str) -> bool:
     """Check if a PostgreSQL user already exists."""
-    cursor.execute(
-        "SELECT 1 FROM pg_roles WHERE rolname = %s",
-        (username,)
+    result = conn.run(
+        "SELECT 1 FROM pg_roles WHERE rolname = :username",
+        username=username
     )
-    return cursor.fetchone() is not None
+    return len(result) > 0
 
 
-def create_app_user(cursor, username: str, password: str, db_name: str) -> None:
+def create_app_user(conn, username: str, password: str, db_name: str) -> None:
     """Create the app user with DML-only privileges.
 
     The app user can:
@@ -48,34 +58,31 @@ def create_app_user(cursor, username: str, password: str, db_name: str) -> None:
     - TRUNCATE tables
     - Manage other users
     """
-    # Create user
-    cursor.execute(
-        f"CREATE USER {username} WITH PASSWORD %s",
-        (password,)
-    )
+    # Create user (DDL doesn't support parameters, so we escape the password)
+    conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
 
     # Grant connect
-    cursor.execute(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
+    conn.run(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
 
     # Grant schema usage
-    cursor.execute(f"GRANT USAGE ON SCHEMA public TO {username}")
+    conn.run(f"GRANT USAGE ON SCHEMA public TO {username}")
 
     # Grant DML on existing tables
-    cursor.execute(
+    conn.run(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {username}"
     )
 
     # Grant DML on future tables (when migrate user creates them)
-    cursor.execute(
+    conn.run(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {username}"
     )
 
     # Grant sequence usage (for auto-increment columns)
-    cursor.execute(
+    conn.run(
         f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {username}"
     )
-    cursor.execute(
+    conn.run(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT USAGE, SELECT ON SEQUENCES TO {username}"
     )
@@ -83,7 +90,7 @@ def create_app_user(cursor, username: str, password: str, db_name: str) -> None:
     logger.info(f"Created app user '{username}' with DML-only privileges")
 
 
-def create_migrate_user(cursor, username: str, password: str, db_name: str) -> None:
+def create_migrate_user(conn, username: str, password: str, db_name: str) -> None:
     """Create the migrate user with DDL + DML privileges.
 
     The migrate user can:
@@ -94,34 +101,31 @@ def create_migrate_user(cursor, username: str, password: str, db_name: str) -> N
 
     This user is only used for running migrations.
     """
-    # Create user
-    cursor.execute(
-        f"CREATE USER {username} WITH PASSWORD %s",
-        (password,)
-    )
+    # Create user (DDL doesn't support parameters, so we escape the password)
+    conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
 
     # Grant connect
-    cursor.execute(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
+    conn.run(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
 
     # Grant full schema privileges (DDL + DML)
-    cursor.execute(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {username}")
+    conn.run(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {username}")
 
     # Grant full privileges on existing tables
-    cursor.execute(
+    conn.run(
         f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {username}"
     )
 
     # Grant full privileges on future tables
-    cursor.execute(
+    conn.run(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT ALL PRIVILEGES ON TABLES TO {username}"
     )
 
     # Grant full privileges on sequences
-    cursor.execute(
+    conn.run(
         f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {username}"
     )
-    cursor.execute(
+    conn.run(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT ALL PRIVILEGES ON SEQUENCES TO {username}"
     )
@@ -129,12 +133,9 @@ def create_migrate_user(cursor, username: str, password: str, db_name: str) -> N
     logger.info(f"Created migrate user '{username}' with DDL + DML privileges")
 
 
-def update_user_password(cursor, username: str, password: str) -> None:
+def update_user_password(conn, username: str, password: str) -> None:
     """Update an existing user's password."""
-    cursor.execute(
-        f"ALTER USER {username} WITH PASSWORD %s",
-        (password,)
-    )
+    conn.run(f"ALTER USER {username} WITH PASSWORD {escape_literal(password)}")
     logger.info(f"Updated password for user '{username}'")
 
 
@@ -157,34 +158,29 @@ def handler(event, context):
 
     logger.info(f"Connecting to database {db_name} at {master['host']}:{master['port']}")
 
-    # Connect as master user
-    conn = psycopg2.connect(
+    # Connect as master user using pg8000 native interface
+    conn = pg8000.native.Connection(
         host=master["host"],
-        port=master["port"],
-        dbname=db_name,
+        port=int(master["port"]),
+        database=db_name,
         user=master["username"],
         password=master["password"],
     )
-    conn.autocommit = True
 
     try:
-        cursor = conn.cursor()
-
         # Create or update app user
-        if user_exists(cursor, app["username"]):
+        if user_exists(conn, app["username"]):
             logger.info(f"App user '{app['username']}' already exists, updating password")
-            update_user_password(cursor, app["username"], app["password"])
+            update_user_password(conn, app["username"], app["password"])
         else:
-            create_app_user(cursor, app["username"], app["password"], db_name)
+            create_app_user(conn, app["username"], app["password"], db_name)
 
         # Create or update migrate user
-        if user_exists(cursor, migrate["username"]):
+        if user_exists(conn, migrate["username"]):
             logger.info(f"Migrate user '{migrate['username']}' already exists, updating password")
-            update_user_password(cursor, migrate["username"], migrate["password"])
+            update_user_password(conn, migrate["username"], migrate["password"])
         else:
-            create_migrate_user(cursor, migrate["username"], migrate["password"], db_name)
-
-        cursor.close()
+            create_migrate_user(conn, migrate["username"], migrate["password"], db_name)
 
         return {
             "status": "success",

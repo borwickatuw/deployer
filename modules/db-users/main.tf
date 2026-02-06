@@ -54,6 +54,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "permissions_boundary" {
+  type        = string
+  description = "IAM permissions boundary ARN for the Lambda role"
+  default     = null
+}
+
 # Generate random passwords for app and migrate users
 resource "random_password" "app_password" {
   length  = 32
@@ -146,7 +152,8 @@ resource "aws_security_group_rule" "lambda_to_db" {
 
 # IAM role for Lambda
 resource "aws_iam_role" "lambda" {
-  name = "${var.name_prefix}-db-users-lambda"
+  name                 = "${var.name_prefix}-db-users-lambda"
+  permissions_boundary = var.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -202,11 +209,25 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+# Install Python dependencies for Lambda
+resource "null_resource" "lambda_dependencies" {
+  triggers = {
+    requirements = filemd5("${path.module}/lambda/requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command = "pip install -r ${path.module}/lambda/requirements.txt -t ${path.module}/lambda --upgrade --quiet"
+  }
+}
+
 # Package the Lambda function code
 data "archive_file" "lambda" {
   type        = "zip"
   source_dir  = "${path.module}/lambda"
   output_path = "${path.module}/lambda.zip"
+  excludes    = ["requirements.txt", "__pycache__"]
+
+  depends_on = [null_resource.lambda_dependencies]
 }
 
 # Lambda function to create database users
@@ -233,11 +254,6 @@ resource "aws_lambda_function" "create_db_users" {
       DB_NAME            = var.db_name
     }
   }
-
-  # Use Lambda layer for psycopg2
-  layers = [
-    "arn:aws:lambda:${data.aws_region.current.name}:898466741470:layer:psycopg2-py312:1"
-  ]
 
   tags = var.tags
 

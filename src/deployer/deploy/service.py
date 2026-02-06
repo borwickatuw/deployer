@@ -475,15 +475,6 @@ def start_migrations(
     if not migrations.get("enabled", False):
         return None
 
-    # Check if migrations can be skipped (no changes since last deploy)
-    current_hash = None
-    if source_dir and not dry_run:
-        should_skip, current_hash = should_skip_migrations(source_dir, app_name, environment)
-        if should_skip:
-            return None
-
-    log("Starting migrations...")
-
     # Determine which service to use for migrations
     migration_service = migrations.get("service", "web")
     services_config = config.get("services", {})
@@ -495,9 +486,9 @@ def start_migrations(
         log_error(f"No image URI for migration service {migration_service} (image: {image_name})")
         return None
 
-    # Register task definition with migrate credentials (DDL + DML)
-    # This ensures migrations have the necessary permissions to create/alter tables
-    # Use a separate task family "migrate" to avoid affecting the service's task definition
+    # Always register the migrate task definition so it's available for ecs-run.py
+    # This ensures the task definition exists even if we skip running migrations
+    log("Registering migrate task definition...")
     task_def_arn = register_task_definition(
         ecs_client,
         "migrate",  # Use "migrate" as task family name
@@ -517,6 +508,16 @@ def start_migrations(
     if dry_run:
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs run-task (migrate command)")
         return None
+
+    # Check if migrations can be skipped (no changes since last deploy)
+    current_hash = None
+    if source_dir:
+        should_skip, current_hash = should_skip_migrations(source_dir, app_name, environment)
+        if should_skip:
+            # Task definition is registered but we skip running the migration
+            return None
+
+    log("Starting migrations...")
 
     command = migrations.get("command", ["python", "manage.py", "migrate"])
 
