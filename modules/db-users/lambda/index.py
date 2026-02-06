@@ -72,19 +72,9 @@ def create_app_user(conn, username: str, password: str, db_name: str) -> None:
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {username}"
     )
 
-    # Grant DML on future tables (when migrate user creates them)
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {username}"
-    )
-
     # Grant sequence usage (for auto-increment columns)
     conn.run(
         f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {username}"
-    )
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT USAGE, SELECT ON SEQUENCES TO {username}"
     )
 
     logger.info(f"Created app user '{username}' with DML-only privileges")
@@ -115,19 +105,9 @@ def create_migrate_user(conn, username: str, password: str, db_name: str) -> Non
         f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {username}"
     )
 
-    # Grant full privileges on future tables
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT ALL PRIVILEGES ON TABLES TO {username}"
-    )
-
     # Grant full privileges on sequences
     conn.run(
         f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {username}"
-    )
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT ALL PRIVILEGES ON SEQUENCES TO {username}"
     )
 
     logger.info(f"Created migrate user '{username}' with DDL + DML privileges")
@@ -137,6 +117,46 @@ def update_user_password(conn, username: str, password: str) -> None:
     """Update an existing user's password."""
     conn.run(f"ALTER USER {username} WITH PASSWORD {escape_literal(password)}")
     logger.info(f"Updated password for user '{username}'")
+
+
+def setup_default_privileges(conn, migrate_username: str, app_username: str) -> None:
+    """Set up default privileges so app user can access tables created by migrate user.
+
+    This uses ALTER DEFAULT PRIVILEGES FOR ROLE which sets the defaults for objects
+    created by the migrate user, not the current user (master).
+
+    This is idempotent and should be run on every Lambda invocation.
+    """
+    # Tables created by migrate user should be accessible by app user
+    conn.run(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {migrate_username} IN SCHEMA public "
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {app_username}"
+    )
+
+    # Sequences created by migrate user should be accessible by app user
+    conn.run(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {migrate_username} IN SCHEMA public "
+        f"GRANT USAGE, SELECT ON SEQUENCES TO {app_username}"
+    )
+
+    logger.info(
+        f"Set up default privileges: {migrate_username}'s objects grant access to {app_username}"
+    )
+
+
+def grant_app_permissions(conn, app_username: str) -> None:
+    """Grant app user permissions on all existing tables and sequences.
+
+    This handles tables that may have been created before default privileges
+    were properly configured. Idempotent - safe to run multiple times.
+    """
+    conn.run(
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {app_username}"
+    )
+    conn.run(
+        f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {app_username}"
+    )
+    logger.info(f"Granted permissions on existing objects to {app_username}")
 
 
 def transfer_ownership(conn, migrate_username: str) -> None:
@@ -233,6 +253,14 @@ def handler(event, context):
         # Transfer ownership of existing tables/sequences to migrate user
         # This handles migration from single-user to two-account model
         transfer_ownership(conn, migrate["username"])
+
+        # Set up default privileges so tables created by migrate user
+        # are automatically accessible by app user
+        setup_default_privileges(conn, migrate["username"], app["username"])
+
+        # Grant app user access to any existing tables
+        # (handles tables created before defaults were configured)
+        grant_app_permissions(conn, app["username"])
 
         return {
             "status": "success",
