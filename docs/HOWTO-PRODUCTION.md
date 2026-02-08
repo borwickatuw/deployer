@@ -17,6 +17,20 @@ This guide covers deploying, operating, and maintaining production environments 
 
 ## Initial Production Deployment
 
+### Recovery Targets
+
+| Metric | Target | How Achieved |
+|--------|--------|--------------|
+| RPO (Recovery Point Objective) | 5 minutes | RDS continuous backup (point-in-time recovery) |
+| RTO (Recovery Time Objective) | 1 hour | emergency.py restore procedures |
+| Retention | 35 days (production) | rds_backup_retention_period setting |
+| Multi-AZ Failover | Automatic | rds_multi_az = true |
+
+These targets assume:
+- Production RDS settings applied (35-day retention, deletion protection, multi-az)
+- Monthly restore testing via `emergency.py restore-db`
+- Emergency procedures documented and practiced
+
 ### Pre-Deployment Checklist
 
 Before deploying to production, verify:
