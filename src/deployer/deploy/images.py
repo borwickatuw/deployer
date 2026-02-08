@@ -8,6 +8,7 @@ from pathlib import Path
 
 from botocore.exceptions import ClientError
 
+from ..config import DeployConfig, ImageConfig
 from ..core import topological_sort
 from ..timing import get_timer
 from ..utils import Colors, log, log_error, log_status, log_success, log_warning
@@ -193,56 +194,8 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     log_success("ECR login")
 
 
-def get_build_args(image_config: dict, environment: str) -> dict[str, str]:
-    """Get merged build arguments for an image.
-
-    Merge order (later values override earlier):
-    1. build_args = { KEY = "value" } - base args
-    2. build_args.{environment} = { KEY = "value" } - environment-specific
-
-    Args:
-        image_config: The image configuration dictionary.
-        environment: The target environment (staging, production).
-
-    Returns:
-        Merged build arguments dictionary.
-    """
-    build_args_config = image_config.get("build_args", {})
-
-    # Start with base build_args - filter out sub-tables (staging, production, etc.)
-    merged = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
-
-    # Merge environment-specific build_args if exists
-    env_override = build_args_config.get(environment, {})
-    merged.update(env_override)
-
-    return merged
-
-
-def get_target(image_config: dict, environment: str) -> str | None:
-    """Get the Docker build target for an image.
-
-    Supports environment-specific override via target.{environment}.
-
-    Args:
-        image_config: The image configuration dictionary.
-        environment: The target environment (staging, production).
-
-    Returns:
-        Target name or None if not specified.
-    """
-    target_config = image_config.get("target")
-
-    # If target is a dict, look for environment-specific value
-    if isinstance(target_config, dict):
-        return target_config.get(environment)
-
-    # Otherwise it's a string (or None)
-    return target_config
-
-
 def build_and_push_images(
-    config: dict,
+    config: DeployConfig | dict,
     source_dir: Path,
     ecr_prefix: str,
     account_id: str,
@@ -279,27 +232,48 @@ def build_and_push_images(
     log("Building and pushing images...")
 
     image_uris = {}
-    images = config.get("images", {})
+
+    # Support both DeployConfig dataclass and raw dict
+    if isinstance(config, DeployConfig):
+        images = config.images
+        # Convert to dict format for topological_sort
+        images_for_sort = {
+            name: {"depends_on": img.depends_on} for name, img in images.items()
+        }
+    else:
+        images = config.get("images", {})
+        images_for_sort = images
 
     # Sort images by dependencies
     try:
-        build_order = topological_sort(images)
+        build_order = topological_sort(images_for_sort)
     except ValueError as e:
         log_error(str(e))
         raise
 
     for image_name in build_order:
         image_config = images[image_name]
-        context = source_dir / image_config["context"]
-        dockerfile = image_config.get("dockerfile", "Dockerfile")
-        should_push = image_config.get("push", True)
+
+        # Handle both ImageConfig dataclass and raw dict
+        if isinstance(image_config, ImageConfig):
+            context = source_dir / image_config.context
+            dockerfile = image_config.dockerfile
+            should_push = image_config.push
+            build_args = image_config.get_build_args(environment)
+            target = image_config.get_target(environment)
+        else:
+            context = source_dir / image_config["context"]
+            dockerfile = image_config.get("dockerfile", "Dockerfile")
+            should_push = image_config.get("push", True)
+            # Legacy dict support - inline the logic
+            build_args_config = image_config.get("build_args", {})
+            build_args = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
+            build_args.update(build_args_config.get(environment, {}))
+            target_config = image_config.get("target")
+            target = target_config.get(environment) if isinstance(target_config, dict) else target_config
 
         # Compute content hash for cache key
         content_hash = compute_context_hash(context, dockerfile)
-
-        # Include build args and target in hash (they affect the image)
-        build_args = get_build_args(image_config, environment)
-        target = get_target(image_config, environment)
 
         hash_modifiers = []
         if build_args:
@@ -408,7 +382,7 @@ def build_and_push_images(
 
 def validate_ecr_repositories(
     ecr_client,
-    config: dict,
+    config: DeployConfig | dict,
     ecr_prefix: str,
 ) -> list[str]:
     """Validate that all required ECR repositories exist.
@@ -418,18 +392,28 @@ def validate_ecr_repositories(
 
     Args:
         ecr_client: boto3 ECR client.
-        config: The deployment configuration dictionary.
+        config: The deployment configuration (DeployConfig or dict).
         ecr_prefix: ECR repository prefix.
 
     Returns:
         List of missing repository names. Empty list if all exist.
     """
     missing = []
-    images = config.get("images", {})
+
+    # Support both DeployConfig dataclass and raw dict
+    if isinstance(config, DeployConfig):
+        images = config.images
+    else:
+        images = config.get("images", {})
 
     for image_name, image_config in images.items():
         # Skip images that won't be pushed
-        if not image_config.get("push", True):
+        if isinstance(image_config, ImageConfig):
+            should_push = image_config.push
+        else:
+            should_push = image_config.get("push", True)
+
+        if not should_push:
             continue
 
         repo_name = f"{ecr_prefix}-{image_name}"

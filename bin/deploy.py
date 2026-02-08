@@ -29,15 +29,10 @@ import threading
 import time
 from pathlib import Path
 
-try:
-    import tomllib  # Python 3.11+
-except ImportError:
-    import tomli as tomllib  # Fallback for older Python
-
 import boto3
 import requests
 
-from deployer.config.toml import validate_deploy_toml
+from deployer.config import DeployConfig, parse_deploy_config
 from deployer.core import run_audit
 from deployer.core.config import (
     derive_environment_from_env_name,
@@ -98,20 +93,22 @@ class Deployer:
         self.force_build = force_build
         self.timer = timer
 
-        # Load configuration
-        with open(self.config_path, "rb") as f:
-            self.config = tomllib.load(f)
+        # Load configuration using typed dataclass
+        self.deploy_config = parse_deploy_config(self.config_path)
 
-        # Validate configuration and warn about unknown options
-        config_warnings = validate_deploy_toml(self.config)
+        # Warn about unknown options
+        config_warnings = self.deploy_config.get_warnings()
         for warning in config_warnings:
             log_warning(f"deploy.toml: {warning}")
         if config_warnings:
             print()  # Add blank line after warnings
 
-        self.app_name = self.config["application"]["name"]
+        # Get raw dict for backward compatibility with existing code
+        self.config = self.deploy_config.get_raw_dict()
+
+        self.app_name = self.deploy_config.application.name
         # Resolve source_dir relative to the config file's location
-        source_path = self.config["application"]["source"]
+        source_path = self.deploy_config.application.source
         self.source_dir = (self.config_path.parent / source_path).resolve()
 
         # Extract sections from resolved environment config
@@ -770,11 +767,10 @@ Examples:
         return 1
 
     # Load configs
-    with open(parsed.config, "rb") as f:
-        deploy_config = tomllib.load(f)
+    deploy_config = parse_deploy_config(parsed.config)
 
-    app_name = deploy_config.get("application", {}).get("name", "unknown")
-    health_path = _get_health_check_path(deploy_config)
+    app_name = deploy_config.application.name
+    health_path = _get_health_check_path(deploy_config.get_raw_dict())
 
     env_dir = get_environment_path(parsed.environment)
     if not env_dir.exists():
@@ -1108,8 +1104,7 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
             print()
 
     # Load deploy.toml for pre-flight checks
-    with open(config_path, "rb") as f:
-        deploy_config = tomllib.load(f)
+    deploy_config = parse_deploy_config(config_path)
 
     # Check ECR repositories exist unless --skip-ecr-check is set
     if not args.skip_ecr_check:
@@ -1121,7 +1116,7 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
             if not ecr_prefix:
                 log_warning("ecr_prefix not found in config.toml, skipping ECR check")
             else:
-                images = deploy_config.get("images", {})
+                images = deploy_config.images
                 log_debug(f"Images to check: {list(images.keys())}")
                 missing_repos = validate_ecr_repositories(ecr_client, deploy_config, ecr_prefix)
                 if missing_repos:
@@ -1129,8 +1124,8 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
                     sys.exit(1)
                 else:
                     image_count = len([
-                        img for img, cfg in images.items()
-                        if cfg.get("push", True)
+                        img for img in images.values()
+                        if img.push
                     ])
                     log_success(f"All {image_count} ECR repository(ies) present")
             print()
@@ -1143,7 +1138,7 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
         log("Checking SSM secrets...")
         try:
             missing, present = check_secrets_exist(
-                deploy_config, environment_type, environment, env_config
+                deploy_config.get_raw_dict(), environment_type, environment, env_config
             )
 
             if missing:

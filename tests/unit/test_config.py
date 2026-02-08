@@ -3,12 +3,13 @@
 import pytest
 
 from deployer.config import (
+    AuditConfig,
+    DeployConfig,
+    ImageConfig,
+    ServiceConfig,
     TfvarsService,
-    get_audit_config,
     get_compose_services,
-    get_deploy_env_vars,
-    get_deploy_images,
-    get_deploy_services,
+    parse_deploy_config,
     parse_deploy_toml,
     parse_docker_compose,
     parse_tfvars,
@@ -33,81 +34,110 @@ class TestParseDeployToml:
             parse_deploy_toml(tmp_path / "nonexistent.toml")
 
 
-class TestGetDeployServices:
-    """Tests for get_deploy_services function."""
+class TestDeployConfigServices:
+    """Tests for DeployConfig.services (replaces get_deploy_services)."""
 
-    def test_extract_services(self):
+    def test_extract_services(self, tmp_path):
         """Test extracting services from deploy config."""
-        deploy = {
-            "services": {
-                "web": {"image": "web", "port": 8000},
-                "worker": {"image": "worker"},
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_services(deploy)
+[services.web]
+image = "web"
+port = 8000
 
-        assert "web" in result
-        assert result["web"]["image"] == "web"
-        assert result["web"]["port"] == 8000
-        assert "worker" in result
+[services.worker]
+image = "worker"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
 
-    def test_empty_services(self):
+        assert "web" in config.services
+        assert config.services["web"].image == "web"
+        assert config.services["web"].port == 8000
+        assert "worker" in config.services
+
+    def test_empty_services(self, tmp_path):
         """Test with no services."""
-        result = get_deploy_services({})
-        assert result == {}
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        assert config.services == {}
 
 
-class TestGetDeployImages:
-    """Tests for get_deploy_images function."""
+class TestDeployConfigImages:
+    """Tests for DeployConfig.images (replaces get_deploy_images)."""
 
-    def test_extract_images(self):
+    def test_extract_images(self, tmp_path):
         """Test extracting images from deploy config."""
-        deploy = {
-            "images": {
-                "web": {"context": ".", "dockerfile": "Dockerfile.web"},
-                "base": {"context": "./base", "push": False},
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_images(deploy)
+[images.web]
+context = "."
+dockerfile = "Dockerfile.web"
 
-        assert "web" in result
-        assert result["web"]["context"] == "."
-        assert result["web"]["dockerfile"] == "Dockerfile.web"
-        assert result["web"]["push"] is True
+[images.base]
+context = "./base"
+push = false
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
 
-        assert result["base"]["push"] is False
+        assert "web" in config.images
+        assert config.images["web"].context == "."
+        assert config.images["web"].dockerfile == "Dockerfile.web"
+        assert config.images["web"].push is True
 
-    def test_default_dockerfile(self):
+        assert config.images["base"].push is False
+
+    def test_default_dockerfile(self, tmp_path):
         """Test default Dockerfile value."""
-        deploy = {"images": {"app": {"context": "."}}}
-        result = get_deploy_images(deploy)
-        assert result["app"]["dockerfile"] == "Dockerfile"
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[images.app]
+context = "."
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        assert config.images["app"].dockerfile == "Dockerfile"
 
 
-class TestGetDeployEnvVars:
-    """Tests for get_deploy_env_vars function."""
+class TestDeployConfigEnvVars:
+    """Tests for DeployConfig.get_all_env_var_names (replaces get_deploy_env_vars)."""
 
-    def test_extract_env_vars(self):
+    def test_extract_env_vars(self, tmp_path):
         """Test extracting environment variables."""
-        deploy = {
-            "environment": {
-                "DEBUG": "false",
-                "staging": {"DEBUG": "true"},
-            },
-            "secrets": {"API_KEY": "ssm:/key"},
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_env_vars(deploy)
+[environment]
+DEBUG = "false"
+
+[environment.staging]
+DEBUG = "true"
+
+[secrets]
+API_KEY = "ssm:/key"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "DEBUG" in result
         assert "API_KEY" in result
 
-    def test_module_injected_database_vars(self):
+    def test_module_injected_database_vars(self, tmp_path):
         """Test that database module vars are included."""
-        deploy = {"database": {"type": "postgresql"}}
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[database]
+type = "postgresql"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "DB_HOST" in result
         assert "DB_PORT" in result
@@ -115,51 +145,96 @@ class TestGetDeployEnvVars:
         assert "DB_USERNAME" in result
         assert "DB_PASSWORD" in result
 
-    def test_module_injected_cache_vars(self):
+    def test_module_injected_cache_vars(self, tmp_path):
         """Test that cache module vars are included."""
-        deploy = {"cache": {"type": "redis"}}
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[cache]
+type = "redis"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "REDIS_URL" in result
 
-    def test_module_injected_storage_vars(self):
+    def test_module_injected_storage_vars(self, tmp_path):
         """Test that storage module vars are included."""
-        deploy = {"storage": {"type": "s3", "buckets": ["media", "originals"]}}
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[storage]
+type = "s3"
+buckets = ["media", "originals"]
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "S3_MEDIA_BUCKET" in result
         assert "S3_MEDIA_BUCKET_REGION" in result
         assert "S3_ORIGINALS_BUCKET" in result
         assert "S3_ORIGINALS_BUCKET_REGION" in result
 
-    def test_module_injected_cdn_vars(self):
+    def test_module_injected_cdn_vars(self, tmp_path):
         """Test that CDN module vars are included."""
-        deploy = {"cdn": {"type": "cloudfront"}}
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[cdn]
+type = "cloudfront"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "CLOUDFRONT_DOMAIN" in result
         assert "CLOUDFRONT_KEY_ID" in result
         assert "CLOUDFRONT_PRIVATE_KEY" in result
 
-    def test_module_injected_secrets_vars(self):
+    def test_module_injected_secrets_vars(self, tmp_path):
         """Test that secrets module vars are included."""
-        deploy = {"secrets": {"names": ["SECRET_KEY", "API_TOKEN"]}}
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[secrets]
+names = ["SECRET_KEY", "API_TOKEN"]
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "SECRET_KEY" in result
         assert "API_TOKEN" in result
 
-    def test_all_modules_combined(self):
+    def test_all_modules_combined(self, tmp_path):
         """Test that all modules work together."""
-        deploy = {
-            "environment": {"CUSTOM_VAR": "value"},
-            "database": {"type": "postgresql"},
-            "cache": {"type": "redis"},
-            "storage": {"type": "s3", "buckets": ["media"]},
-            "cdn": {"type": "cloudfront"},
-            "secrets": {"names": ["SECRET_KEY"]},
-        }
-        result = get_deploy_env_vars(deploy)
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[environment]
+CUSTOM_VAR = "value"
+
+[database]
+type = "postgresql"
+
+[cache]
+type = "redis"
+
+[storage]
+type = "s3"
+buckets = ["media"]
+
+[cdn]
+type = "cloudfront"
+
+[secrets]
+names = ["SECRET_KEY"]
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         # Explicit env var
         assert "CUSTOM_VAR" in result
@@ -175,30 +250,34 @@ class TestGetDeployEnvVars:
         assert "SECRET_KEY" in result
 
 
-class TestGetAuditConfig:
-    """Tests for get_audit_config function."""
+class TestDeployConfigAudit:
+    """Tests for DeployConfig.audit (replaces get_audit_config)."""
 
-    def test_extract_audit_config(self):
+    def test_extract_audit_config(self, tmp_path):
         """Test extracting audit configuration."""
-        deploy = {
-            "audit": {
-                "ignore_services": ["db"],
-                "service_mapping": {"app": "web"},
-                "ignore_env_vars": ["DEBUG"],
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_audit_config(deploy)
+[audit]
+ignore_services = ["db"]
+service_mapping = { app = "web" }
+ignore_env_vars = ["DEBUG"]
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        audit = config.audit
 
-        assert "db" in result["ignore_services"]
-        assert result["service_mapping"]["app"] == "web"
-        assert "DEBUG" in result["ignore_env_vars"]
+        assert "db" in audit.ignore_services
+        assert audit.service_mapping["app"] == "web"
+        assert "DEBUG" in audit.ignore_env_vars
 
-    def test_empty_audit_config(self):
+    def test_empty_audit_config(self, tmp_path):
         """Test with no audit config."""
-        result = get_audit_config({})
-        assert result["ignore_services"] == set()
-        assert result["service_mapping"] == {}
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        audit = config.audit
+        assert audit.ignore_services == set()
+        assert audit.service_mapping == {}
 
 
 class TestParseDockerCompose:
@@ -325,3 +404,54 @@ class TestTfvarsService:
         assert svc.port == 8080
         assert svc.health_check_path == "/health"
         assert svc.path_pattern == "/api/*"
+
+
+class TestImageConfig:
+    """Tests for ImageConfig dataclass."""
+
+    def test_get_target_string(self):
+        """Test get_target with string value."""
+        img = ImageConfig.from_dict("web", {"context": ".", "target": "production"})
+        assert img.get_target("staging") == "production"
+        assert img.get_target("production") == "production"
+
+    def test_get_target_dict(self):
+        """Test get_target with environment-specific dict."""
+        img = ImageConfig.from_dict(
+            "web",
+            {"context": ".", "target": {"staging": "development", "production": "production"}},
+        )
+        assert img.get_target("staging") == "development"
+        assert img.get_target("production") == "production"
+
+    def test_get_target_none(self):
+        """Test get_target when not specified."""
+        img = ImageConfig.from_dict("web", {"context": "."})
+        assert img.get_target("staging") is None
+
+    def test_get_build_args_base(self):
+        """Test get_build_args with base args only."""
+        img = ImageConfig.from_dict(
+            "web", {"context": ".", "build_args": {"PYTHON_VERSION": "3.12", "DEBUG": "0"}}
+        )
+        args = img.get_build_args("staging")
+        assert args == {"PYTHON_VERSION": "3.12", "DEBUG": "0"}
+
+    def test_get_build_args_with_env_override(self):
+        """Test get_build_args with environment-specific overrides."""
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "build_args": {
+                    "PYTHON_VERSION": "3.12",
+                    "staging": {"DEBUG": "1"},
+                    "production": {"DEBUG": "0"},
+                },
+            },
+        )
+        staging_args = img.get_build_args("staging")
+        assert staging_args == {"PYTHON_VERSION": "3.12", "DEBUG": "1"}
+
+        prod_args = img.get_build_args("production")
+        assert prod_args == {"PYTHON_VERSION": "3.12", "DEBUG": "0"}

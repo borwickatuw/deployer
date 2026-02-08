@@ -4,6 +4,7 @@ import string
 
 import pytest
 
+from deployer.config import AuditConfig
 from deployer.core import (
     ServiceMetrics,
     audit_env_vars,
@@ -335,14 +336,14 @@ class TestAuditServices:
         """Test no issues when all services accounted for."""
         compose = {"web": {"has_build": True, "profiles": []}}
         deploy = {"web": {}}
-        config = {"ignore_services": set(), "service_mapping": {}}
+        config = AuditConfig(ignore_services=set(), service_mapping={})
         assert audit_services(compose, deploy, config) == []
 
     def test_missing_service(self):
         """Test detection of missing service."""
         compose = {"web": {"has_build": True, "profiles": []}}
         deploy = {}
-        config = {"ignore_services": set(), "service_mapping": {}}
+        config = AuditConfig(ignore_services=set(), service_mapping={})
         issues = audit_services(compose, deploy, config)
         assert len(issues) == 1
         assert "web" in issues[0]
@@ -355,7 +356,7 @@ class TestAuditImages:
         """Test no issues when all images accounted for."""
         compose = {"web": {"has_build": True, "build_context": "web", "profiles": []}}
         images = {"web": {"context": "web"}}
-        config = {"ignore_services": set(), "ignore_images": set()}
+        config = AuditConfig(ignore_services=set(), ignore_images=set())
         assert audit_images(compose, images, config) == []
 
 
@@ -368,7 +369,7 @@ class TestAuditEnvVars:
             "web": {"has_build": True, "environment": ["DATABASE_URL"], "profiles": []}
         }
         env_vars = {"DATABASE_URL"}
-        config = {"ignore_env_vars": set(), "ignore_services": set()}
+        config = AuditConfig(ignore_env_vars=set(), ignore_services=set())
         assert audit_env_vars(compose, env_vars, config) == []
 
 

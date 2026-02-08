@@ -4,7 +4,6 @@ from .images import (
     build_and_push_images,
     ecr_login,
     format_missing_ecr_error,
-    get_build_args,
     validate_ecr_repositories,
 )
 from .service import (
@@ -35,7 +34,6 @@ __all__ = [
     "build_and_push_images",
     "ecr_login",
     "format_missing_ecr_error",
-    "get_build_args",
     "validate_ecr_repositories",
     # Task definition
     "build_task_definition",

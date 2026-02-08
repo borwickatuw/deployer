@@ -10,9 +10,9 @@ bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
 # Import from the new module structure
+from deployer.config import ImageConfig
 from deployer.core import topological_sort
 from deployer.deploy import (
-    get_build_args,
     get_environment_variables,
     get_service_sizing,
 )
@@ -272,35 +272,35 @@ class TestResolveLegacyPlaceholders:
         assert resolved["UNKNOWN"] == "${unknown_var}"
 
 
-class TestGetBuildArgs:
-    """Tests for get_build_args function."""
+class TestImageConfigGetBuildArgs:
+    """Tests for ImageConfig.get_build_args method."""
 
     def test_no_build_args(self):
         """Test image with no build args returns empty dict."""
-        image_config = {
+        img = ImageConfig.from_dict("web", {
             "context": ".",
             "dockerfile": "Dockerfile"
-        }
+        })
 
-        build_args = get_build_args(image_config, "staging")
+        build_args = img.get_build_args("staging")
 
         assert build_args == {}
 
     def test_base_build_args(self):
         """Test image with base build args only."""
-        image_config = {
+        img = ImageConfig.from_dict("web", {
             "context": ".",
             "dockerfile": "Dockerfile",
             "build_args": {"PYTHON_VERSION": "3.12", "NODE_VERSION": "20"}
-        }
+        })
 
-        build_args = get_build_args(image_config, "staging")
+        build_args = img.get_build_args("staging")
 
         assert build_args == {"PYTHON_VERSION": "3.12", "NODE_VERSION": "20"}
 
     def test_environment_specific_build_args(self):
         """Test that environment-specific build args override base."""
-        image_config = {
+        img = ImageConfig.from_dict("web", {
             "context": ".",
             "dockerfile": "Dockerfile",
             "build_args": {
@@ -308,30 +308,30 @@ class TestGetBuildArgs:
                 "staging": {"UV_INSTALL_ARGS": "--group dev"},
                 "production": {"UV_INSTALL_ARGS": ""}
             }
-        }
+        })
 
         # Test staging
-        build_args = get_build_args(image_config, "staging")
+        build_args = img.get_build_args("staging")
         assert build_args["PYTHON_VERSION"] == "3.12"
         assert build_args["UV_INSTALL_ARGS"] == "--group dev"
 
         # Test production
-        build_args_prod = get_build_args(image_config, "production")
+        build_args_prod = img.get_build_args("production")
         assert build_args_prod["PYTHON_VERSION"] == "3.12"
         assert build_args_prod["UV_INSTALL_ARGS"] == ""
 
     def test_environment_override_base_arg(self):
         """Test that environment-specific build args can override base args."""
-        image_config = {
+        img = ImageConfig.from_dict("web", {
             "context": ".",
             "dockerfile": "Dockerfile",
             "build_args": {
                 "DEBUG": "false",
                 "staging": {"DEBUG": "true"}
             }
-        }
+        })
 
-        build_args = get_build_args(image_config, "staging")
+        build_args = img.get_build_args("staging")
 
         assert build_args["DEBUG"] == "true"
 

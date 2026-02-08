@@ -4,12 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from ..config import (
-    get_audit_config,
+    AuditConfig,
+    DeployConfig,
     get_compose_services,
-    get_deploy_env_vars,
-    get_deploy_images,
-    get_deploy_services,
-    parse_deploy_toml,
+    parse_deploy_config,
     parse_docker_compose,
 )
 from ..utils import Colors, log_info, log_ok, log_section, log_warning
@@ -27,25 +25,28 @@ DEFAULT_IGNORE_SERVICES = {
 
 def audit_services(
     compose_services: dict[str, dict],
-    deploy_services: dict[str, dict],
-    audit_config: dict[str, Any],
+    deploy_services: dict[str, Any],
+    audit_config: AuditConfig,
 ) -> list[str]:
     """Audit services and return list of issues.
 
     Args:
         compose_services: Services extracted from docker-compose.yml.
-        deploy_services: Services extracted from deploy.toml.
+        deploy_services: Services from deploy.toml (dict of ServiceConfig or dict).
         audit_config: Audit configuration from deploy.toml.
 
     Returns:
         List of issue strings describing mismatches.
     """
     issues = []
-    ignore = DEFAULT_IGNORE_SERVICES | audit_config["ignore_services"]
-    mapping = audit_config["service_mapping"]
+    ignore = DEFAULT_IGNORE_SERVICES | audit_config.ignore_services
+    mapping = audit_config.service_mapping
 
     # Build reverse mapping for lookup
     reverse_mapping = {v: k for k, v in mapping.items()}
+
+    # Get service names from deploy_services
+    deploy_service_names = set(deploy_services.keys())
 
     for name, config in compose_services.items():
         # Skip non-build services (they use pre-built images)
@@ -62,13 +63,13 @@ def audit_services(
 
         # Check if service exists in deploy.toml (directly or via mapping)
         mapped_name = mapping.get(name, name)
-        if mapped_name not in deploy_services:
+        if mapped_name not in deploy_service_names:
             issues.append(f"Service '{name}' in docker-compose not found in deploy.toml")
             if name != mapped_name:
                 issues[-1] += f" (checked as '{mapped_name}')"
 
     # Check for services in deploy.toml that don't exist in docker-compose
-    for name in deploy_services:
+    for name in deploy_service_names:
         original_name = reverse_mapping.get(name, name)
         if original_name not in compose_services and name not in compose_services:
             issues.append(
@@ -80,14 +81,14 @@ def audit_services(
 
 def audit_images(
     compose_services: dict[str, dict],
-    deploy_images: dict[str, dict],
-    audit_config: dict[str, Any],
+    deploy_images: dict[str, Any],
+    audit_config: AuditConfig,
 ) -> list[str]:
     """Audit images/build contexts and return list of issues.
 
     Args:
         compose_services: Services extracted from docker-compose.yml.
-        deploy_images: Images extracted from deploy.toml.
+        deploy_images: Images from deploy.toml (dict of ImageConfig or dict).
         audit_config: Audit configuration from deploy.toml.
 
     Returns:
@@ -96,8 +97,8 @@ def audit_images(
     issues = []
     ignore = (
         DEFAULT_IGNORE_SERVICES
-        | audit_config["ignore_services"]
-        | audit_config.get("ignore_images", set())
+        | audit_config.ignore_services
+        | audit_config.ignore_images
     )
 
     # Get all build contexts from docker-compose
@@ -113,7 +114,11 @@ def audit_images(
             compose_contexts[context] = name
 
     # Get all contexts from deploy.toml images (normalize the same way as compose)
-    deploy_contexts = {img["context"].lstrip("./"): name for name, img in deploy_images.items()}
+    deploy_contexts = {}
+    for name, img in deploy_images.items():
+        # Handle both ImageConfig dataclass and dict
+        context = img.context if hasattr(img, "context") else img.get("context", "")
+        deploy_contexts[context.lstrip("./")] = name
 
     # Check for missing contexts
     for context, service_name in compose_contexts.items():
@@ -129,7 +134,7 @@ def audit_images(
 def audit_env_vars(
     compose_services: dict[str, dict],
     deploy_env_vars: set[str],
-    audit_config: dict[str, Any],
+    audit_config: AuditConfig,
 ) -> list[str]:
     """Audit environment variables and return list of issues.
 
@@ -142,8 +147,8 @@ def audit_env_vars(
         List of issue strings describing missing env vars.
     """
     issues = []
-    ignore_vars = audit_config["ignore_env_vars"]
-    ignore_services = DEFAULT_IGNORE_SERVICES | audit_config["ignore_services"]
+    ignore_vars = audit_config.ignore_env_vars
+    ignore_services = DEFAULT_IGNORE_SERVICES | audit_config.ignore_services
 
     # Common dev-only or infrastructure env vars to ignore by default
     default_ignore = {
@@ -210,28 +215,33 @@ def run_audit(
 
     # Parse files
     compose = parse_docker_compose(compose_path)
-    deploy = parse_deploy_toml(deploy_path)
+    deploy = parse_deploy_config(deploy_path)
 
     # Extract data
     compose_services = get_compose_services(compose)
-    deploy_services = get_deploy_services(deploy)
-    deploy_images = get_deploy_images(deploy)
-    deploy_env_vars = get_deploy_env_vars(deploy)
-    audit_config = get_audit_config(deploy)
+    deploy_services = deploy.services
+    deploy_images = deploy.images
+    deploy_env_vars = deploy.get_all_env_var_names()
+    audit_config = deploy.audit
 
     # Show audit config if present
-    if verbose and deploy.get("audit"):
+    if verbose and (
+        audit_config.ignore_services
+        or audit_config.service_mapping
+        or audit_config.ignore_env_vars
+        or audit_config.ignore_images
+    ):
         log_section("Audit Configuration")
-        if audit_config["ignore_services"]:
+        if audit_config.ignore_services:
             log_info(
-                f"Ignoring services: {', '.join(sorted(audit_config['ignore_services']))}"
+                f"Ignoring services: {', '.join(sorted(audit_config.ignore_services))}"
             )
-        if audit_config["service_mapping"]:
-            mappings = [f"{k}→{v}" for k, v in audit_config["service_mapping"].items()]
+        if audit_config.service_mapping:
+            mappings = [f"{k}→{v}" for k, v in audit_config.service_mapping.items()]
             log_info(f"Service mappings: {', '.join(mappings)}")
-        if audit_config["ignore_env_vars"]:
+        if audit_config.ignore_env_vars:
             log_info(
-                f"Ignoring env vars: {', '.join(sorted(audit_config['ignore_env_vars']))}"
+                f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}"
             )
 
     total_issues = 0

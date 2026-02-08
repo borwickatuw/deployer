@@ -3,11 +3,10 @@
 import pytest
 
 from deployer.config import (
-    get_audit_config,
+    AuditConfig,
+    DeployConfig,
     get_compose_services,
-    get_deploy_env_vars,
-    get_deploy_images,
-    get_deploy_services,
+    parse_deploy_config,
     parse_deploy_toml,
     parse_docker_compose,
 )
@@ -53,6 +52,40 @@ class TestParseDeployToml:
         """Test parsing a non-existent file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
             parse_deploy_toml(tmp_path / "nonexistent.toml")
+
+
+class TestParseDeployConfig:
+    """Tests for parse_deploy_config function (dataclass approach)."""
+
+    def test_parse_deploy_config(self, sample_deploy_toml):
+        """Test parsing into DeployConfig dataclass."""
+        config = parse_deploy_config(sample_deploy_toml)
+
+        assert isinstance(config, DeployConfig)
+        assert config.application.name == "testapp"
+        assert "web" in config.services
+        assert config.services["web"].name == "web"
+
+    def test_parse_deploy_config_warnings_for_unknown_keys(self, tmp_path):
+        """Test that unknown keys generate warnings."""
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+unknown_key = "value"
+
+[images.web]
+context = "."
+bad_option = true
+
+[unknown_section]
+foo = "bar"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        warnings = config.get_warnings()
+        assert any("unknown_key" in w.lower() for w in warnings)
+        assert any("bad_option" in w.lower() for w in warnings)
+        assert any("unknown_section" in w.lower() for w in warnings)
 
 
 class TestGetComposeServices:
@@ -126,141 +159,157 @@ class TestGetComposeServices:
         assert "PORT" in result["app"]["environment"]
 
 
-class TestGetDeployServices:
-    """Tests for get_deploy_services function."""
+class TestDeployConfigServices:
+    """Tests for DeployConfig.services (replaces get_deploy_services)."""
 
-    def test_extract_services(self):
+    def test_extract_services(self, tmp_path):
         """Test extracting services from deploy.toml structure."""
-        deploy = {
-            "services": {
-                "web": {"image": "web", "port": 8000, "command": ["gunicorn"]},
-                "worker": {"image": "worker"},
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_services(deploy)
+[services.web]
+image = "web"
+port = 8000
+command = ["gunicorn"]
 
-        assert "web" in result
-        assert result["web"]["image"] == "web"
-        assert result["web"]["port"] == 8000
-        assert "worker" in result
+[services.worker]
+image = "worker"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
 
-    def test_empty_services(self):
+        assert "web" in config.services
+        assert config.services["web"].image == "web"
+        assert config.services["web"].port == 8000
+        assert "worker" in config.services
+
+    def test_empty_services(self, tmp_path):
         """Test with no services defined."""
-        deploy = {}
-        result = get_deploy_services(deploy)
-        assert result == {}
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        assert config.services == {}
 
 
-class TestGetDeployImages:
-    """Tests for get_deploy_images function."""
+class TestDeployConfigImages:
+    """Tests for DeployConfig.images (replaces get_deploy_images)."""
 
-    def test_extract_images(self):
+    def test_extract_images(self, tmp_path):
         """Test extracting images from deploy.toml structure."""
-        deploy = {
-            "images": {
-                "web": {"context": ".", "dockerfile": "Dockerfile"},
-                "worker": {"context": ".", "dockerfile": "Dockerfile.worker"},
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_images(deploy)
+[images.web]
+context = "."
+dockerfile = "Dockerfile"
 
-        assert "web" in result
-        assert result["web"]["context"] == "."
-        assert result["web"]["dockerfile"] == "Dockerfile"
-        assert result["worker"]["dockerfile"] == "Dockerfile.worker"
+[images.worker]
+context = "."
+dockerfile = "Dockerfile.worker"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
 
-    def test_default_dockerfile(self):
+        assert "web" in config.images
+        assert config.images["web"].context == "."
+        assert config.images["web"].dockerfile == "Dockerfile"
+        assert config.images["worker"].dockerfile == "Dockerfile.worker"
+
+    def test_default_dockerfile(self, tmp_path):
         """Test that default dockerfile is 'Dockerfile'."""
-        deploy = {
-            "images": {
-                "app": {"context": "."},
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_images(deploy)
-        assert result["app"]["dockerfile"] == "Dockerfile"
+[images.app]
+context = "."
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        assert config.images["app"].dockerfile == "Dockerfile"
 
 
-class TestGetDeployEnvVars:
-    """Tests for get_deploy_env_vars function."""
+class TestDeployConfigEnvVars:
+    """Tests for DeployConfig.get_all_env_var_names (replaces get_deploy_env_vars)."""
 
-    def test_extract_env_vars(self):
+    def test_extract_env_vars(self, tmp_path):
         """Test extracting environment variables."""
-        deploy = {
-            "environment": {
-                "DEBUG": "false",
-                "API_URL": "https://api.example.com",
-            },
-            "secrets": {
-                "SECRET_KEY": "ssm:/app/secret",
-            },
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_env_vars(deploy)
+[environment]
+DEBUG = "false"
+API_URL = "https://api.example.com"
+
+[secrets]
+SECRET_KEY = "ssm:/app/secret"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "DEBUG" in result
         assert "API_URL" in result
         assert "SECRET_KEY" in result
 
-    def test_extract_service_specific_env_vars(self):
+    def test_extract_service_specific_env_vars(self, tmp_path):
         """Test extracting environment variables from service-specific sections."""
-        deploy = {
-            "environment": {
-                "GLOBAL_VAR": "value",
-            },
-            "services": {
-                "web": {
-                    "image": "web",
-                    "port": 8000,
-                },
-                "api": {
-                    "image": "api",
-                    "environment": {
-                        "DELEGATE_ENABLED": "true",
-                        "DJANGO_URL": "${services.web.url}",
-                    },
-                },
-            },
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_deploy_env_vars(deploy)
+[environment]
+GLOBAL_VAR = "value"
+
+[services.web]
+image = "web"
+port = 8000
+
+[services.api]
+image = "api"
+
+[services.api.environment]
+DELEGATE_ENABLED = "true"
+DJANGO_URL = "${services.web.url}"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        result = config.get_all_env_var_names()
 
         assert "GLOBAL_VAR" in result
         assert "DELEGATE_ENABLED" in result
         assert "DJANGO_URL" in result
 
 
-class TestGetAuditConfig:
-    """Tests for get_audit_config function."""
+class TestDeployConfigAudit:
+    """Tests for DeployConfig.audit (replaces get_audit_config)."""
 
-    def test_extract_audit_config(self):
+    def test_extract_audit_config(self, tmp_path):
         """Test extracting audit configuration."""
-        deploy = {
-            "audit": {
-                "ignore_services": ["postgres", "redis"],
-                "service_mapping": {"app": "web"},
-                "ignore_env_vars": ["DEBUG"],
-                "ignore_images": ["base"],
-            }
-        }
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
 
-        result = get_audit_config(deploy)
+[audit]
+ignore_services = ["postgres", "redis"]
+service_mapping = { app = "web" }
+ignore_env_vars = ["DEBUG"]
+ignore_images = ["base"]
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        audit = config.audit
 
-        assert result["ignore_services"] == {"postgres", "redis"}
-        assert result["service_mapping"] == {"app": "web"}
-        assert result["ignore_env_vars"] == {"DEBUG"}
-        assert result["ignore_images"] == {"base"}
+        assert audit.ignore_services == {"postgres", "redis"}
+        assert audit.service_mapping == {"app": "web"}
+        assert audit.ignore_env_vars == {"DEBUG"}
+        assert audit.ignore_images == {"base"}
 
-    def test_empty_audit_config(self):
+    def test_empty_audit_config(self, tmp_path):
         """Test with no audit config defined."""
-        deploy = {}
-        result = get_audit_config(deploy)
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        audit = config.audit
 
-        assert result["ignore_services"] == set()
-        assert result["service_mapping"] == {}
-        assert result["ignore_env_vars"] == set()
+        assert audit.ignore_services == set()
+        assert audit.service_mapping == {}
+        assert audit.ignore_env_vars == set()
 
 
 class TestAuditServices:
@@ -277,10 +326,10 @@ class TestAuditServices:
             "web": {},
             "worker": {},
         }
-        audit_config = {
-            "ignore_services": set(),
-            "service_mapping": {},
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            service_mapping={},
+        )
 
         issues = audit_services(compose_services, deploy_services, audit_config)
         assert issues == []
@@ -294,10 +343,10 @@ class TestAuditServices:
         deploy_services = {
             "web": {},
         }
-        audit_config = {
-            "ignore_services": set(),
-            "service_mapping": {},
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            service_mapping={},
+        )
 
         issues = audit_services(compose_services, deploy_services, audit_config)
         assert len(issues) == 1
@@ -311,10 +360,10 @@ class TestAuditServices:
         deploy_services = {
             "web": {},
         }
-        audit_config = {
-            "ignore_services": set(),
-            "service_mapping": {"app": "web"},
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            service_mapping={"app": "web"},
+        )
 
         issues = audit_services(compose_services, deploy_services, audit_config)
         assert issues == []
@@ -325,10 +374,10 @@ class TestAuditServices:
             "db-seeder": {"has_build": True, "profiles": []},
         }
         deploy_services = {}
-        audit_config = {
-            "ignore_services": {"db-seeder"},
-            "service_mapping": {},
-        }
+        audit_config = AuditConfig(
+            ignore_services={"db-seeder"},
+            service_mapping={},
+        )
 
         issues = audit_services(compose_services, deploy_services, audit_config)
         assert issues == []
@@ -339,10 +388,10 @@ class TestAuditServices:
             "dev-tool": {"has_build": True, "profiles": ["dev-tools"]},
         }
         deploy_services = {}
-        audit_config = {
-            "ignore_services": set(),
-            "service_mapping": {},
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            service_mapping={},
+        )
 
         issues = audit_services(compose_services, deploy_services, audit_config)
         assert issues == []
@@ -361,10 +410,10 @@ class TestAuditImages:
         deploy_images = {
             "web": {"context": "web"},
         }
-        audit_config = {
-            "ignore_services": set(),
-            "ignore_images": set(),
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            ignore_images=set(),
+        )
 
         issues = audit_images(compose_services, deploy_images, audit_config)
         assert issues == []
@@ -377,10 +426,10 @@ class TestAuditImages:
         deploy_images = {
             "api": {"context": "./api"},
         }
-        audit_config = {
-            "ignore_services": set(),
-            "ignore_images": set(),
-        }
+        audit_config = AuditConfig(
+            ignore_services=set(),
+            ignore_images=set(),
+        )
 
         issues = audit_images(compose_services, deploy_images, audit_config)
         assert len(issues) == 1
@@ -400,10 +449,10 @@ class TestAuditEnvVars:
             },
         }
         deploy_env_vars = {"DATABASE_URL", "REDIS_URL"}
-        audit_config = {
-            "ignore_env_vars": set(),
-            "ignore_services": set(),
-        }
+        audit_config = AuditConfig(
+            ignore_env_vars=set(),
+            ignore_services=set(),
+        )
 
         issues = audit_env_vars(compose_services, deploy_env_vars, audit_config)
         assert issues == []
@@ -418,10 +467,10 @@ class TestAuditEnvVars:
             },
         }
         deploy_env_vars = {"DATABASE_URL"}
-        audit_config = {
-            "ignore_env_vars": set(),
-            "ignore_services": set(),
-        }
+        audit_config = AuditConfig(
+            ignore_env_vars=set(),
+            ignore_services=set(),
+        )
 
         issues = audit_env_vars(compose_services, deploy_env_vars, audit_config)
         assert len(issues) == 1
@@ -437,10 +486,10 @@ class TestAuditEnvVars:
             },
         }
         deploy_env_vars = set()
-        audit_config = {
-            "ignore_env_vars": set(),  # DEBUG and PYTHONUNBUFFERED are default ignores
-            "ignore_services": set(),
-        }
+        audit_config = AuditConfig(
+            ignore_env_vars=set(),  # DEBUG and PYTHONUNBUFFERED are default ignores
+            ignore_services=set(),
+        )
 
         issues = audit_env_vars(compose_services, deploy_env_vars, audit_config)
         # DEBUG and PYTHONUNBUFFERED should be in default_ignore

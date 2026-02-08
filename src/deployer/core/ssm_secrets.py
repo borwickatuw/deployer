@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from deployer.aws import ssm
-from deployer.config.toml import parse_deploy_toml
+from deployer.config import DeployConfig, parse_deploy_config
 
 
 def parse_environment(env_name: str) -> tuple[str, str]:
@@ -69,8 +69,8 @@ def get_secrets_from_deploy_toml(
     Returns:
         Dictionary mapping env var names to SSM parameter paths.
     """
-    config = parse_deploy_toml(deploy_toml_path)
-    return get_secrets_from_config(config, environment, env_config)
+    config = parse_deploy_config(deploy_toml_path)
+    return get_secrets_from_config(config.get_raw_dict(), environment, env_config)
 
 
 def get_secrets_from_config(
