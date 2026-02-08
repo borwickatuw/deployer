@@ -81,7 +81,7 @@ Created: environments/shared-infra-staging/terraform.tfvars
 
 Next steps for shared infrastructure:
   1. Edit shared-infra-staging/terraform.tfvars (set domain, Route53 zone)
-  2. Deploy: ./bin/tofu.sh -chdir=shared-infra-staging init && apply
+  2. Deploy: ./bin/tofu.sh rollout shared-infra-staging
 
 Created: environments/myapp-staging/main.tf
 Created: environments/myapp-staging/config.toml
@@ -111,12 +111,10 @@ Created: environments/otherapp-staging/main.tf
 
 ```bash
 # 1. Deploy shared infrastructure (first time only)
-./bin/tofu.sh -chdir=environments/shared-infra-staging init
-./bin/tofu.sh -chdir=environments/shared-infra-staging apply
+./bin/tofu.sh rollout shared-infra-staging
 
 # 2. Deploy per-app infrastructure
-./bin/tofu.sh -chdir=environments/myapp-staging init
-./bin/tofu.sh -chdir=environments/myapp-staging apply
+./bin/tofu.sh rollout myapp-staging
 
 # 3. Link environment to deploy.toml (one-time)
 uv run python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
@@ -222,8 +220,7 @@ To migrate an existing standalone environment to shared infrastructure:
 
 2. **Deploy shared infrastructure**
    ```bash
-   ./bin/tofu.sh -chdir=environments/shared-infra-staging init
-   ./bin/tofu.sh -chdir=environments/shared-infra-staging apply
+   ./bin/tofu.sh rollout shared-infra-staging
    ```
 
 3. **Create new shared app environment**
@@ -238,8 +235,7 @@ To migrate an existing standalone environment to shared infrastructure:
 4. **Configure and deploy**
    ```bash
    # Edit terraform.tfvars with DB credentials, etc.
-   ./bin/tofu.sh -chdir=environments/existingapp-staging init
-   ./bin/tofu.sh -chdir=environments/existingapp-staging apply
+   ./bin/tofu.sh rollout existingapp-staging
    ```
 
 5. **Link and deploy app**
@@ -254,7 +250,7 @@ To migrate an existing standalone environment to shared infrastructure:
 6. **Decommission old infrastructure**
    ```bash
    # After verifying the new environment works
-   ./bin/tofu.sh -chdir=environments/existingapp-staging-old destroy
+   ./bin/tofu.sh destroy existingapp-staging-old
    ```
 
 ## Troubleshooting

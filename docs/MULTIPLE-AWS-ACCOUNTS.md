@@ -233,9 +233,13 @@ uv run python bin/deploy.py myapp-production
 
 # Infrastructure changes to staging account
 ./bin/tofu.sh plan myapp-staging
+./bin/tofu.sh apply myapp-staging
+
+# Or use rollout to run init, plan, and apply in sequence
+./bin/tofu.sh rollout myapp-staging
 
 # Infrastructure changes to production account
-./bin/tofu.sh plan myapp-production
+./bin/tofu.sh rollout myapp-production
 ```
 
 ## Single Account Setup

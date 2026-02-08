@@ -143,6 +143,9 @@ scaling = {
    ```bash
    ./bin/tofu.sh plan myapp-production
    ./bin/tofu.sh apply myapp-production
+
+   # Or use rollout to run init, plan, and apply in sequence
+   ./bin/tofu.sh rollout myapp-production
    ```
 
 2. **Verify infrastructure**:

@@ -19,7 +19,10 @@ cognito_auth_enabled = true
 Apply the changes:
 
 ```bash
-./bin/tofu.sh -chdir=environments/myapp-staging apply
+./bin/tofu.sh apply myapp-staging
+
+# Or use rollout to run init, plan, and apply in sequence
+./bin/tofu.sh rollout myapp-staging
 ```
 
 ### Managing Users
@@ -127,7 +130,7 @@ module "scheduler" {
 Apply:
 
 ```bash
-./bin/tofu.sh -chdir=environments/myapp-staging apply
+./bin/tofu.sh apply myapp-staging
 ```
 
 ### Custom Schedule
