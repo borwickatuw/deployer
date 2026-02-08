@@ -69,6 +69,31 @@ variable "db_password" {
   sensitive   = true
 }
 
+# RDS backup and protection settings (override for production)
+variable "rds_backup_retention_period" {
+  description = "Number of days to retain automated backups (7 for staging, 35 for production)"
+  type        = number
+  default     = 7
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "Skip final snapshot on deletion (true for staging, false for production)"
+  type        = bool
+  default     = true
+}
+
+variable "rds_deletion_protection" {
+  description = "Prevent accidental deletion (false for staging, true for production)"
+  type        = bool
+  default     = false
+}
+
+variable "rds_multi_az" {
+  description = "Enable Multi-AZ deployment for automatic failover (false for staging, true for production)"
+  type        = bool
+  default     = false
+}
+
 # Cache configuration
 
 variable "cache_enabled" {
@@ -119,9 +144,19 @@ variable "certificate_arn" {
 # Authentication configuration
 
 variable "cognito_auth_enabled" {
-  description = "Enable Cognito authentication for the ALB. Requires HTTPS (domain_name must be set)."
+  description = "Enable Cognito authentication for the ALB (creates per-environment pool). Requires HTTPS (domain_name must be set). Ignored if cognito_auth is provided."
   type        = bool
   default     = false
+}
+
+variable "cognito_auth" {
+  description = "External Cognito authentication configuration (for shared pools). If provided, cognito_auth_enabled is ignored and no local pool is created."
+  type = object({
+    user_pool_arn       = string
+    user_pool_client_id = string
+    user_pool_domain    = string
+  })
+  default = null
 }
 
 # Load balancer configuration

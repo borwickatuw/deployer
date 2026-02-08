@@ -36,6 +36,17 @@ locals {
   # Determine certificate ARN: use provided ARN, or create via ACM module
   create_certificate = var.domain_name != null && var.route53_zone_id != null && var.certificate_arn == null
   certificate_arn    = var.certificate_arn != null ? var.certificate_arn : (local.create_certificate ? module.acm[0].certificate_arn : null)
+
+  # Cognito authentication configuration
+  # Prefer external cognito_auth if provided, otherwise create local pool if enabled
+  create_local_cognito = var.cognito_auth == null && var.cognito_auth_enabled
+  cognito_auth_config = var.cognito_auth != null ? var.cognito_auth : (
+    local.create_local_cognito ? {
+      user_pool_arn       = module.cognito[0].user_pool_arn
+      user_pool_client_id = module.cognito[0].client_id
+      user_pool_domain    = module.cognito[0].domain
+    } : null
+  )
 }
 
 # State migration: Route 53 record moved from inline resource to module
@@ -94,11 +105,8 @@ module "alb" {
   idle_timeout = var.alb_idle_timeout
 
   # Cognito authentication (optional)
-  cognito_auth = var.cognito_auth_enabled ? {
-    user_pool_arn       = module.cognito[0].user_pool_arn
-    user_pool_client_id = module.cognito[0].client_id
-    user_pool_domain    = module.cognito[0].domain
-  } : null
+  # Prefer external cognito_auth if provided, otherwise use local pool if enabled
+  cognito_auth = local.cognito_auth_config
 }
 
 # RDS PostgreSQL
@@ -114,6 +122,12 @@ module "rds" {
   master_username    = var.db_username
   master_password    = var.db_password
   ecs_security_group = module.ecs_cluster.security_group_id
+
+  # Backup and protection (override for production environments)
+  backup_retention_period = var.rds_backup_retention_period
+  skip_final_snapshot     = var.rds_skip_final_snapshot
+  deletion_protection     = var.rds_deletion_protection
+  multi_az                = var.rds_multi_az
 }
 
 # Database credentials in Secrets Manager (for ECS secrets injection)
@@ -186,9 +200,10 @@ module "acm" {
 }
 
 # Cognito User Pool (for staging authentication)
+# Only created if cognito_auth_enabled and no external cognito_auth is provided
 module "cognito" {
   source = "./modules/cognito"
-  count  = var.cognito_auth_enabled ? 1 : 0
+  count  = local.create_local_cognito ? 1 : 0
 
   name_prefix = local.name_prefix
   domain_name = var.domain_name

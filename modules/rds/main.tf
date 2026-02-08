@@ -39,6 +39,31 @@ variable "ecs_security_group" {
   type        = string
 }
 
+# Production settings - override these for production environments
+variable "backup_retention_period" {
+  description = "Number of days to retain automated backups (7 for staging, 35 for production)"
+  type        = number
+  default     = 7
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip final snapshot on deletion (true for staging, false for production)"
+  type        = bool
+  default     = true
+}
+
+variable "deletion_protection" {
+  description = "Prevent accidental deletion (false for staging, true for production)"
+  type        = bool
+  default     = false
+}
+
+variable "multi_az" {
+  description = "Enable Multi-AZ deployment for automatic failover (false for staging, true for production)"
+  type        = bool
+  default     = false
+}
+
 # Subnet group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.name_prefix}-db-subnet"
@@ -85,11 +110,15 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
 
   publicly_accessible = false
-  skip_final_snapshot = true # Set to false for production
 
-  backup_retention_period = 7
-  backup_window           = "03:00-04:00"
-  maintenance_window      = "Mon:04:00-Mon:05:00"
+  # Backup and protection settings (override for production)
+  backup_retention_period = var.backup_retention_period
+  skip_final_snapshot     = var.skip_final_snapshot
+  deletion_protection     = var.deletion_protection
+  multi_az                = var.multi_az
+
+  backup_window      = "03:00-04:00"
+  maintenance_window = "Mon:04:00-Mon:05:00"
 
   tags = {
     Name = "${var.name_prefix}-db"
