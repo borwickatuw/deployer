@@ -252,6 +252,40 @@ Private Subnets (Data):
 - Regular security patching via ECR image updates
 - Enable **AWS Config** for compliance monitoring
 
+### IMDS Protection (EC2 Instance Metadata Service)
+
+**Current architecture:** Fargate-only (no IMDS exposure)
+
+This infrastructure uses ECS Fargate exclusively, which does not have access to the EC2 Instance Metadata Service (IMDS). Therefore, no IMDS protection is required.
+
+**If EC2 capacity providers are added in the future:**
+
+EC2-backed ECS tasks can access the host's IMDS at `169.254.169.254`. This is a security risk because:
+- SSRF vulnerabilities could leak IAM credentials
+- Compromised containers could access instance metadata
+- AWS credentials could be exfiltrated
+
+To protect against this, configure the EC2 launch template with:
+
+```hcl
+resource "aws_launch_template" "ecs" {
+  # ... other configuration ...
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"    # Enforce IMDSv2
+    http_put_response_hop_limit = 1             # Block container access
+  }
+}
+```
+
+The `http_put_response_hop_limit = 1` setting is critical:
+- IMDSv2 requires a token obtained via HTTP PUT
+- Hop limit of 1 prevents the request from traversing the container network
+- Containers cannot obtain a token, so IMDS is inaccessible
+
+**Defense in depth:** Applications should also implement SSRF protection at the application layer (blocking private IP ranges like `169.254.0.0/16`). See individual application security documentation for details.
+
 ## Scaling Strategies
 
 ### Auto-Scaling
