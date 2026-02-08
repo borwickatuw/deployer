@@ -131,20 +131,22 @@ output "https_enabled" {
 }
 
 # Cognito outputs (for managing users)
+# Note: When using external cognito_auth, user_pool_id is not available here.
+# Use the bootstrap outputs for the shared pool ID instead.
 
 output "cognito_user_pool_id" {
-  description = "Cognito user pool ID (for managing users via AWS CLI)"
-  value       = var.cognito_auth_enabled ? module.cognito[0].user_pool_id : null
+  description = "Cognito user pool ID (for managing users via AWS CLI). Null when using external cognito_auth."
+  value       = local.create_local_cognito ? module.cognito[0].user_pool_id : null
 }
 
 output "cognito_user_pool_client_id" {
   description = "Cognito user pool client ID (for authentication)"
-  value       = var.cognito_auth_enabled ? module.cognito[0].client_id : null
+  value       = local.create_local_cognito ? module.cognito[0].client_id : (var.cognito_auth != null ? var.cognito_auth.user_pool_client_id : null)
 }
 
 output "cognito_user_pool_client_secret" {
-  description = "Cognito user pool client secret (for authentication)"
-  value       = var.cognito_auth_enabled ? module.cognito[0].client_secret : null
+  description = "Cognito user pool client secret (for authentication). Null when using external cognito_auth."
+  value       = local.create_local_cognito ? module.cognito[0].client_secret : null
   sensitive   = true
 }
 
@@ -173,6 +175,16 @@ output "alb_https_listener_arn" {
 output "alb_security_group_id" {
   description = "Security group ID for the ALB"
   value       = module.alb.security_group_id
+}
+
+output "alb_arn_suffix" {
+  description = "ALB ARN suffix (for CloudWatch metrics)"
+  value       = module.alb.arn_suffix
+}
+
+output "alb_target_group_arn_suffix" {
+  description = "ALB target group ARN suffix (for CloudWatch metrics)"
+  value       = module.alb.target_group_arn_suffix
 }
 
 output "ecs_execution_role_arn" {
