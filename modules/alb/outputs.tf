@@ -46,3 +46,13 @@ output "auth_enabled" {
   description = "Whether Cognito authentication is enabled"
   value       = local.auth_enabled
 }
+
+output "arn_suffix" {
+  description = "ALB ARN suffix (for CloudWatch metrics dimensions)"
+  value       = aws_lb.main.arn_suffix
+}
+
+output "target_group_arn_suffix" {
+  description = "Default target group ARN suffix (for CloudWatch metrics)"
+  value       = aws_lb_target_group.default.arn_suffix
+}

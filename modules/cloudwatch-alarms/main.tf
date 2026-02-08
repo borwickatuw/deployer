@@ -181,8 +181,8 @@ resource "aws_cloudwatch_metric_alarm" "rds_connections" {
   # Note: This is a static threshold. For percentage-based, you'd need to know max_connections
   # which varies by instance size. Consider adjusting based on your instance class.
   # db.t3.micro: ~87, db.r6g.large: ~1700
-  threshold           = 100
-  treat_missing_data  = "notBreaching"
+  threshold          = 100
+  treat_missing_data = "notBreaching"
 
   dimensions = {
     DBInstanceIdentifier = var.rds_instance_id
@@ -263,8 +263,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_running_tasks" {
   statistic           = "Average"
   # Threshold of 1 means alarm if running tasks drop below 1
   # For production, you typically want at least 1 task running
-  threshold           = 1
-  treat_missing_data  = "breaching"
+  threshold          = 1
+  treat_missing_data = "breaching"
 
   dimensions = {
     ClusterName = var.ecs_cluster_name
