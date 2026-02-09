@@ -58,7 +58,7 @@ For automated health checks of Cognito-protected environments, create a dedicate
 
 ```bash
 # Generate password
-PASSWORD=$(python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))")
+PASSWORD=$(uv run python -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))")
 
 # Create user
 uv run python bin/cognito.py create myapp-staging \
@@ -116,14 +116,21 @@ Deploy the scheduler module for automatic start/stop:
 ```hcl
 # In environments/myapp-staging/main.tf
 module "scheduler" {
-  source = "../../modules/staging-scheduler"
+  source = "../modules/staging-scheduler"
 
-  environment_name = "myapp-staging"
-  cluster_name     = module.infrastructure.ecs_cluster_name
-  rds_instance_id  = module.infrastructure.rds_instance_id
+  environment_name = "${var.project_name}-staging"
+  ecs_cluster_name = module.infrastructure.ecs_cluster_name
+  ecs_services = {
+    for name, config in var.services : name => {
+      replicas = config.replicas
+    }
+  }
+  rds_instance_id = module.infrastructure.rds_instance_id
 
   # Default: 7 AM start, 7 PM stop, Monday-Friday (Pacific)
   enabled = true
+
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
 }
 ```
 
