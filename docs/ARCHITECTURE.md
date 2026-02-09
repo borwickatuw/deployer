@@ -286,6 +286,56 @@ The `http_put_response_hop_limit = 1` setting is critical:
 
 **Defense in depth:** Applications should also implement SSRF protection at the application layer (blocking private IP ranges like `169.254.0.0/16`). See individual application security documentation for details.
 
+## Failure Modes by Component
+
+Understanding what happens when each component fails helps prioritize resilience investments and incident response.
+
+| Component | If Unavailable | User Impact | Detection | Recovery |
+|-----------|----------------|-------------|-----------|----------|
+| **RDS PostgreSQL** | App returns 503, all DB operations fail | Total outage | ALB unhealthy hosts, health check fails | Multi-AZ automatic failover (< 2 min) |
+| **ElastiCache Redis** | Cache misses, sessions lost, Celery tasks fail to queue | Degraded (slower), users logged out | Application errors in logs | Automatic reconnect when available |
+| **S3** | File uploads/downloads fail | Partial outage (file features) | Application errors | S3 is highly available (99.99%); retry |
+| **ALB** | No traffic reaches application | Total outage | External monitoring | ALB is highly available; check config |
+| **NAT Gateway** | Outbound internet fails (webhooks, external APIs) | Partial outage | Outbound connection errors | NAT Gateway per AZ; check AZ health |
+| **ECS Tasks** | Reduced capacity | Degraded (slow or errors) | ALB unhealthy hosts | Auto-scaling replaces tasks |
+| **CloudWatch Logs** | Logs not visible (app continues) | No user impact | Missing recent logs | Automatic; logs buffered briefly |
+| **SSM Parameter Store** | New containers can't start | Delayed deployments | ECS task start failures | SSM is highly available |
+
+### Graceful Degradation Patterns
+
+**What typically degrades gracefully:**
+- **Redis unavailable**: Most apps fall back to database queries (slower but functional)
+- **Celery workers down**: Tasks queue in Redis, processed when workers return
+- **CloudFront unavailable**: Requests route directly to ALB (higher latency)
+
+**What doesn't degrade:**
+- **Database unavailable**: No database = no service (except static pages)
+- **S3 unavailable**: File-based features fail completely
+- **All ECS tasks down**: Complete outage
+
+### Multi-AZ Resilience
+
+With Multi-AZ enabled (production recommendation):
+
+| Component | AZ Failure Behavior |
+|-----------|---------------------|
+| RDS | Automatic failover to standby (< 2 min) |
+| ElastiCache | Automatic failover to replica |
+| ECS | Tasks redistributed to healthy AZs |
+| NAT Gateway | Other AZ's gateway handles traffic |
+| ALB | Automatically routes to healthy AZs |
+
+**Single points of failure to be aware of:**
+- Secrets in SSM (regional service, but highly available)
+- ECR (regional, but highly available)
+- Route53 (global, highly available)
+
+### Application-Specific Failure Modes
+
+Each application should document its specific failure modes in `docs/OPERATIONS.md`. See:
+- `~/code/claude-meta/docs/OPERATIONS-BEST-PRACTICE.md` for template
+- Application repos for specific documentation
+
 ## Scaling Strategies
 
 ### Auto-Scaling

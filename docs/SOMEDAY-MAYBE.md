@@ -497,3 +497,127 @@ when there are unused secrets
 4. Update error messages to suggest adding missing commands to deploy.toml
 
 **Complexity**: Low - straightforward code removal and config updates.
+
+---
+
+## SRE / Incident Response Improvements
+
+Enhancements for Site Reliability Engineering practices and incident management.
+
+### SLOs in config.toml
+
+**Current state**: SLO targets are documented in prose (OPERATIONS.md, MONITORING-BEST-PRACTICE.md).
+
+**Enhancement**: Define SLOs programmatically in environment config.toml:
+
+```toml
+[slo]
+availability_target = 99.9        # percent
+latency_p95_ms = 500              # milliseconds
+latency_p99_ms = 1000             # milliseconds
+error_rate_percent = 0.1          # percent
+
+[slo.alerting]
+# When to alert vs when to page
+availability_warning = 99.5       # Warning at 99.5%
+availability_critical = 99.0      # Page at 99.0%
+```
+
+**Benefits:**
+- CloudWatch alarms module can read targets and set thresholds automatically
+- `ops.py status` can report SLO compliance
+- Drift between documentation and reality becomes impossible
+- Error budget calculations become possible
+
+**Implementation approach:**
+1. Add `[slo]` section to config.toml schema
+2. Update cloudwatch-alarms module to use SLO values for thresholds
+3. Add `ops.py slo` command to report current compliance
+4. Consider error budget dashboard in CloudWatch
+
+**Complexity**: Medium - requires config schema update, alarm module changes, new ops.py command.
+
+### Incident Response Tooling
+
+**Current state**: `emergency.py` handles operational actions; incident tracking is manual.
+
+**Enhancement**: Add incident management commands to ops.py:
+
+```bash
+# Start tracking an incident
+uv run python bin/ops.py myapp-production incident start "Database slow queries"
+# Creates timestamped log at local/incidents/2026-02-08-1430-database-slow.md
+# Captures current state (status, health, recent logs)
+
+# Add notes during incident
+uv run python bin/ops.py myapp-production incident note "Identified slow query in users table"
+
+# Resolve and generate postmortem template
+uv run python bin/ops.py myapp-production incident resolve
+# Prompts for resolution summary
+# Generates postmortem template with timeline
+```
+
+**Features:**
+- Automatic timeline from command history during incident
+- Pre-populated postmortem with CloudWatch metrics from incident window
+- Links to relevant log queries
+- Integration with emergency.py actions (auto-logged to incident)
+
+**Complexity**: Medium - mostly CLI wrapper and file management.
+
+### Postmortem Automation
+
+**Current state**: Postmortems are written manually.
+
+**Enhancement**: Auto-generate postmortem template with data:
+
+```bash
+uv run python bin/ops.py myapp-production postmortem generate --start "2026-02-08T14:30:00Z" --end "2026-02-08T15:45:00Z"
+```
+
+**Generated content:**
+- Timeline of emergency.py commands run during window
+- CloudWatch metrics graphs (exported as images or links)
+- Error counts from logs
+- Deployment events in the timeframe
+- Pre-filled template sections
+
+**Complexity**: Medium-High - requires CloudWatch API integration, metric extraction.
+
+### Error Budget Dashboard
+
+**Current state**: No error budget tracking.
+
+**Enhancement**: Calculate and display remaining error budget:
+
+```bash
+uv run python bin/ops.py myapp-production slo
+# Output:
+# SLO Status for myapp-production (rolling 30 days)
+#
+# Availability: 99.94% (target: 99.9%) ✓
+#   Error budget: 43 min allowed, 26 min consumed, 17 min remaining
+#
+# Latency p95: 320ms (target: 500ms) ✓
+#   All requests within budget
+#
+# Error rate: 0.08% (target: 0.1%) ✓
+#   Error budget: 0.1% allowed, 0.08% current
+```
+
+**Implementation:**
+- Query CloudWatch metrics for rolling window
+- Calculate against SLO targets from config.toml
+- Display remaining budget
+
+**Complexity**: Medium - CloudWatch queries, calculations, formatting.
+
+### Prioritization
+
+| Enhancement | Value | Effort | Priority |
+|-------------|-------|--------|----------|
+| SLOs in config.toml | High | Medium | 1 |
+| Incident start/resolve commands | Medium | Low | 2 |
+| Error budget dashboard | Medium | Medium | 3 |
+| Postmortem automation | Low | High | 4 |

@@ -9,9 +9,10 @@ This guide covers deploying, operating, and maintaining production environments 
 3. [Component-Specific Maintenance](#component-specific-maintenance)
 4. [Monitoring and Alerting](#monitoring-and-alerting)
 5. [Emergency Procedures](#emergency-procedures)
-6. [Tooling Gaps and Workarounds](#tooling-gaps-and-workarounds)
-7. [Compliance Considerations](#compliance-considerations)
-8. [Appendices](#appendices)
+6. [Incident Response](#incident-response)
+7. [Tooling Gaps and Workarounds](#tooling-gaps-and-workarounds)
+8. [Compliance Considerations](#compliance-considerations)
+9. [Appendices](#appendices)
 
 ---
 
@@ -227,6 +228,84 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 | Review IAM policies | Audit bootstrap/ policies for least privilege |
 | Test disaster recovery | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing) |
 | Update OpenTofu providers | `./bin/tofu.sh init -upgrade myapp-production` |
+| Load testing baseline | Run load test, compare to previous baseline - see [Load Testing](#load-testing) |
+
+### Load Testing
+
+Establish baseline performance to detect regressions and understand capacity limits.
+
+**When to run:**
+- Quarterly (at minimum)
+- Before major releases
+- After significant infrastructure changes
+
+**Recommended tools:**
+- [k6](https://k6.io/) - Scriptable, good for CI integration
+- [locust](https://locust.io/) - Python-based, easy to customize
+- [Apache Bench](https://httpd.apache.org/docs/2.4/programs/ab.html) - Simple, quick tests
+
+**Basic test with k6:**
+```javascript
+// load-test.js
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '2m', target: 10 },   // Ramp up to 10 users
+    { duration: '5m', target: 10 },   // Hold at 10 users
+    { duration: '2m', target: 50 },   // Ramp up to 50 users
+    { duration: '5m', target: 50 },   // Hold at 50 users
+    { duration: '2m', target: 0 },    // Ramp down
+  ],
+};
+
+export default function () {
+  const res = http.get('https://myapp.example.com/health/');
+  check(res, {
+    'status is 200': (r) => r.status === 200,
+    'response time < 500ms': (r) => r.timings.duration < 500,
+  });
+  sleep(1);
+}
+```
+
+**Run test:**
+```bash
+k6 run load-test.js
+```
+
+**Document results:**
+Store baseline results in the application repo's `docs/performance/` directory:
+
+```markdown
+# Load Test Baseline - 2026-02-08
+
+**Environment:** myapp-production
+**Tool:** k6 v0.48
+
+## Results
+
+| Metric | 10 users | 50 users |
+|--------|----------|----------|
+| p95 latency | 120ms | 350ms |
+| p99 latency | 250ms | 800ms |
+| Error rate | 0% | 0.1% |
+| RPS | 45 | 180 |
+
+## Observations
+
+- Performance degrades gracefully under load
+- No errors until 50+ concurrent users
+- Database connection pooling effective
+
+## Capacity Estimate
+
+Based on current sizing, production can handle ~100 concurrent users
+before p95 latency exceeds SLO target (500ms).
+```
+
+**Example:** See `~/code/myapp/performance/` for API load testing scripts.
 
 ---
 
@@ -730,6 +809,127 @@ aws application-autoscaling register-scalable-target \
 ```
 
 </details>
+
+---
+
+## Incident Response
+
+When something goes wrong in production, follow this structured approach.
+
+### Severity Definitions
+
+| Severity | Definition | Examples | Response Time |
+|----------|------------|----------|---------------|
+| **P1 - Critical** | Total service outage or data loss risk | All users affected, no workaround | Immediate (within 15 min) |
+| **P2 - Major** | Significant degradation, partial outage | Key feature unavailable, slow performance | Within 1 hour |
+| **P3 - Minor** | Limited impact, workaround available | Cosmetic issue, single user affected | Within 1 business day |
+
+### Immediate Response (First 15 Minutes)
+
+1. **Assess the situation**
+   ```bash
+   # Quick health check
+   uv run python bin/ops.py myapp-production audit
+   ```
+
+2. **Determine severity** using definitions above
+
+3. **Communicate** (for P1/P2)
+   - Notify stakeholders: "We're aware of [issue] and investigating"
+   - Post to team channel with initial assessment
+
+4. **Stabilize if possible**
+   ```bash
+   # Rollback if recent deployment caused issue
+   uv run python bin/emergency.py myapp-production rollback --service web
+
+   # Scale up if capacity issue
+   uv run python bin/emergency.py myapp-production scale --all --multiplier 2
+
+   # Force redeploy if containers unhealthy
+   uv run python bin/emergency.py myapp-production force-deploy --all
+   ```
+
+### During the Incident
+
+- **Keep notes** - Document timeline, actions taken, findings
+- **Communicate updates** - Every 30 min for P1, every hour for P2
+- **Focus on restoration** - Fix the symptom first, root cause later
+
+### Resolution
+
+1. **Verify service restored**
+   ```bash
+   uv run python bin/ops.py myapp-production health
+   uv run python bin/ops.py myapp-production logs --minutes 10
+   ```
+
+2. **Communicate resolution**
+   - "Service restored at [time]. We'll follow up with details."
+
+3. **Document the incident** (see Postmortem section)
+
+### Postmortem Process
+
+**When required:** All P1 incidents, P2 incidents lasting > 1 hour
+
+**Timeline:** Complete within 5 business days of incident
+
+**Template:**
+
+```markdown
+# Incident: [Brief Title]
+
+**Date:** YYYY-MM-DD
+**Duration:** X hours Y minutes
+**Severity:** P1/P2
+**Author:** [name]
+
+## Summary
+One paragraph describing what happened and impact.
+
+## Timeline
+- HH:MM - Issue reported/detected
+- HH:MM - Investigation started
+- HH:MM - Root cause identified
+- HH:MM - Fix deployed
+- HH:MM - Service restored
+
+## Root Cause
+What actually broke and why.
+
+## Impact
+- Users affected: X
+- Duration: Y minutes
+- Data loss: None / [describe]
+
+## What Went Well
+- [Things that helped]
+
+## What Went Wrong
+- [Things that hurt]
+
+## Action Items
+| Action | Owner | Due Date | Status |
+|--------|-------|----------|--------|
+| [Fix] | [name] | YYYY-MM-DD | Open |
+
+## Lessons Learned
+What we'll do differently next time.
+```
+
+**Store postmortems:** In the application repo's `docs/postmortems/` directory.
+
+### Communication Templates
+
+**Initial notification (P1/P2):**
+> We're aware of an issue affecting [service]. Users may experience [symptom]. We're actively investigating and will provide updates.
+
+**Update during incident:**
+> Update on [service] issue: We've identified [cause/area]. We're [action being taken]. Next update in [30 min/1 hour].
+
+**Resolution:**
+> The issue affecting [service] has been resolved as of [time]. [Brief description of fix]. We'll share a postmortem with more details.
 
 ---
 
