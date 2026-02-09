@@ -50,7 +50,10 @@ scaling = "${tofu:scaling_config}"
 health_check = "${tofu:health_check_config}"
 
 # ------------------------------------------------------------------------------
-# Database (per-app RDS instance)
+# Database
+#
+# This app can use either a separate RDS instance or the shared RDS instance.
+# See app-on-shared-staging/config.toml.example for detailed documentation.
 #
 # Uses a two-account model for security:
 # - App credentials: DML only (SELECT, INSERT, UPDATE, DELETE) - for runtime

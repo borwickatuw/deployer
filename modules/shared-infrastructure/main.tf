@@ -233,3 +233,53 @@ resource "aws_service_discovery_private_dns_namespace" "main" {
     Name = "${var.name_prefix}-service-discovery"
   }
 }
+
+# ------------------------------------------------------------------------------
+# Shared RDS Instance (optional)
+#
+# When enabled, creates a single RDS instance that multiple applications can
+# share. Each app gets its own DATABASE on this instance via the
+# db-on-shared-rds module, with complete data isolation through PostgreSQL's
+# permission model.
+#
+# Cost savings: Instead of N separate db.t3.micro instances (~$15/month each),
+# one larger shared instance can host multiple small apps more efficiently.
+# ------------------------------------------------------------------------------
+
+module "shared_rds" {
+  source = "../rds"
+  count  = var.shared_rds_enabled ? 1 : 0
+
+  name_prefix        = var.name_prefix
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  ecs_security_group = module.ecs_cluster.security_group_id
+
+  instance_class    = var.shared_rds_instance_class
+  allocated_storage = var.shared_rds_allocated_storage
+
+  # The master credentials are for admin access and creating per-app databases
+  # Each app will have its own database and users created by db-on-shared-rds
+  database_name   = "postgres" # Default admin database
+  master_username = var.shared_rds_master_username
+  master_password = var.shared_rds_master_password
+
+  # Production settings
+  backup_retention_period = var.shared_rds_backup_retention_period
+  skip_final_snapshot     = var.shared_rds_skip_final_snapshot
+  deletion_protection     = var.shared_rds_deletion_protection
+  multi_az                = var.shared_rds_multi_az
+}
+
+# Store master credentials in Secrets Manager for the db-on-shared-rds module
+module "shared_rds_secrets" {
+  source = "../db-secrets"
+  count  = var.shared_rds_enabled ? 1 : 0
+
+  name_prefix = var.name_prefix
+  db_username = var.shared_rds_master_username
+  db_password = var.shared_rds_master_password
+  db_host     = module.shared_rds[0].address
+  db_port     = module.shared_rds[0].port
+  db_name     = "postgres"
+}

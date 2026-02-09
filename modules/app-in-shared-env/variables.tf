@@ -45,14 +45,20 @@ variable "shared_state_config" {
 # Database Configuration
 # ------------------------------------------------------------------------------
 
+variable "use_shared_rds" {
+  description = "Use shared RDS instance from shared infrastructure instead of creating a separate instance"
+  type        = bool
+  default     = false
+}
+
 variable "db_instance_class" {
-  description = "RDS instance class"
+  description = "RDS instance class (only used when use_shared_rds = false)"
   type        = string
   default     = "db.t3.micro"
 }
 
 variable "db_allocated_storage" {
-  description = "RDS allocated storage in GB"
+  description = "RDS allocated storage in GB (only used when use_shared_rds = false)"
   type        = number
   default     = 20
 }
@@ -64,14 +70,16 @@ variable "db_name" {
 }
 
 variable "db_username" {
-  description = "Database master username"
+  description = "Database master username (only used when use_shared_rds = false)"
   type        = string
+  default     = ""
   sensitive   = true
 }
 
 variable "db_password" {
-  description = "Database master password"
+  description = "Database master password (only used when use_shared_rds = false)"
   type        = string
+  default     = ""
   sensitive   = true
 }
 

@@ -10,14 +10,15 @@ Shared environments allow multiple small apps to share expensive AWS resources:
 - ECS Cluster (free)
 - Optional: Cognito authentication (free)
 - Optional: Shared ElastiCache (~$15-25/month)
+- Optional: **Shared RDS database** (~$15-25/month saved per app)
 
 Each app still gets its own:
-- RDS database (data isolation)
+- Database (either own RDS instance OR isolated database on shared RDS)
 - ALB target group and listener rule (independent routing)
 - ECR repository (separate images)
 - IAM roles (security isolation)
 
-**Estimated savings: ~$65-85/month per app** (for apps that would otherwise have standalone infrastructure)
+**Estimated savings: ~$65-85/month per app** (or ~$80-100/month with shared RDS)
 
 ## When to Use Shared Environments
 
@@ -192,6 +193,113 @@ domain_name     = "staging.example.com"
 certificate_san = ["*.staging.example.com"]
 ```
 
+## Shared RDS Database
+
+By default, each app on shared infrastructure gets its own RDS instance. For additional cost savings, you can enable a **shared RDS instance** where multiple apps share one database server, with each app getting its own isolated database.
+
+### How It Works
+
+```
+Shared RDS Instance (e.g., db.t3.small)
+├── alpha_db     ← alpha_staging_app / alpha_staging_migrate users
+├── beta_db      ← beta_staging_app / beta_staging_migrate users
+└── gamma_db     ← gamma_staging_app / gamma_staging_migrate users
+```
+
+PostgreSQL's permission model ensures complete isolation:
+- Each app gets its own DATABASE (`CREATE DATABASE alpha_db`)
+- Each app gets dedicated users (app + migrate) with passwords in Secrets Manager
+- Users can only `CONNECT` to their specific database
+- No `GRANT` on other databases = no access to other apps' data
+
+### When to Use Shared RDS
+
+**Good fit:**
+- Multiple small apps with low database usage
+- Apps owned by the same team
+- Staging environments where cost optimization matters
+- Apps that don't need dedicated IOPS or specific instance sizing
+
+**Not recommended:**
+- Apps requiring dedicated database resources
+- Different compliance or backup requirements per app
+- Apps from different teams needing separate billing
+- Production apps with strict performance requirements
+
+### Enabling Shared RDS
+
+**Step 1: Enable in shared infrastructure**
+
+```hcl
+# shared-infra-staging/terraform.tfvars
+shared_rds_enabled         = true
+shared_rds_instance_class  = "db.t3.small"
+shared_rds_allocated_storage = 20
+shared_rds_master_username = "shared_admin"
+shared_rds_master_password = "CHANGE-ME-generate-secure-password"  # openssl rand -base64 24
+
+# For production, also set:
+# shared_rds_backup_retention_period = 35
+# shared_rds_skip_final_snapshot     = false
+# shared_rds_deletion_protection     = true
+# shared_rds_multi_az                = true
+```
+
+**Step 2: Configure each app to use shared RDS**
+
+```hcl
+# myapp-staging/terraform.tfvars
+use_shared_rds = true
+db_username    = ""  # Not used - credentials auto-generated
+db_password    = ""  # Not used - credentials auto-generated
+```
+
+**Step 3: Deploy**
+
+```bash
+# Redeploy shared infrastructure (creates the RDS instance)
+./bin/tofu.sh rollout shared-infra-staging
+
+# Deploy app (creates database and users on shared RDS)
+./bin/tofu.sh rollout myapp-staging
+```
+
+### Database Credentials
+
+When using shared RDS, credentials are automatically:
+1. Generated with secure random passwords
+2. Stored in AWS Secrets Manager
+3. Made available to ECS tasks via IAM permissions
+
+The config.toml uses the same structure regardless of RDS mode:
+
+```toml
+[database]
+host = "${tofu:db_host}"
+port = "${tofu:db_port}"
+name = "${tofu:db_name}"
+credentials = "secretsmanager"
+app_username_secret = "${tofu:db_app_username_secret_arn}"
+app_password_secret = "${tofu:db_app_password_secret_arn}"
+migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
+migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
+```
+
+### Mixing Modes
+
+You can mix apps using shared RDS with apps using separate RDS instances in the same shared infrastructure:
+
+```
+shared-infra-staging/
+├── Shared RDS instance (if enabled)
+│
+├── app1-staging/  (use_shared_rds = true)  → Uses shared RDS
+├── app2-staging/  (use_shared_rds = true)  → Uses shared RDS
+└── app3-staging/  (use_shared_rds = false) → Has own RDS instance
+```
+
+This is useful when most apps can share but one needs dedicated resources.
+
 ## Standalone vs Shared Comparison
 
 | Aspect | Standalone | Shared |
@@ -296,20 +404,35 @@ The per-app listener rules include a higher-priority rule that bypasses Cognito 
 |-----------|---------|-----------|
 | NAT Gateway | $32 | $320 |
 | ALB | $20 | $200 |
-| RDS (db.t3.micro) | $25 | $250 |
+| RDS (db.t3.micro) | $15 | $150 |
 | ElastiCache | $20 | $200 |
 | Misc | $5 | $50 |
-| **Total** | **$102** | **$1,020** |
+| **Total** | **$92** | **$920** |
 
-### 10 Apps on Shared Staging
+### 10 Apps on Shared Staging (Separate RDS per App)
 
 | Component | Shared | Per-App (x10) | Total |
 |-----------|--------|---------------|-------|
 | NAT Gateway | $32 | - | $32 |
 | ALB | $30 | - | $30 |
-| RDS | - | $25 x 10 | $250 |
+| RDS (db.t3.micro) | - | $15 x 10 | $150 |
 | Redis (optional) | $25 | - | $25 |
 | Misc | $10 | - | $10 |
-| **Total** | | | **$347** |
+| **Total** | | | **$247** |
 
-**Savings: ~$673/month (66%)** for staging alone.
+**Savings: ~$673/month (73%)** vs separate environments.
+
+### 10 Apps on Shared Staging (Shared RDS)
+
+| Component | Shared | Per-App (x10) | Total |
+|-----------|--------|---------------|-------|
+| NAT Gateway | $32 | - | $32 |
+| ALB | $30 | - | $30 |
+| RDS (db.t3.small, shared) | $25 | - | $25 |
+| Redis (optional) | $25 | - | $25 |
+| Misc | $10 | - | $10 |
+| **Total** | | | **$122** |
+
+**Savings: ~$798/month (87%)** vs separate environments.
+
+The shared RDS option saves an additional ~$125/month (10 x $15 - $25) by consolidating database instances.

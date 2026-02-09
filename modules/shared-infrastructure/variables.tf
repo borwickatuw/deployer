@@ -262,3 +262,63 @@ variable "service_discovery_enabled" {
   type        = bool
   default     = false
 }
+
+# ------------------------------------------------------------------------------
+# Shared RDS Configuration
+# ------------------------------------------------------------------------------
+
+variable "shared_rds_enabled" {
+  description = "Enable a shared RDS instance for multiple applications. Each app gets its own database on this instance."
+  type        = bool
+  default     = false
+}
+
+variable "shared_rds_instance_class" {
+  description = "RDS instance class for the shared database"
+  type        = string
+  default     = "db.t3.small"
+}
+
+variable "shared_rds_allocated_storage" {
+  description = "Allocated storage in GB for the shared RDS instance"
+  type        = number
+  default     = 20
+}
+
+variable "shared_rds_master_username" {
+  description = "Master username for the shared RDS instance"
+  type        = string
+  default     = "shared_admin"
+  sensitive   = true
+}
+
+variable "shared_rds_master_password" {
+  description = "Master password for the shared RDS instance"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "shared_rds_backup_retention_period" {
+  description = "Number of days to retain automated backups (7 for staging, 35 for production)"
+  type        = number
+  default     = 7
+}
+
+variable "shared_rds_skip_final_snapshot" {
+  description = "Skip final snapshot on deletion (true for staging, false for production)"
+  type        = bool
+  default     = true
+}
+
+variable "shared_rds_deletion_protection" {
+  description = "Prevent accidental deletion (false for staging, true for production)"
+  type        = bool
+  default     = false
+}
+
+variable "shared_rds_multi_az" {
+  description = "Enable Multi-AZ deployment for automatic failover"
+  type        = bool
+  default     = false
+}

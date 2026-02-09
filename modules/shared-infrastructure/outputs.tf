@@ -261,3 +261,42 @@ output "service_discovery_namespace_name" {
   description = "AWS Cloud Map namespace name (e.g., 'myapp-staging.local')"
   value       = var.service_discovery_enabled && length(aws_service_discovery_private_dns_namespace.main) > 0 ? aws_service_discovery_private_dns_namespace.main[0].name : ""
 }
+
+# ------------------------------------------------------------------------------
+# Shared RDS Outputs
+# ------------------------------------------------------------------------------
+
+output "shared_rds_enabled" {
+  description = "Whether shared RDS is enabled"
+  value       = var.shared_rds_enabled
+}
+
+output "shared_rds_endpoint" {
+  description = "Shared RDS endpoint (empty if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds) > 0 ? module.shared_rds[0].endpoint : ""
+}
+
+output "shared_rds_address" {
+  description = "Shared RDS hostname (empty if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds) > 0 ? module.shared_rds[0].address : ""
+}
+
+output "shared_rds_port" {
+  description = "Shared RDS port (0 if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds) > 0 ? module.shared_rds[0].port : 0
+}
+
+output "shared_rds_security_group_id" {
+  description = "Security group ID for the shared RDS instance (empty if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds) > 0 ? module.shared_rds[0].security_group_id : ""
+}
+
+output "shared_rds_master_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing shared RDS master credentials (empty if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds_secrets) > 0 ? module.shared_rds_secrets[0].master_secret_arn : ""
+}
+
+output "shared_rds_instance_id" {
+  description = "Shared RDS instance identifier for AWS CLI commands (empty if shared RDS disabled)"
+  value       = var.shared_rds_enabled && length(module.shared_rds) > 0 ? module.shared_rds[0].db_instance_id : ""
+}

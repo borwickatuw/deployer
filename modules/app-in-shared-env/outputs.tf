@@ -75,20 +75,61 @@ output "listener_rule_priority" {
 # Database Outputs
 # ------------------------------------------------------------------------------
 
+output "db_host" {
+  description = "Database hostname"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].db_host : module.rds[0].address
+}
+
+output "db_port" {
+  description = "Database port"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].db_port : module.rds[0].port
+}
+
+output "db_name" {
+  description = "Database name"
+  value       = local.db_name
+}
+
 output "database_url" {
-  description = "PostgreSQL connection URL"
-  value       = module.rds.connection_url
+  description = "PostgreSQL connection URL (only available for separate RDS mode)"
+  value       = var.use_shared_rds ? "" : module.rds[0].connection_url
   sensitive   = true
 }
 
 output "rds_instance_id" {
-  description = "RDS instance identifier"
-  value       = module.rds.db_instance_id
+  description = "RDS instance identifier (empty when using shared RDS)"
+  value       = var.use_shared_rds ? "" : module.rds[0].db_instance_id
 }
 
 output "rds_endpoint" {
   description = "RDS endpoint"
-  value       = module.rds.endpoint
+  value       = var.use_shared_rds ? "${module.db_on_shared_rds[0].db_host}:${module.db_on_shared_rds[0].db_port}" : module.rds[0].endpoint
+}
+
+# Database credentials (from db-on-shared-rds or db-users module)
+output "db_app_username_secret_arn" {
+  description = "ARN for app database username secret"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].app_username_arn : ""
+}
+
+output "db_app_password_secret_arn" {
+  description = "ARN for app database password secret"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].app_password_arn : ""
+}
+
+output "db_migrate_username_secret_arn" {
+  description = "ARN for migrate database username secret"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].migrate_username_arn : ""
+}
+
+output "db_migrate_password_secret_arn" {
+  description = "ARN for migrate database password secret"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].migrate_password_arn : ""
+}
+
+output "use_shared_rds" {
+  description = "Whether this app uses the shared RDS instance"
+  value       = var.use_shared_rds
 }
 
 # ------------------------------------------------------------------------------

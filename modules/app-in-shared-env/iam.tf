@@ -59,6 +59,41 @@ resource "aws_iam_role_policy" "ecs_task_execution_ssm" {
   })
 }
 
+# Allow reading database credentials from Secrets Manager (when using shared RDS)
+resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
+  count = var.use_shared_rds ? 1 : 0
+  name  = "${local.name_prefix}-secrets-access"
+  role  = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          module.db_on_shared_rds[0].app_secret_arn,
+          module.db_on_shared_rds[0].migrate_secret_arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "secretsmanager.*.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
 # Task Role - used by the application to access AWS resources
 resource "aws_iam_role" "ecs_task" {
   name = "${local.name_prefix}-ecs-task"

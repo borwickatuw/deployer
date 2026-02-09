@@ -9,11 +9,20 @@ app_name    = "{{app_name}}"
 environment = "{{env_type}}"
 
 # ------------------------------------------------------------------------------
-# Database Credentials
+# Database Configuration
+#
+# See app-on-shared-staging/terraform.tfvars.example for detailed documentation.
 # ------------------------------------------------------------------------------
 
-db_username = "{{app_name}}_admin"
-db_password = "CHANGE-ME-generate-a-secure-password"  # Generate with: openssl rand -base64 24
+# Option 1: Separate RDS instance (default)
+use_shared_rds = false
+db_username    = "{{app_name}}_admin"
+db_password    = "CHANGE-ME-generate-a-secure-password"  # openssl rand -base64 24
+
+# Option 2: Shared RDS instance
+# use_shared_rds = true
+# db_username    = ""
+# db_password    = ""
 
 # ------------------------------------------------------------------------------
 # Domain Configuration

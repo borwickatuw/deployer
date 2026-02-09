@@ -9,11 +9,29 @@ app_name    = "{{app_name}}"
 environment = "{{env_type}}"
 
 # ------------------------------------------------------------------------------
-# Database Credentials
+# Database Configuration
+#
+# Two modes available:
+#
+# 1. Separate RDS instance (default): Set use_shared_rds = false
+#    - Each app gets its own RDS instance (~$15/mo for db.t3.micro)
+#    - Requires db_username and db_password
+#
+# 2. Shared RDS instance: Set use_shared_rds = true
+#    - App gets a DATABASE on the shared RDS instance
+#    - Credentials auto-generated and stored in Secrets Manager
+#    - Requires shared_rds_enabled = true in shared infrastructure
 # ------------------------------------------------------------------------------
 
-db_username = "{{app_name}}_admin"
-db_password = "CHANGE-ME-generate-a-secure-password"  # Generate with: openssl rand -base64 24
+# Option 1: Separate RDS instance (default)
+use_shared_rds = false
+db_username    = "{{app_name}}_admin"
+db_password    = "CHANGE-ME-generate-a-secure-password"  # openssl rand -base64 24
+
+# Option 2: Shared RDS instance (uncomment and set use_shared_rds = true)
+# use_shared_rds = true
+# db_username    = ""  # Not used - credentials auto-generated
+# db_password    = ""  # Not used - credentials auto-generated
 
 # ------------------------------------------------------------------------------
 # Domain Configuration

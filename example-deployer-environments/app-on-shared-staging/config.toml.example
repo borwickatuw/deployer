@@ -49,11 +49,18 @@ scaling = "${tofu:scaling_config}"
 health_check = "${tofu:health_check_config}"
 
 # ------------------------------------------------------------------------------
-# Database (per-app RDS instance)
+# Database
 #
-# Uses a two-account model for security:
+# This app can use either:
+# 1. Separate RDS instance (use_shared_rds = false in terraform.tfvars)
+# 2. Shared RDS instance (use_shared_rds = true in terraform.tfvars)
+#
+# Both modes use a two-account security model:
 # - App credentials: DML only (SELECT, INSERT, UPDATE, DELETE) - for runtime
 # - Migrate credentials: DDL + DML (CREATE, ALTER, DROP) - for migrations only
+#
+# When using shared RDS, each app gets its own DATABASE on the shared instance.
+# PostgreSQL permissions ensure complete data isolation between apps.
 # ------------------------------------------------------------------------------
 
 [database]
