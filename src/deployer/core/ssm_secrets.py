@@ -196,6 +196,6 @@ def format_missing_secrets_error(
 
     for env_var, ssm_path in missing:
         secret_name = ssm_path.split("/")[-1]
-        lines.append(f"  uv run python bin/secrets.py put {env_name} {secret_name}")
+        lines.append(f"  uv run python bin/ssm-secrets.py put {env_name} {secret_name}")
 
     return "\n".join(lines)

@@ -37,7 +37,7 @@ These targets assume:
 Before deploying to production, verify:
 
 - [ ] **Infrastructure**: All Terraform/OpenTofu resources planned and reviewed
-- [ ] **Secrets**: All secrets stored in SSM Parameter Store (`bin/secrets.py`)
+- [ ] **Secrets**: All secrets stored in SSM Parameter Store (`bin/ssm-secrets.py`)
 - [ ] **DNS**: Route53 hosted zone configured, domain verified
 - [ ] **Certificates**: ACM certificates issued and validated
 - [ ] **Database**: RDS instance sized appropriately for production load
@@ -164,7 +164,7 @@ scaling = {
 
 3. **Create secrets** (if not already present):
    ```bash
-   uv run python bin/secrets.py set myapp-production SECRET_KEY "$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+   uv run python bin/ssm-secrets.py set myapp-production SECRET_KEY "$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
    ```
 
 4. **Link and deploy application**:

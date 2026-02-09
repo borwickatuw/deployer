@@ -73,7 +73,7 @@ deployer/
 │   ├── init.py                        # Initialize new apps and environments
 │   ├── environment.py                 # Start/stop environments
 │   ├── cognito.py                     # Cognito user management
-│   ├── secrets.py                     # SSM Parameter Store secrets
+│   ├── ssm-secrets.py                 # SSM Parameter Store secrets
 │   └── capacity-report.py             # ECS right-sizing recommendations
 ├── example-deploy.toml                # Example application deploy.toml
 ├── example-deployer-environments/     # Example environments directory structure

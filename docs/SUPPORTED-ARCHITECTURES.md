@@ -108,7 +108,7 @@ These should work with the [generic framework guide](frameworks/generic.md):
 |---------|---------|--------|----------|
 | ACM | SSL certificates | `modules/acm` | Required for HTTPS |
 | Cognito | Staging environment auth | `modules/cognito` | Optional |
-| SSM Parameter Store | Secrets storage | (managed via `bin/secrets.py`) | Yes |
+| SSM Parameter Store | Secrets storage | (managed via `bin/ssm-secrets.py`) | Yes |
 | IAM | Access control | (inline in `main.tf`) | Yes |
 
 ### Monitoring

@@ -10,31 +10,31 @@ Example: /myapp/staging/SECRET_KEY
 
 Usage:
     # Check secrets: missing from SSM, or extra (in SSM but not in deploy.toml)
-    python bin/secrets.py check ../app/deploy.toml myapp-staging
+    python bin/ssm-secrets.py check ../app/deploy.toml myapp-staging
 
     # Set a secret (prompts for value or offers to generate random)
-    python bin/secrets.py put myapp-staging SECRET_KEY
+    python bin/ssm-secrets.py put myapp-staging SECRET_KEY
 
     # Set a secret with a random value (default 32 chars)
-    python bin/secrets.py put myapp-staging SECRET_KEY --random
+    python bin/ssm-secrets.py put myapp-staging SECRET_KEY --random
 
     # Set a secret with a random value of specific length
-    python bin/secrets.py put myapp-staging SECRET_KEY --random 64
+    python bin/ssm-secrets.py put myapp-staging SECRET_KEY --random 64
 
     # Set a secret with value from command line (less secure - visible in history)
-    python bin/secrets.py put myapp-staging SECRET_KEY --value "my-secret-value"
+    python bin/ssm-secrets.py put myapp-staging SECRET_KEY --value "my-secret-value"
 
     # Set a secret with value from file
-    python bin/secrets.py put myapp-staging SSL_CERT --from-file /path/to/cert.pem
+    python bin/ssm-secrets.py put myapp-staging SSL_CERT --from-file /path/to/cert.pem
 
     # List all secrets for an environment
-    python bin/secrets.py list myapp-staging
+    python bin/ssm-secrets.py list myapp-staging
 
     # Get a secret value
-    python bin/secrets.py get myapp-staging SECRET_KEY
+    python bin/ssm-secrets.py get myapp-staging SECRET_KEY
 
     # Delete a secret
-    python bin/secrets.py delete myapp-staging SECRET_KEY
+    python bin/ssm-secrets.py delete myapp-staging SECRET_KEY
 """
 
 import argparse
@@ -111,7 +111,7 @@ def cmd_check(args) -> int:
         else:
             print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
             print(f"\nTo link: python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
-            print(f"Or specify: secrets.py check {args.environment} --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+            print(f"Or specify: ssm-secrets.py check {args.environment} --deploy-toml /path/to/deploy.toml", file=sys.stderr)
             return 1
 
     if not deploy_toml_path.exists():
@@ -121,7 +121,7 @@ def cmd_check(args) -> int:
     # Print tip if --deploy-toml was explicitly provided
     if used_explicit_flag:
         print(f"Tip: Run 'python bin/link-environments.py {args.environment} {deploy_toml_path}'")
-        print(f"     to check with just: secrets.py check {args.environment}\n")
+        print(f"     to check with just: ssm-secrets.py check {args.environment}\n")
 
     # Parse environment name
     project, environment = parse_environment(args.environment)
@@ -191,12 +191,12 @@ def cmd_check(args) -> int:
         print("\nTo set missing secrets, run:")
         for env_var, ssm_path in missing:
             secret_name = ssm_path.split("/")[-1]
-            print(f"  uv run python bin/secrets.py put {args.environment} {secret_name}")
+            print(f"  uv run python bin/ssm-secrets.py put {args.environment} {secret_name}")
 
     if extra:
         print("\nExtra secrets not referenced in deploy.toml:")
         for secret_name, ssm_path in extra:
-            print(f"  uv run python bin/secrets.py delete {args.environment} {secret_name}")
+            print(f"  uv run python bin/ssm-secrets.py delete {args.environment} {secret_name}")
 
     if missing or extra:
         return 1
