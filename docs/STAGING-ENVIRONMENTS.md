@@ -163,6 +163,57 @@ aws logs tail /aws/lambda/myapp-staging-scheduler --follow
 
 ---
 
+## Custom Error Pages
+
+When staging environments are stopped (ECS scaled to 0, RDS stopped), the ALB returns raw 502/503 errors. CloudFront sits in front of the ALB to intercept these errors and serve a friendly HTML page from S3 instead.
+
+### How It Works
+
+1. CloudFront distribution is created in front of the ALB
+2. An S3 bucket stores the custom error page HTML
+3. CloudFront intercepts 502, 503, and 504 responses from the ALB
+4. Users see a branded "Service Temporarily Unavailable" page instead of a raw error
+
+### Enabling CloudFront Error Pages
+
+In your environment's `main.tf`, add to the `module "infrastructure"` block:
+
+```hcl
+# CloudFront for custom error pages (shows friendly 503 when services are stopped)
+cloudfront_alb_enabled            = true
+cloudfront_alb_error_page_content = file("${path.module}/error-503.html")
+```
+
+### Custom Error Page
+
+Create an `error-503.html` file in your environment directory. This is a standalone HTML file that you can preview in a browser. The file is version-controlled and independently editable per environment.
+
+If you omit `cloudfront_alb_error_page_content`, a generic default page is used (defined in the `cloudfront-alb` module).
+
+### Required Outputs
+
+Add these outputs to your environment's `main.tf`:
+
+```hcl
+# CloudFront ALB outputs
+output "cloudfront_alb_distribution_id" {
+  value       = module.infrastructure.cloudfront_alb_distribution_id
+  description = "CloudFront distribution ID for custom error pages"
+}
+
+output "cloudfront_alb_domain_name" {
+  value       = module.infrastructure.cloudfront_alb_domain_name
+  description = "CloudFront distribution domain name"
+}
+
+output "cloudfront_alb_error_bucket" {
+  value       = module.infrastructure.cloudfront_alb_error_bucket
+  description = "S3 bucket for error pages"
+}
+```
+
+---
+
 ## Troubleshooting
 
 ### Cognito Issues
@@ -208,23 +259,31 @@ Normal - ECS services fail health checks while RDS is starting (5-10 minutes). U
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Staging Environment                      │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │                    ALB (always running)                     │ │
-│  │  ┌──────────────────┐    ┌───────────────────────────────┐ │ │
-│  │  │ Cognito Auth     │───►│ ECS Service (can be scaled    │ │ │
-│  │  │ (login required) │    │ to 0 during off-hours)        │ │ │
-│  │  └──────────────────┘    └───────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                                │                                 │
-│              ┌─────────────────┼─────────────────┐              │
-│              │                 │                 │              │
-│              ▼                 ▼                 ▼              │
-│  ┌───────────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
-│  │ RDS (can be       │ │ ElastiCache │ │ Lambda Scheduler    │ │
-│  │ stopped)          │ │ (always on) │ │ (EventBridge rules) │ │
-│  └───────────────────┘ └─────────────┘ └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          Staging Environment                         │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │              CloudFront (intercepts 502/503/504)               │  │
+│  │  ┌─────────────────────────┐                                  │  │
+│  │  │ S3 Error Page (fallback │                                  │  │
+│  │  │ when ALB returns 5xx)   │                                  │  │
+│  │  └─────────────────────────┘                                  │  │
+│  └────────────────────────────┬───────────────────────────────────┘  │
+│                               ▼                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │                     ALB (always running)                       │  │
+│  │  ┌──────────────────┐    ┌───────────────────────────────┐    │  │
+│  │  │ Cognito Auth     │───►│ ECS Service (can be scaled    │    │  │
+│  │  │ (login required) │    │ to 0 during off-hours)        │    │  │
+│  │  └──────────────────┘    └───────────────────────────────┘    │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                │                                     │
+│              ┌─────────────────┼─────────────────┐                   │
+│              │                 │                 │                   │
+│              ▼                 ▼                 ▼                   │
+│  ┌───────────────────┐ ┌─────────────┐ ┌─────────────────────┐      │
+│  │ RDS (can be       │ │ ElastiCache │ │ Lambda Scheduler    │      │
+│  │ stopped)          │ │ (always on) │ │ (EventBridge rules) │      │
+│  └───────────────────┘ └─────────────┘ └─────────────────────┘      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
