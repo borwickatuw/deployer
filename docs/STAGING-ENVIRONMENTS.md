@@ -106,7 +106,7 @@ Staging environments can be stopped during off-hours to reduce costs.
 ./bin/environment.py stop myapp-staging
 
 # Start (starts RDS, waits for it, scales ECS back up)
-./bin/environment.py start myapp-staging --wait
+./bin/environment.py start myapp-staging
 ```
 
 ### Automatic Scheduling
@@ -243,10 +243,10 @@ Common cause: RDS in transitional state.
 
 **Environment won't start**
 1. Check if RDS is stopped: `./bin/environment.py status myapp-staging`
-2. Try manual start: `./bin/environment.py start myapp-staging --wait`
+2. Try manual start: `./bin/environment.py start myapp-staging`
 
 **Health checks failing after start**
-Normal - ECS services fail health checks while RDS is starting (5-10 minutes). Use `--wait` flag to start RDS before scaling ECS.
+Normal - ECS services fail health checks while RDS is starting (5-10 minutes). The start command waits for RDS before scaling ECS, but health checks may still fail briefly during initialization.
 
 ### Known Limitations
 

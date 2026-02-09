@@ -369,14 +369,14 @@ uv run python bin/environment.py myapp-staging status
 # Stop environment (scales ECS to 0, stops RDS)
 uv run python bin/environment.py myapp-staging stop
 
-# Start environment (starts RDS, restores ECS replicas)
-uv run python bin/environment.py myapp-staging start --wait
+# Start environment (starts RDS, waits for it, restores ECS replicas)
+uv run python bin/environment.py myapp-staging start
 ```
 
 **Notes:**
 - ElastiCache and ALB cannot be stopped (only deleted), so these continue to incur costs
 - RDS auto-restarts after 7 days if stopped (AWS limitation)
-- Use `--wait` to wait for RDS to be available before scaling ECS back up
+- Start always waits for RDS to be available before scaling ECS back up
 
 See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for automated scheduling to stop/start environments on a schedule.
 
