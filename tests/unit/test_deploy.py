@@ -409,7 +409,7 @@ memory = 512
                 "health_check": {},
             },
             "database": {},
-            "redis": {},
+            "cache": {},
             "storage": {},
             "deployment": {},
             "scheduler": {},

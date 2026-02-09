@@ -115,7 +115,7 @@ class Deployer:
         infra = env_config.get("infrastructure", {})
         services = env_config.get("services", {})
         database = env_config.get("database", {})
-        redis = env_config.get("redis", {})
+        cache = env_config.get("cache", {})
         storage = env_config.get("storage", {})
         deployment = env_config.get("deployment", {})
         scheduler = env_config.get("scheduler", {})
@@ -149,7 +149,7 @@ class Deployer:
             "db_name": database.get("name"),
             "db_password_secret_arn": database.get("password_secret_arn"),
             "db_username_secret_arn": database.get("username_secret_arn"),
-            "redis_url": redis.get("url"),
+            "redis_url": cache.get("url"),
             "s3_media_bucket": storage.get("media_bucket"),
             "rds_instance_id": infra.get("rds_instance_id"),
             "scheduler": {

@@ -364,13 +364,13 @@ Staging environments can be stopped during off-hours to reduce costs (~50-60% sa
 
 ```bash
 # Check environment status
-uv run python bin/environment.py myapp-staging status
+uv run python bin/environment.py status myapp-staging
 
 # Stop environment (scales ECS to 0, stops RDS)
-uv run python bin/environment.py myapp-staging stop
+uv run python bin/environment.py stop myapp-staging
 
 # Start environment (starts RDS, waits for it, restores ECS replicas)
-uv run python bin/environment.py myapp-staging start
+uv run python bin/environment.py start myapp-staging
 ```
 
 **Notes:**
@@ -390,14 +390,14 @@ Quick reference for which file to edit based on what you want to change.
 
 | If you want to... | Edit this file | Section/Key |
 |-------------------|----------------|-------------|
-| Change CPU or memory | `terraform.tfvars` | `services.*.cpu`, `services.*.memory` |
-| Change replica count | `terraform.tfvars` | `services.*.replicas` |
-| Add auto-scaling | `terraform.tfvars` | `scaling` block |
+| Change CPU or memory | `services.auto.tfvars` | `services.*.cpu`, `services.*.memory` |
+| Change replica count | `services.auto.tfvars` | `services.*.replicas` |
+| Add auto-scaling | `services.auto.tfvars` | `scaling` block |
 | Change the Docker command | `deploy.toml` (app repo) | `services.*.command` |
 | Change health check path | `deploy.toml` (app repo) | `services.*.health_check_path` |
-| Change health check timing | `terraform.tfvars` | `health_check` block |
+| Change health check timing | `services.auto.tfvars` | `health_check` block |
 | Set minimum resource requirements | `deploy.toml` (app repo) | `services.*.min_cpu`, `services.*.min_memory` |
-| Add a new service | Both: `deploy.toml` + `terraform.tfvars` | Define service in both |
+| Add a new service | Both: `deploy.toml` + `services.auto.tfvars` | Define service in both |
 
 ### Environment Variables & Secrets
 
@@ -411,7 +411,7 @@ Quick reference for which file to edit based on what you want to change.
 
 | If you want to... | Edit this file | Then run |
 |-------------------|----------------|----------|
-| Change domain name | `terraform.tfvars` | `tofu apply` |
+| Change domain name | `services.auto.tfvars` | `tofu apply` |
 | Change database size | `main.tf` | `tofu apply` |
 | Change Redis/cache size | `main.tf` | `tofu apply` |
 | Add S3 bucket | `main.tf` | `tofu apply` |
@@ -432,7 +432,7 @@ Want to change HOW the app runs (command, env vars, Dockerfile)?
   → Edit deploy.toml in your app repo
 
 Want to change HOW MUCH resources (CPU, memory, replicas)?
-  → Edit terraform.tfvars in deployer/environments/
+  → Edit services.auto.tfvars in deployer-environments/
 
 Want to set MINIMUM resource requirements the app needs?
   → Edit deploy.toml (min_cpu, min_memory) in your app repo
@@ -479,7 +479,7 @@ command = ["python", "manage.py", "migrate"]
 ```
 
 ```hcl
-# terraform.tfvars
+# services.auto.tfvars
 services = {
   web = {
     cpu               = 256
@@ -497,10 +497,6 @@ services = {
   }
 }
 ```
-
-### Rails App
-
-See [docs/frameworks/rails.md](frameworks/rails.md) for Rails-specific configuration.
 
 ### Multiple Services with Path Routing
 
@@ -571,7 +567,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 1. Verify the health check endpoint returns 200 status
 2. Check CloudWatch logs for application errors
-3. Ensure the health check path in `terraform.tfvars` matches your app
+3. Ensure the health check path in `services.auto.tfvars` matches your app
 
 ### Service stuck in "pending" state
 

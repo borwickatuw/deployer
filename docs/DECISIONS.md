@@ -109,12 +109,10 @@ AWS_REGION = "${aws_region}"
 
 **Available placeholders** (resolved from config.toml):
 - `${database_url}` - from `[database].url`
-- `${redis_url}` - from `[redis].url`
+- `${redis_url}` - from `[cache].url`
 - `${s3_media_bucket}` - from `[storage].media_bucket`
 - `${aws_region}` - from AWS SDK
 - `${environment}` - from environment argument
-- `${iiif_server_url}` - from `[services].iiif_server_url`
-- `${video_server_url}` - from `[services].video_server_url`
 
 ---
 

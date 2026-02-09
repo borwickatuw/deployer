@@ -31,9 +31,6 @@ uv run python bin/deploy.py myapp-staging --dry-run
 # View logs
 aws logs tail /ecs/myapp-staging --follow
 
-# Link environment to deploy.toml (one-time setup)
-uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
-
 # Run commands (uses linked deploy.toml)
 uv run python bin/ecs-run.py run myapp-staging migrate
 
@@ -361,12 +358,10 @@ These placeholders are resolved at deploy time from the environment's `config.to
 | Placeholder | Source (config.toml) | Description |
 |-------------|---------------------|-------------|
 | `${database_url}` | `[database].url` | PostgreSQL connection URL |
-| `${redis_url}` | `[redis].url` | Redis connection URL |
+| `${redis_url}` | `[cache].url` | Redis connection URL |
 | `${s3_media_bucket}` | `[storage].media_bucket` | S3 bucket name |
 | `${aws_region}` | AWS SDK | Current AWS region |
 | `${environment}` | `environment` argument | Deployment environment (staging/production) |
-| `${iiif_server_url}` | `[services].iiif_server_url` | IIIF server base URL |
-| `${video_server_url}` | `[services].video_server_url` | Video/media server URL |
 
 For service URL references like `${services.api.url}`, see [MODULES.md](MODULES.md#service-url-references).
 
@@ -572,7 +567,7 @@ app_password_secret = "${tofu:db_app_password_secret_arn}"
 migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
 migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
 
-[redis]
+[cache]
 url = "${tofu:redis_url}"
 
 [storage]
@@ -664,7 +659,7 @@ This reduces blast radius if the application is compromised - attackers cannot d
 
 When running `ecs-run.py run <env> migrate`, the migrate task definition is used automatically, which has the migrate credentials.
 
-#### `[redis]`
+#### `[cache]`
 
 | Field | Tofu Output | Description |
 |-------|-------------|-------------|

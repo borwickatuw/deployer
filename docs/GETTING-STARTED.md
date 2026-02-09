@@ -8,7 +8,7 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 | Tool | Version | Installation | Purpose |
 |------|---------|--------------|---------|
-| Python | 3.11+ | `brew install python@3.11` | Deploy scripts |
+| Python | 3.12+ | `brew install python@3.12` | Deploy scripts |
 | uv | Latest | `brew install uv` | Python package manager |
 | OpenTofu | 1.6+ | `brew install opentofu` | Infrastructure as code |
 | AWS CLI | v2 | `brew install awscli` | AWS operations |
@@ -16,7 +16,7 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 **Verify your setup:**
 ```bash
-python3 --version    # Should be 3.11 or higher
+python3 --version    # Should be 3.12 or higher
 uv --version
 tofu --version
 aws --version

@@ -67,9 +67,9 @@ module "waf" {
   name_prefix = var.name_prefix
   alb_arn     = module.alb.arn
 
-  ip_reputation_enabled    = var.waf_ip_reputation
-  common_rules_enabled     = var.waf_common_rules
-  known_bad_inputs_enabled = var.waf_known_bad_inputs
+  ip_reputation_enabled    = var.waf_ip_reputation_enabled
+  common_rules_enabled     = var.waf_common_rules_enabled
+  known_bad_inputs_enabled = var.waf_known_bad_inputs_enabled
   rate_limit_enabled       = var.waf_rate_limit_enabled
   rate_limit_requests      = var.waf_rate_limit_requests
   bot_control_level        = var.waf_bot_control_level
