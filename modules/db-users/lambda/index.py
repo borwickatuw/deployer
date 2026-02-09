@@ -119,14 +119,22 @@ def update_user_password(conn, username: str, password: str) -> None:
     logger.info(f"Updated password for user '{username}'")
 
 
-def setup_default_privileges(conn, migrate_username: str, app_username: str) -> None:
+def setup_default_privileges(
+    conn, master_username: str, migrate_username: str, app_username: str
+) -> None:
     """Set up default privileges so app user can access tables created by migrate user.
 
     This uses ALTER DEFAULT PRIVILEGES FOR ROLE which sets the defaults for objects
     created by the migrate user, not the current user (master).
 
+    Requires master to be a member of migrate role (granted below).
+
     This is idempotent and should be run on every Lambda invocation.
     """
+    # Master must be a member of migrate role to set its default privileges
+    # GRANT ... TO ... is idempotent (no error if already granted)
+    conn.run(f"GRANT {migrate_username} TO {master_username}")
+
     # Tables created by migrate user should be accessible by app user
     conn.run(
         f"ALTER DEFAULT PRIVILEGES FOR ROLE {migrate_username} IN SCHEMA public "
@@ -256,7 +264,9 @@ def handler(event, context):
 
         # Set up default privileges so tables created by migrate user
         # are automatically accessible by app user
-        setup_default_privileges(conn, migrate["username"], app["username"])
+        setup_default_privileges(
+            conn, master["username"], migrate["username"], app["username"]
+        )
 
         # Grant app user access to any existing tables
         # (handles tables created before defaults were configured)
