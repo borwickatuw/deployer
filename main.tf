@@ -62,6 +62,10 @@ module "vpc" {
   name_prefix        = local.name_prefix
   vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
+
+  # Flow logs
+  flow_logs_enabled    = var.vpc_flow_logs_enabled
+  permissions_boundary = var.iam_permissions_boundary
 }
 
 # ECS Cluster
@@ -150,6 +154,9 @@ module "rds" {
   performance_insights_enabled = var.rds_performance_insights
   monitoring_interval          = var.rds_monitoring_interval
   permissions_boundary         = var.iam_permissions_boundary
+
+  # Encryption
+  storage_encrypted = var.rds_storage_encrypted
 }
 
 # Database credentials in Secrets Manager (for ECS secrets injection)

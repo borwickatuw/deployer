@@ -24,6 +24,10 @@ module "vpc" {
   name_prefix        = var.name_prefix
   vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
+
+  # Flow logs
+  flow_logs_enabled    = var.vpc_flow_logs_enabled
+  permissions_boundary = var.permissions_boundary
 }
 
 # ------------------------------------------------------------------------------
@@ -280,6 +284,9 @@ module "shared_rds" {
   performance_insights_enabled = var.shared_rds_performance_insights
   monitoring_interval          = var.shared_rds_monitoring_interval
   permissions_boundary         = var.permissions_boundary
+
+  # Encryption
+  storage_encrypted = var.shared_rds_storage_encrypted
 }
 
 # Store master credentials in Secrets Manager for the db-on-shared-rds module

@@ -359,6 +359,18 @@ variable "shared_rds_monitoring_interval" {
   default     = 60
 }
 
+variable "shared_rds_storage_encrypted" {
+  description = "Enable RDS storage encryption at rest (cannot be changed in-place on existing instances)"
+  type        = bool
+  default     = true
+}
+
+variable "vpc_flow_logs_enabled" {
+  description = "Enable VPC flow logs to CloudWatch"
+  type        = bool
+  default     = true
+}
+
 variable "permissions_boundary" {
   description = "IAM permissions boundary ARN"
   type        = string

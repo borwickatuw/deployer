@@ -106,6 +106,20 @@ variable "rds_monitoring_interval" {
   default     = 60
 }
 
+variable "rds_storage_encrypted" {
+  description = "Enable RDS storage encryption at rest (cannot be changed in-place on existing instances)"
+  type        = bool
+  default     = true
+}
+
+# VPC flow logs
+
+variable "vpc_flow_logs_enabled" {
+  description = "Enable VPC flow logs to CloudWatch"
+  type        = bool
+  default     = true
+}
+
 # Cache configuration
 
 variable "cache_enabled" {

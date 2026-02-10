@@ -82,6 +82,12 @@ variable "permissions_boundary" {
   default     = null
 }
 
+variable "storage_encrypted" {
+  description = "Enable storage encryption at rest (cannot be changed in-place on existing instances)"
+  type        = bool
+  default     = true
+}
+
 # Subnet group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.name_prefix}-db-subnet"
@@ -138,6 +144,35 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
+resource "aws_db_parameter_group" "main" {
+  name   = "${var.name_prefix}-postgres15"
+  family = "postgres15"
+
+  parameter {
+    name  = "log_statement"
+    value = "ddl"
+  }
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "1000"
+  }
+
+  parameter {
+    name  = "log_connections"
+    value = "1"
+  }
+
+  parameter {
+    name  = "log_disconnections"
+    value = "1"
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-postgres15"
+  }
+}
+
 resource "aws_db_instance" "main" {
   identifier = "${var.name_prefix}-db"
 
@@ -147,13 +182,16 @@ resource "aws_db_instance" "main" {
   instance_class    = var.instance_class
   allocated_storage = var.allocated_storage
   storage_type      = "gp3"
+  storage_encrypted = var.storage_encrypted
 
   db_name  = var.database_name
   username = var.master_username
   password = var.master_password
 
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  db_subnet_group_name            = aws_db_subnet_group.main.name
+  vpc_security_group_ids          = [aws_security_group.rds.id]
+  parameter_group_name            = aws_db_parameter_group.main.name
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   publicly_accessible = false
 

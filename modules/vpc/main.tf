@@ -10,6 +10,24 @@ variable "availability_zones" {
   type = list(string)
 }
 
+variable "flow_logs_enabled" {
+  description = "Enable VPC flow logs to CloudWatch"
+  type        = bool
+  default     = true
+}
+
+variable "flow_logs_retention_days" {
+  description = "CloudWatch log retention for VPC flow logs"
+  type        = number
+  default     = 365
+}
+
+variable "permissions_boundary" {
+  description = "IAM permissions boundary ARN"
+  type        = string
+  default     = null
+}
+
 locals {
   az_count = length(var.availability_zones)
 }
@@ -123,6 +141,70 @@ resource "aws_route_table_association" "private" {
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
+}
+
+# VPC Flow Logs
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  count             = var.flow_logs_enabled ? 1 : 0
+  name              = "/vpc/${var.name_prefix}-flow-logs"
+  retention_in_days = var.flow_logs_retention_days
+
+  tags = {
+    Name = "${var.name_prefix}-vpc-flow-logs"
+  }
+}
+
+resource "aws_iam_role" "flow_logs" {
+  count                = var.flow_logs_enabled ? 1 : 0
+  name                 = "${var.name_prefix}-vpc-flow-logs"
+  permissions_boundary = var.permissions_boundary
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+    }]
+  })
+
+  tags = {
+    Name = "${var.name_prefix}-vpc-flow-logs"
+  }
+}
+
+resource "aws_iam_role_policy" "flow_logs" {
+  count = var.flow_logs_enabled ? 1 : 0
+  name  = "vpc-flow-logs"
+  role  = aws_iam_role.flow_logs[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_flow_log" "main" {
+  count                = var.flow_logs_enabled ? 1 : 0
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  log_destination_type = "cloud-watch-logs"
+  log_destination      = aws_cloudwatch_log_group.flow_logs[0].arn
+  iam_role_arn         = aws_iam_role.flow_logs[0].arn
+
+  tags = {
+    Name = "${var.name_prefix}-vpc-flow-logs"
+  }
 }
 
 # Outputs
