@@ -471,6 +471,27 @@ python bin/ecs-run.py run myapp-staging --list-commands
 python bin/ecs-run.py run myapp-staging migrate
 ```
 
+### `[database]`
+
+**Optional.** Declares database requirements. The environment's `config.toml` provides the actual connection details.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Database type: `"postgresql"`. |
+| `extensions` | array | No | PostgreSQL extensions to create before migrations (e.g., `["unaccent", "pg_bigm"]`). Requires `extensions_lambda` in config.toml. |
+
+Extensions listed here are created via a Lambda function that connects as the RDS master user (which has `rds_superuser` privileges). This is necessary because the migrate user cannot create extensions like `pg_bigm` that require superuser.
+
+**Example:**
+
+```toml
+[database]
+type = "postgresql"
+extensions = ["unaccent", "pg_bigm"]
+```
+
+The deploy script invokes the Lambda **before** running migrations, so extensions are available for any migration that depends on them.
+
 ### `[migrations]`
 
 **Optional.** Database migration configuration.
@@ -656,6 +677,7 @@ This reduces blast radius if the application is compromised - attackers cannot d
 | `app_password_secret` | `db_app_password_secret_arn` | App user password ARN |
 | `migrate_username_secret` | `db_migrate_username_secret_arn` | Migrate user username ARN (DDL + DML) |
 | `migrate_password_secret` | `db_migrate_password_secret_arn` | Migrate user password ARN |
+| `extensions_lambda` | `db_users_lambda_function_name` | Lambda function name for creating PostgreSQL extensions. Required if deploy.toml declares `extensions`. |
 
 When running `ecs-run.py run <env> migrate`, the migrate task definition is used automatically, which has the migrate credentials.
 
