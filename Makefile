@@ -75,7 +75,8 @@ security-bandit: ## Run bandit Python security linter
 # Checkov skip-check rationale (grouped by category):
 #   KMS encryption not needed (SSE-S3/default sufficient for our use case):
 #     CKV_AWS_145 (S3 KMS), CKV_AWS_158 (CloudWatch KMS), CKV_AWS_136 (ECR KMS),
-#     CKV_AWS_26 (SNS KMS), CKV_AWS_173 (Lambda env KMS)
+#     CKV_AWS_26 (SNS KMS), CKV_AWS_173 (Lambda env KMS),
+#     CKV_AWS_354 (RDS Performance Insights KMS)
 #   Intentional network design:
 #     CKV_AWS_130 (public subnets for ALB), CKV_AWS_260 (ALB ingress port 80),
 #     CKV_AWS_382 (ECS egress 0.0.0.0/0 for ECR/CloudWatch/SecretsManager),
@@ -100,18 +101,19 @@ security-bandit: ## Run bandit Python security linter
 #     CKV2_AWS_28 (ALB WAF - WAF is on CloudFront),
 #     CKV2_AWS_57 (Secrets Manager rotation), CKV2_AWS_6 (S3 public access block
 #       - already have it, but conditional on var.public so Checkov can't see it)
+#   Variable-dependent (Checkov can't evaluate variables):
+#     CKV_AWS_150 (ALB deletion protection - var.deletion_protection),
+#     CKV_AWS_91 (ALB access logging - opt-in via var.access_logs_enabled)
 #   Deferred - need infrastructure changes (see docs/SOMEDAY-MAYBE.md):
 #     CKV_AWS_16 (RDS encryption at rest), CKV_AWS_161 (RDS IAM auth),
-#     CKV_AWS_118 (RDS enhanced monitoring), CKV_AWS_129 (RDS logging),
-#     CKV_AWS_353 (RDS performance insights), CKV2_AWS_30 (RDS query logging),
+#     CKV_AWS_129 (RDS logging), CKV2_AWS_30 (RDS query logging),
 #     CKV_AWS_157 (RDS Multi-AZ - configurable per env), CKV_AWS_293 (RDS deletion
 #       protection - configurable per env), CKV2_AWS_11 (VPC flow logs),
-#     CKV_AWS_91 (ALB access logging), CKV_AWS_134 (ElastiCache backups),
-#     CKV_AWS_338 (CloudWatch 1yr retention), CKV_AWS_150 (ALB deletion protection),
+#     CKV_AWS_134 (ElastiCache backups),
 #     CKV_AWS_149 (SecretsManager CMK), CKV_AWS_51 (ECR immutable tags)
 #   S3 public access block checks (CKV_AWS_53-56) - conditional on var.public:
 #     CKV_AWS_53, CKV_AWS_54, CKV_AWS_55, CKV_AWS_56
-CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_16,CKV_AWS_161,CKV_AWS_118,CKV_AWS_129,CKV_AWS_353,CKV2_AWS_30,CKV_AWS_157,CKV_AWS_293,CKV2_AWS_11,CKV_AWS_91,CKV_AWS_134,CKV_AWS_338,CKV_AWS_150,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23
+CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_354,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_150,CKV_AWS_91,CKV_AWS_16,CKV_AWS_161,CKV_AWS_129,CKV2_AWS_30,CKV_AWS_157,CKV_AWS_293,CKV2_AWS_11,CKV_AWS_134,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23
 
 .PHONY: security-checkov
 security-checkov: ## Run Checkov IaC scanner on OpenTofu modules

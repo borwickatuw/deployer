@@ -334,31 +334,41 @@ Alternatively:
 
 These Checkov findings are valid but require infrastructure changes. Currently suppressed via `--skip-check` in the Makefile.
 
-### RDS Enhancements
+### Completed (removed from skip list)
+
+| Check | Description | Resolution |
+|-------|-------------|------------|
+| CKV_AWS_118 | RDS enhanced monitoring | Added `monitoring_interval` variable (default 60s) with IAM role |
+| CKV_AWS_353 | RDS Performance Insights | Added `performance_insights_enabled` variable (default true) |
+| CKV_AWS_338 | CloudWatch 1-year retention | Changed all `log_retention_days` defaults from 30 to 365 |
+
+### Completed (still in skip list — Checkov can't evaluate variables)
+
+| Check | Description | Resolution |
+|-------|-------------|------------|
+| CKV_AWS_150 | ALB deletion protection | Added `deletion_protection` variable (default false for staging) |
+| CKV_AWS_91 | ALB access logging | Added `access_logs_enabled` variable with `alb-access-logs` module |
+
+### RDS Enhancements (deferred — need migration planning)
 
 | Check | Description | Complexity | Notes |
 |-------|-------------|------------|-------|
 | CKV_AWS_16 | Storage encryption at rest | High | Requires snapshot-restore for existing instances |
 | CKV_AWS_161 | IAM authentication | Medium | Requires app changes to use IAM auth |
-| CKV_AWS_118 | Enhanced monitoring | Low | Needs IAM role for monitoring |
 | CKV_AWS_129 | Database logging | Medium | Needs parameter group changes |
-| CKV_AWS_353 | Performance Insights | Low | Check instance class support |
 | CKV2_AWS_30 | Query logging | Medium | Needs parameter group with `log_statement` |
 
-### Infrastructure Logging
+### Infrastructure (deferred)
 
 | Check | Description | Complexity | Notes |
 |-------|-------------|------------|-------|
 | CKV2_AWS_11 | VPC flow logs | Medium | Needs CloudWatch log group or S3 destination, adds cost |
-| CKV_AWS_91 | ALB access logging | Low | Needs S3 bucket for logs |
-| CKV_AWS_338 | CloudWatch 1-year retention | Low | Increase retention_in_days |
 
 ### Other
 
 | Check | Description | Complexity | Notes |
 |-------|-------------|------------|-------|
 | CKV_AWS_134 | ElastiCache automatic backups | Low | Single-node cache, can rebuild from scratch |
-| CKV_AWS_150 | ALB deletion protection | Low | Already configurable but defaults to false |
 | CKV_AWS_51 | ECR immutable tags | Medium | Deploy workflow uses `latest` tag pattern |
 
 ---
