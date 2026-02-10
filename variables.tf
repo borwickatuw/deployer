@@ -94,6 +94,18 @@ variable "rds_multi_az" {
   default     = false
 }
 
+variable "rds_performance_insights" {
+  description = "Enable RDS Performance Insights (free tier for 7 days retention on db.t3+)"
+  type        = bool
+  default     = true
+}
+
+variable "rds_monitoring_interval" {
+  description = "RDS enhanced monitoring interval in seconds (0 = disabled, 60 = 1 min)"
+  type        = number
+  default     = 60
+}
+
 # Cache configuration
 
 variable "cache_enabled" {
@@ -203,6 +215,24 @@ variable "alb_idle_timeout" {
   default     = 60
 }
 
+variable "alb_deletion_protection" {
+  description = "Enable ALB deletion protection (true for production, false for staging)"
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_enabled" {
+  description = "Enable ALB access logging to S3"
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_prefix" {
+  description = "S3 key prefix for ALB access logs"
+  type        = string
+  default     = "alb-logs"
+}
+
 # Container configuration
 
 variable "container_port" {
@@ -216,7 +246,7 @@ variable "container_port" {
 variable "log_retention_days" {
   description = "CloudWatch log retention in days (0 = never expire)"
   type        = number
-  default     = 30
+  default     = 365
 }
 
 # ECR configuration

@@ -132,6 +132,12 @@ module "alb" {
   healthy_threshold         = var.healthy_threshold
   unhealthy_threshold       = var.unhealthy_threshold
   deregistration_delay      = var.deregistration_delay
+
+  # Deletion protection and access logging
+  deletion_protection = var.alb_deletion_protection
+  access_logs_enabled = var.alb_access_logs_enabled
+  access_logs_bucket  = var.alb_access_logs_bucket
+  access_logs_prefix  = var.alb_access_logs_prefix
 }
 
 # Allow ALB to reach ECS tasks
@@ -269,6 +275,11 @@ module "shared_rds" {
   skip_final_snapshot     = var.shared_rds_skip_final_snapshot
   deletion_protection     = var.shared_rds_deletion_protection
   multi_az                = var.shared_rds_multi_az
+
+  # Monitoring
+  performance_insights_enabled = var.shared_rds_performance_insights
+  monitoring_interval          = var.shared_rds_monitoring_interval
+  permissions_boundary         = var.permissions_boundary
 }
 
 # Store master credentials in Secrets Manager for the db-on-shared-rds module

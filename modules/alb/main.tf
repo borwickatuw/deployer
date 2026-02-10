@@ -15,11 +15,20 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = var.public_subnet_ids
 
-  enable_deletion_protection = false # Set to true for production
+  enable_deletion_protection = var.deletion_protection
   drop_invalid_header_fields = true
 
   # Idle timeout - increase for large file uploads (default 60, max 4000)
   idle_timeout = var.idle_timeout
+
+  dynamic "access_logs" {
+    for_each = var.access_logs_enabled ? [1] : []
+    content {
+      bucket  = var.access_logs_bucket
+      prefix  = var.access_logs_prefix
+      enabled = true
+    }
+  }
 
   tags = {
     Name = "${var.name_prefix}-alb"

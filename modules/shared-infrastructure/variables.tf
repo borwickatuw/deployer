@@ -118,6 +118,30 @@ variable "deregistration_delay" {
   default     = 15 # Staging-optimized default
 }
 
+variable "alb_deletion_protection" {
+  description = "Enable ALB deletion protection (true for production, false for staging)"
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_enabled" {
+  description = "Enable ALB access logging to S3"
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_bucket" {
+  description = "S3 bucket name for ALB access logs (required if alb_access_logs_enabled)"
+  type        = string
+  default     = ""
+}
+
+variable "alb_access_logs_prefix" {
+  description = "S3 key prefix for ALB access logs"
+  type        = string
+  default     = "alb-logs"
+}
+
 # ------------------------------------------------------------------------------
 # WAF Configuration
 # ------------------------------------------------------------------------------
@@ -321,4 +345,22 @@ variable "shared_rds_multi_az" {
   description = "Enable Multi-AZ deployment for automatic failover"
   type        = bool
   default     = false
+}
+
+variable "shared_rds_performance_insights" {
+  description = "Enable RDS Performance Insights (free tier for 7 days retention on db.t3+)"
+  type        = bool
+  default     = true
+}
+
+variable "shared_rds_monitoring_interval" {
+  description = "RDS enhanced monitoring interval in seconds (0 = disabled, 60 = 1 min)"
+  type        = number
+  default     = 60
+}
+
+variable "permissions_boundary" {
+  description = "IAM permissions boundary ARN"
+  type        = string
+  default     = null
 }

@@ -74,3 +74,27 @@ variable "idle_timeout" {
   type        = number
   default     = 60
 }
+
+variable "deletion_protection" {
+  description = "Enable deletion protection (true for production, false for staging)"
+  type        = bool
+  default     = false
+}
+
+variable "access_logs_enabled" {
+  description = "Enable ALB access logging to S3"
+  type        = bool
+  default     = false
+}
+
+variable "access_logs_bucket" {
+  description = "S3 bucket name for ALB access logs (required if access_logs_enabled = true)"
+  type        = string
+  default     = ""
+}
+
+variable "access_logs_prefix" {
+  description = "S3 key prefix for ALB access logs"
+  type        = string
+  default     = "alb-logs"
+}

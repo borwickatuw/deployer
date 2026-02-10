@@ -82,6 +82,15 @@ resource "aws_cloudwatch_log_group" "ecs" {
   }
 }
 
+# ALB Access Logs S3 Bucket (optional)
+module "alb_access_logs" {
+  source = "./modules/alb-access-logs"
+  count  = var.alb_access_logs_enabled ? 1 : 0
+
+  name_prefix = local.name_prefix
+  aws_region  = var.aws_region
+}
+
 # Application Load Balancer
 module "alb" {
   source = "./modules/alb"
@@ -103,6 +112,14 @@ module "alb" {
 
   # Idle timeout - increase for large file uploads
   idle_timeout = var.alb_idle_timeout
+
+  # Deletion protection
+  deletion_protection = var.alb_deletion_protection
+
+  # Access logging
+  access_logs_enabled = var.alb_access_logs_enabled
+  access_logs_bucket  = var.alb_access_logs_enabled ? module.alb_access_logs[0].bucket_name : ""
+  access_logs_prefix  = var.alb_access_logs_prefix
 
   # Cognito authentication (optional)
   # Prefer external cognito_auth if provided, otherwise use local pool if enabled
@@ -128,6 +145,11 @@ module "rds" {
   skip_final_snapshot     = var.rds_skip_final_snapshot
   deletion_protection     = var.rds_deletion_protection
   multi_az                = var.rds_multi_az
+
+  # Monitoring
+  performance_insights_enabled = var.rds_performance_insights
+  monitoring_interval          = var.rds_monitoring_interval
+  permissions_boundary         = var.iam_permissions_boundary
 }
 
 # Database credentials in Secrets Manager (for ECS secrets injection)
