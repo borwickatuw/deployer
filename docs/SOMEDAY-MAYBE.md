@@ -358,11 +358,127 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 | CKV_AWS_129 | Database logging | Medium | Needs parameter group changes |
 | CKV2_AWS_30 | Query logging | Medium | Needs parameter group with `log_statement` |
 
+#### CKV_AWS_16: RDS Storage Encryption
+
+Cannot enable encryption on an existing unencrypted RDS instance in-place. Requires a full migration:
+
+1. Stop all services writing to the database
+2. Create final snapshot
+3. Copy snapshot with encryption enabled
+4. Restore encrypted snapshot to a new instance
+5. Update terraform state (`tofu state rm` + `tofu import`)
+6. Point applications to new instance, restart services
+7. Verify, then delete old instance
+
+```bash
+# Example migration steps (myapp-staging):
+# 1. Scale ECS services to 0
+# 2. Create final snapshot
+aws rds create-db-snapshot \
+  --db-instance-identifier myapp-staging-db \
+  --db-snapshot-identifier myapp-staging-pre-encrypt
+# 3. Copy with encryption
+aws rds copy-db-snapshot \
+  --source-db-snapshot-identifier myapp-staging-pre-encrypt \
+  --target-db-snapshot-identifier myapp-staging-encrypted \
+  --kms-key-id alias/aws/rds
+# 4. Restore from encrypted snapshot (new identifier)
+# 5. Update terraform state: tofu state rm + import
+# 6. Restart services, verify
+# 7. Delete old instance
+```
+
+**Module change**: Add `storage_encrypted = true` to `modules/rds/main.tf` (default true for new instances). Existing instances need the migration above.
+
+**Estimated downtime**: 30-60 minutes depending on database size.
+**Risk**: Medium — data migration, requires careful state management.
+**Cost**: None ongoing (encryption is free with AWS-managed keys).
+
+#### CKV_AWS_129 + CKV2_AWS_30: RDS PostgreSQL Logging
+
+Requires creating a custom `aws_db_parameter_group` and enabling CloudWatch log exports.
+
+**Module changes** (`modules/rds/main.tf`):
+
+```hcl
+resource "aws_db_parameter_group" "main" {
+  name   = "${var.name_prefix}-pg15"
+  family = "postgres15"
+
+  parameter {
+    name  = "log_statement"
+    value = "ddl"           # Log DDL statements (CREATE, ALTER, DROP)
+  }
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "1000"          # Log queries taking > 1 second
+  }
+  parameter {
+    name  = "log_connections"
+    value = "1"
+  }
+  parameter {
+    name  = "log_disconnections"
+    value = "1"
+  }
+}
+```
+
+Add to `aws_db_instance.main`:
+```hcl
+parameter_group_name            = aws_db_parameter_group.main.name
+enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+```
+
+**Key decisions**:
+- `log_statement = "ddl"` (not `"all"` — "all" generates enormous log volume)
+- `log_min_duration_statement = 1000` (1 second threshold for slow query detection)
+- Parameter group family must match engine version (`postgres15`)
+
+**Risk**: Low-Medium — static parameter changes show "pending-reboot" status and require a manual reboot. Dynamic parameters apply immediately. `log_statement` and `log_min_duration_statement` are dynamic, but the parameter group association itself may trigger a reboot.
+
+**Cost**: CloudWatch log ingestion ~$0.50/GB, typically small for DDL-only logging.
+
 ### Infrastructure (deferred)
 
 | Check | Description | Complexity | Notes |
 |-------|-------------|------------|-------|
 | CKV2_AWS_11 | VPC flow logs | Medium | Needs CloudWatch log group or S3 destination, adds cost |
+
+#### CKV2_AWS_11: VPC Flow Logs
+
+**Module changes** (`modules/vpc/main.tf`):
+
+```hcl
+variable "flow_logs_enabled" {
+  description = "Enable VPC flow logs"
+  type        = bool
+  default     = true
+}
+
+resource "aws_flow_log" "main" {
+  count = var.flow_logs_enabled ? 1 : 0
+
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  log_destination_type = "cloud-watch-logs"
+  log_destination      = aws_cloudwatch_log_group.flow_logs[0].arn
+  iam_role_arn         = aws_iam_role.flow_logs[0].arn
+}
+
+# Plus: aws_cloudwatch_log_group, aws_iam_role, aws_iam_role_policy
+```
+
+Wire through root `main.tf` and `shared-infrastructure/main.tf`.
+
+**Key decisions**:
+- **Destination**: CloudWatch Logs (easier to query with Logs Insights) vs S3 (cheaper for high volume). Recommend CloudWatch for our small scale.
+- **Traffic type**: `"ALL"` initially (complete picture). Can switch to `"REJECT"` later if cost is a concern.
+- **Retention**: 365 days (consistent with other log groups).
+
+**Cost**: ~$0.50/GB ingested to CloudWatch. For a small staging environment, expect < $5/month. Production with more traffic could be $10-30/month.
+
+**Risk**: Low — additive only, no changes to existing resources.
 
 ### Other
 
