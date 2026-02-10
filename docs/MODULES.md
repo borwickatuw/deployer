@@ -63,6 +63,33 @@ some extensions (e.g., `pg_bigm`) can only be created by a superuser. Apps can
 keep `CREATE EXTENSION IF NOT EXISTS` in Django migrations as a safety net — they
 will harmlessly no-op when the extension already exists.
 
+**Setting up extensions for an environment:**
+
+1. Add the `extensions` list to your app's `deploy.toml`:
+   ```toml
+   [database]
+   type = "postgresql"
+   extensions = ["unaccent", "pg_bigm"]
+   ```
+
+2. Add the Lambda function name output to your environment's `main.tf`:
+   ```hcl
+   output "db_users_lambda_function_name" {
+     value = module.infrastructure.db_users_lambda_function_name
+   }
+   ```
+
+3. Add `extensions_lambda` to your environment's `config.toml`:
+   ```toml
+   [database]
+   # ... existing fields ...
+   extensions_lambda = "${tofu:db_users_lambda_function_name}"
+   ```
+
+4. Run `tofu apply` in your environment directory to create the output.
+
+5. Deploy — `deploy.py` will invoke the Lambda to create extensions before running migrations.
+
 **Environment provides** (`config.toml`):
 ```toml
 [database]
