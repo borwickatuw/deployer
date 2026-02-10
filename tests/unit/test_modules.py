@@ -70,8 +70,68 @@ class TestDatabaseModule:
             "port": "5432",
             "name": "testdb",
             "credentials": "secretsmanager",
-            "username_secret": "arn:aws:secretsmanager:...:username",
-            "password_secret": "arn:aws:secretsmanager:...:password",
+            "app_username_secret": "arn:aws:secretsmanager:...:username",
+            "app_password_secret": "arn:aws:secretsmanager:...:password",
+            "migrate_username_secret": "arn:aws:secretsmanager:...:username",
+            "migrate_password_secret": "arn:aws:secretsmanager:...:password",
+        }
+
+        errors = module.validate(app_config, env_config)
+
+        assert len(errors) == 0
+
+    def test_validate_extensions_requires_lambda(self):
+        """Test validation fails when extensions declared but no extensions_lambda."""
+        module = DatabaseModule()
+        app_config = {"type": "postgresql", "extensions": ["unaccent", "pg_bigm"]}
+        env_config = {
+            "host": "db.example.com",
+            "port": "5432",
+            "name": "testdb",
+            "credentials": "secretsmanager",
+            "app_username_secret": "arn:...",
+            "app_password_secret": "arn:...",
+            "migrate_username_secret": "arn:...",
+            "migrate_password_secret": "arn:...",
+        }
+
+        errors = module.validate(app_config, env_config)
+
+        assert any("extensions_lambda" in e for e in errors)
+
+    def test_validate_extensions_passes_with_lambda(self):
+        """Test validation passes when extensions and extensions_lambda both present."""
+        module = DatabaseModule()
+        app_config = {"type": "postgresql", "extensions": ["unaccent"]}
+        env_config = {
+            "host": "db.example.com",
+            "port": "5432",
+            "name": "testdb",
+            "credentials": "secretsmanager",
+            "app_username_secret": "arn:...",
+            "app_password_secret": "arn:...",
+            "migrate_username_secret": "arn:...",
+            "migrate_password_secret": "arn:...",
+            "extensions_lambda": "myapp-staging-create-db-users",
+        }
+
+        errors = module.validate(app_config, env_config)
+
+        assert len(errors) == 0
+
+    def test_validate_no_extensions_no_lambda_ok(self):
+        """Test validation passes when no extensions declared (lambda not required)."""
+        module = DatabaseModule()
+        app_config = {"type": "postgresql"}
+        env_config = {
+            "host": "db.example.com",
+            "port": "5432",
+            "name": "testdb",
+            "credentials": "secretsmanager",
+            "app_username_secret": "arn:...",
+            "app_password_secret": "arn:...",
+            "migrate_username_secret": "arn:...",
+            "migrate_password_secret": "arn:...",
         }
 
         errors = module.validate(app_config, env_config)
@@ -110,8 +170,10 @@ class TestDatabaseModule:
             "port": 5432,
             "name": "testdb",
             "credentials": "secretsmanager",
-            "username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
-            "password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
+            "app_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
+            "app_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
+            "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",
+            "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",
         }
         ctx = ModuleContext(
             region="us-west-2",
@@ -362,8 +424,10 @@ class TestModuleRegistry:
                 "port": "5432",
                 "name": "testdb",
                 "credentials": "secretsmanager",
-                "username_secret": "arn:...",
-                "password_secret": "arn:...",
+                "app_username_secret": "arn:...",
+                "app_password_secret": "arn:...",
+                "migrate_username_secret": "arn:...",
+                "migrate_password_secret": "arn:...",
             },
             "cache": {"url": "redis://localhost:6379"},
         }
@@ -395,8 +459,10 @@ class TestModuleRegistry:
                 "port": 5432,
                 "name": "testdb",
                 "credentials": "secretsmanager",
-                "username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
-                "password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
+                "app_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
+                "app_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
+                "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",
+                "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",
             },
             "cache": {"url": "redis://localhost:6379"},
         }

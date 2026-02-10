@@ -1,5 +1,6 @@
 """Deployment module for ECS applications."""
 
+from .extensions import create_database_extensions
 from .images import (
     build_and_push_images,
     ecr_login,
@@ -30,6 +31,8 @@ from .validation import (
 )
 
 __all__ = [
+    # Extensions
+    "create_database_extensions",
     # Images
     "build_and_push_images",
     "ecr_login",

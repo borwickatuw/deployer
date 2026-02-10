@@ -78,6 +78,11 @@ output "db_migrate_password_secret_arn" {
   value       = module.db_users.migrate_password_arn
 }
 
+output "db_users_lambda_function_name" {
+  description = "Name of the db-users Lambda function (for creating extensions at deploy time)"
+  value       = module.db_users.lambda_function_name
+}
+
 output "db_host" {
   description = "Database host endpoint"
   value       = module.rds.address

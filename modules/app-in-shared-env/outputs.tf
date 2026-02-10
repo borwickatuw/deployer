@@ -132,6 +132,11 @@ output "use_shared_rds" {
   value       = var.use_shared_rds
 }
 
+output "db_users_lambda_function_name" {
+  description = "Name of the db-users Lambda function (for creating extensions at deploy time)"
+  value       = var.use_shared_rds ? module.db_on_shared_rds[0].lambda_function_name : ""
+}
+
 # ------------------------------------------------------------------------------
 # ECR Outputs
 # ------------------------------------------------------------------------------

@@ -215,18 +215,52 @@ def transfer_ownership(conn, migrate_username: str) -> None:
         logger.info(f"Transferred ownership of {len(sequences)} sequence(s) to '{migrate_username}'")
 
 
-def handler(event, context):
-    """Lambda handler to create database users.
+def create_extensions(conn, extensions: list[str]) -> None:
+    """Create PostgreSQL extensions using the master (rds_superuser) connection.
 
-    Expects environment variables:
-    - MASTER_SECRET_ARN: ARN of the master credentials secret
-    - APP_SECRET_ARN: ARN of the app credentials secret
-    - MIGRATE_SECRET_ARN: ARN of the migrate credentials secret
-    - DB_NAME: Database name
+    Extensions like pg_bigm require rds_superuser privileges which the migrate
+    user does not have. This function runs as the master user.
     """
-    logger.info(f"Event: {json.dumps(event)}")
+    for ext in extensions:
+        conn.run(f'CREATE EXTENSION IF NOT EXISTS "{ext}"')
+        logger.info(f"Ensured extension '{ext}' exists")
 
-    # Get credentials from Secrets Manager
+
+def handle_create_extensions(event) -> dict:
+    """Handle the create_extensions action.
+
+    Connects to the database as master user and creates requested extensions.
+    """
+    extensions = event.get("extensions", [])
+    if not extensions:
+        logger.info("No extensions requested")
+        return {"status": "success", "extensions": []}
+
+    master = get_secret(os.environ["MASTER_SECRET_ARN"])
+    db_name = os.environ["DB_NAME"]
+
+    logger.info(f"Creating extensions {extensions} in database {db_name}")
+
+    conn = pg8000.native.Connection(
+        host=master["host"],
+        port=int(master["port"]),
+        database=db_name,
+        user=master["username"],
+        password=master["password"],
+    )
+
+    try:
+        create_extensions(conn, extensions)
+        return {"status": "success", "extensions": extensions}
+    except Exception as e:
+        logger.error(f"Error creating extensions: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+def handle_create_users() -> dict:
+    """Handle the create_users action (default behavior)."""
     master = get_secret(os.environ["MASTER_SECRET_ARN"])
     app = get_secret(os.environ["APP_SECRET_ARN"])
     migrate = get_secret(os.environ["MIGRATE_SECRET_ARN"])
@@ -234,7 +268,6 @@ def handler(event, context):
 
     logger.info(f"Connecting to database {db_name} at {master['host']}:{master['port']}")
 
-    # Connect as master user using pg8000 native interface
     conn = pg8000.native.Connection(
         host=master["host"],
         port=int(master["port"]),
@@ -289,3 +322,26 @@ def handler(event, context):
 
     finally:
         conn.close()
+
+
+def handler(event, context):
+    """Lambda handler to create database users or extensions.
+
+    Dispatches on event["action"]:
+    - "create_extensions": Create PostgreSQL extensions (requires rds_superuser)
+    - "create_users" or default: Create/update database users (original behavior)
+
+    Expects environment variables:
+    - MASTER_SECRET_ARN: ARN of the master credentials secret
+    - APP_SECRET_ARN: ARN of the app credentials secret (create_users only)
+    - MIGRATE_SECRET_ARN: ARN of the migrate credentials secret (create_users only)
+    - DB_NAME: Database name
+    """
+    logger.info(f"Event: {json.dumps(event)}")
+
+    action = event.get("action", "create_users")
+
+    if action == "create_extensions":
+        return handle_create_extensions(event)
+    else:
+        return handle_create_users()

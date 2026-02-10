@@ -44,3 +44,13 @@ output "lambda_invocation_result" {
   description = "Result of the Lambda invocation"
   value       = jsondecode(aws_lambda_invocation.create_users.result)
 }
+
+output "lambda_function_name" {
+  description = "Name of the Lambda function for creating database users/extensions"
+  value       = aws_lambda_function.create_db_users.function_name
+}
+
+output "lambda_function_arn" {
+  description = "ARN of the Lambda function for creating database users/extensions"
+  value       = aws_lambda_function.create_db_users.arn
+}

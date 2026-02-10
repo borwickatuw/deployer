@@ -75,6 +75,14 @@ class DatabaseModule(ResourceModule):
             if not env_config.get(field):
                 errors.append(f"[database] section missing '{field}' in config.toml")
 
+        # Check extensions_lambda is present if app declares extensions
+        extensions = app_config.get("extensions", [])
+        if extensions and not env_config.get("extensions_lambda"):
+            errors.append(
+                "[database] deploy.toml declares extensions but config.toml is missing "
+                "'extensions_lambda' (add: extensions_lambda = \"${tofu:db_users_lambda_function_name}\")"
+            )
+
         # Check credentials configuration
         credentials = env_config.get("credentials")
         if credentials == "secretsmanager":

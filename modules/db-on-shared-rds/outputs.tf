@@ -59,3 +59,13 @@ output "lambda_invocation_result" {
   description = "Result of the Lambda invocation"
   value       = jsondecode(aws_lambda_invocation.setup_db.result)
 }
+
+output "lambda_function_name" {
+  description = "Name of the Lambda function for setting up database/extensions"
+  value       = aws_lambda_function.setup_db.function_name
+}
+
+output "lambda_function_arn" {
+  description = "ARN of the Lambda function for setting up database/extensions"
+  value       = aws_lambda_function.setup_db.arn
+}

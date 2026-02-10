@@ -45,6 +45,7 @@ from deployer.core.ssm_secrets import (
 )
 from deployer.deploy import (
     build_and_push_images,
+    create_database_extensions,
     deploy_services,
     ecr_login,
     format_missing_ecr_error,
@@ -337,7 +338,26 @@ class Deployer:
             )
         print()
 
-        # Step 3: Start migrations (non-blocking)
+        # Step 3: Create database extensions (if declared)
+        # Extensions like pg_bigm require rds_superuser, so we invoke the
+        # db-users Lambda (which connects as master) before migrations run.
+        if self.timer:
+            with self.timer.step("create_extensions"):
+                create_database_extensions(
+                    config=self.config,
+                    env_config=self.env_config,
+                    region=self.region,
+                    dry_run=self.dry_run,
+                )
+        else:
+            create_database_extensions(
+                config=self.config,
+                env_config=self.env_config,
+                region=self.region,
+                dry_run=self.dry_run,
+            )
+
+        # Step 4: Start migrations (non-blocking)
         # This runs in parallel with ECS pulling images and starting containers
         if self.timer:
             with self.timer.step("start_migrations"):
@@ -368,7 +388,7 @@ class Deployer:
             )
         print()
 
-        # Step 4: Deploy services (triggers ECS to pull images)
+        # Step 5: Deploy services (triggers ECS to pull images)
         if self.timer:
             with self.timer.step("deploy_services"):
                 deploy_services(
@@ -402,7 +422,7 @@ class Deployer:
             )
         print()
 
-        # Step 5: Wait for migrations to complete
+        # Step 6: Wait for migrations to complete
         # Must complete before services become healthy (they may need DB schema changes)
         try:
             if self.timer:
@@ -420,7 +440,7 @@ class Deployer:
             raise
         print()
 
-        # Step 6: Wait for services to stabilize (parallel)
+        # Step 7: Wait for services to stabilize (parallel)
         if self.timer:
             with self.timer.step("wait_for_stable"):
                 health_failures = wait_for_stable(self.ecs, self.cluster_name, self.config, self.dry_run)
