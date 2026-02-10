@@ -82,7 +82,7 @@ variable "log_group_name" {
 variable "log_retention_days" {
   description = "CloudWatch Logs retention in days (0 = never expire)"
   type        = number
-  default     = 30
+  default     = 365
 }
 
 # S3 bucket ARNs for task role permissions (optional)

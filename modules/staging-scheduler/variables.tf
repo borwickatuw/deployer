@@ -43,3 +43,9 @@ variable "permissions_boundary" {
   description = "ARN of the permissions boundary policy for the Lambda IAM role"
   default     = null
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days"
+  type        = number
+  default     = 365
+}
