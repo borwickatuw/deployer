@@ -54,7 +54,14 @@ This reduces blast radius if the application is compromised - attackers cannot d
 ```toml
 [database]
 type = "postgresql"
+extensions = ["unaccent", "pg_bigm"]  # optional: PostgreSQL extensions to create
 ```
+
+Extensions are created before migrations via the db-users Lambda (which connects
+as the RDS master user with `rds_superuser` privileges). This is necessary because
+some extensions (e.g., `pg_bigm`) can only be created by a superuser. Apps can
+keep `CREATE EXTENSION IF NOT EXISTS` in Django migrations as a safety net — they
+will harmlessly no-op when the extension already exists.
 
 **Environment provides** (`config.toml`):
 ```toml
@@ -180,7 +187,7 @@ Validation errors are shown before deployment starts, helping catch configuratio
 
 | Module | App Declares | Environment Provides | Injects |
 |--------|--------------|---------------------|---------|
-| database | `type = "postgresql"` | host, port, name, credentials (app + migrate) | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
+| database | `type = "postgresql"`, `extensions = [...]` | host, port, name, credentials (app + migrate), lambda | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
 | cache | `type = "redis"` | url | REDIS_URL |
 | storage | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3_{NAME}_BUCKET |
 | cdn | `type = "cloudfront"` | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |

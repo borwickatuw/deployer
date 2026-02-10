@@ -170,6 +170,15 @@ LOG_LEVEL = "INFO"
 #   secretsmanager:secret-name:key
 # ------------------------------------------------------------------------------
 
+# Example: PostgreSQL extensions (created by Lambda before migrations)
+# Some extensions (pg_bigm, PostGIS) require rds_superuser, which the migrate
+# user doesn't have. Extensions listed here are created via the db-users Lambda
+# (which connects as the RDS master user) before migrations run.
+#
+# [database]
+# type = "postgresql"
+# extensions = ["unaccent", "pg_bigm"]
+
 [secrets]
 SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
 # DB_PASSWORD = "secretsmanager:myapp/${environment}/db:password"

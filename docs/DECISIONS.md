@@ -429,6 +429,45 @@ For a Lambda that runs once at infrastructure provisioning time, the performance
 
 ---
 
+## 2026-02-09: Database Extensions via deploy.toml and Lambda
+
+**Decision:** Applications declare required PostgreSQL extensions in `deploy.toml`. At deploy time, `deploy.py` invokes the db-users Lambda (which connects as the RDS master user) to create them before running migrations.
+
+```toml
+# deploy.toml
+[database]
+type = "postgresql"
+extensions = ["unaccent", "pg_bigm"]
+```
+
+**Alternatives considered:**
+- Create extensions in Django migrations (current approach that broke)
+- Create extensions purely in tofu (db-users Lambda hardcodes extensions)
+- Run a pre-migration ECS task with master credentials
+- Grant `rds_superuser` to the migrate user
+
+**Reasoning:**
+- **Some extensions require `rds_superuser`**: On AWS RDS, extensions like `pg_bigm` can only be created by the master user. The migrate user (DDL+DML) is insufficient even with `CREATE` privilege on the database. Trusted extensions like `unaccent` work with lesser privileges, but untrusted ones do not.
+- **App declares, infrastructure provides**: This follows the existing module pattern — the app says what it needs, the deployer figures out how to provide it. Extensions are database infrastructure needs, so they belong in `deploy.toml`'s `[database]` section.
+- **Lambda already has the right access**: The db-users Lambda connects as the RDS master user, which has `rds_superuser`. Adding extension creation to its capabilities is a natural fit.
+- **deploy.py invokes the Lambda**: Rather than only running at `tofu apply` time, the Lambda can be invoked by `deploy.py` before migrations. This means new extensions take effect at deploy time without requiring a separate `tofu apply`.
+- **Django migrations become no-ops**: Apps can keep `CREATE EXTENSION IF NOT EXISTS` in migrations as a safety net. When the extension already exists (created by the Lambda), the migration harmlessly no-ops.
+
+**Implementation outline:**
+1. `deploy.toml` declares `extensions` in `[database]` section
+2. `config.toml` provides the Lambda function name (from tofu output)
+3. `deploy.py` reads extensions from deploy.toml, invokes the Lambda with `{"action": "create_extensions", "extensions": ["unaccent", "pg_bigm"]}` before starting migrations
+4. The Lambda creates each extension as the master user (`CREATE EXTENSION IF NOT EXISTS`)
+5. The Lambda function name is a new tofu output from the db-users module
+6. `deploy.py` needs `lambda:InvokeFunction` permission on the db-users Lambda (added to the `deployer-app-deploy` IAM role)
+
+**Trade-offs:**
+- `deploy.py` gains a new AWS API call (Lambda invoke), adding to the `deployer-app-deploy` IAM role
+- The db-users Lambda gains a second action (`create_extensions` in addition to `create_users`)
+- Extensions are created on every deploy (idempotent, but adds a few seconds)
+
+---
+
 ## Template for New Decisions
 
 ```markdown
