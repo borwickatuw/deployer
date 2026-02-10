@@ -285,10 +285,11 @@ resource "aws_lambda_invocation" "setup_db" {
   ]
 
   lifecycle {
-    # Re-run if credentials change
+    # Re-run if credentials or lambda code change
     replace_triggered_by = [
       aws_secretsmanager_secret_version.app_credentials,
       aws_secretsmanager_secret_version.migrate_credentials,
+      aws_lambda_function.setup_db,
     ]
   }
 }
