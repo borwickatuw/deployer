@@ -63,7 +63,7 @@ check: lint test ## Run lint and tests
 # =============================================================================
 
 .PHONY: security
-security: security-bandit security-deps ## Run all security checks
+security: security-bandit security-deps security-checkov ## Run all security checks
 	@echo ""
 	@echo "=== Security Checks Complete ==="
 
@@ -71,6 +71,53 @@ security: security-bandit security-deps ## Run all security checks
 security-bandit: ## Run bandit Python security linter
 	@echo "=== Bandit Security Linter ==="
 	@uv run bandit -c pyproject.toml -r bin src -ll
+
+# Checkov skip-check rationale (grouped by category):
+#   KMS encryption not needed (SSE-S3/default sufficient for our use case):
+#     CKV_AWS_145 (S3 KMS), CKV_AWS_158 (CloudWatch KMS), CKV_AWS_136 (ECR KMS),
+#     CKV_AWS_26 (SNS KMS), CKV_AWS_173 (Lambda env KMS)
+#   Intentional network design:
+#     CKV_AWS_130 (public subnets for ALB), CKV_AWS_260 (ALB ingress port 80),
+#     CKV_AWS_382 (ECS egress 0.0.0.0/0 for ECR/CloudWatch/SecretsManager),
+#     CKV_AWS_378 (ALB target group HTTP - TLS terminates at ALB)
+#   CloudFront design choices:
+#     CKV_AWS_86 (CF access logging), CKV_AWS_68 (CF WAF - WAF is on shared infra),
+#     CKV_AWS_310 (CF origin failover), CKV_AWS_305 (CF default root object),
+#     CKV_AWS_374 (CF geo restriction), CKV_AWS_174 (CF TLS version),
+#     CKV2_AWS_42 (CF custom SSL cert), CKV2_AWS_32 (CF response headers policy),
+#     CKV2_AWS_47 (CF WAF Log4j - no Java)
+#   Lambda scheduler (low-risk internal function):
+#     CKV_AWS_115 (concurrent limit), CKV_AWS_116 (DLQ), CKV_AWS_117 (VPC),
+#     CKV_AWS_50 (X-Ray), CKV_AWS_272 (code-signing)
+#   S3 features not needed:
+#     CKV_AWS_144 (cross-region replication), CKV_AWS_18 (access logging),
+#     CKV2_AWS_61 (lifecycle config), CKV2_AWS_62 (event notifications),
+#     CKV_AWS_21 (versioning - already configurable via variable)
+#   Intentional design / false positives:
+#     CKV2_AWS_5 (SG attachment - ECS SG attached at runtime),
+#     CKV2_AWS_19 (EIP attachment - NAT gateway EIP),
+#     CKV2_AWS_12 (default VPC SG), CKV2_AWS_23 (Route53 A record),
+#     CKV2_AWS_28 (ALB WAF - WAF is on CloudFront),
+#     CKV2_AWS_57 (Secrets Manager rotation), CKV2_AWS_6 (S3 public access block
+#       - already have it, but conditional on var.public so Checkov can't see it)
+#   Deferred - need infrastructure changes (see docs/SOMEDAY-MAYBE.md):
+#     CKV_AWS_16 (RDS encryption at rest), CKV_AWS_161 (RDS IAM auth),
+#     CKV_AWS_118 (RDS enhanced monitoring), CKV_AWS_129 (RDS logging),
+#     CKV_AWS_353 (RDS performance insights), CKV2_AWS_30 (RDS query logging),
+#     CKV_AWS_157 (RDS Multi-AZ - configurable per env), CKV_AWS_293 (RDS deletion
+#       protection - configurable per env), CKV2_AWS_11 (VPC flow logs),
+#     CKV_AWS_91 (ALB access logging), CKV_AWS_134 (ElastiCache backups),
+#     CKV_AWS_338 (CloudWatch 1yr retention), CKV_AWS_150 (ALB deletion protection),
+#     CKV_AWS_149 (SecretsManager CMK), CKV_AWS_51 (ECR immutable tags)
+#   S3 public access block checks (CKV_AWS_53-56) - conditional on var.public:
+#     CKV_AWS_53, CKV_AWS_54, CKV_AWS_55, CKV_AWS_56
+CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_16,CKV_AWS_161,CKV_AWS_118,CKV_AWS_129,CKV_AWS_353,CKV2_AWS_30,CKV_AWS_157,CKV_AWS_293,CKV2_AWS_11,CKV_AWS_91,CKV_AWS_134,CKV_AWS_338,CKV_AWS_150,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23
+
+.PHONY: security-checkov
+security-checkov: ## Run Checkov IaC scanner on OpenTofu modules
+	@echo "=== Checkov IaC Security Scanner ==="
+	@uv run checkov --directory modules --framework terraform --compact --quiet \
+		--skip-check $(CHECKOV_SKIP)
 
 .PHONY: security-deps
 security-deps: ## Check dependency vulnerabilities

@@ -23,6 +23,7 @@ dev = [
     # Security scanning (local only)
     "bandit>=1.7",
     "pip-audit>=2.6",
+    "checkov>=3.0",
     # Code analysis
     "vulture",
     "radon",
