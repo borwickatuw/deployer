@@ -330,6 +330,39 @@ Alternatively:
 
 ---
 
+## Checkov Deferred Items
+
+These Checkov findings are valid but require infrastructure changes. Currently suppressed via `--skip-check` in the Makefile.
+
+### RDS Enhancements
+
+| Check | Description | Complexity | Notes |
+|-------|-------------|------------|-------|
+| CKV_AWS_16 | Storage encryption at rest | High | Requires snapshot-restore for existing instances |
+| CKV_AWS_161 | IAM authentication | Medium | Requires app changes to use IAM auth |
+| CKV_AWS_118 | Enhanced monitoring | Low | Needs IAM role for monitoring |
+| CKV_AWS_129 | Database logging | Medium | Needs parameter group changes |
+| CKV_AWS_353 | Performance Insights | Low | Check instance class support |
+| CKV2_AWS_30 | Query logging | Medium | Needs parameter group with `log_statement` |
+
+### Infrastructure Logging
+
+| Check | Description | Complexity | Notes |
+|-------|-------------|------------|-------|
+| CKV2_AWS_11 | VPC flow logs | Medium | Needs CloudWatch log group or S3 destination, adds cost |
+| CKV_AWS_91 | ALB access logging | Low | Needs S3 bucket for logs |
+| CKV_AWS_338 | CloudWatch 1-year retention | Low | Increase retention_in_days |
+
+### Other
+
+| Check | Description | Complexity | Notes |
+|-------|-------------|------------|-------|
+| CKV_AWS_134 | ElastiCache automatic backups | Low | Single-node cache, can rebuild from scratch |
+| CKV_AWS_150 | ALB deletion protection | Low | Already configurable but defaults to false |
+| CKV_AWS_51 | ECR immutable tags | Medium | Deploy workflow uses `latest` tag pattern |
+
+---
+
 ## Security Enhancements
 
 ### Secrets Rotation
