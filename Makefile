@@ -140,3 +140,8 @@ clean: ## Remove build artifacts and caches
 	@rm -f .coverage
 	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
+
+.PHONY: format-docs
+format-docs: ## Format markdown files
+	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
+	@mdformat .

@@ -49,6 +49,7 @@ After enabling, wait 14 days for sufficient data collection, then:
 Navigate to Compute Optimizer → ECS services
 
 **AWS CLI:**
+
 ```bash
 # List all ECS recommendations
 aws compute-optimizer get-ecs-service-recommendations
@@ -152,12 +153,12 @@ You can copy the suggested tfvars block directly into your `terraform.tfvars` fi
 
 #### Classification Logic
 
-| Status | Criteria |
-|--------|----------|
-| OVER_PROVISIONED | avg < 30% AND p95 < 50% for both CPU and memory |
-| UNDER_PROVISIONED | avg > 70% OR p95 > 90% for either CPU or memory |
-| BURSTY | avg < 30% BUT p95 > 70% (workload is spiky, don't reduce) |
-| OK | Everything else |
+| Status            | Criteria                                                  |
+| ----------------- | --------------------------------------------------------- |
+| OVER_PROVISIONED  | avg < 30% AND p95 < 50% for both CPU and memory           |
+| UNDER_PROVISIONED | avg > 70% OR p95 > 90% for either CPU or memory           |
+| BURSTY            | avg < 30% BUT p95 > 70% (workload is spiky, don't reduce) |
+| OK                | Everything else                                           |
 
 ## Prerequisites
 
@@ -197,6 +198,7 @@ The capacity report creates a tight feedback loop between CloudWatch metrics and
 ### Regular Right-Sizing Review
 
 1. Run capacity report with tfvars comparison:
+
    ```bash
    uv run bin/capacity-report.py \
      --environment production \
@@ -204,28 +206,32 @@ The capacity report creates a tight feedback loop between CloudWatch metrics and
      --tfvars environments/production/terraform.tfvars
    ```
 
-2. Review the output:
+1. Review the output:
+
    - Check utilization percentages (avg and p95)
    - Review the tfvars comparison section
    - Copy the suggested tfvars if recommendations look reasonable
 
-3. Update tfvars with the suggested values:
+1. Update tfvars with the suggested values:
+
    ```bash
    # Edit environments/production/terraform.tfvars
    # Copy the "Suggested tfvars:" output from the report
    ```
 
-4. Apply infrastructure changes:
+1. Apply infrastructure changes:
+
    ```bash
    tofu -chdir=environments/production apply
    ```
 
-5. Deploy to pick up new task definitions:
+1. Deploy to pick up new task definitions:
+
    ```bash
    uv run python bin/deploy.py myapp-production
    ```
 
-6. Wait a few days and re-run the capacity report to verify the changes had the expected effect.
+1. Wait a few days and re-run the capacity report to verify the changes had the expected effect.
 
 ### Validating tfvars Match Running Infrastructure
 
@@ -238,6 +244,7 @@ uv run bin/capacity-report.py \
 ```
 
 If you see output like:
+
 ```
 tfvars Comparison:
 web:
@@ -245,6 +252,7 @@ web:
 ```
 
 This indicates your tfvars says 256, but the running task definition is 512. You should either:
+
 - Update tfvars to match running (if the running value is correct)
 - Run `tofu apply` to sync running to tfvars (if tfvars is correct)
 
@@ -265,12 +273,12 @@ jq -r '.services[] | "\(.name): \(.cpu.avg_percent)% avg CPU"' before.json after
 
 ## Cost Estimates
 
-| Service | Monthly Cost |
-|---------|--------------|
-| Container Insights | ~$0.30/task |
-| Compute Optimizer | Free |
+| Service              | Monthly Cost            |
+| -------------------- | ----------------------- |
+| Container Insights   | ~$0.30/task             |
+| Compute Optimizer    | Free                    |
 | CloudWatch Dashboard | $3/dashboard (optional) |
-| CloudWatch Alarms | $0.10/alarm (optional) |
+| CloudWatch Alarms    | $0.10/alarm (optional)  |
 
 ## Future Enhancements
 

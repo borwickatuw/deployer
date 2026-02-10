@@ -10,9 +10,9 @@ Deployer separates **infrastructure** (managed by OpenTofu) from **application d
 
 **Clear separation of concerns:**
 
-| Concern | Location | Owner |
-|---------|----------|-------|
-| **What to run** (app structure) | `deploy.toml` | App developers |
+| Concern                                 | Location        | Owner                    |
+| --------------------------------------- | --------------- | ------------------------ |
+| **What to run** (app structure)         | `deploy.toml`   | App developers           |
 | **How big to run it** (sizing/capacity) | OpenTofu tfvars | Infrastructure operators |
 
 ### What goes in `deploy.toml` (Application Repository)
@@ -44,14 +44,15 @@ Infrastructure operators control *how much* resources to allocate per environmen
 ### Benefits of This Separation
 
 1. **No environment-specific values in app repos**: `deploy.toml` works for any environment
-2. **Clear ownership**: App devs own app config, ops owns sizing
-3. **Easy environment differences**: Staging can use minimal resources, production can scale
-4. **No deployment mistakes**: Can't accidentally deploy production sizing to staging
-5. **Independent changes**: Can adjust sizing without touching app code
+1. **Clear ownership**: App devs own app config, ops owns sizing
+1. **Easy environment differences**: Staging can use minimal resources, production can scale
+1. **No deployment mistakes**: Can't accidentally deploy production sizing to staging
+1. **Independent changes**: Can adjust sizing without touching app code
 
 ### Example
 
 **In `deploy.toml` (app repo):**
+
 ```toml
 [services.web]
 image = "web"
@@ -61,6 +62,7 @@ health_check_path = "/health/"
 ```
 
 **In staging `terraform.tfvars`:**
+
 ```hcl
 services = {
   web = {
@@ -73,6 +75,7 @@ services = {
 ```
 
 **In production `terraform.tfvars`:**
+
 ```hcl
 services = {
   web = {
@@ -91,15 +94,16 @@ scaling = {
 
 The separation exists because infrastructure and application code have different characteristics:
 
-| Aspect | Infrastructure | Application Code |
-|--------|---------------|------------------|
-| Change frequency | Rarely (adding services, scaling) | Frequently (every deploy) |
-| Risk level | High (can delete databases) | Lower (rolling out containers) |
-| Workflow | Plan → Review → Apply | Build → Push → Deploy |
-| Speed requirements | Acceptable to be slow | Should be fast |
-| State management | Needs tracking (Terraform state) | Stateless |
+| Aspect             | Infrastructure                    | Application Code               |
+| ------------------ | --------------------------------- | ------------------------------ |
+| Change frequency   | Rarely (adding services, scaling) | Frequently (every deploy)      |
+| Risk level         | High (can delete databases)       | Lower (rolling out containers) |
+| Workflow           | Plan → Review → Apply             | Build → Push → Deploy          |
+| Speed requirements | Acceptable to be slow             | Should be fast                 |
+| State management   | Needs tracking (Terraform state)  | Stateless                      |
 
 Running `tofu apply` for every code deployment would be:
+
 - **Slow** - Terraform/OpenTofu refreshes all resource state
 - **Risky** - Could accidentally modify infrastructure
 - **Unnecessary** - Most deploys just update container images
@@ -108,21 +112,22 @@ Running `tofu apply` for every code deployment would be:
 
 OpenTofu creates and manages foundational AWS infrastructure - resources that change infrequently and require careful planning:
 
-| Resource | Purpose | Change Frequency |
-|----------|---------|------------------|
-| VPC, subnets, route tables | Network foundation | Rarely |
-| NAT Gateways | Outbound internet access | Rarely |
-| RDS PostgreSQL | Database | Rarely (maybe scaling) |
-| ElastiCache Redis | Cache/queue | Rarely |
-| ECS Cluster | Container orchestration platform | Rarely |
-| Application Load Balancer | Traffic routing | When adding services |
-| S3 Buckets | File storage | Rarely |
-| IAM Roles | Permissions | When adding services |
-| Security Groups | Network access control | When adding services |
-| CloudWatch Log Groups | Logging | When adding services |
-| ECR Repositories | Container image storage | When adding images |
+| Resource                   | Purpose                          | Change Frequency       |
+| -------------------------- | -------------------------------- | ---------------------- |
+| VPC, subnets, route tables | Network foundation               | Rarely                 |
+| NAT Gateways               | Outbound internet access         | Rarely                 |
+| RDS PostgreSQL             | Database                         | Rarely (maybe scaling) |
+| ElastiCache Redis          | Cache/queue                      | Rarely                 |
+| ECS Cluster                | Container orchestration platform | Rarely                 |
+| Application Load Balancer  | Traffic routing                  | When adding services   |
+| S3 Buckets                 | File storage                     | Rarely                 |
+| IAM Roles                  | Permissions                      | When adding services   |
+| Security Groups            | Network access control           | When adding services   |
+| CloudWatch Log Groups      | Logging                          | When adding services   |
+| ECR Repositories           | Container image storage          | When adding images     |
 
 OpenTofu configuration lives in:
+
 - `modules/` - Reusable infrastructure modules
 - `environments/staging/` - Staging environment configuration
 - `environments/production/` - Production environment configuration
@@ -131,20 +136,22 @@ OpenTofu configuration lives in:
 
 The Python deploy script (`bin/deploy.py`) handles frequent application deployments by talking directly to AWS APIs via boto3:
 
-| Action | AWS API | Purpose |
-|--------|---------|---------|
-| ECR login | `ecr.get_authorization_token` | Authenticate Docker to push images |
-| Build & push images | Docker CLI + ECR | Update container images |
-| Run migrations | `ecs.run_task` | One-off task before deployment |
-| Deploy services | `ecs.update_service` | Tell ECS to use new images |
-| Wait for stability | `ecs.describe_services` | Confirm rollout succeeded |
+| Action              | AWS API                       | Purpose                            |
+| ------------------- | ----------------------------- | ---------------------------------- |
+| ECR login           | `ecr.get_authorization_token` | Authenticate Docker to push images |
+| Build & push images | Docker CLI + ECR              | Update container images            |
+| Run migrations      | `ecs.run_task`                | One-off task before deployment     |
+| Deploy services     | `ecs.update_service`          | Tell ECS to use new images         |
+| Wait for stability  | `ecs.describe_services`       | Confirm rollout succeeded          |
 
 The deploy script does **not** use OpenTofu - it calls AWS APIs directly. This means:
+
 - Deployments are fast (no Terraform state locking or planning)
 - No risk of accidentally modifying infrastructure
 - Can be run frequently without concern
 
 Application configuration lives in:
+
 - `deploy.toml` in each application repository (not in deployer)
 
 ## The Gray Area: ECS Services and Task Definitions
@@ -155,12 +162,14 @@ ECS services and task definitions sit between infrastructure and application:
 - **Services** describe *how many* containers to run and how to route traffic
 
 Currently, OpenTofu creates the initial ECS services and task definitions. The deploy script then updates them by:
+
 1. Pushing new images to ECR (same tag, e.g., `latest`)
-2. Calling `update_service` with `forceNewDeployment=True`
+1. Calling `update_service` with `forceNewDeployment=True`
 
 ECS detects the new image digest and performs a rolling deployment.
 
 For more complex scenarios (changing CPU/memory, adding environment variables), you would either:
+
 - Update the OpenTofu configuration and run `tofu apply`
 - Or extend deploy.py to register new task definition revisions
 
@@ -269,6 +278,7 @@ Application repositories contain their own `deploy.toml` that references this de
 ### Why not put deploy.toml in deployer?
 
 Applications own their deployment configuration because:
+
 - Different apps have different services, commands, and environment variables
 - App developers know their app's requirements
 - Keeps deployer generic and reusable
@@ -284,6 +294,7 @@ Applications own their deployment configuration because:
 ### Why config.toml in each environment?
 
 Each environment directory contains a `config.toml` that references OpenTofu outputs via `${tofu:...}` placeholders. The deploy script resolves these at deploy time. This approach provides:
+
 - **Single source of truth**: OpenTofu outputs are the authoritative source for infrastructure values
 - **Environment isolation**: Each environment's config.toml contains only that environment's configuration
 - **No manual exports**: No need to run `export SERVICE_CONFIG=$(tofu output ...)` before deploying
@@ -293,11 +304,11 @@ Each environment directory contains a `config.toml` that references OpenTofu out
 
 Each environment directory (e.g., `environments/myapp-staging/`) contains three key files with distinct purposes:
 
-| File | Purpose | Consumed By |
-|------|---------|-------------|
-| **main.tf** | Infrastructure *definition* - what AWS resources to create (VPC, ECS cluster, RDS, ALB, module calls, outputs) | OpenTofu |
-| **terraform.tfvars** | Infrastructure *inputs* - environment-specific values (credentials, service sizing, domain name) | OpenTofu |
-| **config.toml** | Deployment *bridge* - connects tofu outputs to deploy.py, plus deploy-time settings | `bin/deploy.py` |
+| File                 | Purpose                                                                                                        | Consumed By     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- | --------------- |
+| **main.tf**          | Infrastructure *definition* - what AWS resources to create (VPC, ECS cluster, RDS, ALB, module calls, outputs) | OpenTofu        |
+| **terraform.tfvars** | Infrastructure *inputs* - environment-specific values (credentials, service sizing, domain name)               | OpenTofu        |
+| **config.toml**      | Deployment *bridge* - connects tofu outputs to deploy.py, plus deploy-time settings                            | `bin/deploy.py` |
 
 **Why this separation?**
 
@@ -341,6 +352,7 @@ SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
 ```
 
 This couples the application to:
+
 - Placeholder naming conventions (`${db_host}`)
 - Secret storage mechanisms (SSM vs Secrets Manager)
 - AWS ARN formats
@@ -374,12 +386,12 @@ path_prefix = "/myapp/staging"
 
 ### Built-in Modules
 
-| Module | App Declares | Environment Provides | Injects |
-|--------|--------------|---------------------|---------|
-| database | `type = "postgresql"` | host, port, credentials | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
-| cache | `type = "redis"` | url | REDIS_URL |
-| storage | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3_{NAME}_BUCKET |
-| cdn | `type = "cloudfront"` | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
-| secrets | `names = [...]` | provider, path_prefix | Each named secret |
+| Module   | App Declares                     | Environment Provides              | Injects                                                      |
+| -------- | -------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| database | `type = "postgresql"`            | host, port, credentials           | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD          |
+| cache    | `type = "redis"`                 | url                               | REDIS_URL                                                    |
+| storage  | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket  | S3\_{NAME}\_BUCKET                                           |
+| cdn      | `type = "cloudfront"`            | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
+| secrets  | `names = [...]`                  | provider, path_prefix             | Each named secret                                            |
 
 See [MODULES.md](MODULES.md) for complete module reference.

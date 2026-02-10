@@ -13,15 +13,15 @@ The deployment speed test measures deployment time by instrumenting each step of
 
 ### Deployment Pipeline Steps
 
-| Step | Function | Before All Optimizations | After ALB/ECS Tuning | After Parallel Optimizations |
-|------|----------|--------------------------|----------------------|------------------------------|
-| ECR Login | `ecr_login()` | ~2s | ~2s | ~2s |
-| Build & Push | `build_and_push_images()` | 20-30s | 20-30s | 20-30s |
-| Start Migrations | `start_migrations()` | - | - | ~2s (non-blocking) |
-| Deploy Services | `deploy_services()` | ~2s | ~2s | ~2s |
-| Wait for Migrations | `wait_for_migrations()` | 60-70s | 60-70s | ~40s (overlapped with deploy) |
-| Wait for Stable | `wait_for_stable()` | **150-360s** | **~140s** | **~80s** (parallel) |
-| **Total** | | **~450s** | **~235s** | **~145s** |
+| Step                | Function                  | Before All Optimizations | After ALB/ECS Tuning | After Parallel Optimizations  |
+| ------------------- | ------------------------- | ------------------------ | -------------------- | ----------------------------- |
+| ECR Login           | `ecr_login()`             | ~2s                      | ~2s                  | ~2s                           |
+| Build & Push        | `build_and_push_images()` | 20-30s                   | 20-30s               | 20-30s                        |
+| Start Migrations    | `start_migrations()`      | -                        | -                    | ~2s (non-blocking)            |
+| Deploy Services     | `deploy_services()`       | ~2s                      | ~2s                  | ~2s                           |
+| Wait for Migrations | `wait_for_migrations()`   | 60-70s                   | 60-70s               | ~40s (overlapped with deploy) |
+| Wait for Stable     | `wait_for_stable()`       | **150-360s**             | **~140s**            | **~80s** (parallel)           |
+| **Total**           |                           | **~450s**                | **~235s**            | **~145s**                     |
 
 Note: With migrations skipped (no changes), total time is ~75s.
 
@@ -31,7 +31,7 @@ Note: With migrations skipped (no changes), total time is ~75s.
 
 1. **Environment config.toml**: The environment must have a `config.toml` file with `${tofu:...}` placeholders configured. The speed test script automatically resolves these by running `tofu output` in the environment directory.
 
-2. **Cognito Test Account**: For Cognito-protected environments, the deployer test account must exist with password stored in SSM at `/deployer/<environment>/cognito-test-password`. See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md#test-account-for-automation) for setup.
+1. **Cognito Test Account**: For Cognito-protected environments, the deployer test account must exist with password stored in SSM at `/deployer/<environment>/cognito-test-password`. See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md#test-account-for-automation) for setup.
 
 ### Running the Test
 
@@ -44,10 +44,12 @@ uv run python bin/deploy.py speed-test ~/code/myapp/deploy.toml myapp-staging \
 ### Arguments
 
 **Positional (required):**
+
 - `config`: Path to the application's deploy.toml file
 - `environment`: Full environment name (e.g., `myapp-staging`, `myapp-production`)
 
 **Optional flags:**
+
 - `--output`: Path for JSON results file
 - `--dry-run`: Skip actual deployment, test infrastructure only
 - `--skip-auth`: Skip Cognito authentication (for debugging)
@@ -103,37 +105,39 @@ These measurements were taken before the ALB and ECS deployment optimizations we
 
 ### Best Baseline: baseline-002.json (248s total)
 
-| Step | Duration | % of Total |
-|------|----------|------------|
-| ECR Login | 2.08s | 0.8% |
-| Build & Push | 26.31s | 10.6% |
-| Migrations | 61.88s | 25.0% |
-| Deploy Services | 1.74s | 0.7% |
-| Wait for Stable | 155.74s | **62.9%** |
+| Step            | Duration | % of Total |
+| --------------- | -------- | ---------- |
+| ECR Login       | 2.08s    | 0.8%       |
+| Build & Push    | 26.31s   | 10.6%      |
+| Migrations      | 61.88s   | 25.0%      |
+| Deploy Services | 1.74s    | 0.7%       |
+| Wait for Stable | 155.74s  | **62.9%**  |
 
 ### Latest Full Test: baseline-004.json (448s total)
 
-| Step | Duration | % of Total |
-|------|----------|------------|
-| ECR Login | 2.18s | 0.5% |
-| Build & Push | 22.82s | 5.1% |
-| Migrations | 63.09s | 14.1% |
-| Deploy Services | 1.65s | 0.4% |
-| Wait for Stable | 358.27s | **79.9%** |
+| Step            | Duration | % of Total |
+| --------------- | -------- | ---------- |
+| ECR Login       | 2.18s    | 0.5%       |
+| Build & Push    | 22.82s   | 5.1%       |
+| Migrations      | 63.09s   | 14.1%      |
+| Deploy Services | 1.65s    | 0.4%       |
+| Wait for Stable | 358.27s  | **79.9%**  |
 
 ### Key Observations
 
 1. **`wait_for_stable` was the bottleneck** at 60-80% of total time. Root causes:
+
    - ALB health check intervals (was 60s, now 10s for staging)
    - Old task draining / deregistration delay (was 300s, now 15s for staging)
    - ECS deployment config waiting for overlap (now 0% minimum healthy for staging)
    - **Status: RESOLVED** - See "Implemented Optimizations" section
 
-2. **Migrations are now the largest remaining target** at ~29% of optimized time (~68s). Could save ~60s by skipping when no changes.
+1. **Migrations are now the largest remaining target** at ~29% of optimized time (~68s). Could save ~60s by skipping when no changes.
 
-3. **Build/push is well optimized** at 20-30s total, thanks to Docker layer caching and good `.dockerignore`.
+1. **Build/push is well optimized** at 20-30s total, thanks to Docker layer caching and good `.dockerignore`.
 
-4. **Variance is high**: Total time ranged from 248s to 624s in pre-optimization tests. Factors include:
+1. **Variance is high**: Total time ranged from 248s to 624s in pre-optimization tests. Factors include:
+
    - Whether RDS/services were already warm
    - Network conditions for image push/pull
    - ECS scheduling delays
@@ -146,13 +150,13 @@ The following optimizations have been implemented to reduce deployment time for 
 
 **Location:** `modules/alb/main.tf`, passed through `main.tf` → `environments/*/main.tf`
 
-| Setting | Default (Prod) | Staging Optimized | Impact |
-|---------|---------------|-------------------|--------|
-| `health_check_interval` | 30s | 10s | Faster health checks |
-| `health_check_timeout` | 10s | 5s | Quicker timeout |
-| `healthy_threshold` | 2 | 2 | Min 20s to healthy |
-| `unhealthy_threshold` | 5 | 3 | Faster failure detection |
-| `deregistration_delay` | 120s | 15s | Faster task draining |
+| Setting                 | Default (Prod) | Staging Optimized | Impact                   |
+| ----------------------- | -------------- | ----------------- | ------------------------ |
+| `health_check_interval` | 30s            | 10s               | Faster health checks     |
+| `health_check_timeout`  | 10s            | 5s                | Quicker timeout          |
+| `healthy_threshold`     | 2              | 2                 | Min 20s to healthy       |
+| `unhealthy_threshold`   | 5              | 3                 | Faster failure detection |
+| `deregistration_delay`  | 120s           | 15s               | Faster task draining     |
 
 **Expected savings:** ~100s+ (health check) + faster draining
 
@@ -160,18 +164,19 @@ The following optimizations have been implemented to reduce deployment time for 
 
 **Location:** `config.toml` → `[deployment]` section, used by `deploy.py`
 
-| Setting | Default (Prod) | Staging Optimized | Impact |
-|---------|---------------|-------------------|--------|
-| `minimum_healthy_percent` | 100% | 0% | No wait for new before stopping old |
-| `maximum_percent` | 200% | 100% | No extra capacity |
-| `circuit_breaker_enabled` | false | true | Faster failure detection |
-| `circuit_breaker_rollback` | true | true | Auto-rollback on failure |
+| Setting                    | Default (Prod) | Staging Optimized | Impact                              |
+| -------------------------- | -------------- | ----------------- | ----------------------------------- |
+| `minimum_healthy_percent`  | 100%           | 0%                | No wait for new before stopping old |
+| `maximum_percent`          | 200%           | 100%              | No extra capacity                   |
+| `circuit_breaker_enabled`  | false          | true              | Faster failure detection            |
+| `circuit_breaker_rollback` | true           | true              | Auto-rollback on failure            |
 
 **Expected savings:** ~30-60s (no overlap period)
 
 ### Configuration Example
 
 **Staging ALB settings** (in `environments/myapp-staging/main.tf`):
+
 ```hcl
 module "infrastructure" {
   # ... other config ...
@@ -184,6 +189,7 @@ module "infrastructure" {
 ```
 
 **Staging deployment settings** (in `environments/myapp-staging/config.toml`):
+
 ```toml
 [deployment]
 minimum_healthy_percent = 0
@@ -194,14 +200,14 @@ circuit_breaker_rollback = true
 
 ### Measured Results (2026-01-23)
 
-| Metric | Before (baseline-004) | After (experiment-combined) | Improvement |
-|--------|----------------------|----------------------------|-------------|
-| **wait_for_stable** | 358.27s | 140.23s | **218s (61%)** |
-| **Total Duration** | 448.02s | 235.34s | **213s (47%)** |
+| Metric              | Before (baseline-004) | After (experiment-combined) | Improvement    |
+| ------------------- | --------------------- | --------------------------- | -------------- |
+| **wait_for_stable** | 358.27s               | 140.23s                     | **218s (61%)** |
+| **Total Duration**  | 448.02s               | 235.34s                     | **213s (47%)** |
 
 The combined optimizations achieved a **47% reduction** in total deployment time.
 
----
+______________________________________________________________________
 
 ## Implemented: Skip Migrations When Unchanged
 
@@ -212,25 +218,27 @@ When no migration files have changed since the last successful deployment, the m
 ### How It Works
 
 1. Before running migrations, compute a hash of all `*/migrations/*.py` files using `git ls-files` and `git hash-object`
-2. Compare with the stored hash in SSM (`/<app>/<env>/last-migrations-hash`)
-3. If hashes match, skip migrations
-4. After successful migration, store the new hash
+1. Compare with the stored hash in SSM (`/<app>/<env>/last-migrations-hash`)
+1. If hashes match, skip migrations
+1. After successful migration, store the new hash
 
 ### Output Examples
 
 **Migrations skipped:**
+
 ```
 Migrations unchanged (hash: 464f3623962b7cdb), skipping ✓
 ```
 
 **Migrations run (first deploy or files changed):**
+
 ```
 No stored migrations hash found, will run migrations
 Running migrations...
   Migrations complete ✓
 ```
 
----
+______________________________________________________________________
 
 ## Implemented: Parallel Service Waiting
 
@@ -241,17 +249,18 @@ When waiting for services to stabilize, all services are now waited on in parall
 ### How It Works
 
 1. After deploying services, `wait_for_stable()` creates a thread pool with one thread per service
-2. Each thread independently polls ECS for service status and ALB target health
-3. Results are collected as threads complete using `as_completed()`
-4. First fatal error fails the deployment immediately
+1. Each thread independently polls ECS for service status and ALB target health
+1. Results are collected as threads complete using `as_completed()`
+1. First fatal error fails the deployment immediately
 
 ### Expected Savings
 
 For deployments with multiple services (e.g., web + celery):
+
 - **Before**: web stable (60s) → web ALB (20s) → celery stable (60s) = ~140s sequential
 - **After**: max(web, celery) = ~80s parallel
 
----
+______________________________________________________________________
 
 ## Implemented: Parallel Migrations
 
@@ -262,9 +271,9 @@ Migrations now start before ECS services are deployed, allowing them to run in p
 ### How It Works
 
 1. `start_migrations()` launches the migration task and returns immediately
-2. `deploy_services()` triggers ECS deployment (image pulls start)
-3. `wait_for_migrations()` waits for migrations to complete
-4. `wait_for_stable()` waits for services (which may already be partially started)
+1. `deploy_services()` triggers ECS deployment (image pulls start)
+1. `wait_for_migrations()` waits for migrations to complete
+1. `wait_for_stable()` waits for services (which may already be partially started)
 
 ### New Deployment Flow
 
@@ -280,7 +289,7 @@ deploy_services (2s) ──┴─ ECS pulling/starting (~30s) → stabilize ┴�
 - Total time reduced by overlap: ~30s savings
 - Combined with parallel wait_for_stable: ~60s total savings
 
----
+______________________________________________________________________
 
 ## Future Optimization Targets
 
@@ -295,13 +304,14 @@ Additional optimizations not yet implemented:
 ### Low Impact (already optimized)
 
 2. **ECR login** (~2s, minimal)
-3. **Deploy API calls** (~2s, minimal)
+1. **Deploy API calls** (~2s, minimal)
 
 ## Troubleshooting
 
 ### Service not stabilizing
 
 Check ECS service events for errors:
+
 ```bash
 aws ecs describe-services \
     --cluster myapp-staging-cluster \
@@ -310,6 +320,7 @@ aws ecs describe-services \
 ```
 
 Common issues:
+
 - Missing SSM parameters
 - Health check failing
 - Insufficient resources
@@ -317,6 +328,7 @@ Common issues:
 ### Authentication errors
 
 Verify Cognito test account:
+
 ```bash
 aws ssm get-parameter \
     --name /deployer/myapp-staging/cognito-test-password \

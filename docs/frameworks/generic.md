@@ -7,9 +7,9 @@ This guide covers deploying any containerized application with the deployer, reg
 Your application must:
 
 1. **Run in a Docker container** - Build from a Dockerfile
-2. **Listen on a configurable port** - Receive HTTP traffic from the ALB
-3. **Have a health check endpoint** - Return 200-399 for health checks
-4. **Read configuration from environment variables** - No hardcoded secrets
+1. **Listen on a configurable port** - Receive HTTP traffic from the ALB
+1. **Have a health check endpoint** - Return 200-399 for health checks
+1. **Read configuration from environment variables** - No hardcoded secrets
 
 ## deploy.toml Configuration
 
@@ -83,9 +83,9 @@ container_port = 3000
 Your health check should:
 
 1. Return HTTP 200-399 when healthy
-2. Be fast (under 10 seconds)
-3. Not require authentication
-4. Optionally check critical dependencies
+1. Be fast (under 10 seconds)
+1. Not require authentication
+1. Optionally check critical dependencies
 
 Example (any language):
 

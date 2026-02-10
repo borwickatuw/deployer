@@ -5,6 +5,7 @@ This guide explains how to use shared infrastructure for running multiple simple
 ## Overview
 
 Shared environments allow multiple small apps to share expensive AWS resources:
+
 - VPC with NAT Gateway (~$32-50/month)
 - Application Load Balancer (~$18-25/month)
 - ECS Cluster (free)
@@ -13,6 +14,7 @@ Shared environments allow multiple small apps to share expensive AWS resources:
 - Optional: **Shared RDS database** (~$15-25/month saved per app)
 
 Each app still gets its own:
+
 - Database (either own RDS instance OR isolated database on shared RDS)
 - ALB target group and listener rule (independent routing)
 - ECR repository (separate images)
@@ -24,16 +26,17 @@ Each app still gets its own:
 
 Apps qualify for shared environments if they meet ALL of these criteria:
 
-| Criterion | Rationale |
-|-----------|-----------|
-| Single container/image | Simplifies routing, no worker coordination |
-| Single ECS service (web only) | No celery, no background workers |
-| Minimal resource needs (≤512 CPU, ≤1GB memory) | Won't overwhelm shared resources |
-| No special networking | No VPC peering, no private link requirements |
-| Standard Django stack | PostgreSQL + optional Redis |
-| Same team ownership | Coordination for shared infra changes |
+| Criterion                                      | Rationale                                    |
+| ---------------------------------------------- | -------------------------------------------- |
+| Single container/image                         | Simplifies routing, no worker coordination   |
+| Single ECS service (web only)                  | No celery, no background workers             |
+| Minimal resource needs (≤512 CPU, ≤1GB memory) | Won't overwhelm shared resources             |
+| No special networking                          | No VPC peering, no private link requirements |
+| Standard Django stack                          | PostgreSQL + optional Redis                  |
+| Same team ownership                            | Coordination for shared infra changes        |
 
 **Do NOT use shared environments for:**
+
 - Multi-container apps (web + celery + beat)
 - High-traffic apps requiring dedicated ALB capacity
 - Apps with strict isolation requirements
@@ -75,6 +78,7 @@ uv run python bin/init.py environment \
 ```
 
 **First time setup output:**
+
 ```
 Shared infrastructure 'shared-infra-staging' doesn't exist. Create it? [y/N] y
 Created: environments/shared-infra-staging/main.tf
@@ -102,6 +106,7 @@ uv run python bin/init.py environment \
 ```
 
 **Output:**
+
 ```
 Using existing shared infrastructure: shared-infra-staging
 Created: environments/otherapp-staging/main.tf
@@ -207,6 +212,7 @@ Shared RDS Instance (e.g., db.t3.small)
 ```
 
 PostgreSQL's permission model ensures complete isolation:
+
 - Each app gets its own DATABASE (`CREATE DATABASE alpha_db`)
 - Each app gets dedicated users (app + migrate) with passwords in Secrets Manager
 - Users can only `CONNECT` to their specific database
@@ -215,12 +221,14 @@ PostgreSQL's permission model ensures complete isolation:
 ### When to Use Shared RDS
 
 **Good fit:**
+
 - Multiple small apps with low database usage
 - Apps owned by the same team
 - Staging environments where cost optimization matters
 - Apps that don't need dedicated IOPS or specific instance sizing
 
 **Not recommended:**
+
 - Apps requiring dedicated database resources
 - Different compliance or backup requirements per app
 - Apps from different teams needing separate billing
@@ -267,9 +275,10 @@ db_password    = ""  # Not used - credentials auto-generated
 ### Database Credentials
 
 When using shared RDS, credentials are automatically:
+
 1. Generated with secure random passwords
-2. Stored in AWS Secrets Manager
-3. Made available to ECS tasks via IAM permissions
+1. Stored in AWS Secrets Manager
+1. Made available to ECS tasks via IAM permissions
 
 The config.toml uses the same structure regardless of RDS mode:
 
@@ -302,22 +311,23 @@ This is useful when most apps can share but one needs dedicated resources.
 
 ## Standalone vs Shared Comparison
 
-| Aspect | Standalone | Shared |
-|--------|------------|--------|
-| `bin/init.py` | `--env-type staging` | `--env-type staging --shared` |
-| VPC | Own | Shared |
-| NAT Gateway | Own (~$32/mo) | Shared |
-| ALB | Own (~$20/mo) | Shared (listener rule) |
-| ECS Cluster | Own | Shared |
-| RDS | Own | Own |
-| Cognito | Own | Shared |
-| Monthly overhead | ~$80-145 | ~$25-35 |
+| Aspect           | Standalone           | Shared                        |
+| ---------------- | -------------------- | ----------------------------- |
+| `bin/init.py`    | `--env-type staging` | `--env-type staging --shared` |
+| VPC              | Own                  | Shared                        |
+| NAT Gateway      | Own (~$32/mo)        | Shared                        |
+| ALB              | Own (~$20/mo)        | Shared (listener rule)        |
+| ECS Cluster      | Own                  | Shared                        |
+| RDS              | Own                  | Own                           |
+| Cognito          | Own                  | Shared                        |
+| Monthly overhead | ~$80-145             | ~$25-35                       |
 
 ## Migrating Existing Apps
 
 To migrate an existing standalone environment to shared infrastructure:
 
 1. **Create shared infrastructure** (if not exists)
+
    ```bash
    uv run python bin/init.py environment \
        --app-name placeholder \
@@ -326,12 +336,14 @@ To migrate an existing standalone environment to shared infrastructure:
    # Say 'y' to create shared infra, then cancel
    ```
 
-2. **Deploy shared infrastructure**
+1. **Deploy shared infrastructure**
+
    ```bash
    ./bin/tofu.sh rollout shared-infra-staging
    ```
 
-3. **Create new shared app environment**
+1. **Create new shared app environment**
+
    ```bash
    uv run python bin/init.py environment \
        --app-name existingapp \
@@ -340,13 +352,15 @@ To migrate an existing standalone environment to shared infrastructure:
        --domain existingapp.staging.example.com
    ```
 
-4. **Configure and deploy**
+1. **Configure and deploy**
+
    ```bash
    # Edit terraform.tfvars with DB credentials, etc.
    ./bin/tofu.sh rollout existingapp-staging
    ```
 
-5. **Link and deploy app**
+1. **Link and deploy app**
+
    ```bash
    # Link environment to deploy.toml
    uv run python bin/link-environments.py existingapp-staging /path/to/existingapp/deploy.toml
@@ -355,7 +369,8 @@ To migrate an existing standalone environment to shared infrastructure:
    uv run python bin/deploy.py existingapp-staging
    ```
 
-6. **Decommission old infrastructure**
+1. **Decommission old infrastructure**
+
    ```bash
    # After verifying the new environment works
    ./bin/tofu.sh destroy existingapp-staging-old
@@ -378,7 +393,7 @@ Assign the next available priority (100, 200, 300, ...).
 The per-app environment references the shared infrastructure state file. Ensure:
 
 1. Shared infrastructure is deployed first
-2. The `shared_state_path` in `main.tf` points to the correct location:
+1. The `shared_state_path` in `main.tf` points to the correct location:
    ```hcl
    shared_state_path = "../shared-infra-staging/terraform.tfstate"
    ```
@@ -386,52 +401,52 @@ The per-app environment references the shared infrastructure state file. Ensure:
 ### App not accessible at subdomain
 
 1. Check DNS resolves to the shared ALB
-2. Verify listener rule exists: `aws elbv2 describe-rules --listener-arn <listener_arn>`
-3. Check target group health: `aws elbv2 describe-target-health --target-group-arn <tg_arn>`
+1. Verify listener rule exists: `aws elbv2 describe-rules --listener-arn <listener_arn>`
+1. Check target group health: `aws elbv2 describe-target-health --target-group-arn <tg_arn>`
 
 ### Cognito auth blocking health checks
 
 The per-app listener rules include a higher-priority rule that bypasses Cognito for `/health` and `/health/` paths. If health checks still fail:
 
 1. Verify the health check bypass rule exists (priority = app_priority - 1)
-2. Check your app's health endpoint doesn't require authentication
+1. Check your app's health endpoint doesn't require authentication
 
 ## Cost Breakdown
 
 ### 10 Separate Staging Environments
 
-| Component | Per Env | x10 Total |
-|-----------|---------|-----------|
-| NAT Gateway | $32 | $320 |
-| ALB | $20 | $200 |
-| RDS (db.t3.micro) | $15 | $150 |
-| ElastiCache | $20 | $200 |
-| Misc | $5 | $50 |
-| **Total** | **$92** | **$920** |
+| Component         | Per Env | x10 Total |
+| ----------------- | ------- | --------- |
+| NAT Gateway       | $32     | $320      |
+| ALB               | $20     | $200      |
+| RDS (db.t3.micro) | $15     | $150      |
+| ElastiCache       | $20     | $200      |
+| Misc              | $5      | $50       |
+| **Total**         | **$92** | **$920**  |
 
 ### 10 Apps on Shared Staging (Separate RDS per App)
 
-| Component | Shared | Per-App (x10) | Total |
-|-----------|--------|---------------|-------|
-| NAT Gateway | $32 | - | $32 |
-| ALB | $30 | - | $30 |
-| RDS (db.t3.micro) | - | $15 x 10 | $150 |
-| Redis (optional) | $25 | - | $25 |
-| Misc | $10 | - | $10 |
-| **Total** | | | **$247** |
+| Component         | Shared | Per-App (x10) | Total    |
+| ----------------- | ------ | ------------- | -------- |
+| NAT Gateway       | $32    | -             | $32      |
+| ALB               | $30    | -             | $30      |
+| RDS (db.t3.micro) | -      | $15 x 10      | $150     |
+| Redis (optional)  | $25    | -             | $25      |
+| Misc              | $10    | -             | $10      |
+| **Total**         |        |               | **$247** |
 
 **Savings: ~$673/month (73%)** vs separate environments.
 
 ### 10 Apps on Shared Staging (Shared RDS)
 
-| Component | Shared | Per-App (x10) | Total |
-|-----------|--------|---------------|-------|
-| NAT Gateway | $32 | - | $32 |
-| ALB | $30 | - | $30 |
-| RDS (db.t3.small, shared) | $25 | - | $25 |
-| Redis (optional) | $25 | - | $25 |
-| Misc | $10 | - | $10 |
-| **Total** | | | **$122** |
+| Component                 | Shared | Per-App (x10) | Total    |
+| ------------------------- | ------ | ------------- | -------- |
+| NAT Gateway               | $32    | -             | $32      |
+| ALB                       | $30    | -             | $30      |
+| RDS (db.t3.small, shared) | $25    | -             | $25      |
+| Redis (optional)          | $25    | -             | $25      |
+| Misc                      | $10    | -             | $10      |
+| **Total**                 |        |               | **$122** |
 
 **Savings: ~$798/month (87%)** vs separate environments.
 

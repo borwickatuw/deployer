@@ -1,6 +1,7 @@
 # Deployer - Claude Code Context
 
 ## Project Overview
+
 Infrastructure and deployment tooling for containerized applications on AWS ECS Fargate. Supports any framework that runs in Docker (Django, Rails, Node.js, etc.).
 
 ## Related Projects
@@ -8,6 +9,7 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - **deployer-environments** (`~/code/deployer-environments`) - Per-environment tofu configurations that use this repo's modules
 
 ## Key Files
+
 - `bin/deploy.py` - Main deployment script (auto-selects AWS profile from config.toml)
 - `bin/init.py` - Initialize new apps: generate deploy.toml and environment directories
 - `bin/tofu.sh` - OpenTofu wrapper (auto-selects AWS profile from config.toml)
@@ -50,6 +52,7 @@ uv run python bin/emergency.py myapp-production rollback --service web
 ```
 
 ## Key Documentation
+
 - [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) - Complete deployment walkthrough
 - [CONFIG-REFERENCE.md](docs/CONFIG-REFERENCE.md) - All configuration options
 - [DESIGN.md](docs/DESIGN.md) - Architecture and three-layer config separation
@@ -84,21 +87,24 @@ Environment configs are stored separately, configured via `DEPLOYER_ENVIRONMENTS
 ## Maintainer Notes
 
 When changing the environment config.toml structure, update:
+
 1. `example-deployer-environments/myapp-staging/config.toml.example`
-2. `example-deployer-environments/app-on-shared-staging/config.toml.example`
-3. `docs/CONFIG-REFERENCE.md` (Environment config.toml Reference section)
-4. All existing `*/config.toml` files in the environments directory
+1. `example-deployer-environments/app-on-shared-staging/config.toml.example`
+1. `docs/CONFIG-REFERENCE.md` (Environment config.toml Reference section)
+1. All existing `*/config.toml` files in the environments directory
 
 ## IAM Policies (Bootstrap Terraform)
 
 IAM roles and policies are managed in `deployer-environments/bootstrap/`. Key guidelines:
+
 - **Use service-level wildcards** (e.g., `ecs:*`, `rds:*`) rather than listing individual actions
 - **Apply resource restrictions** where they matter: S3, SSM, ECR, IAM scoped to `project_prefixes`
 - **Keep IAM role management granular** due to sensitivity
 
 To add a new project:
+
 1. Edit bootstrap's `terraform.tfvars`, add to `project_prefixes`
-2. Run `AWS_PROFILE=admin tofu apply`
+1. Run `AWS_PROFILE=admin tofu apply`
 
 For multi-account setups, see [MULTIPLE-AWS-ACCOUNTS.md](docs/MULTIPLE-AWS-ACCOUNTS.md).
 

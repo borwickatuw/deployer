@@ -223,6 +223,7 @@ CMD ["gunicorn", "myapp.wsgi:application", "--bind", "0.0.0.0:8000"]
 ```
 
 Key points:
+
 - Install dependencies before copying code for better Docker layer caching
 - Use `ARG SECRET_KEY` to provide a dummy key for `collectstatic` at build time
 - Run `collectstatic --noinput` during build so static files are baked into the image
@@ -346,17 +347,17 @@ See [CSRF_TRUSTED_ORIGINS](#csrf_trusted_origins) above.
 ### Static Files 404
 
 1. Verify WhiteNoise middleware is in the correct position
-2. Check that `collectstatic` runs in the Dockerfile
-3. Ensure `STATIC_ROOT` is set correctly
+1. Check that `collectstatic` runs in the Dockerfile
+1. Ensure `STATIC_ROOT` is set correctly
 
 ### ALLOWED_HOSTS Error
 
 1. Check that `local_settings.py` is in `.dockerignore`
-2. Verify `ALLOWED_HOSTS` environment variable is set in `deploy.toml`
+1. Verify `ALLOWED_HOSTS` environment variable is set in `deploy.toml`
 
 ### Database Connection Refused
 
 1. Verify `DATABASE_URL` SSM parameter exists and is correct
-2. Check security groups allow ECS tasks to reach the database
+1. Check security groups allow ECS tasks to reach the database
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more detailed debugging steps.

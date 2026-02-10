@@ -5,29 +5,30 @@ This guide covers deploying, operating, and maintaining production environments 
 ## Table of Contents
 
 1. [Initial Production Deployment](#initial-production-deployment)
-2. [Maintenance Cadences](#maintenance-cadences)
-3. [Component-Specific Maintenance](#component-specific-maintenance)
-4. [Monitoring and Alerting](#monitoring-and-alerting)
-5. [Emergency Procedures](#emergency-procedures)
-6. [Incident Response](#incident-response)
-7. [Tooling Gaps and Workarounds](#tooling-gaps-and-workarounds)
-8. [Compliance Considerations](#compliance-considerations)
-9. [Appendices](#appendices)
+1. [Maintenance Cadences](#maintenance-cadences)
+1. [Component-Specific Maintenance](#component-specific-maintenance)
+1. [Monitoring and Alerting](#monitoring-and-alerting)
+1. [Emergency Procedures](#emergency-procedures)
+1. [Incident Response](#incident-response)
+1. [Tooling Gaps and Workarounds](#tooling-gaps-and-workarounds)
+1. [Compliance Considerations](#compliance-considerations)
+1. [Appendices](#appendices)
 
----
+______________________________________________________________________
 
 ## Initial Production Deployment
 
 ### Recovery Targets
 
-| Metric | Target | How Achieved |
-|--------|--------|--------------|
-| RPO (Recovery Point Objective) | 5 minutes | RDS continuous backup (point-in-time recovery) |
-| RTO (Recovery Time Objective) | 1 hour | emergency.py restore procedures |
-| Retention | 35 days (production) | rds_backup_retention_period setting |
-| Multi-AZ Failover | Automatic | rds_multi_az = true |
+| Metric                         | Target               | How Achieved                                   |
+| ------------------------------ | -------------------- | ---------------------------------------------- |
+| RPO (Recovery Point Objective) | 5 minutes            | RDS continuous backup (point-in-time recovery) |
+| RTO (Recovery Time Objective)  | 1 hour               | emergency.py restore procedures                |
+| Retention                      | 35 days (production) | rds_backup_retention_period setting            |
+| Multi-AZ Failover              | Automatic            | rds_multi_az = true                            |
 
 These targets assume:
+
 - Production RDS settings applied (35-day retention, deletion protection, multi-az)
 - Monthly restore testing via `emergency.py restore-db`
 - Emergency procedures documented and practiced
@@ -74,6 +75,7 @@ lifecycle_policy_count   = 50        # Keep 50 images vs 10 for staging
 Sizing depends on your specific workload. Start conservatively and adjust based on monitoring data.
 
 **RDS Instance Class:**
+
 - Start with the smallest instance that meets your baseline needs
 - `db.t4g.*` (burstable): Good for variable workloads with idle periods
 - `db.r6g.*` (memory-optimized): Better for steady, memory-intensive workloads
@@ -81,17 +83,20 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 - Use `capacity-report.py` patterns to right-size over time
 
 **RDS Storage:**
+
 - Estimate based on current data + 6-12 months growth
 - GP3 storage can be resized without downtime (increases only)
 - Monitor `FreeStorageSpace` and set alarms
 
 **ElastiCache Node Type:**
+
 - Size based on working set size (how much data needs to be in memory)
 - `cache.t4g.*` (burstable): Good for caching with variable load
 - `cache.r6g.*` (memory-optimized): Better for session storage or large datasets
 - Monitor `DatabaseMemoryUsagePercentage`
 
 **ECS CPU/Memory:**
+
 - Profile your application locally to understand baseline needs
 - Web services: Often memory-bound (Django/Rails); start with higher memory ratio
 - Workers: Often CPU-bound during processing; may need higher CPU
@@ -99,6 +104,7 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 - See [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md#cpumemory-combinations) for valid Fargate combinations
 
 **Replicas and Auto-Scaling:**
+
 - `min_replicas >= 2` for high availability (survives single task failure)
 - Set `max_replicas` based on budget and expected peak load
 - `cpu_target = 70` is a reasonable starting point; lower means more headroom
@@ -133,14 +139,16 @@ scaling = {
 ```
 
 **Iteration Process:**
+
 1. Deploy with conservative estimates
-2. Run `capacity-report.py --days 7` after a week of production traffic
-3. Adjust based on recommendations (watch for OOM kills especially)
-4. Repeat monthly as part of maintenance cadence
+1. Run `capacity-report.py --days 7` after a week of production traffic
+1. Adjust based on recommendations (watch for OOM kills especially)
+1. Repeat monthly as part of maintenance cadence
 
 ### First Deployment Walkthrough
 
 1. **Apply infrastructure**:
+
    ```bash
    ./bin/tofu.sh plan myapp-production
    ./bin/tofu.sh apply myapp-production
@@ -149,7 +157,8 @@ scaling = {
    ./bin/tofu.sh rollout myapp-production
    ```
 
-2. **Verify infrastructure**:
+1. **Verify infrastructure**:
+
    ```bash
    # Check environment status (ECS services, RDS)
    uv run python bin/environment.py status myapp-production
@@ -162,23 +171,27 @@ scaling = {
      --query 'CacheClusters[0].CacheClusterStatus'
    ```
 
-3. **Create secrets** (if not already present):
+1. **Create secrets** (if not already present):
+
    ```bash
    uv run python bin/ssm-secrets.py set myapp-production SECRET_KEY "$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
    ```
 
-4. **Link and deploy application**:
+1. **Link and deploy application**:
+
    ```bash
    uv run python bin/link-environments.py myapp-production ../myapp/deploy.toml
    uv run python bin/deploy.py myapp-production
    ```
 
-5. **Run migrations** (assumes environment is linked via `link-environments.py`):
+1. **Run migrations** (assumes environment is linked via `link-environments.py`):
+
    ```bash
    uv run python bin/ecs-run.py run myapp-production migrate
    ```
 
-6. **Verify deployment**:
+1. **Verify deployment**:
+
    ```bash
    # Check ECS services, task definitions, and RDS status
    uv run python bin/ops.py myapp-production status
@@ -187,64 +200,67 @@ scaling = {
    uv run python bin/ops.py myapp-production health
    ```
 
----
+______________________________________________________________________
 
 ## Maintenance Cadences
 
 ### Daily (~5-10 minutes)
 
-| Task | Command/Action |
-|------|----------------|
-| Run full audit | `uv run python bin/ops.py myapp-production audit` |
-| Review CloudWatch alarms | AWS Console > CloudWatch > Alarms > In alarm |
-| Check for OOM kills | `uv run python bin/capacity-report.py myapp-production --days 1` |
+| Task                     | Command/Action                                                   |
+| ------------------------ | ---------------------------------------------------------------- |
+| Run full audit           | `uv run python bin/ops.py myapp-production audit`                |
+| Review CloudWatch alarms | AWS Console > CloudWatch > Alarms > In alarm                     |
+| Check for OOM kills      | `uv run python bin/capacity-report.py myapp-production --days 1` |
 
 The `audit` command runs status, health, logs, maintenance, and ECR vulnerability checks in one command.
 
 ### Weekly
 
-| Task | Description |
-|------|-------------|
-| Run capacity report | `uv run python bin/capacity-report.py myapp-production --days 7` |
-| Check RDS/snapshots status | `uv run python bin/ops.py myapp-production status` (shows recent snapshots) |
-| Review WAF blocked requests | AWS Console > WAF > Web ACLs > Sampled requests |
-| Check ECR image count | `aws ecr describe-images --repository-name myapp-production-web --query 'length(imageDetails)'` |
+| Task                        | Description                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| Run capacity report         | `uv run python bin/capacity-report.py myapp-production --days 7`                                |
+| Check RDS/snapshots status  | `uv run python bin/ops.py myapp-production status` (shows recent snapshots)                     |
+| Review WAF blocked requests | AWS Console > WAF > Web ACLs > Sampled requests                                                 |
+| Check ECR image count       | `aws ecr describe-images --repository-name myapp-production-web --query 'length(imageDetails)'` |
 
 ### Monthly
 
-| Task | Description |
-|------|-------------|
-| Test RDS backup restore | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing) |
-| Review CloudWatch Logs costs | AWS Console > Cost Explorer > Filter by CloudWatch |
-| Apply capacity recommendations | Review `capacity-report.py` output and update `terraform.tfvars` |
-| Check pending maintenance | `uv run python bin/ops.py myapp-production maintenance` |
+| Task                           | Description                                                               |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| Test RDS backup restore        | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing) |
+| Review CloudWatch Logs costs   | AWS Console > Cost Explorer > Filter by CloudWatch                        |
+| Apply capacity recommendations | Review `capacity-report.py` output and update `terraform.tfvars`          |
+| Check pending maintenance      | `uv run python bin/ops.py myapp-production maintenance`                   |
 
 ### Quarterly
 
-| Task | Description |
-|------|-------------|
-| Rotate database credentials | Update in RDS, then SSM Parameter Store |
-| Security audit | Review CloudTrail, GuardDuty findings |
-| Review IAM policies | Audit bootstrap/ policies for least privilege |
-| Test disaster recovery | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing) |
-| Update OpenTofu providers | `./bin/tofu.sh init -upgrade myapp-production` |
-| Load testing baseline | Run load test, compare to previous baseline - see [Load Testing](#load-testing) |
+| Task                        | Description                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Rotate database credentials | Update in RDS, then SSM Parameter Store                                         |
+| Security audit              | Review CloudTrail, GuardDuty findings                                           |
+| Review IAM policies         | Audit bootstrap/ policies for least privilege                                   |
+| Test disaster recovery      | `emergency.py restore-db` - see [RDS Backup Testing](#rds-backup-testing)       |
+| Update OpenTofu providers   | `./bin/tofu.sh init -upgrade myapp-production`                                  |
+| Load testing baseline       | Run load test, compare to previous baseline - see [Load Testing](#load-testing) |
 
 ### Load Testing
 
 Establish baseline performance to detect regressions and understand capacity limits.
 
 **When to run:**
+
 - Quarterly (at minimum)
 - Before major releases
 - After significant infrastructure changes
 
 **Recommended tools:**
+
 - [k6](https://k6.io/) - Scriptable, good for CI integration
 - [locust](https://locust.io/) - Python-based, easy to customize
 - [Apache Bench](https://httpd.apache.org/docs/2.4/programs/ab.html) - Simple, quick tests
 
 **Basic test with k6:**
+
 ```javascript
 // load-test.js
 import http from 'k6/http';
@@ -271,6 +287,7 @@ export default function () {
 ```
 
 **Run test:**
+
 ```bash
 k6 run load-test.js
 ```
@@ -307,21 +324,24 @@ before p95 latency exceeds SLO target (500ms).
 
 **Example:** See `~/code/myapp/performance/` for API load testing scripts.
 
----
+______________________________________________________________________
 
 ## Component-Specific Maintenance
 
 ### ECR (Elastic Container Registry)
 
 **Current defaults** (modules/ecr/main.tf:33-37):
+
 - `lifecycle_policy_count = 10` - keeps last 10 images
 
 **Production recommendations**:
+
 - Increase to 30-50 images for deeper rollback capability
 - Override in `terraform.tfvars`: `lifecycle_policy_count = 50`
 - Review vulnerability scan findings regularly
 
 **Maintenance commands**:
+
 ```bash
 # Check vulnerability findings (CRITICAL/HIGH) for all repositories
 uv run python bin/ops.py myapp-production ecr
@@ -345,6 +365,7 @@ aws ecr describe-image-scan-findings \
   --image-id imageTag=latest \
   --query 'imageScanFindings.findings[?severity==`CRITICAL` || severity==`HIGH`]'
 ```
+
 </details>
 
 **References**: [AWS ECR Lifecycle Policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html)
@@ -352,11 +373,13 @@ aws ecr describe-image-scan-findings \
 ### RDS PostgreSQL
 
 **Current defaults** (modules/rds/main.tf:88-92):
+
 - `backup_retention_period = 7` days
 - `skip_final_snapshot = true`
 - `backup_window = "03:00-04:00"` UTC
 
 **Production recommendations**:
+
 - Increase backup retention: `backup_retention_period = 35`
 - Enable deletion protection: `deletion_protection = true`
 - Disable skip final snapshot: `skip_final_snapshot = false`
@@ -364,14 +387,16 @@ aws ecr describe-image-scan-findings \
 - Set application DNS TTL < 30s for faster failover
 
 **Key metrics to monitor**:
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| CPUUtilization | > 70% | > 90% |
-| FreeStorageSpace | < 20GB | < 10GB |
-| DatabaseConnections | > 70% max | > 90% max |
-| ReadLatency/WriteLatency | > 20ms | > 100ms |
+
+| Metric                   | Warning   | Critical  |
+| ------------------------ | --------- | --------- |
+| CPUUtilization           | > 70%     | > 90%     |
+| FreeStorageSpace         | < 20GB    | < 10GB    |
+| DatabaseConnections      | > 70% max | > 90% max |
+| ReadLatency/WriteLatency | > 20ms    | > 100ms   |
 
 **Maintenance commands**:
+
 ```bash
 # Check backup status
 aws rds describe-db-instance-automated-backups \
@@ -387,23 +412,27 @@ aws rds describe-pending-maintenance-actions \
 ### ElastiCache Redis
 
 **Current defaults** (modules/elasticache/main.tf):
+
 - Single node (`num_cache_nodes = 1`)
 - No Multi-AZ
 
 **Production recommendations**:
+
 - Use Multi-AZ with automatic failover
 - Enable at-rest and in-transit encryption
 - Consider reserved nodes (30-50% savings)
 
 **Key metrics to monitor**:
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| DatabaseMemoryUsagePercentage | > 70% | > 85% |
-| EngineCPUUtilization | > 80% | > 90% |
-| ReplicationLag | > 5s | > 10s |
-| CurrConnections | > 80% max | > 95% max |
+
+| Metric                        | Warning   | Critical  |
+| ----------------------------- | --------- | --------- |
+| DatabaseMemoryUsagePercentage | > 70%     | > 85%     |
+| EngineCPUUtilization          | > 80%     | > 90%     |
+| ReplicationLag                | > 5s      | > 10s     |
+| CurrConnections               | > 80% max | > 95% max |
 
 **Maintenance commands**:
+
 ```bash
 # Check cluster status
 aws elasticache describe-cache-clusters \
@@ -420,19 +449,22 @@ aws elasticache describe-replication-groups \
 ### ALB (Application Load Balancer)
 
 **Key metrics to monitor**:
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| UnHealthyHostCount | > 0 | > 1 |
-| HTTPCode_ELB_5XX_Count | > 5/min | > 20/min |
-| TargetResponseTime | > 2s p95 | > 5s p95 |
-| RequestCount | Monitor for anomalies | - |
+
+| Metric                 | Warning               | Critical |
+| ---------------------- | --------------------- | -------- |
+| UnHealthyHostCount     | > 0                   | > 1      |
+| HTTPCode_ELB_5XX_Count | > 5/min               | > 20/min |
+| TargetResponseTime     | > 2s p95              | > 5s p95 |
+| RequestCount           | Monitor for anomalies | -        |
 
 **Recommendations**:
+
 - Enable access logs to S3 for debugging
 - Enable deletion protection
 - Configure appropriate idle timeout (default 60s)
 
 **Maintenance commands**:
+
 ```bash
 # Check target health
 uv run python bin/ops.py myapp-production health
@@ -456,6 +488,7 @@ aws cloudwatch get-metric-statistics \
   --period 300 \
   --statistics Sum
 ```
+
 </details>
 
 **References**: [AWS ALB Monitoring](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-cloudwatch-metrics.html)
@@ -465,15 +498,17 @@ aws cloudwatch get-metric-statistics \
 The `ecs-service` module creates log groups with retention policies automatically. The `log_retention_days` variable controls retention (default: 30 days).
 
 **Recommended retention periods**:
-| Environment | Retention | Setting |
-|-------------|-----------|---------|
-| Staging | 7 days | `log_retention_days = 7` |
-| Production | 30 days | `log_retention_days = 30` (default) |
-| Audit logs | 90-365 days | `log_retention_days = 90` |
+
+| Environment | Retention   | Setting                             |
+| ----------- | ----------- | ----------------------------------- |
+| Staging     | 7 days      | `log_retention_days = 7`            |
+| Production  | 30 days     | `log_retention_days = 30` (default) |
+| Audit logs  | 90-365 days | `log_retention_days = 90`           |
 
 ### ECS Fargate
 
 **Using capacity-report.py**:
+
 ```bash
 # Weekly right-sizing analysis
 uv run python bin/capacity-report.py myapp-production --days 7
@@ -483,6 +518,7 @@ uv run python bin/capacity-report.py myapp-production --days 1
 ```
 
 **Recommendations**:
+
 - Enable Container Insights (already configured in ecs-cluster module)
 - Configure auto-scaling based on CPU/memory metrics
 - Use `min_replicas >= 2` for production services
@@ -493,12 +529,14 @@ uv run python bin/capacity-report.py myapp-production --days 1
 ### S3
 
 **Recommendations**:
+
 - Configure lifecycle rules (Intelligent-Tiering after 30 days)
 - Enable versioning for critical buckets
 - Enable access logging to a separate bucket
 - Review storage growth monthly
 
 **Maintenance commands**:
+
 ```bash
 # Check bucket size
 aws s3 ls s3://myapp-production-media --summarize --recursive \
@@ -509,7 +547,7 @@ aws s3api get-bucket-lifecycle-configuration \
   --bucket myapp-production-media
 ```
 
----
+______________________________________________________________________
 
 ## Monitoring and Alerting
 
@@ -535,23 +573,23 @@ module "alarms" {
 
 **Alarm thresholds**:
 
-| Alarm | Metric | Threshold | Severity |
-|-------|--------|-----------|----------|
-| ALB-5XX-High | HTTPCode_ELB_5XX_Count | > 10/5min | Critical |
-| ALB-Latency-High | TargetResponseTime | > 5s p95/5min | Warning |
-| RDS-CPU-High | CPUUtilization | > 80%/10min | Warning |
-| RDS-Storage-Low | FreeStorageSpace | < 10GB | Critical |
-| RDS-Connections-High | DatabaseConnections | > 80% max | Warning |
-| ElastiCache-Memory | DatabaseMemoryUsagePercentage | > 80% | Warning |
-| ECS-Tasks-Failing | RunningTaskCount < Desired | 5min | Critical |
+| Alarm                | Metric                        | Threshold     | Severity |
+| -------------------- | ----------------------------- | ------------- | -------- |
+| ALB-5XX-High         | HTTPCode_ELB_5XX_Count        | > 10/5min     | Critical |
+| ALB-Latency-High     | TargetResponseTime            | > 5s p95/5min | Warning  |
+| RDS-CPU-High         | CPUUtilization                | > 80%/10min   | Warning  |
+| RDS-Storage-Low      | FreeStorageSpace              | < 10GB        | Critical |
+| RDS-Connections-High | DatabaseConnections           | > 80% max     | Warning  |
+| ElastiCache-Memory   | DatabaseMemoryUsagePercentage | > 80%         | Warning  |
+| ECS-Tasks-Failing    | RunningTaskCount < Desired    | 5min          | Critical |
 
 ### SNS Notification Setup
 
 The cloudwatch-alarms module creates an SNS topic and email subscription:
 
 1. Apply the module - creates SNS topic `myapp-production-alarms`
-2. Check email for subscription confirmation
-3. Click confirmation link in email
+1. Check email for subscription confirmation
+1. Click confirmation link in email
 
 For additional notification channels (Slack, PagerDuty), see [SOMEDAY-MAYBE.md](SOMEDAY-MAYBE.md).
 
@@ -560,22 +598,26 @@ For additional notification channels (Slack, PagerDuty), see [SOMEDAY-MAYBE.md](
 Create a CloudWatch dashboard with these widgets:
 
 **ECS**:
+
 - CPU/Memory utilization per service
 - Running task count vs desired
 - Task launch/stop events
 
 **ALB**:
+
 - Request count (stacked by target group)
 - Latency percentiles (p50, p95, p99)
 - HTTP error rates (4xx, 5xx)
 
 **RDS**:
+
 - CPU utilization
 - Database connections
 - Read/Write IOPS
 - Free storage space
 
 **ElastiCache**:
+
 - Memory usage percentage
 - CPU utilization
 - Current connections
@@ -584,6 +626,7 @@ Create a CloudWatch dashboard with these widgets:
 ### Log Insights Queries
 
 **Find errors**:
+
 ```
 fields @timestamp, @message
 | filter @message like /ERROR|Exception|Traceback/
@@ -592,6 +635,7 @@ fields @timestamp, @message
 ```
 
 **Slow requests**:
+
 ```
 fields @timestamp, @message
 | filter @message like /took.*ms/
@@ -602,6 +646,7 @@ fields @timestamp, @message
 ```
 
 **Request volume by endpoint**:
+
 ```
 fields @timestamp, @message
 | filter @message like /GET|POST|PUT|DELETE/
@@ -611,11 +656,12 @@ fields @timestamp, @message
 | limit 20
 ```
 
----
+______________________________________________________________________
 
 ## Emergency Procedures
 
 Production operations are split into two tools:
+
 - **`bin/ops.py`** - Read-only monitoring commands (safe to run anytime)
 - **`bin/emergency.py`** - Commands that modify production state (use with care)
 
@@ -624,6 +670,7 @@ All emergency actions are logged to `local/emergency.log`.
 ### Quick Reference
 
 **Monitoring (read-only - ops.py):**
+
 ```bash
 # Run full audit (status, health, logs, maintenance, ECR vulnerabilities)
 uv run python bin/ops.py myapp-production audit
@@ -645,6 +692,7 @@ uv run python bin/ops.py myapp-production ecr
 ```
 
 **Emergency operations (modifies production - emergency.py):**
+
 ```bash
 # Roll back to previous task definition (creates checkpoint first)
 uv run python bin/emergency.py myapp-production rollback --service web
@@ -687,12 +735,14 @@ uv run python bin/emergency.py myapp-production rollback --service web --revisio
 ```
 
 The tool automatically:
+
 - Creates a checkpoint before making changes
 - Shows environment variable differences between revisions
 - Monitors deployment progress
 - Logs all actions to `local/emergency.log`
 
 If the rollback was wrong, restore the previous state:
+
 ```bash
 uv run python bin/emergency.py myapp-production revert --list
 uv run python bin/emergency.py myapp-production revert --checkpoint emergency-2026-02-04-120000.json
@@ -701,6 +751,7 @@ uv run python bin/emergency.py myapp-production revert --checkpoint emergency-20
 ### Database Recovery
 
 Database restore operations create a **new** RDS instance with a `-restore` suffix. This is intentional—the original database is never modified, so you can:
+
 - Compare data between original and restored instances
 - Go back to the original by not updating the app config
 - Delete the `-restore` instance if the restore wasn't needed
@@ -717,9 +768,10 @@ uv run python bin/emergency.py myapp-production restore-db --time "2026-02-04T12
 ```
 
 After restore completes (10-30 minutes):
+
 1. The new instance will be at `myapp-production-db-restore`
-2. Update your application's `DATABASE_URL` to point to the new instance
-3. When done, delete the restore instance or the original as appropriate
+1. Update your application's `DATABASE_URL` to point to the new instance
+1. When done, delete the restore instance or the original as appropriate
 
 ### Scale Up Quickly
 
@@ -810,7 +862,7 @@ aws application-autoscaling register-scalable-target \
 
 </details>
 
----
+______________________________________________________________________
 
 ## Incident Response
 
@@ -818,27 +870,30 @@ When something goes wrong in production, follow this structured approach.
 
 ### Severity Definitions
 
-| Severity | Definition | Examples | Response Time |
-|----------|------------|----------|---------------|
-| **P1 - Critical** | Total service outage or data loss risk | All users affected, no workaround | Immediate (within 15 min) |
-| **P2 - Major** | Significant degradation, partial outage | Key feature unavailable, slow performance | Within 1 hour |
-| **P3 - Minor** | Limited impact, workaround available | Cosmetic issue, single user affected | Within 1 business day |
+| Severity          | Definition                              | Examples                                  | Response Time             |
+| ----------------- | --------------------------------------- | ----------------------------------------- | ------------------------- |
+| **P1 - Critical** | Total service outage or data loss risk  | All users affected, no workaround         | Immediate (within 15 min) |
+| **P2 - Major**    | Significant degradation, partial outage | Key feature unavailable, slow performance | Within 1 hour             |
+| **P3 - Minor**    | Limited impact, workaround available    | Cosmetic issue, single user affected      | Within 1 business day     |
 
 ### Immediate Response (First 15 Minutes)
 
 1. **Assess the situation**
+
    ```bash
    # Quick health check
    uv run python bin/ops.py myapp-production audit
    ```
 
-2. **Determine severity** using definitions above
+1. **Determine severity** using definitions above
 
-3. **Communicate** (for P1/P2)
+1. **Communicate** (for P1/P2)
+
    - Notify stakeholders: "We're aware of [issue] and investigating"
    - Post to team channel with initial assessment
 
-4. **Stabilize if possible**
+1. **Stabilize if possible**
+
    ```bash
    # Rollback if recent deployment caused issue
    uv run python bin/emergency.py myapp-production rollback --service web
@@ -859,15 +914,17 @@ When something goes wrong in production, follow this structured approach.
 ### Resolution
 
 1. **Verify service restored**
+
    ```bash
    uv run python bin/ops.py myapp-production health
    uv run python bin/ops.py myapp-production logs --minutes 10
    ```
 
-2. **Communicate resolution**
+1. **Communicate resolution**
+
    - "Service restored at [time]. We'll follow up with details."
 
-3. **Document the incident** (see Postmortem section)
+1. **Document the incident** (see Postmortem section)
 
 ### Postmortem Process
 
@@ -923,25 +980,28 @@ What we'll do differently next time.
 ### Communication Templates
 
 **Initial notification (P1/P2):**
+
 > We're aware of an issue affecting [service]. Users may experience [symptom]. We're actively investigating and will provide updates.
 
 **Update during incident:**
+
 > Update on [service] issue: We've identified [cause/area]. We're [action being taken]. Next update in [30 min/1 hour].
 
 **Resolution:**
+
 > The issue affecting [service] has been resolved as of [time]. [Brief description of fix]. We'll share a postmortem with more details.
 
----
+______________________________________________________________________
 
 ## Tooling Gaps and Workarounds
 
 Some production operations require manual steps or CLI commands:
 
-| Gap | Workaround |
-|-----|------------|
-| RDS backup retention > 7 days | Override `backup_retention_period` in terraform.tfvars |
-| RDS deletion protection | Override `deletion_protection = true` in terraform.tfvars |
-| CloudWatch alarms | Use `modules/cloudwatch-alarms/` module |
+| Gap                           | Workaround                                                |
+| ----------------------------- | --------------------------------------------------------- |
+| RDS backup retention > 7 days | Override `backup_retention_period` in terraform.tfvars    |
+| RDS deletion protection       | Override `deletion_protection = true` in terraform.tfvars |
+| CloudWatch alarms             | Use `modules/cloudwatch-alarms/` module                   |
 
 ### RDS Backup Testing
 
@@ -973,7 +1033,7 @@ aws rds delete-db-instance \
 
 Note: The `restore-db` command creates a new instance with `-restore` suffix and never modifies the original database.
 
----
+______________________________________________________________________
 
 ## Compliance Considerations
 
@@ -1012,7 +1072,7 @@ Note: The `restore-db` command creates a new instance with `-restore` suffix and
 - **AWS Config**: Enable for compliance rules
 - **CloudWatch**: Regular log review for anomalies
 
----
+______________________________________________________________________
 
 ## Appendices
 
@@ -1069,6 +1129,7 @@ uv run python bin/environment.py start myapp-staging
 ```
 
 Notes:
+
 - ElastiCache and ALB cannot be stopped (only deleted)
 - RDS auto-restarts after 7 days if stopped (AWS limitation)
 - Data is preserved when stopped
@@ -1086,7 +1147,7 @@ Notes:
 - [ ] MFA enabled for all users
 - [ ] Secrets rotated quarterly
 
----
+______________________________________________________________________
 
 ## Related Documentation
 

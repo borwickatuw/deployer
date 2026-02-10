@@ -2,7 +2,7 @@
 
 Ideas for future improvements that aren't urgent.
 
----
+______________________________________________________________________
 
 ## Notification Improvements
 
@@ -11,12 +11,14 @@ Ideas for future improvements that aren't urgent.
 **Current state**: CloudWatch alarms notify via SNS email subscriptions.
 
 **Enhancement**: Integrate with PagerDuty for:
+
 - Real-time alerting with escalation policies
 - On-call schedules and rotations
 - Incident management and tracking
 - Mobile push notifications
 
 **Implementation approach**:
+
 ```hcl
 # Option 1: SNS → PagerDuty integration
 resource "aws_sns_topic_subscription" "pagerduty" {
@@ -47,11 +49,13 @@ resource "aws_cloudwatch_event_rule" "alarm_state_change" {
 **Current state**: Email notifications only.
 
 **Enhancement**: Send alerts to Slack channels for:
+
 - Warning-level alerts (non-paging)
 - Deployment notifications
 - Daily summary reports
 
 **Implementation approach**:
+
 ```hcl
 # Lambda function to format and send to Slack
 resource "aws_lambda_function" "slack_notifier" {
@@ -72,11 +76,12 @@ resource "aws_sns_topic_subscription" "slack" {
 ### OpsGenie Integration
 
 **Alternative to PagerDuty** with similar features:
+
 - Alerting and on-call management
 - Often more cost-effective for smaller teams
 - Native AWS integration available
 
----
+______________________________________________________________________
 
 ## Infrastructure Enhancements
 
@@ -85,12 +90,14 @@ resource "aws_sns_topic_subscription" "slack" {
 **Current state**: Manual monthly process documented in HOWTO-PRODUCTION.md.
 
 **Enhancement**: Scheduled Lambda that:
+
 1. Creates temporary RDS instance from latest snapshot
-2. Runs basic connectivity/query test
-3. Reports success/failure to SNS
-4. Deletes temporary instance
+1. Runs basic connectivity/query test
+1. Reports success/failure to SNS
+1. Deletes temporary instance
 
 **Implementation approach**:
+
 ```python
 # Lambda function (pseudocode)
 def handler(event, context):
@@ -168,6 +175,7 @@ resource "aws_budgets_budget" "anomaly" {
 **Current state**: Rolling deployments via ECS.
 
 **Enhancement**: CodeDeploy integration for blue-green:
+
 - Instant rollback capability
 - Traffic shifting (canary, linear, all-at-once)
 - Pre/post deployment hooks
@@ -177,6 +185,7 @@ resource "aws_budgets_budget" "anomaly" {
 ### Multi-Region Disaster Recovery
 
 **Enhancement**: Secondary region with:
+
 - RDS read replica (can be promoted)
 - S3 cross-region replication
 - Route53 health checks and failover
@@ -184,7 +193,7 @@ resource "aws_budgets_budget" "anomaly" {
 
 **Complexity**: Very High - doubles infrastructure, requires careful planning.
 
----
+______________________________________________________________________
 
 ## Monitoring Enhancements
 
@@ -216,6 +225,7 @@ resource "aws_synthetics_canary" "health_check" {
 ### Real User Monitoring (RUM)
 
 **Enhancement**: CloudWatch RUM for frontend performance:
+
 - Page load times by geography
 - JavaScript error tracking
 - User session analysis
@@ -225,6 +235,7 @@ resource "aws_synthetics_canary" "health_check" {
 ### Distributed Tracing (X-Ray)
 
 **Enhancement**: AWS X-Ray integration for:
+
 - Request tracing across services
 - Performance bottleneck identification
 - Service map visualization
@@ -236,12 +247,14 @@ resource "aws_synthetics_canary" "health_check" {
 **Current state**: Dashboards created manually in AWS Console.
 
 **Enhancement**: CloudWatch dashboards managed in Terraform via `aws_cloudwatch_dashboard` resource. A standard production dashboard would include:
+
 - ECS: CPU/Memory per service, running task count
 - ALB: Request count, latency percentiles, error rates
 - RDS: CPU, connections, IOPS, free storage
 - ElastiCache: Memory, CPU, connections
 
 **Example**:
+
 ```hcl
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.name_prefix}-overview"
@@ -271,13 +284,14 @@ resource "aws_cloudwatch_dashboard" "main" {
 
 **Complexity**: Medium - verbose but straightforward.
 
----
+______________________________________________________________________
 
 ## Developer Experience
 
 ### Deploy Preview Environments
 
 **Enhancement**: Ephemeral environments for pull requests:
+
 - Spin up environment on PR open
 - Run integration tests
 - Tear down on PR close/merge
@@ -287,6 +301,7 @@ resource "aws_cloudwatch_dashboard" "main" {
 ### Local Development Environment
 
 **Enhancement**: Docker Compose configuration matching production:
+
 - LocalStack for AWS services
 - Same container images as production
 - Seeded test data
@@ -296,6 +311,7 @@ resource "aws_cloudwatch_dashboard" "main" {
 ### CLI Improvements
 
 **Enhancement ideas**:
+
 - `bin/status.py` - unified view of all environments
 - `bin/logs.py` - simplified log tailing across services
 - `bin/ssh.py` - ECS Exec wrapper with service selection
@@ -307,28 +323,32 @@ resource "aws_cloudwatch_dashboard" "main" {
 **Current state**: `bin/emergency.py` supports RDS snapshot restore but not downloading database backups locally. (Note: Read-only monitoring is now in `bin/ops.py`, while `bin/emergency.py` handles write operations.)
 
 **Enhancement**: Add `download-backup` command to emergency.py:
+
 ```bash
 uv run python bin/emergency.py myapp-production download-backup --output backup.sql
 ```
 
 **Implementation approach**:
+
 1. Run a one-off ECS task with `pg_dump` command
-2. Stream output to S3 (ECS tasks can't easily stream to local)
-3. Download from S3 to local machine
-4. Clean up S3 object
+1. Stream output to S3 (ECS tasks can't easily stream to local)
+1. Download from S3 to local machine
+1. Clean up S3 object
 
 Alternatively:
+
 - Use RDS native S3 export feature (requires setup)
 - Run pg_dump through a bastion host
 
 **Complexity**: High - requires ECS task orchestration, S3 bucket access, and handling large files. The RDS restore approach (`restore-db`) is usually more practical for recovery scenarios.
 
 **Why deferred**: For most emergencies, restoring to a new RDS instance is faster and safer than downloading a backup. If you need a local copy for analysis, you can:
-1. Create a restore instance: `emergency.py restore-db --snapshot <id>`
-2. Connect to the restore instance and run `pg_dump` manually
-3. Delete the restore instance when done
 
----
+1. Create a restore instance: `emergency.py restore-db --snapshot <id>`
+1. Connect to the restore instance and run `pg_dump` manually
+1. Delete the restore instance when done
+
+______________________________________________________________________
 
 ## Checkov Deferred Items
 
@@ -336,25 +356,26 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 
 ### RDS Enhancements (deferred)
 
-| Check | Description | Complexity | Notes |
-|-------|-------------|------------|-------|
-| CKV_AWS_161 | IAM authentication | Medium | Requires app changes to use IAM auth |
-| CKV2_AWS_69 | Encryption in transit | Low | Add `rds.force_ssl = 1` to parameter group |
+| Check       | Description           | Complexity | Notes                                      |
+| ----------- | --------------------- | ---------- | ------------------------------------------ |
+| CKV_AWS_161 | IAM authentication    | Medium     | Requires app changes to use IAM auth       |
+| CKV2_AWS_69 | Encryption in transit | Low        | Add `rds.force_ssl = 1` to parameter group |
 
 ### Other
 
-| Check | Description | Complexity | Notes |
-|-------|-------------|------------|-------|
-| CKV_AWS_134 | ElastiCache automatic backups | Low | Single-node cache, can rebuild from scratch |
-| CKV_AWS_51 | ECR immutable tags | Medium | Deploy workflow uses `latest` tag pattern |
+| Check       | Description                   | Complexity | Notes                                       |
+| ----------- | ----------------------------- | ---------- | ------------------------------------------- |
+| CKV_AWS_134 | ElastiCache automatic backups | Low        | Single-node cache, can rebuild from scratch |
+| CKV_AWS_51  | ECR immutable tags            | Medium     | Deploy workflow uses `latest` tag pattern   |
 
----
+______________________________________________________________________
 
 ## Security Enhancements
 
 ### Secrets Rotation
 
 **Enhancement**: Automated secrets rotation:
+
 - Database credentials via Secrets Manager rotation
 - API keys with scheduled Lambda
 - Notification on rotation
@@ -364,6 +385,7 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 ### Security Hub Integration
 
 **Enhancement**: AWS Security Hub for:
+
 - Aggregated security findings
 - Compliance standards (CIS, PCI DSS)
 - Automated remediation
@@ -373,52 +395,65 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 ### Container Image Signing
 
 **Enhancement**: Sign container images with cosign/Sigstore:
+
 - Verify image provenance
 - Prevent unauthorized images
 - Supply chain security
 
 **Complexity**: High - requires CI/CD changes and verification policies.
 
----
+______________________________________________________________________
 
 ## Advanced WAF Features
 
 The `modules/waf` module provides baseline protection. Future enhancements could include:
 
 ### Account Fraud Protection (ATP/ACFP)
+
 AWS offers paid rule groups for login and signup endpoints:
+
 - **Account Takeover Prevention (ATP)**: Protects login endpoints from credential stuffing
 - **Account Creation Fraud Prevention (ACFP)**: Blocks fraudulent account creation
 
 These require app-specific configuration (login/signup endpoint paths) and cost ~$10/month + per-request fees.
 
 ### Client-Side SDK Integration
+
 AWS WAF's advanced bot protection works best with JavaScript/mobile SDKs that provide challenge tokens:
+
 - Enables CAPTCHA and silent challenges
 - Improves bot detection accuracy
 - Requires app code changes to integrate the SDK
 
 ### CloudFront WAF Integration
+
 Currently the WAF module only supports ALB attachment. For apps using CloudFront:
+
 - WAF can attach to CloudFront distributions for edge-level protection
 - Requires scope="CLOUDFRONT" and us-east-1 region
 - Blocks bad traffic before it reaches the origin
 
 ### Centralized WAF Management
+
 For organizations with many environments:
+
 - **AWS Firewall Manager**: Enforce WAF policies across multiple accounts/regions
 - Requires AWS Organizations setup
 - Provides compliance reporting and automatic remediation
 
 ### Advanced Rate Limiting
+
 The current module uses simple IP-based rate limiting. Advanced options:
+
 - Rate limit by URI path (different limits for /api vs /static)
 - Rate limit by custom header (e.g., API key)
 - Rate limit by authenticated user (requires forwarded headers)
 - Aggregate by IP + URI for more precise control
 
 ### Shield Advanced
+
 For high-value applications needing DDoS protection:
+
 - $3,000/month subscription
 - Automatic application layer DDoS mitigation
 - 24/7 access to AWS DDoS Response Team
@@ -429,14 +464,16 @@ For high-value applications needing DDoS protection:
 The current large file upload approach requires increasing timeouts at multiple layers (gunicorn, ALB, WAF). A better pattern for UI uploads is **direct-to-S3 with presigned URLs**:
 
 ### How It Works
+
 1. User selects file in browser
-2. JavaScript requests a presigned upload URL from Django
-3. Django generates S3 presigned POST/PUT URL (with size limits, content-type restrictions)
-4. Browser uploads directly to S3 (bypasses Django, ALB, gunicorn entirely)
-5. S3 notifies Django via Lambda/SQS, or browser calls Django to confirm upload
-6. Django creates the File record and queues transcoding
+1. JavaScript requests a presigned upload URL from Django
+1. Django generates S3 presigned POST/PUT URL (with size limits, content-type restrictions)
+1. Browser uploads directly to S3 (bypasses Django, ALB, gunicorn entirely)
+1. S3 notifies Django via Lambda/SQS, or browser calls Django to confirm upload
+1. Django creates the File record and queues transcoding
 
 ### Benefits
+
 - **No timeout concerns**: S3 handles the upload, not Django
 - **Resumable**: Can use S3 multipart uploads for pause/resume support
 - **Progress tracking**: Browser can show real upload progress
@@ -444,6 +481,7 @@ The current large file upload approach requires increasing timeouts at multiple 
 - **Cost effective**: Less ALB/ECS compute time
 
 ### Implementation Notes
+
 - Use `boto3.client('s3').generate_presigned_post()` for browser uploads
 - Set conditions: content-length-range, content-type, key prefix
 - Consider S3 event notifications (Lambda or SQS) for upload completion
@@ -451,46 +489,49 @@ The current large file upload approach requires increasing timeouts at multiple 
 - CORS configuration needed on S3 bucket
 
 ### When to Use
+
 - Files > 100 MB
 - When upload reliability matters (resumable uploads)
 - High-traffic sites where Django worker availability is precious
 
 ### Current Approach (for reference)
+
 The timeout-based approach works for occasional large uploads:
+
 - `DATA_UPLOAD_MAX_MEMORY_SIZE` (Django): 1 GB
 - `--timeout 1800` (gunicorn): 30 minutes
 - `alb_idle_timeout`: 1800 seconds
 - WAF `SizeRestrictions_BODY`: excluded
 
----
+______________________________________________________________________
 
 ## Prioritization Notes
 
 When considering implementation:
 
 1. **High value, low effort**: ECR vulnerability notifications, cost anomaly detection
-2. **High value, medium effort**: Slack integration, synthetic monitoring
-3. **High value, high effort**: PagerDuty integration, automated restore testing
-4. **Lower priority**: Blue-green deployments, multi-region DR (only if specifically needed)
+1. **High value, medium effort**: Slack integration, synthetic monitoring
+1. **High value, high effort**: PagerDuty integration, automated restore testing
+1. **Lower priority**: Blue-green deployments, multi-region DR (only if specifically needed)
 
----
+______________________________________________________________________
 
 ## Contributing Ideas
 
 To add ideas to this list:
 
 1. Describe the current state/gap
-2. Explain the proposed enhancement
-3. Outline implementation approach
-4. Estimate complexity (Low/Medium/High/Very High)
-5. Note any dependencies or prerequisites
+1. Explain the proposed enhancement
+1. Outline implementation approach
+1. Estimate complexity (Low/Medium/High/Very High)
+1. Note any dependencies or prerequisites
 
----
+______________________________________________________________________
 
 We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert
 when there are unused secrets
 
----
+______________________________________________________________________
 
 ## Remove Django Default Commands Fallback
 
@@ -498,27 +539,30 @@ when there are unused secrets
 
 1. `DJANGO_DEFAULT_COMMANDS` dict (lines 636-644) - provides default commands for `migrate`, `shell`, `dbshell`, `createsuperuser`, `collectstatic`, `check`, `showmigrations` when not defined in deploy.toml
 
-2. Hardcoded DDL check (lines 619, 632) - assumes `migrate` and `makemigrations` need DDL credentials even if deploy.toml doesn't specify `ddl = true`
+1. Hardcoded DDL check (lines 619, 632) - assumes `migrate` and `makemigrations` need DDL credentials even if deploy.toml doesn't specify `ddl = true`
 
 **Problem**: These fallbacks:
+
 - Create "magic" behavior that's not explicit in deploy.toml
 - Mix available commands from two sources (deploy.toml + hardcoded defaults)
 - Could mask missing command definitions
 
 **Enhancement**: Remove fallbacks and require explicit command definitions:
+
 - All commands must be defined in deploy.toml's `[commands]` section
 - DDL requirements must be explicit via `ddl = true`
 - Fail fast with clear error if command not found
 
 **Migration path**:
+
 1. Audit all deploy.toml files to ensure they define all needed commands
-2. Add `shell`, `dbshell`, `createsuperuser` to deploy.toml files that use them
-3. Remove `DJANGO_DEFAULT_COMMANDS` and hardcoded DDL checks
-4. Update error messages to suggest adding missing commands to deploy.toml
+1. Add `shell`, `dbshell`, `createsuperuser` to deploy.toml files that use them
+1. Remove `DJANGO_DEFAULT_COMMANDS` and hardcoded DDL checks
+1. Update error messages to suggest adding missing commands to deploy.toml
 
 **Complexity**: Low - straightforward code removal and config updates.
 
----
+______________________________________________________________________
 
 ## SRE / Incident Response Improvements
 
@@ -544,16 +588,18 @@ availability_critical = 99.0      # Page at 99.0%
 ```
 
 **Benefits:**
+
 - CloudWatch alarms module can read targets and set thresholds automatically
 - `ops.py status` can report SLO compliance
 - Drift between documentation and reality becomes impossible
 - Error budget calculations become possible
 
 **Implementation approach:**
+
 1. Add `[slo]` section to config.toml schema
-2. Update cloudwatch-alarms module to use SLO values for thresholds
-3. Add `ops.py slo` command to report current compliance
-4. Consider error budget dashboard in CloudWatch
+1. Update cloudwatch-alarms module to use SLO values for thresholds
+1. Add `ops.py slo` command to report current compliance
+1. Consider error budget dashboard in CloudWatch
 
 **Complexity**: Medium - requires config schema update, alarm module changes, new ops.py command.
 
@@ -579,6 +625,7 @@ uv run python bin/ops.py myapp-production incident resolve
 ```
 
 **Features:**
+
 - Automatic timeline from command history during incident
 - Pre-populated postmortem with CloudWatch metrics from incident window
 - Links to relevant log queries
@@ -597,6 +644,7 @@ uv run python bin/ops.py myapp-production postmortem generate --start "2026-02-0
 ```
 
 **Generated content:**
+
 - Timeline of emergency.py commands run during window
 - CloudWatch metrics graphs (exported as images or links)
 - Error counts from logs
@@ -627,6 +675,7 @@ uv run python bin/ops.py myapp-production slo
 ```
 
 **Implementation:**
+
 - Query CloudWatch metrics for rolling window
 - Calculate against SLO targets from config.toml
 - Display remaining budget
@@ -635,9 +684,9 @@ uv run python bin/ops.py myapp-production slo
 
 ### Prioritization
 
-| Enhancement | Value | Effort | Priority |
-|-------------|-------|--------|----------|
-| SLOs in config.toml | High | Medium | 1 |
-| Incident start/resolve commands | Medium | Low | 2 |
-| Error budget dashboard | Medium | Medium | 3 |
-| Postmortem automation | Low | High | 4 |
+| Enhancement                     | Value  | Effort | Priority |
+| ------------------------------- | ------ | ------ | -------- |
+| SLOs in config.toml             | High   | Medium | 1        |
+| Incident start/resolve commands | Medium | Low    | 2        |
+| Error budget dashboard          | Medium | Medium | 3        |
+| Postmortem automation           | Low    | High   | 4        |

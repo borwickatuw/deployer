@@ -13,7 +13,7 @@ For first-time AWS account setup (IAM roles, bootstrap infrastructure), see [GET
 - [ ] Infrastructure deployed via OpenTofu
 - [ ] First deployment successful
 
----
+______________________________________________________________________
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ AWS_PROFILE=deployer-app aws sts get-caller-identity
 
 The deployer scripts automatically select the correct profile via `.env`. Copy `.env.example` to `.env` to configure.
 
----
+______________________________________________________________________
 
 ## Initial Setup
 
@@ -68,6 +68,7 @@ uv run python /path/to/deployer/bin/init.py deploy-toml --from-compose docker-co
 ```
 
 The generator will:
+
 - Extract services with `build` configurations
 - Filter out infrastructure services (postgres, redis, etc.)
 - Detect your framework (Django, Rails, etc.)
@@ -141,6 +142,7 @@ uv run python bin/init.py environment \
 ```
 
 This creates `environments/myapp-staging/` with:
+
 ```
 environments/myapp-staging/
 ├── main.tf           # Infrastructure module reference
@@ -152,6 +154,7 @@ environments/myapp-staging/
 **Environment Naming Convention:**
 
 Environment directories follow the pattern `<app-name>-<env-type>` where:
+
 - `<app-name>` can contain hyphens (e.g., `my-cool-app`)
 - `<env-type>` must be `staging` or `production` and comes at the end
 
@@ -235,7 +238,7 @@ aws ssm put-parameter \
   --value "postgres://user:password@host/dbname"
 ```
 
----
+______________________________________________________________________
 
 ## Deploying
 
@@ -246,6 +249,7 @@ uv run python bin/deploy.py myapp-staging --dry-run
 ```
 
 This shows:
+
 - Which images will be built
 - What environment variables will be set
 - Which services will be created/updated
@@ -259,13 +263,14 @@ uv run python bin/deploy.py myapp-staging
 Note: Requires environment to be linked via `link-environments.py`, or use `--deploy-toml` flag.
 
 The script will:
-1. Log into ECR
-2. Build and push Docker images
-3. Run database migrations (if configured)
-4. Create/update ECS services
-5. Wait for services to stabilize
 
----
+1. Log into ECR
+1. Build and push Docker images
+1. Run database migrations (if configured)
+1. Create/update ECS services
+1. Wait for services to stabilize
+
+______________________________________________________________________
 
 ## Verification
 
@@ -302,7 +307,7 @@ aws logs filter-log-events \
   --filter-pattern "ERROR"
 ```
 
----
+______________________________________________________________________
 
 ## Post-Deployment Tasks
 
@@ -356,7 +361,7 @@ uv run python bin/cognito.py create myapp-staging \
 
 See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for full user management documentation.
 
----
+______________________________________________________________________
 
 ## Managing Environment Lifecycle
 
@@ -374,13 +379,14 @@ uv run python bin/environment.py start myapp-staging
 ```
 
 **Notes:**
+
 - ElastiCache and ALB cannot be stopped (only deleted), so these continue to incur costs
 - RDS auto-restarts after 7 days if stopped (AWS limitation)
 - Start always waits for RDS to be available before scaling ECS back up
 
 See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for automated scheduling to stop/start environments on a schedule.
 
----
+______________________________________________________________________
 
 ## Where to Make Changes
 
@@ -388,42 +394,42 @@ Quick reference for which file to edit based on what you want to change.
 
 ### Service Configuration
 
-| If you want to... | Edit this file | Section/Key |
-|-------------------|----------------|-------------|
-| Change CPU or memory | `services.auto.tfvars` | `services.*.cpu`, `services.*.memory` |
-| Change replica count | `services.auto.tfvars` | `services.*.replicas` |
-| Add auto-scaling | `services.auto.tfvars` | `scaling` block |
-| Change the Docker command | `deploy.toml` (app repo) | `services.*.command` |
-| Change health check path | `deploy.toml` (app repo) | `services.*.health_check_path` |
-| Change health check timing | `services.auto.tfvars` | `health_check` block |
-| Set minimum resource requirements | `deploy.toml` (app repo) | `services.*.min_cpu`, `services.*.min_memory` |
-| Add a new service | Both: `deploy.toml` + `services.auto.tfvars` | Define service in both |
+| If you want to...                 | Edit this file                               | Section/Key                                   |
+| --------------------------------- | -------------------------------------------- | --------------------------------------------- |
+| Change CPU or memory              | `services.auto.tfvars`                       | `services.*.cpu`, `services.*.memory`         |
+| Change replica count              | `services.auto.tfvars`                       | `services.*.replicas`                         |
+| Add auto-scaling                  | `services.auto.tfvars`                       | `scaling` block                               |
+| Change the Docker command         | `deploy.toml` (app repo)                     | `services.*.command`                          |
+| Change health check path          | `deploy.toml` (app repo)                     | `services.*.health_check_path`                |
+| Change health check timing        | `services.auto.tfvars`                       | `health_check` block                          |
+| Set minimum resource requirements | `deploy.toml` (app repo)                     | `services.*.min_cpu`, `services.*.min_memory` |
+| Add a new service                 | Both: `deploy.toml` + `services.auto.tfvars` | Define service in both                        |
 
 ### Environment Variables & Secrets
 
-| If you want to... | Edit this file | Section/Key |
-|-------------------|----------------|-------------|
-| Add/change an environment variable | `deploy.toml` (app repo) | `[environment]` |
-| Add/change a secret | `deploy.toml` (app repo) + SSM | `[secrets]` + create SSM parameter |
-| Change database URL injection | `deploy.toml` (app repo) | `[environment]` or `[secrets]` |
+| If you want to...                  | Edit this file                 | Section/Key                        |
+| ---------------------------------- | ------------------------------ | ---------------------------------- |
+| Add/change an environment variable | `deploy.toml` (app repo)       | `[environment]`                    |
+| Add/change a secret                | `deploy.toml` (app repo) + SSM | `[secrets]` + create SSM parameter |
+| Change database URL injection      | `deploy.toml` (app repo)       | `[environment]` or `[secrets]`     |
 
 ### Infrastructure
 
-| If you want to... | Edit this file | Then run |
-|-------------------|----------------|----------|
-| Change domain name | `services.auto.tfvars` | `tofu apply` |
-| Change database size | `main.tf` | `tofu apply` |
-| Change Redis/cache size | `main.tf` | `tofu apply` |
-| Add S3 bucket | `main.tf` | `tofu apply` |
-| Change VPC/networking | `main.tf` | `tofu apply` |
+| If you want to...       | Edit this file         | Then run     |
+| ----------------------- | ---------------------- | ------------ |
+| Change domain name      | `services.auto.tfvars` | `tofu apply` |
+| Change database size    | `main.tf`              | `tofu apply` |
+| Change Redis/cache size | `main.tf`              | `tofu apply` |
+| Add S3 bucket           | `main.tf`              | `tofu apply` |
+| Change VPC/networking   | `main.tf`              | `tofu apply` |
 
 ### Deployment Behavior
 
-| If you want to... | Edit this file | Section/Key |
-|-------------------|----------------|-------------|
-| Speed up staging deployments | `config.toml` | `[deployment]` |
-| Enable/disable circuit breaker | `config.toml` | `deployment.circuit_breaker_enabled` |
-| Change Cognito test credentials | `config.toml` | `[cognito]` |
+| If you want to...               | Edit this file | Section/Key                          |
+| ------------------------------- | -------------- | ------------------------------------ |
+| Speed up staging deployments    | `config.toml`  | `[deployment]`                       |
+| Enable/disable circuit breaker  | `config.toml`  | `deployment.circuit_breaker_enabled` |
+| Change Cognito test credentials | `config.toml`  | `[cognito]`                          |
 
 ### Quick Decision Tree
 
@@ -446,7 +452,7 @@ Want to change DEPLOYMENT BEHAVIOR (speed, rollback)?
 
 See [DESIGN.md](DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
 
----
+______________________________________________________________________
 
 ## Common Patterns
 
@@ -516,14 +522,14 @@ health_check_path = "/admin/health"
 path_pattern = "/admin/*"
 ```
 
----
+______________________________________________________________________
 
 ## Rollback
 
 If deployment fails:
 
 1. **Check logs** - View ECS task logs and events
-2. **Rollback to previous revision**:
+1. **Rollback to previous revision**:
    ```bash
    # Find previous revision
    aws ecs list-task-definitions --family-prefix myapp-staging-web
@@ -534,15 +540,16 @@ If deployment fails:
      --service web \
      --task-definition myapp-staging-web:PREVIOUS_REVISION
    ```
-3. **Fix and redeploy** - Address the issue and deploy again
+1. **Fix and redeploy** - Address the issue and deploy again
 
----
+______________________________________________________________________
 
 ## Troubleshooting
 
 ### CSRF verification failed (Django)
 
 Add to your Django settings:
+
 ```python
 CSRF_TRUSTED_ORIGINS = [f"https://{os.environ.get('DOMAIN_NAME', 'localhost')}"]
 ```
@@ -554,6 +561,7 @@ Ensure `ALLOWED_HOSTS` includes your domain and that `local_settings.py` is excl
 ### Static files 404
 
 For Django, configure whitenoise:
+
 ```python
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -566,17 +574,19 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 ### Health check failures
 
 1. Verify the health check endpoint returns 200 status
-2. Check CloudWatch logs for application errors
-3. Ensure the health check path in `services.auto.tfvars` matches your app
+1. Check CloudWatch logs for application errors
+1. Ensure the health check path in `services.auto.tfvars` matches your app
 
 ### Service stuck in "pending" state
 
 Common causes:
+
 - Missing SSM parameters (check CloudWatch logs)
 - ECR image not found
 - Security group or subnet misconfiguration
 
 Check task stopped reason in ECS console or run:
+
 ```bash
 aws ecs describe-tasks --cluster myapp-staging-cluster --tasks <task-arn>
 ```
@@ -584,12 +594,13 @@ aws ecs describe-tasks --cluster myapp-staging-cluster --tasks <task-arn>
 ### 302 redirects on health check
 
 This usually indicates Cognito authentication is blocking the health check. Either:
+
 1. Exclude the health check path from Cognito protection
-2. Configure a test account for authenticated health checks (see STAGING-ENVIRONMENTS.md)
+1. Configure a test account for authenticated health checks (see STAGING-ENVIRONMENTS.md)
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
----
+______________________________________________________________________
 
 ## Checklists
 
@@ -623,7 +634,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 - [ ] ECS tasks have no public IPs
 - [ ] Database only accessible from ECS security group
 
----
+______________________________________________________________________
 
 ## Next Steps
 

@@ -29,6 +29,7 @@ Before starting any simplification work:
 ### Large File Analysis
 
 Files over these thresholds often benefit from being split into focused modules:
+
 - **Python scripts**: 300 lines
 - **Python library modules**: 250 lines
 - **Terraform modules**: 200 lines
@@ -47,9 +48,9 @@ find . -name "*.tf" ! -path "./.terraform/*" -exec wc -l {} + | sort -rn | head 
 **Criteria for splitting files:**
 
 1. File has multiple distinct responsibilities (e.g., different AWS services)
-2. File has groups of related functions that could be isolated
-3. File has utility functions mixed with core business logic
-4. File is difficult to navigate when looking for specific functionality
+1. File has groups of related functions that could be isolated
+1. File has utility functions mixed with core business logic
+1. File is difficult to navigate when looking for specific functionality
 
 **Questions to ask:**
 
@@ -109,6 +110,7 @@ grep -rn "^    import \|^    from " src scripts --include="*.py"
 ```
 
 Inline imports sometimes indicate:
+
 - Circular dependency issues that need restructuring
 - Lazy loading that could be simplified
 - Import organization problems
@@ -160,6 +162,7 @@ Maintainability grades: A (100-20), B (19-10), C (9-0)
 ```bash
 uv run ruff check bin/ src/ --select=F401,F841,C901
 ```
+
 - F401: unused imports
 - F841: unused variables
 - C901: high cyclomatic complexity
@@ -193,16 +196,16 @@ grep -rn "t3\.\|t4g\." modules --include="*.tf"
 **Step-by-step process:**
 
 1. **Identify the grouping**: Determine which functions/classes belong together
-2. **Create the new module**: Create a new file in the appropriate package
-3. **Move code**: Cut and paste the code, updating imports
-4. **Add re-exports** (if needed for backwards compatibility):
+1. **Create the new module**: Create a new file in the appropriate package
+1. **Move code**: Cut and paste the code, updating imports
+1. **Add re-exports** (if needed for backwards compatibility):
    ```python
    # In original file, temporarily:
    from .new_module import function_name  # noqa: F401
    ```
-5. **Update imports**: Find and update all imports across the codebase
-6. **Remove re-exports**: Once all imports are updated, remove backwards compatibility
-7. **Run tests**: Verify everything still works
+1. **Update imports**: Find and update all imports across the codebase
+1. **Remove re-exports**: Once all imports are updated, remove backwards compatibility
+1. **Run tests**: Verify everything still works
 
 **Example - splitting a large script:**
 
@@ -295,9 +298,9 @@ def get_client(service: str, region: str | None = None) -> boto3.client:
 **Techniques:**
 
 1. **Extract helper methods**: Move logical chunks into well-named private functions
-2. **Use early returns**: Reduce nesting by handling edge cases first
-3. **Split into smaller functions**: Each doing one thing well
-4. **Use dataclasses for config**: Replace dictionaries with typed structures
+1. **Use early returns**: Reduce nesting by handling edge cases first
+1. **Split into smaller functions**: Each doing one thing well
+1. **Use dataclasses for config**: Replace dictionaries with typed structures
 
 **Example - before:**
 
@@ -377,12 +380,12 @@ wc -l CLAUDE.md docs/*.md | sort -rn
 
 **Thresholds to consider:**
 
-| File Type | Threshold | Action |
-|-----------|-----------|--------|
-| CLAUDE.md | 100 lines | Keep slim; move details to docs/ |
-| HOWTO guides | 400 lines | Consider splitting by topic |
-| Reference docs | 600 lines | Consider splitting by section |
-| DECISIONS.md | No limit | Chronological log, grows naturally |
+| File Type      | Threshold | Action                             |
+| -------------- | --------- | ---------------------------------- |
+| CLAUDE.md      | 100 lines | Keep slim; move details to docs/   |
+| HOWTO guides   | 400 lines | Consider splitting by topic        |
+| Reference docs | 600 lines | Consider splitting by section      |
+| DECISIONS.md   | No limit  | Chronological log, grows naturally |
 
 ### CLAUDE.md Considerations
 
@@ -469,28 +472,28 @@ These are known areas that could benefit from simplification:
 
 ### Code - Potential Opportunities
 
-| File | Lines | Notes |
-|------|-------|-------|
-| `bin/deploy.py` | 827 | Could extract Docker/ECR/ECS logic to library |
-| `tests/unit/test_audit.py` | 452 | Large but may be appropriate for coverage |
-| `bin/cognito.py` | 446 | Could share patterns with environment.py |
+| File                       | Lines | Notes                                         |
+| -------------------------- | ----- | --------------------------------------------- |
+| `bin/deploy.py`            | 827   | Could extract Docker/ECR/ECS logic to library |
+| `tests/unit/test_audit.py` | 452   | Large but may be appropriate for coverage     |
+| `bin/cognito.py`           | 446   | Could share patterns with environment.py      |
 
 ### Terraform - Potential Opportunities
 
-| Module | Lines | Notes |
-|--------|-------|-------|
-| `modules/alb/main.tf` | 259 | Could split listeners, security, target groups |
-| `modules/staging-scheduler/main.tf` | 229 | Lambda + EventBridge could be separated |
-| `modules/ecs-service/main.tf` | 225 | Could extract IAM, security groups |
+| Module                              | Lines | Notes                                          |
+| ----------------------------------- | ----- | ---------------------------------------------- |
+| `modules/alb/main.tf`               | 259   | Could split listeners, security, target groups |
+| `modules/staging-scheduler/main.tf` | 229   | Lambda + EventBridge could be separated        |
+| `modules/ecs-service/main.tf`       | 225   | Could extract IAM, security groups             |
 
 ### Documentation - Current State
 
-| Document | Lines | Status |
-|----------|-------|--------|
-| `docs/CONFIG-REFERENCE.md` | 576 | Reference doc, may be appropriate |
-| `docs/ARCHITECTURE.md` | 339 | Moderate, acceptable |
-| `docs/STAGING-ENVIRONMENTS.md` | ~200 | Merged from ACCESS + SCHEDULING |
-| `CLAUDE.md` | 59 | Well under threshold |
+| Document                       | Lines | Status                            |
+| ------------------------------ | ----- | --------------------------------- |
+| `docs/CONFIG-REFERENCE.md`     | 576   | Reference doc, may be appropriate |
+| `docs/ARCHITECTURE.md`         | 339   | Moderate, acceptable              |
+| `docs/STAGING-ENVIRONMENTS.md` | ~200  | Merged from ACCESS + SCHEDULING   |
+| `CLAUDE.md`                    | 59    | Well under threshold              |
 
 ## Quick Reference
 
@@ -549,6 +552,7 @@ grep -l "staging" docs/*.md
 ### Commit Message Templates
 
 **Code refactoring:**
+
 ```
 Refactor: Extract <module> from <file>
 
@@ -560,6 +564,7 @@ Part of codebase simplification effort.
 ```
 
 **Terraform refactoring:**
+
 ```
 Refactor: Split <module> into submodules
 
@@ -570,6 +575,7 @@ Part of infrastructure simplification effort.
 ```
 
 **Documentation simplification:**
+
 ```
 Docs: Reorganize <topic> documentation
 

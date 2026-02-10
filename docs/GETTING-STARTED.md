@@ -6,15 +6,16 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ## Prerequisites
 
-| Tool | Version | Installation | Purpose |
-|------|---------|--------------|---------|
-| Python | 3.12+ | `brew install python@3.12` | Deploy scripts |
-| uv | Latest | `brew install uv` | Python package manager |
-| OpenTofu | 1.6+ | `brew install opentofu` | Infrastructure as code |
-| AWS CLI | v2 | `brew install awscli` | AWS operations |
-| Docker | Latest | `brew install docker` | Container builds |
+| Tool     | Version | Installation               | Purpose                |
+| -------- | ------- | -------------------------- | ---------------------- |
+| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts         |
+| uv       | Latest  | `brew install uv`          | Python package manager |
+| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code |
+| AWS CLI  | v2      | `brew install awscli`      | AWS operations         |
+| Docker   | Latest  | `brew install docker`      | Container builds       |
 
 **Verify your setup:**
+
 ```bash
 python3 --version    # Should be 3.12 or higher
 uv --version
@@ -24,6 +25,7 @@ docker --version
 ```
 
 **Additional requirements:**
+
 - AWS account with Administrator access (for initial setup only)
 - AWS CLI configured (`aws configure`)
 
@@ -99,6 +101,7 @@ AWS_PROFILE=admin tofu apply
 ```
 
 This creates:
+
 - S3 bucket for terraform state
 - ECS role permissions boundary
 - `deployer-app-deploy` role (for deploy.py)
@@ -106,6 +109,7 @@ This creates:
 - `deployer-cognito-admin` role (for Cognito management)
 
 **Note:** If you have existing IAM resources from a previous setup, run the import script first:
+
 ```bash
 AWS_PROFILE=admin ../bootstrap/import-existing.sh
 ```
@@ -206,7 +210,7 @@ Each should show the assumed role ARN.
 Once you've verified all roles work correctly:
 
 1. **Remove AdministratorAccess** from any existing IAM user
-2. **Document** that admin access is only needed for:
+1. **Document** that admin access is only needed for:
    - Modifying the deployer IAM policies themselves
    - Adding new projects (requires updating ARN patterns)
    - Creating the initial IAM infrastructure
@@ -216,10 +220,12 @@ Once you've verified all roles work correctly:
 When you need to add a new project (not just a new environment of an existing project):
 
 1. **Update bootstrap configuration**:
+
    - Edit your bootstrap instance's `terraform.tfvars`
    - Add the project name to `project_prefixes`
 
-2. **Apply the changes**:
+1. **Apply the changes**:
+
    ```bash
    cd ~/code/deployer-environments/bootstrap-myaccount
    AWS_PROFILE=admin tofu plan
@@ -227,10 +233,11 @@ When you need to add a new project (not just a new environment of an existing pr
    ```
 
    This updates:
+
    - IAM policies with the new project ARN patterns
    - ECS permissions boundary
 
-3. **Create the environment** - ECR repositories are created automatically when you run `tofu apply` (via `ecr_repository_names` in terraform.tfvars)
+1. **Create the environment** - ECR repositories are created automatically when you run `tofu apply` (via `ecr_repository_names` in terraform.tfvars)
 
 ## Multi-Account Setup
 

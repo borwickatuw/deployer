@@ -79,7 +79,7 @@ aws ssm get-parameter \
   --with-decryption --query 'Parameter.Value' --output text
 ```
 
----
+______________________________________________________________________
 
 ## Cost Savings & Scheduling
 
@@ -87,12 +87,12 @@ Staging environments can be stopped during off-hours to reduce costs.
 
 ### What Gets Stopped
 
-| Resource | When Stopped | Savings |
-|----------|--------------|---------|
-| ECS Fargate | Scaled to 0 | 100% |
-| RDS PostgreSQL | Stopped | ~90% (storage charges continue) |
-| ElastiCache | Keeps running | 0% (cannot be stopped) |
-| ALB, NAT Gateway | Keep running | 0% |
+| Resource         | When Stopped  | Savings                         |
+| ---------------- | ------------- | ------------------------------- |
+| ECS Fargate      | Scaled to 0   | 100%                            |
+| RDS PostgreSQL   | Stopped       | ~90% (storage charges continue) |
+| ElastiCache      | Keeps running | 0% (cannot be stopped)          |
+| ALB, NAT Gateway | Keep running  | 0%                              |
 
 **Estimated savings:** ~50-60% reduction in staging costs.
 
@@ -168,7 +168,7 @@ aws lambda invoke \
 aws logs tail /aws/lambda/myapp-staging-scheduler --follow
 ```
 
----
+______________________________________________________________________
 
 ## Custom Error Pages
 
@@ -177,9 +177,9 @@ When staging environments are stopped (ECS scaled to 0, RDS stopped), the ALB re
 ### How It Works
 
 1. CloudFront distribution is created in front of the ALB
-2. An S3 bucket stores the custom error page HTML
-3. CloudFront intercepts 502, 503, and 504 responses from the ALB
-4. Users see a branded "Service Temporarily Unavailable" page instead of a raw error
+1. An S3 bucket stores the custom error page HTML
+1. CloudFront intercepts 502, 503, and 504 responses from the ALB
+1. Users see a branded "Service Temporarily Unavailable" page instead of a raw error
 
 ### Enabling CloudFront Error Pages
 
@@ -219,38 +219,45 @@ output "cloudfront_alb_error_bucket" {
 }
 ```
 
----
+______________________________________________________________________
 
 ## Troubleshooting
 
 ### Cognito Issues
 
 **"Redirect URI mismatch"**
+
 - Verify `domain_name` matches your actual domain
 - Access via HTTPS, not HTTP
 
 **User can't log in**
+
 ```bash
 # Check user status
 uv run python bin/cognito.py list myapp-staging
 ```
+
 If status is `FORCE_CHANGE_PASSWORD`, user needs to complete first login or reset password with `--permanent`.
 
 **Certificate not validating**
+
 - Verify `route53_zone_id` is correct
 - DNS propagation can take up to 30 minutes
 
 ### Scheduling Issues
 
 **Environment won't stop**
+
 ```bash
 aws logs tail /aws/lambda/myapp-staging-scheduler --since 1h
 ```
+
 Common cause: RDS in transitional state.
 
 **Environment won't start**
+
 1. Check if RDS is stopped: `./bin/environment.py status myapp-staging`
-2. Try manual start: `./bin/environment.py start myapp-staging`
+1. Try manual start: `./bin/environment.py start myapp-staging`
 
 **Health checks failing after start**
 Normal - ECS services fail health checks while RDS is starting (5-10 minutes). The start command waits for RDS before scaling ECS, but health checks may still fail briefly during initialization.
@@ -261,7 +268,7 @@ Normal - ECS services fail health checks while RDS is starting (5-10 minutes). T
 - **ElastiCache**: Cannot be stopped without deletion. Stays running.
 - **Sessions**: Cognito sessions last 1 hour by default.
 
----
+______________________________________________________________________
 
 ## Architecture
 

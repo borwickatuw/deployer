@@ -179,6 +179,7 @@ region = us-west-2
 Each environment's `config.toml` specifies which AWS profiles to use:
 
 **myapp-staging/config.toml:**
+
 ```toml
 [aws]
 deploy_profile = "deployer-app-staging"
@@ -191,6 +192,7 @@ type = "staging"
 ```
 
 **myapp-production/config.toml:**
+
 ```toml
 [aws]
 deploy_profile = "deployer-app-production"
@@ -259,32 +261,35 @@ cognito_profile = "deployer-cognito"
 If you're moving from a single account to multiple accounts:
 
 1. Create the new account and bootstrap it
-2. Create new environment directories for the new account
-3. Run `tofu apply` to create infrastructure in the new account
-4. Migrate data (database dumps, S3 objects) as needed
-5. Update DNS to point to the new environment
-6. Decommission the old environment
+1. Create new environment directories for the new account
+1. Run `tofu apply` to create infrastructure in the new account
+1. Migrate data (database dumps, S3 objects) as needed
+1. Update DNS to point to the new environment
+1. Decommission the old environment
 
 ## Troubleshooting
 
 ### "Unable to assume role"
 
 Verify:
+
 1. The IAM user exists in the target account
-2. The user has the `assume-deployer-roles` policy attached
-3. The role's trust policy includes the user's ARN
-4. The AWS CLI profile is configured correctly
+1. The user has the `assume-deployer-roles` policy attached
+1. The role's trust policy includes the user's ARN
+1. The AWS CLI profile is configured correctly
 
 ### "Access Denied" on resources
 
 Verify:
+
 1. The project name is in the bootstrap's `project_prefixes`
-2. The bootstrap has been applied after adding the project
-3. You're using the correct profile for the operation
+1. The bootstrap has been applied after adding the project
+1. You're using the correct profile for the operation
 
 ### Profile not being read from config.toml
 
 Verify:
+
 1. The `[aws]` section exists in config.toml
-2. The profile key matches the operation (e.g., `deploy_profile` for deploy.py)
-3. There are no syntax errors in config.toml
+1. The profile key matches the operation (e.g., `deploy_profile` for deploy.py)
+1. There are no syntax errors in config.toml

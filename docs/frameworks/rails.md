@@ -138,13 +138,13 @@ python bin/ecs-run.py exec myapp-staging bundle exec rails console
 ### Assets Not Loading
 
 1. Ensure `RAILS_SERVE_STATIC_FILES=true` is set
-2. Verify assets are precompiled in Dockerfile
-3. Check that `public/assets/` is not in `.dockerignore`
+1. Verify assets are precompiled in Dockerfile
+1. Check that `public/assets/` is not in `.dockerignore`
 
 ### Database Connection Issues
 
 1. Verify `DATABASE_URL` SSM parameter is set correctly
-2. Check security groups allow ECS tasks to reach RDS
-3. Ensure database exists and migrations have run
+1. Check security groups allow ECS tasks to reach RDS
+1. Ensure database exists and migrations have run
 
 See [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) for more debugging steps.

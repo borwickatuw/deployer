@@ -14,15 +14,16 @@ The `modules/waf` module provides Web Application Firewall protection for your a
 
 ## Pricing
 
-| Component | Monthly Cost |
-|-----------|-------------|
-| Base Web ACL | $5 |
-| Managed rule groups | $1 each |
-| Request processing | $0.60/million |
-| Bot Control (Common) | $10 + $1/million |
+| Component              | Monthly Cost      |
+| ---------------------- | ----------------- |
+| Base Web ACL           | $5                |
+| Managed rule groups    | $1 each           |
+| Request processing     | $0.60/million     |
+| Bot Control (Common)   | $10 + $1/million  |
 | Bot Control (Targeted) | $10 + $10/million |
 
 **Typical costs:**
+
 - Basic protection (staging): ~$15-20/month
 - Standard protection (production): ~$20-25/month
 - With Bot Control: ~$35-50/month
@@ -82,27 +83,27 @@ module "waf" {
 
 ### Protection Rules
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ip_reputation_enabled` | `true` | Block known malicious IPs |
-| `common_rules_enabled` | `true` | OWASP Top 10 protection |
-| `known_bad_inputs_enabled` | `true` | Block exploit patterns |
-| `sqli_rules_enabled` | `false` | Additional SQL injection rules |
+| Variable                   | Default | Description                    |
+| -------------------------- | ------- | ------------------------------ |
+| `ip_reputation_enabled`    | `true`  | Block known malicious IPs      |
+| `common_rules_enabled`     | `true`  | OWASP Top 10 protection        |
+| `known_bad_inputs_enabled` | `true`  | Block exploit patterns         |
+| `sqli_rules_enabled`       | `false` | Additional SQL injection rules |
 
 ### Rate Limiting
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `rate_limit_enabled` | `true` | Enable rate limiting |
-| `rate_limit_requests` | `2000` | Max requests per IP |
-| `rate_limit_window` | `300` | Evaluation window (seconds) |
+| Variable              | Default | Description                 |
+| --------------------- | ------- | --------------------------- |
+| `rate_limit_enabled`  | `true`  | Enable rate limiting        |
+| `rate_limit_requests` | `2000`  | Max requests per IP         |
+| `rate_limit_window`   | `300`   | Evaluation window (seconds) |
 
 ### Bot Control (Paid)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `bot_control_level` | `"none"` | `"none"`, `"common"`, or `"targeted"` |
-| `bot_control_scope_paths` | `[]` | Limit bot control to specific paths |
+| Variable                  | Default  | Description                           |
+| ------------------------- | -------- | ------------------------------------- |
+| `bot_control_level`       | `"none"` | `"none"`, `"common"`, or `"targeted"` |
+| `bot_control_scope_paths` | `[]`     | Limit bot control to specific paths   |
 
 **Tip:** Use `bot_control_scope_paths` to reduce costs by only applying bot control to sensitive endpoints:
 
@@ -112,19 +113,19 @@ bot_control_scope_paths = ["/login", "/api/", "/admin/"]
 
 ### Geographic and IP Rules
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `geo_block_countries` | `[]` | Country codes to block (e.g., `["RU", "CN"]`) |
-| `ip_allowlist` | `[]` | CIDRs that bypass all rules |
-| `health_check_paths` | `["/health", "/health/"]` | Paths that bypass WAF |
+| Variable              | Default                   | Description                                   |
+| --------------------- | ------------------------- | --------------------------------------------- |
+| `geo_block_countries` | `[]`                      | Country codes to block (e.g., `["RU", "CN"]`) |
+| `ip_allowlist`        | `[]`                      | CIDRs that bypass all rules                   |
+| `health_check_paths`  | `["/health", "/health/"]` | Paths that bypass WAF                         |
 
 ### Deployment and Logging
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable               | Default  | Description                  |
+| ---------------------- | -------- | ---------------------------- |
 | `rule_action_override` | `"none"` | Set to `"count"` for testing |
-| `logging_enabled` | `true` | Enable CloudWatch logging |
-| `log_retention_days` | `30` | Log retention period |
+| `logging_enabled`      | `true`   | Enable CloudWatch logging    |
+| `log_retention_days`   | `30`     | Log retention period         |
 
 ## Deployment Strategy
 
@@ -142,6 +143,7 @@ module "waf" {
 ### 2. Monitor CloudWatch Logs
 
 Check the WAF logs in CloudWatch (log group: `aws-waf-logs-{name_prefix}`) for:
+
 - False positives (legitimate traffic being matched)
 - Expected blocks (malicious traffic)
 
@@ -161,6 +163,7 @@ module "waf" {
 ### CloudWatch Metrics
 
 WAF publishes metrics to CloudWatch under the `AWS/WAFV2` namespace:
+
 - `AllowedRequests`
 - `BlockedRequests`
 - `CountedRequests`
@@ -178,9 +181,9 @@ aws logs filter-log-events \
 ### AWS Console
 
 1. Go to AWS WAF & Shield console
-2. Select your Web ACL
-3. View "Sampled requests" for recent matches
-4. Check "CloudWatch metrics" for trends
+1. Select your Web ACL
+1. View "Sampled requests" for recent matches
+1. Check "CloudWatch metrics" for trends
 
 ## Common Issues
 
@@ -195,7 +198,7 @@ health_check_paths = ["/health", "/health/", "/api/health"]
 ### Legitimate Traffic Blocked
 
 1. Check CloudWatch logs to identify which rule is triggering
-2. Options:
+1. Options:
    - Add source IP to `ip_allowlist`
    - Adjust `rate_limit_requests` if rate limiting
    - Disable specific rule set if causing issues
@@ -203,9 +206,10 @@ health_check_paths = ["/health", "/health/", "/api/health"]
 ### High WAF Costs
 
 Reduce costs by:
+
 1. Using `bot_control_scope_paths` to limit expensive bot control inspection
-2. Setting appropriate `rate_limit_requests` to block abuse early
-3. Positioning cheaper rules (rate limit, geo block) before expensive ones
+1. Setting appropriate `rate_limit_requests` to block abuse early
+1. Positioning cheaper rules (rate limit, geo block) before expensive ones
 
 ## See Also
 

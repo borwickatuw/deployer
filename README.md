@@ -7,10 +7,11 @@ OpenTofu infrastructure and deployment tooling for AWS ECS applications.
 **First-time users:** Follow this documentation sequence:
 
 1. **[Getting Started](docs/GETTING-STARTED.md)** - One-time AWS account setup (IAM roles, bootstrap)
-2. **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Create environments and deploy your first app
-3. **[Design](docs/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
+1. **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Create environments and deploy your first app
+1. **[Design](docs/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
 
 **Quick reference:**
+
 - [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
 - [Architecture](docs/ARCHITECTURE.md) - AWS infrastructure and **cost estimates** (~$150-250/mo staging, ~$1,600-2,100/mo production)
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - When things go wrong
@@ -20,25 +21,28 @@ OpenTofu infrastructure and deployment tooling for AWS ECS applications.
 This repository provides:
 
 1. **Shared Infrastructure Modules** - Reusable OpenTofu modules for VPC, ECS, RDS, ElastiCache, S3, and ALB
-2. **Deploy Script** - A Python script that reads TOML application configs and deploys to ECS
-3. **Supporting Scripts** - Tools for Cognito user management, secrets, capacity reporting, and more
+1. **Deploy Script** - A Python script that reads TOML application configs and deploys to ECS
+1. **Supporting Scripts** - Tools for Cognito user management, secrets, capacity reporting, and more
 
 Environment configurations are stored in a separate directory (configured via `DEPLOYER_ENVIRONMENTS_DIR` in `.env`).
 
 ## Documentation
 
 ### Core Guides
+
 - **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - First-time setup and deployment walkthrough
 - **[Configuration Reference](docs/CONFIG-REFERENCE.md)** - Complete TOML configuration options
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ### Architecture & Design
+
 - **[Design](docs/DESIGN.md)** - How deployer works and why it's structured this way
 - **[Architecture](docs/ARCHITECTURE.md)** - AWS infrastructure details and cost estimates
 - **[Decisions](docs/DECISIONS.md)** - Architecture decision records
 - **[Supported Architectures](docs/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
 
 ### Topic Guides
+
 - **[Staging Environments](docs/STAGING-ENVIRONMENTS.md)** - Cognito auth and cost-saving scheduling
 - **[Shared Environments](docs/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
 - **[Multiple AWS Accounts](docs/MULTIPLE-AWS-ACCOUNTS.md)** - Staging/production account separation
@@ -46,6 +50,7 @@ Environment configurations are stored in a separate directory (configured via `D
 - **[WAF](docs/WAF.md)** - Web Application Firewall integration
 
 ### Framework Guides
+
 - **[Django](docs/frameworks/django.md)** - Python web framework
 - **[Rails](docs/frameworks/rails.md)** - Ruby web framework
 - **[Generic](docs/frameworks/generic.md)** - Any containerized application
@@ -81,6 +86,7 @@ deployer/
 ```
 
 **Environment configurations** are stored separately (not in this repo):
+
 ```
 ~/code/deployer-environments/          # Set via DEPLOYER_ENVIRONMENTS_DIR
 ├── bootstrap/                         # IAM roles and shared resources
@@ -122,29 +128,29 @@ uv run python bin/deploy.py myapp-staging --dry-run
 
 ## Requirements
 
-| Tool | Version | Installation |
-|------|---------|--------------|
-| OpenTofu | >= 1.6.0 | `brew install opentofu` |
-| AWS CLI | v2 | `brew install awscli` |
-| Python | 3.11+ | `brew install python@3.11` |
-| uv | Latest | `brew install uv` |
-| Docker | Latest | `brew install docker` |
+| Tool     | Version  | Installation               |
+| -------- | -------- | -------------------------- |
+| OpenTofu | >= 1.6.0 | `brew install opentofu`    |
+| AWS CLI  | v2       | `brew install awscli`      |
+| Python   | 3.11+    | `brew install python@3.11` |
+| uv       | Latest   | `brew install uv`          |
+| Docker   | Latest   | `brew install docker`      |
 
 Dependencies are managed in `pyproject.toml` and installed automatically when you run `uv run`.
 
 ## Module Reference
 
-| Module | Purpose |
-|--------|---------|
-| **vpc** | VPC with public/private subnets, NAT gateway, route tables |
-| **ecs-cluster** | ECS cluster with Fargate capacity providers |
-| **ecs-service** | ECS service with task definition, IAM roles, optional ALB |
-| **alb** | Application Load Balancer with HTTP/HTTPS and optional Cognito |
-| **rds** | PostgreSQL RDS instance in private subnets |
-| **elasticache** | Redis ElastiCache cluster in private subnets |
-| **s3** | S3 buckets with configurable versioning |
-| **acm** | SSL/TLS certificates via ACM with Route 53 validation |
-| **cognito** | Cognito User Pool for staging authentication |
-| **waf** | Web Application Firewall with managed rules |
-| **compute-optimizer** | AWS Compute Optimizer for right-sizing |
-| **staging-scheduler** | Lambda/EventBridge for automatic start/stop |
+| Module                | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| **vpc**               | VPC with public/private subnets, NAT gateway, route tables     |
+| **ecs-cluster**       | ECS cluster with Fargate capacity providers                    |
+| **ecs-service**       | ECS service with task definition, IAM roles, optional ALB      |
+| **alb**               | Application Load Balancer with HTTP/HTTPS and optional Cognito |
+| **rds**               | PostgreSQL RDS instance in private subnets                     |
+| **elasticache**       | Redis ElastiCache cluster in private subnets                   |
+| **s3**                | S3 buckets with configurable versioning                        |
+| **acm**               | SSL/TLS certificates via ACM with Route 53 validation          |
+| **cognito**           | Cognito User Pool for staging authentication                   |
+| **waf**               | Web Application Firewall with managed rules                    |
+| **compute-optimizer** | AWS Compute Optimizer for right-sizing                         |
+| **staging-scheduler** | Lambda/EventBridge for automatic start/stop                    |
