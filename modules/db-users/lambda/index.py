@@ -94,8 +94,8 @@ def create_migrate_user(conn, username: str, password: str, db_name: str) -> Non
     # Create user (DDL doesn't support parameters, so we escape the password)
     conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
 
-    # Grant connect
-    conn.run(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
+    # Grant connect and create (CREATE needed for CREATE EXTENSION)
+    conn.run(f"GRANT CONNECT, CREATE ON DATABASE {db_name} TO {username}")
 
     # Grant full schema privileges (DDL + DML)
     conn.run(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {username}")
@@ -257,6 +257,11 @@ def handler(event, context):
             update_user_password(conn, migrate["username"], migrate["password"])
         else:
             create_migrate_user(conn, migrate["username"], migrate["password"], db_name)
+
+        # Ensure migrate user has CREATE on the database (for CREATE EXTENSION)
+        # This is idempotent and handles existing users that were created
+        # before this privilege was included in create_migrate_user()
+        conn.run(f"GRANT CREATE ON DATABASE {db_name} TO {migrate['username']}")
 
         # Transfer ownership of existing tables/sequences to migrate user
         # This handles migration from single-user to two-account model

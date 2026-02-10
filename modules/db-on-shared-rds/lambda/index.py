@@ -113,11 +113,12 @@ def create_migrate_user(conn, username: str, password: str, db_name: str) -> Non
     # Create user (DDL doesn't support parameters, so we escape the password)
     conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
 
-    # Grant connect ONLY on this specific database
-    conn.run(f"GRANT CONNECT ON DATABASE {escape_identifier(db_name)} TO {username}")
+    # Grant connect and create ONLY on this specific database
+    # CREATE needed for CREATE EXTENSION in migrations
+    conn.run(f"GRANT CONNECT, CREATE ON DATABASE {escape_identifier(db_name)} TO {username}")
 
     logger.info(
-        f"Created migrate user '{username}' with CONNECT on database '{db_name}'"
+        f"Created migrate user '{username}' with CONNECT, CREATE on database '{db_name}'"
     )
 
 
@@ -295,6 +296,13 @@ def handler(event, context):
             create_migrate_user(
                 conn_admin, migrate["username"], migrate["password"], db_name
             )
+
+        # Ensure migrate user has CREATE on the database (for CREATE EXTENSION)
+        # This is idempotent and handles existing users that were created
+        # before this privilege was included in create_migrate_user()
+        conn_admin.run(
+            f"GRANT CREATE ON DATABASE {escape_identifier(db_name)} TO {migrate['username']}"
+        )
 
     finally:
         conn_admin.close()
