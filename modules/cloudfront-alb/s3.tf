@@ -10,6 +10,16 @@ resource "aws_s3_bucket" "error_pages" {
   }
 }
 
+resource "aws_s3_bucket_server_side_encryption_configuration" "error_pages" {
+  bucket = aws_s3_bucket.error_pages.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "error_pages" {
   bucket = aws_s3_bucket.error_pages.id
 

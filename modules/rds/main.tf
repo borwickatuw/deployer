@@ -81,6 +81,7 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.vpc_id
 
   ingress {
+    description     = "PostgreSQL access from ECS tasks"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
@@ -116,6 +117,9 @@ resource "aws_db_instance" "main" {
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
   multi_az                = var.multi_az
+
+  auto_minor_version_upgrade = true
+  copy_tags_to_snapshot      = true
 
   backup_window      = "03:00-04:00"
   maintenance_window = "Mon:04:00-Mon:05:00"

@@ -37,6 +37,7 @@ resource "aws_security_group" "elasticache" {
   vpc_id      = var.vpc_id
 
   ingress {
+    description     = "Redis access from ECS tasks"
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"

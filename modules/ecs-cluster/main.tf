@@ -38,8 +38,9 @@ resource "aws_security_group" "ecs_tasks" {
   description = "Security group for ECS tasks"
   vpc_id      = var.vpc_id
 
-  # Allow all outbound traffic
+  # Allow all outbound traffic (required for ECR, CloudWatch, Secrets Manager, etc.)
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

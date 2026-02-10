@@ -16,6 +16,7 @@ resource "aws_lb" "main" {
   subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false # Set to true for production
+  drop_invalid_header_fields = true
 
   # Idle timeout - increase for large file uploads (default 60, max 4000)
   idle_timeout = var.idle_timeout
