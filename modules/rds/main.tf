@@ -64,6 +64,24 @@ variable "multi_az" {
   default     = false
 }
 
+variable "performance_insights_enabled" {
+  description = "Enable RDS Performance Insights (free tier for 7 days retention on db.t3+)"
+  type        = bool
+  default     = true
+}
+
+variable "monitoring_interval" {
+  description = "Enhanced monitoring interval in seconds (0 = disabled, 1/5/10/15/30/60)"
+  type        = number
+  default     = 60
+}
+
+variable "permissions_boundary" {
+  description = "IAM permissions boundary ARN (for monitoring IAM role)"
+  type        = string
+  default     = null
+}
+
 # Subnet group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.name_prefix}-db-subnet"
@@ -93,6 +111,33 @@ resource "aws_security_group" "rds" {
   }
 }
 
+# IAM Role for RDS Enhanced Monitoring
+resource "aws_iam_role" "rds_monitoring" {
+  count = var.monitoring_interval > 0 ? 1 : 0
+  name  = "${var.name_prefix}-rds-monitoring"
+
+  permissions_boundary = var.permissions_boundary
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "monitoring.rds.amazonaws.com" }
+    }]
+  })
+
+  tags = {
+    Name = "${var.name_prefix}-rds-monitoring"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "rds_monitoring" {
+  count      = var.monitoring_interval > 0 ? 1 : 0
+  role       = aws_iam_role.rds_monitoring[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
 resource "aws_db_instance" "main" {
   identifier = "${var.name_prefix}-db"
 
@@ -117,6 +162,11 @@ resource "aws_db_instance" "main" {
   skip_final_snapshot     = var.skip_final_snapshot
   deletion_protection     = var.deletion_protection
   multi_az                = var.multi_az
+
+  # Performance Insights and Enhanced Monitoring
+  performance_insights_enabled = var.performance_insights_enabled
+  monitoring_interval          = var.monitoring_interval
+  monitoring_role_arn          = var.monitoring_interval > 0 ? aws_iam_role.rds_monitoring[0].arn : null
 
   auto_minor_version_upgrade = true
   copy_tags_to_snapshot      = true
