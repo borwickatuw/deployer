@@ -333,7 +333,7 @@ With Multi-AZ enabled (production recommendation):
 ### Application-Specific Failure Modes
 
 Each application should document its specific failure modes in `docs/OPERATIONS.md`. See:
-- `~/code/claude-meta/docs/OPERATIONS-BEST-PRACTICE.md` for template
+- `~/code/claude-meta/best-practices/OPERATIONS.md` for template
 - Application repos for specific documentation
 
 ## Scaling Strategies

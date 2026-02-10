@@ -665,7 +665,7 @@ Enhancements for Site Reliability Engineering practices and incident management.
 
 ### SLOs in config.toml
 
-**Current state**: SLO targets are documented in prose (OPERATIONS.md, MONITORING-BEST-PRACTICE.md).
+**Current state**: SLO targets are documented in prose (OPERATIONS.md, claude-meta best-practices/MONITORING.md).
 
 **Enhancement**: Define SLOs programmatically in environment config.toml:
 
