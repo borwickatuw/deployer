@@ -129,6 +129,9 @@ module "alb" {
   certificate_arn   = local.certificate_arn
   cognito_auth      = local.cognito_auth
 
+  # ALB settings
+  idle_timeout = var.alb_idle_timeout
+
   # Health check settings (staging-optimized by default)
   default_health_check_path = var.default_health_check_path
   health_check_interval     = var.health_check_interval

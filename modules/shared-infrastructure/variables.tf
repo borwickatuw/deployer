@@ -118,6 +118,12 @@ variable "deregistration_delay" {
   default     = 15 # Staging-optimized default
 }
 
+variable "alb_idle_timeout" {
+  description = "ALB idle timeout in seconds. Increase for large file uploads (default 60, max 4000)."
+  type        = number
+  default     = 60
+}
+
 variable "alb_deletion_protection" {
   description = "Enable ALB deletion protection (true for production, false for staging)"
   type        = bool
