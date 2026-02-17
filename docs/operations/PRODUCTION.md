@@ -145,6 +145,81 @@ scaling = {
 1. Adjust based on recommendations (watch for OOM kills especially)
 1. Repeat monthly as part of maintenance cadence
 
+#### Capacity Monitoring Tools
+
+Two tools help with ongoing right-sizing: AWS Compute Optimizer and `capacity-report.py`.
+
+Both require Container Insights to be enabled on the ECS cluster (already configured in the `ecs-cluster` module; costs ~$0.30/task/month).
+
+**AWS Compute Optimizer** is a free AWS service that uses machine learning to analyze utilization patterns:
+
+```bash
+# Enable (one-time)
+aws compute-optimizer update-enrollment-status --status Active
+
+# Or via OpenTofu - add to your environment's main.tf:
+# module "compute_optimizer" { source = "../../modules/compute-optimizer" }
+
+# View recommendations (wait 14 days after enabling)
+aws compute-optimizer get-ecs-service-recommendations
+aws compute-optimizer get-ecs-service-recommendations \
+  --filters name=Finding,values=OVER_PROVISIONED
+```
+
+**capacity-report.py** provides on-demand capacity analysis integrated with the deployer workflow:
+
+```bash
+# Basic report (last 7 days)
+uv run bin/capacity-report.py myapp-production
+
+# Extended period
+uv run bin/capacity-report.py myapp-production --days 14
+
+# Compare against tfvars and generate suggested updates (RECOMMENDED)
+uv run bin/capacity-report.py myapp-production \
+  --tfvars environments/myapp-production/terraform.tfvars
+
+# JSON output for automation
+uv run bin/capacity-report.py myapp-production --format json
+```
+
+Classification logic:
+
+| Status            | Criteria                                                  |
+| ----------------- | --------------------------------------------------------- |
+| OVER_PROVISIONED  | avg < 30% AND p95 < 50% for both CPU and memory           |
+| UNDER_PROVISIONED | avg > 70% OR p95 > 90% for either CPU or memory           |
+| BURSTY            | avg < 30% BUT p95 > 70% (workload is spiky, don't reduce) |
+| OK                | Everything else                                           |
+
+#### Right-Sizing Feedback Loop
+
+The capacity report creates a tight feedback loop between CloudWatch metrics and your tfvars:
+
+```
+CloudWatch Metrics → capacity-report.py → terraform.tfvars
+                                                ↓
+ECS Services (right-sized) ← tofu apply ← Review & Commit
+```
+
+**Regular right-sizing review:**
+
+1. Run capacity report with tfvars comparison:
+
+   ```bash
+   uv run bin/capacity-report.py myapp-production \
+     --days 30 \
+     --tfvars environments/myapp-production/terraform.tfvars
+   ```
+
+1. Review the output: check utilization percentages (avg and p95), review the tfvars comparison, copy suggested tfvars if recommendations look reasonable.
+
+1. Update tfvars, run `tofu apply`, then deploy to pick up new task definitions.
+
+1. Wait a few days and re-run the capacity report to verify the changes had the expected effect.
+
+**Detecting tfvars drift:** If you see `cpu: tfvars=256 → running=512` in the comparison output, either update tfvars to match (if the running value is correct) or run `tofu apply` to sync (if tfvars is correct).
+
 ### First Deployment Walkthrough
 
 1. **Apply infrastructure**:
