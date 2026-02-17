@@ -1,5 +1,6 @@
 """Deployment module for ECS applications."""
 
+from .deployer import Deployer
 from .extensions import create_database_extensions
 from .images import (
     build_and_push_images,
@@ -26,11 +27,18 @@ from .task_definition import (
     get_secrets,
     get_service_sizing,
 )
+from .preflight import (
+    PreflightError,
+    PreflightOptions,
+    run_preflight_checks,
+)
 from .validation import (
     validate_ecs_cluster,
 )
 
 __all__ = [
+    # Deployer
+    "Deployer",
     # Extensions
     "create_database_extensions",
     # Images
@@ -55,6 +63,10 @@ __all__ = [
     "start_migrations",
     "wait_for_migrations",
     "wait_for_stable",
+    # Preflight
+    "PreflightError",
+    "PreflightOptions",
+    "run_preflight_checks",
     # Validation
     "validate_ecs_cluster",
 ]

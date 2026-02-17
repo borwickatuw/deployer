@@ -14,6 +14,9 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.scripts]
+ci-deploy = "deployer.cli.ci_deploy:main"
+
 [dependency-groups]
 dev = [
     # Formatting (local only)
