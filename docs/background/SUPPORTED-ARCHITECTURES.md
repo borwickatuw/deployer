@@ -62,12 +62,12 @@ Can be deployed with this tool.
 
 | Framework       | Port | Documentation                                     |
 | --------------- | ---- | ------------------------------------------------- |
-| Django (Python) | 8000 | [docs/frameworks/django.md](frameworks/django.md) |
-| Rails (Ruby)    | 3000 | [docs/frameworks/rails.md](frameworks/rails.md)   |
+| Django (Python) | 8000 | [docs/frameworks/django.md](../frameworks/django.md) |
+| Rails (Ruby)    | 3000 | [docs/frameworks/rails.md](../frameworks/rails.md)   |
 
 ### Untested but Supported
 
-These should work with the [generic framework guide](frameworks/generic.md):
+These should work with the [generic framework guide](../frameworks/generic.md):
 
 | Framework        | Typical Port |
 | ---------------- | ------------ |
@@ -215,5 +215,5 @@ For most web applications, we recommend:
 ## Related Documentation
 
 - [DESIGN.md](DESIGN.md) - Philosophy behind configuration separation
-- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - Complete configuration reference
+- [CONFIG-REFERENCE.md](../CONFIG-REFERENCE.md) - Complete configuration reference
 - [DECISIONS.md](DECISIONS.md) - Architectural decision records

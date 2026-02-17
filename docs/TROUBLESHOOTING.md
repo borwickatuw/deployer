@@ -400,7 +400,7 @@ ______________________________________________________________________
 
 ## Cognito Authentication Issues
 
-For Cognito setup and user management, see [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md#cognito-authentication).
+For Cognito setup and user management, see [STAGING.md](operations/STAGING.md#cognito-authentication).
 
 ### "Redirect URI Mismatch" Error
 

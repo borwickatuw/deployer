@@ -55,12 +55,12 @@ uv run python bin/emergency.py myapp-production rollback --service web
 
 - [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) - Complete deployment walkthrough
 - [CONFIG-REFERENCE.md](docs/CONFIG-REFERENCE.md) - All configuration options
-- [DESIGN.md](docs/DESIGN.md) - Architecture and three-layer config separation
-- [HOWTO-PRODUCTION.md](docs/HOWTO-PRODUCTION.md) - Production operations and maintenance
+- [DESIGN.md](docs/background/DESIGN.md) - Architecture and three-layer config separation
+- [PRODUCTION.md](docs/operations/PRODUCTION.md) - Production operations and maintenance
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
-- [SHARED-ENVIRONMENTS.md](docs/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
-- [HOWTO-PUBLISH.md](docs/HOWTO-PUBLISH.md) - Publishing to the public repository
-- [SOMEDAY-MAYBE.md](docs/SOMEDAY-MAYBE.md) - Future improvement ideas
+- [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
+- [HOWTO-PUBLISH.md](docs/internal/HOWTO-PUBLISH.md) - Publishing to the public repository
+- [SOMEDAY-MAYBE.md](docs/internal/SOMEDAY-MAYBE.md) - Future improvement ideas
 - Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
 
 ## Design Principles
@@ -107,7 +107,7 @@ To add a new project:
 1. Edit bootstrap's `terraform.tfvars`, add to `project_prefixes`
 1. Run `AWS_PROFILE=admin tofu apply`
 
-For multi-account setups, see [MULTIPLE-AWS-ACCOUNTS.md](docs/MULTIPLE-AWS-ACCOUNTS.md).
+For multi-account setups, see [MULTIPLE-ACCOUNTS.md](docs/operations/MULTIPLE-ACCOUNTS.md).
 
 ## Security
 

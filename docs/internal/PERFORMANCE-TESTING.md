@@ -31,7 +31,7 @@ Note: With migrations skipped (no changes), total time is ~75s.
 
 1. **Environment config.toml**: The environment must have a `config.toml` file with `${tofu:...}` placeholders configured. The speed test script automatically resolves these by running `tofu output` in the environment directory.
 
-1. **Cognito Test Account**: For Cognito-protected environments, the deployer test account must exist with password stored in SSM at `/deployer/<environment>/cognito-test-password`. See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md#test-account-for-automation) for setup.
+1. **Cognito Test Account**: For Cognito-protected environments, the deployer test account must exist with password stored in SSM at `/deployer/<environment>/cognito-test-password`. See [STAGING.md](../operations/STAGING.md#test-account-for-automation) for setup.
 
 ### Running the Test
 

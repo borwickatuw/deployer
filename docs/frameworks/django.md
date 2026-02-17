@@ -360,4 +360,4 @@ See [CSRF_TRUSTED_ORIGINS](#csrf_trusted_origins) above.
 1. Verify `DATABASE_URL` SSM parameter exists and is correct
 1. Check security groups allow ECS tasks to reach the database
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more detailed debugging steps.
+See [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) for more detailed debugging steps.

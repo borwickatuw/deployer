@@ -8,12 +8,12 @@ OpenTofu infrastructure and deployment tooling for AWS ECS applications.
 
 1. **[Getting Started](docs/GETTING-STARTED.md)** - One-time AWS account setup (IAM roles, bootstrap)
 1. **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Create environments and deploy your first app
-1. **[Design](docs/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
+1. **[Design](docs/background/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
 
 **Quick reference:**
 
 - [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
-- [Architecture](docs/ARCHITECTURE.md) - AWS infrastructure and **cost estimates** (~$150-250/mo staging, ~$1,600-2,100/mo production)
+- [Architecture](docs/background/ARCHITECTURE.md) - AWS infrastructure and **cost estimates** (~$150-250/mo staging, ~$1,600-2,100/mo production)
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - When things go wrong
 
 ## Overview
@@ -34,20 +34,21 @@ Environment configurations are stored in a separate directory (configured via `D
 - **[Configuration Reference](docs/CONFIG-REFERENCE.md)** - Complete TOML configuration options
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
-### Architecture & Design
+### Background (Architecture & Design)
 
-- **[Design](docs/DESIGN.md)** - How deployer works and why it's structured this way
-- **[Architecture](docs/ARCHITECTURE.md)** - AWS infrastructure details and cost estimates
-- **[Decisions](docs/DECISIONS.md)** - Architecture decision records
-- **[Supported Architectures](docs/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
+- **[Design](docs/background/DESIGN.md)** - How deployer works and why it's structured this way
+- **[Architecture](docs/background/ARCHITECTURE.md)** - AWS infrastructure details and cost estimates
+- **[Decisions](docs/background/DECISIONS.md)** - Architecture decision records
+- **[Supported Architectures](docs/background/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
+- **[Modules](docs/background/MODULES.md)** - Resource module system
 
-### Topic Guides
+### Operations (How-To Guides)
 
-- **[Staging Environments](docs/STAGING-ENVIRONMENTS.md)** - Cognito auth and cost-saving scheduling
-- **[Shared Environments](docs/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
-- **[Multiple AWS Accounts](docs/MULTIPLE-AWS-ACCOUNTS.md)** - Staging/production account separation
-- **[Capacity Monitoring](docs/CAPACITY-MONITORING.md)** - ECS right-sizing and cost optimization
-- **[WAF](docs/WAF.md)** - Web Application Firewall integration
+- **[Production](docs/operations/PRODUCTION.md)** - Production ops, maintenance, and capacity monitoring
+- **[Staging](docs/operations/STAGING.md)** - Cognito auth and cost-saving scheduling
+- **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
+- **[Multiple AWS Accounts](docs/operations/MULTIPLE-ACCOUNTS.md)** - Staging/production account separation
+- **[WAF](docs/operations/WAF.md)** - Web Application Firewall integration
 
 ### Framework Guides
 

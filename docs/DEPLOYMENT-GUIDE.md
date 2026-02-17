@@ -293,7 +293,7 @@ aws ecs describe-services \
 curl https://staging.myapp.com/health/
 ```
 
-For Cognito-protected staging environments, see [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md#test-account-for-automation) for authentication setup.
+For Cognito-protected staging environments, see [STAGING.md](operations/STAGING.md#test-account-for-automation) for authentication setup.
 
 ### View Logs
 
@@ -359,7 +359,7 @@ uv run python bin/cognito.py create myapp-staging \
   --clipboard
 ```
 
-See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for full user management documentation.
+See [STAGING.md](operations/STAGING.md) for full user management documentation.
 
 ______________________________________________________________________
 
@@ -384,7 +384,7 @@ uv run python bin/environment.py start myapp-staging
 - RDS auto-restarts after 7 days if stopped (AWS limitation)
 - Start always waits for RDS to be available before scaling ECS back up
 
-See [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md) for automated scheduling to stop/start environments on a schedule.
+See [STAGING.md](operations/STAGING.md) for automated scheduling to stop/start environments on a schedule.
 
 ______________________________________________________________________
 
@@ -450,7 +450,7 @@ Want to change DEPLOYMENT BEHAVIOR (speed, rollback)?
   → Edit config.toml in deployer/environments/
 ```
 
-See [DESIGN.md](DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
+See [DESIGN.md](background/DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
 
 ______________________________________________________________________
 
@@ -640,5 +640,5 @@ ______________________________________________________________________
 
 - [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - All configuration options
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - More troubleshooting
-- [SUPPORTED-ARCHITECTURES.md](SUPPORTED-ARCHITECTURES.md) - What's supported
-- [DESIGN.md](DESIGN.md) - Architecture and design decisions
+- [SUPPORTED-ARCHITECTURES.md](background/SUPPORTED-ARCHITECTURES.md) - What's supported
+- [DESIGN.md](background/DESIGN.md) - Architecture and design decisions

@@ -101,7 +101,7 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 - Web services: Often memory-bound (Django/Rails); start with higher memory ratio
 - Workers: Often CPU-bound during processing; may need higher CPU
 - Use `capacity-report.py --days 7` to analyze actual utilization
-- See [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md#cpumemory-combinations) for valid Fargate combinations
+- See [CONFIG-REFERENCE.md](../CONFIG-REFERENCE.md#cpumemory-combinations) for valid Fargate combinations
 
 **Replicas and Auto-Scaling:**
 
@@ -591,7 +591,7 @@ The cloudwatch-alarms module creates an SNS topic and email subscription:
 1. Check email for subscription confirmation
 1. Click confirmation link in email
 
-For additional notification channels (Slack, PagerDuty), see [SOMEDAY-MAYBE.md](SOMEDAY-MAYBE.md).
+For additional notification channels (Slack, PagerDuty), see [SOMEDAY-MAYBE.md](../internal/SOMEDAY-MAYBE.md).
 
 ### Recommended Dashboard
 
@@ -1151,8 +1151,8 @@ ______________________________________________________________________
 
 ## Related Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Infrastructure architecture and costs
-- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Deployment procedures
-- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - Configuration options
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
-- [SOMEDAY-MAYBE.md](SOMEDAY-MAYBE.md) - Future improvements
+- [ARCHITECTURE.md](../background/ARCHITECTURE.md) - Infrastructure architecture and costs
+- [DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md) - Deployment procedures
+- [CONFIG-REFERENCE.md](../CONFIG-REFERENCE.md) - Configuration options
+- [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) - Common issues
+- [SOMEDAY-MAYBE.md](../internal/SOMEDAY-MAYBE.md) - Future improvements

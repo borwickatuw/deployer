@@ -115,7 +115,7 @@ Configuration is split between three locations:
 
 The `config.toml` in each environment directory bridges the gap between OpenTofu outputs and the deploy script. It uses `${tofu:...}` placeholders that are resolved at deploy time.
 
-See [DESIGN.md](DESIGN.md) for the philosophy behind this separation.
+See [DESIGN.md](background/DESIGN.md) for the philosophy behind this separation.
 
 ______________________________________________________________________
 
@@ -370,7 +370,7 @@ These placeholders are resolved at deploy time from the environment's `config.to
 | `${aws_region}`      | AWS SDK                  | Current AWS region                          |
 | `${environment}`     | `environment` argument   | Deployment environment (staging/production) |
 
-For service URL references like `${services.api.url}`, see [MODULES.md](MODULES.md#service-url-references).
+For service URL references like `${services.api.url}`, see [MODULES.md](background/MODULES.md#service-url-references).
 
 **Example:**
 
@@ -641,7 +641,7 @@ cognito_profile = "deployer-cognito" # for cognito.py
 
 Scripts automatically read the appropriate profile. You can override with `AWS_PROFILE=...` if needed.
 
-For multi-account setups (e.g., staging and production in different AWS accounts), use different profiles per environment. See [MULTIPLE-AWS-ACCOUNTS.md](MULTIPLE-AWS-ACCOUNTS.md) for detailed setup instructions.
+For multi-account setups (e.g., staging and production in different AWS accounts), use different profiles per environment. See [MULTIPLE-ACCOUNTS.md](operations/MULTIPLE-ACCOUNTS.md) for detailed setup instructions.
 
 #### `[infrastructure]`
 
