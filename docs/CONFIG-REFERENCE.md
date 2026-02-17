@@ -282,12 +282,12 @@ health_check_path = "/health/"
 image = "web"
 command = ["celery", "-A", "app", "worker", "--loglevel=info"]
 
-# IIIF server with path-based routing
+# API server with path-based routing
 [services.api]
 image = "api"
-port = 8182
+port = 8080
 health_check_path = "/health"
-path_pattern = "/iiif/*"
+path_pattern = "/api/*"
 
 # Resource-intensive service with minimum requirements
 [services.transcoder]

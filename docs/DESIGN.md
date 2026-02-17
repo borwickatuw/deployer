@@ -23,7 +23,7 @@ Deployer separates **infrastructure** (managed by OpenTofu) from **application d
 - Service commands and entrypoints
 - Environment variables and secrets
 - Health check paths (what endpoint to check)
-- Path patterns for routing (e.g., `/iiif/*`)
+- Path patterns for routing (e.g., `/api/*`)
 - Migration commands
 
 App developers know their application best. They define *what* their app needs to run.

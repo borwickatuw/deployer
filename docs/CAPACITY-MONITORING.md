@@ -92,7 +92,7 @@ Service        CPU Alloc  CPU Avg   CPU p95   Memory Alloc   Mem Avg   Mem p95  
 ──────────────────────────────────────────────────────────────────────────────────────────────
 web            512            12%       45%   1024 MB            35%       52%   ⚠️ OVER-PROVISIONED
 celery         256            78%       95%   512 MB             65%       82%   ⚠️ UNDER-PROVISIONED
-api     512            25%       60%   1024 MB            40%       55%   ✓ OK
+api            512            25%       60%   1024 MB            40%       55%   ✓ OK
 transcoder     1024            5%       85%   2048 MB            20%       45%   ✓ OK (bursty)
 
 Recommendations:

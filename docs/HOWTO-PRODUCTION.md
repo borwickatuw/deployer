@@ -322,7 +322,7 @@ Based on current sizing, production can handle ~100 concurrent users
 before p95 latency exceeds SLO target (500ms).
 ```
 
-**Example:** See `~/code/myapp/performance/` for API load testing scripts.
+**Example:** See your application's `performance/` directory for load testing scripts.
 
 ______________________________________________________________________
 

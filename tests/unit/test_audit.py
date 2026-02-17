@@ -267,14 +267,14 @@ port = 8000
 image = "api"
 
 [services.api.environment]
-DELEGATE_ENABLED = "true"
+ENABLE_CACHE = "true"
 DJANGO_URL = "${services.web.url}"
 """)
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
         assert "GLOBAL_VAR" in result
-        assert "DELEGATE_ENABLED" in result
+        assert "ENABLE_CACHE" in result
         assert "DJANGO_URL" in result
 
 

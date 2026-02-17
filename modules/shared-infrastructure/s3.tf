@@ -87,7 +87,7 @@ resource "aws_s3_bucket_public_access_block" "media" {
   restrict_public_buckets = true
 }
 
-# CORS configuration for media bucket (allows IIIF viewers to load images)
+# CORS configuration for media bucket (allows cross-origin viewers to load images)
 resource "aws_s3_bucket_cors_configuration" "media" {
   count  = var.s3_storage_enabled ? 1 : 0
   bucket = aws_s3_bucket.media[0].id

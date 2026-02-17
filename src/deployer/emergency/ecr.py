@@ -207,7 +207,7 @@ def list_repositories_for_environment(
             for repo in page.get("repositories", []):
                 name = repo.get("repositoryName", "")
                 # Match environment prefix with hyphen to avoid partial matches
-                # e.g., "otherapp-staging-" matches "otherapp-staging-web"
+                # e.g., "myapp-staging-" matches "myapp-staging-web"
                 if name.startswith(f"{environment}-"):
                     result.append(name)
     except ClientError as e:

@@ -146,8 +146,8 @@ def resolve_service_url(
 ) -> str | None:
     """Resolve a service URL from its path_pattern and domain.
 
-    For a service with path_pattern = "/iiif/*", the URL would be:
-    https://myapp-staging.example.com/iiif
+    For a service with path_pattern = "/api/*", the URL would be:
+    https://myapp-staging.example.com/api
 
     Args:
         service_name: Name of the service (e.g., "api").
@@ -166,7 +166,7 @@ def resolve_service_url(
     if not path_pattern:
         return None
 
-    # Convert path pattern to URL path: "/iiif/*" -> "/iiif"
+    # Convert path pattern to URL path: "/api/*" -> "/api"
     # Remove trailing /* or *
     path = path_pattern.rstrip("*").rstrip("/")
 

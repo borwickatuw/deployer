@@ -10,7 +10,7 @@ For information on how deployer is designed and why it separates infrastructure 
                                     ┌─────────────────────────────────────────────────────────────┐
                                     │                        CloudFront                           │
                                     │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-                                    │  │ Static/Web  │  │ IIIF Images │  │   Video/Audio       │  │
+                                    │  │ Static/Web  │  │ API/Images  │  │   Video/Audio       │  │
                                     │  │ Distribution│  │ Distribution│  │   Distribution      │  │
                                     │  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
                                     └─────────┼────────────────┼────────────────────┼─────────────┘
@@ -21,7 +21,7 @@ For information on how deployer is designed and why it separates infrastructure 
 │  ┌─────────────────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                              Application Load Balancer                                      │ │
 │  │                    ┌───────────┬───────────┬───────────────┐                                │ │
-│  │                    │ /         │ /iiif/*   │ /api/*        │                                │ │
+│  │                    │ /         │ /api/*    │ /svc/*        │                                │ │
 │  │                    │ /admin/*  │           │               │                                │ │
 │  │                    └─────┬─────┴─────┬─────┴───────────────┘                                │ │
 │  └──────────────────────────┼───────────┼──────────────────────────────────────────────────────┘ │

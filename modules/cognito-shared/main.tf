@@ -9,7 +9,7 @@
 #     name_prefix = "staging-shared"
 #     app_domains = {
 #       myapp      = "myapp-staging.example.com"
-#       otherapp = "otherapp-staging.example.com"
+#       otherapp   = "otherapp-staging.example.com"
 #     }
 #   }
 

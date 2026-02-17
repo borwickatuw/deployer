@@ -214,7 +214,7 @@ The deployer calculates this from:
 - Domain from config.toml's `[environment].domain_name`
 - Path from the service's `path_pattern` in deploy.toml
 
-For `api` with `path_pattern = "/iiif/*"` → `https://example.com/iiif`
+For `api` with `path_pattern = "/api/*"` → `https://example.com/api`
 
 ## Validation
 

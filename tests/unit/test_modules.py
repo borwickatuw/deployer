@@ -495,18 +495,18 @@ class TestServiceUrlResolution:
             "OTHER_VAR": "static_value",
         }
         services = {
-            "api": {"path_pattern": "/iiif/*"},
+            "api": {"path_pattern": "/api/*"},
         }
 
         resolved = resolve_service_urls(env_vars, services, "test.example.com")
 
-        assert resolved["API_BASE_URL"] == "https://test.example.com/iiif"
+        assert resolved["API_BASE_URL"] == "https://test.example.com/api"
         assert resolved["OTHER_VAR"] == "static_value"
 
     def test_resolve_service_url_no_domain(self):
         """Test that service URL is not resolved without domain."""
         env_vars = {"API_BASE_URL": "${services.api.url}"}
-        services = {"api": {"path_pattern": "/iiif/*"}}
+        services = {"api": {"path_pattern": "/api/*"}}
 
         resolved = resolve_service_urls(env_vars, services, None)
 
@@ -572,7 +572,7 @@ class TestServiceUrlResolution:
         }
         services = {
             "web": {"port": 8000},
-            "api": {"port": 8182, "path_pattern": "/iiif/*"},
+            "api": {"port": 8080, "path_pattern": "/api/*"},
         }
 
         resolved = resolve_service_urls(
@@ -581,4 +581,4 @@ class TestServiceUrlResolution:
         )
 
         assert resolved["DJANGO_URL"] == "http://web.myapp-staging.local:8000"
-        assert resolved["API_BASE_URL"] == "https://test.example.com/iiif"
+        assert resolved["API_BASE_URL"] == "https://test.example.com/api"
