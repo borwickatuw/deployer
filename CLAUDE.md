@@ -59,6 +59,7 @@ uv run python bin/emergency.py myapp-production rollback --service web
 - [HOWTO-PRODUCTION.md](docs/HOWTO-PRODUCTION.md) - Production operations and maintenance
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
+- [HOWTO-PUBLISH.md](docs/HOWTO-PUBLISH.md) - Publishing to the public repository
 - [SOMEDAY-MAYBE.md](docs/SOMEDAY-MAYBE.md) - Future improvement ideas
 - Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
 
