@@ -10,11 +10,13 @@ The resolved config JSON can be used by ci-deploy for CI/CD deployments
 without needing tofu or the deployer-environments directory.
 
 Usage:
-    python resolve-config.py <environment> [--output FILE]
+    python resolve-config.py <environment> [--output FILE] [--push-s3]
 
 Examples:
     python resolve-config.py myapp-staging
     python resolve-config.py myapp-staging --output resolved.json
+    python resolve-config.py myapp-staging --push-s3
+    python resolve-config.py myapp-staging --output resolved.json --push-s3
     python resolve-config.py myapp-staging --verify
 """
 
@@ -152,6 +154,46 @@ def verify_config(environment: str, resolved_config: dict) -> bool:
     return True
 
 
+def push_to_s3(environment: str, config_json: str) -> str:
+    """Push resolved config JSON to S3.
+
+    Discovers the resolved-configs bucket by convention
+    (deployer-resolved-configs-{account_id}).
+
+    Args:
+        environment: Environment name (used as S3 key prefix).
+        config_json: JSON string to upload.
+
+    Returns:
+        S3 URI of the uploaded file.
+
+    Raises:
+        RuntimeError: If S3 push fails.
+    """
+    import boto3
+    from botocore.exceptions import ClientError
+
+    sts = boto3.client("sts")
+    account_id = sts.get_caller_identity()["Account"]
+    bucket = f"deployer-resolved-configs-{account_id}"
+    key = f"{environment}/config.json"
+
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=config_json.encode("utf-8"),
+            ContentType="application/json",
+        )
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        error_msg = e.response["Error"]["Message"]
+        raise RuntimeError(f"Failed to push to s3://{bucket}/{key}: {error_code} - {error_msg}")
+
+    return f"s3://{bucket}/{key}"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Resolve an environment's config.toml into standalone JSON.",
@@ -171,6 +213,11 @@ Examples:
         "--output", "-o",
         metavar="FILE",
         help="Write resolved config to file (default: stdout)",
+    )
+    parser.add_argument(
+        "--push-s3",
+        action="store_true",
+        help="Push resolved config to the S3 bucket (deployer-resolved-configs-*)",
     )
     parser.add_argument(
         "--verify",
@@ -241,8 +288,17 @@ Examples:
         log(f"  Environment: {meta['environment']}")
         log(f"  Type:        {meta['environment_type']}")
         log(f"  Resolved at: {meta['resolved_at']}")
-    else:
+    elif not args.push_s3:
+        # Only print to stdout if not pushing to S3 (and no --output)
         print(output_json)
+
+    if args.push_s3:
+        try:
+            s3_uri = push_to_s3(args.environment, output_json)
+            log_success(f"Resolved config pushed to {s3_uri}")
+        except RuntimeError as e:
+            log_error(str(e))
+            sys.exit(1)
 
 
 if __name__ == "__main__":

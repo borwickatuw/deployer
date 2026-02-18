@@ -184,6 +184,23 @@ echo ""
 PLANS_DIR="$DEPLOYER_ROOT/plans"
 PLAN_FILE="$PLANS_DIR/$ENV_NAME.tfplan"
 
+# Post-apply hook: resolve config and push to S3
+# Only runs after a successful apply, and only if the resolved-configs
+# S3 bucket exists. Failure is a warning, not a fatal error.
+post_apply_hook() {
+    local env_name="$1"
+    echo ""
+    echo "=== Post-apply: resolving config ==="
+    if uv run python "$DEPLOYER_ROOT/bin/resolve-config.py" "$env_name" --push-s3; then
+        echo ""
+    else
+        echo "" >&2
+        echo "Warning: Failed to push resolved config to S3." >&2
+        echo "You can push manually: uv run python bin/resolve-config.py $env_name --push-s3" >&2
+        echo "" >&2
+    fi
+}
+
 case "$TOFU_CMD" in
     rollout)
         # Run init, plan, and apply in sequence
@@ -210,6 +227,10 @@ case "$TOFU_CMD" in
         tofu "-chdir=$ENV_DIR" apply "$PLAN_FILE"
         APPLY_EXIT=$?
         rm -f "$PLAN_FILE"
+
+        if [[ $APPLY_EXIT -eq 0 ]]; then
+            post_apply_hook "$ENV_NAME"
+        fi
 
         exit $APPLY_EXIT
         ;;
@@ -249,10 +270,21 @@ case "$TOFU_CMD" in
             echo ""
             echo "Deleted plan file: $PLAN_FILE"
 
+            if [[ $APPLY_EXIT -eq 0 ]]; then
+                post_apply_hook "$ENV_NAME"
+            fi
+
             exit $APPLY_EXIT
         else
             # No saved plan - run apply normally (will prompt for confirmation)
-            exec tofu "-chdir=$ENV_DIR" apply "$@"
+            tofu "-chdir=$ENV_DIR" apply "$@"
+            APPLY_EXIT=$?
+
+            if [[ $APPLY_EXIT -eq 0 ]]; then
+                post_apply_hook "$ENV_NAME"
+            fi
+
+            exit $APPLY_EXIT
         fi
         ;;
     *)
