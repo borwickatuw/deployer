@@ -32,7 +32,7 @@ tofu.sh apply myapp-staging         git push (app code)
   ├─ tofu apply                       ├─ actions/checkout
   │    (creates/updates infra)        │
   │                                   ├─ aws-actions/configure-aws-credentials
-  ├─ resolve-config.py                │    (OIDC → assume deployer-ci-{project} role)
+  ├─ resolve-config.py                │    (OIDC → assume {project}-ci-deploy role)
   │    (resolves ${tofu:...})         │
   │                                   ├─ aws s3 cp (fetch resolved-config.json)
   └─ push to S3 ─────────────────►   │
@@ -112,17 +112,18 @@ module "ci_role" {
   oidc_provider_arn           = data.terraform_remote_state.bootstrap.outputs.oidc_provider_arn
   resolved_configs_bucket_arn = data.terraform_remote_state.bootstrap.outputs.resolved_configs_bucket_arn
   region                      = var.region
+  permissions_boundary        = data.terraform_remote_state.bootstrap.outputs.ecs_role_boundary_arn
 }
 ```
 
-Run `tofu apply`. The module creates a `deployer-ci-myapp` IAM role that
+Run `tofu apply`. The module creates a `myapp-ci-deploy` IAM role that
 only GitHub Actions from `myorg/myapp` can assume, with permissions scoped
 to `myapp-*` resources.
 
 Note the output:
 
 ```
-ci_role_arn = "arn:aws:iam::123456789012:role/deployer-ci-myapp"
+ci_role_arn = "arn:aws:iam::123456789012:role/myapp-ci-deploy"
 ```
 
 ## Step 3: Resolve and Push Config
@@ -157,7 +158,7 @@ In your app repo's GitHub settings, create environments and add variables
 | Variable                 | Value                                                                  | Secret? |
 | ------------------------ | ---------------------------------------------------------------------- | ------- |
 | `AWS_REGION`             | `us-west-2`                                                           | No      |
-| `CI_DEPLOY_ROLE_ARN`     | `arn:aws:iam::123456789012:role/deployer-ci-myapp`                    | No      |
+| `CI_DEPLOY_ROLE_ARN`     | `arn:aws:iam::123456789012:role/myapp-ci-deploy`                    | No      |
 | `RESOLVED_CONFIG_S3_URI` | `s3://deployer-resolved-configs-123456789012/myapp-staging/config.json` | No      |
 
 No AWS access keys needed — OIDC handles authentication.
@@ -232,7 +233,7 @@ GitHub environment protection rules can require:
 
 ## CI Permissions
 
-Each `deployer-ci-{project}` IAM role can:
+Each `{project}-ci-deploy` IAM role can:
 
 - Push images to ECR (scoped to that project's repos only)
 - Update ECS services and run tasks (scoped to that project's services only)
@@ -275,7 +276,7 @@ infrastructure changes but nobody re-resolves.
 in the environment's tofu config with the correct `github_repo`, and that
 `tofu apply` has been run.
 
-**"Access denied fetching S3"** — The deployer-ci role needs `s3:GetObject`
+**"Access denied fetching S3"** — The ci-deploy role needs `s3:GetObject`
 on the resolved-configs bucket. Check that `modules/ci` is instantiated in
 bootstrap and `modules/ci-role` in the environment.
 
