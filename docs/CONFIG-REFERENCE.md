@@ -767,6 +767,64 @@ connection = "host=${tofu:db_host} port=5432"  # String interpolation
 
 ______________________________________________________________________
 
+## Resolved Config JSON Reference
+
+The resolved config JSON is a pre-resolved version of `config.toml` used by `ci-deploy` for CI/CD pipelines. It is produced by `bin/resolve-config.py` and contains all `${tofu:...}` placeholders already resolved to their values.
+
+### Format
+
+```json
+{
+  "_meta": {
+    "environment": "myapp-staging",
+    "environment_type": "staging",
+    "resolved_at": "2026-02-17T12:00:00+00:00",
+    "config_toml_hash": "sha256:abc123...",
+    "tofu_outputs_hash": "sha256:def456..."
+  },
+  "infrastructure": {
+    "cluster_name": "myapp-staging-cluster",
+    "ecr_prefix": "myapp",
+    "execution_role_arn": "arn:aws:iam::123:role/myapp-staging-ecs-execution",
+    "task_role_arn": "arn:aws:iam::123:role/myapp-staging-ecs-task",
+    "security_group_id": "sg-abc123",
+    "private_subnet_ids": ["subnet-1", "subnet-2"]
+  }
+}
+```
+
+### `_meta` Block
+
+| Field               | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `environment`       | Environment name (e.g., "myapp-staging")          |
+| `environment_type`  | "staging" or "production"                         |
+| `resolved_at`       | ISO 8601 timestamp when the config was resolved   |
+| `config_toml_hash`  | SHA-256 hash of the raw config.toml content       |
+| `tofu_outputs_hash` | SHA-256 hash of the tofu output JSON              |
+
+The `_meta` block is stripped before passing the config to the Deployer. It is used only for staleness detection and display.
+
+### Generation
+
+```bash
+# Resolve to stdout
+uv run python bin/resolve-config.py myapp-staging
+
+# Resolve to file
+uv run python bin/resolve-config.py myapp-staging --output resolved.json
+
+# Resolve and push to S3
+uv run python bin/resolve-config.py myapp-staging --push-s3
+
+# Verify freshness
+uv run python bin/resolve-config.py myapp-staging --verify --verify-file resolved.json
+```
+
+The resolved config is also automatically pushed to S3 after every successful `tofu.sh apply`.
+
+______________________________________________________________________
+
 ## OpenTofu tfvars Reference
 
 Service sizing and scaling are configured in `terraform.tfvars` files in the deployer repository, one per environment.

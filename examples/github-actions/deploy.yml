@@ -1,0 +1,76 @@
+# Example GitHub Actions workflow for CI/CD deployment
+#
+# Prerequisites:
+#   1. modules/ci enabled in bootstrap (creates OIDC provider + IAM roles)
+#   2. Resolved config pushed to S3 (automatic on tofu.sh apply)
+#   3. GitHub environment variables configured (see docs/CI-CD.md)
+#
+# Required GitHub environment variables:
+#   AWS_REGION              - AWS region (e.g., us-west-2)
+#   CI_DEPLOY_ROLE_ARN      - deployer-ci-{project} IAM role ARN
+#   RESOLVED_CONFIG_S3_URI  - s3://bucket/environment/config.json
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CI_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Fetch resolved config from S3
+        run: aws s3 cp "${{ vars.RESOLVED_CONFIG_S3_URI }}" resolved-config.json
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy
+        run: uvx --from "git+https://github.com/myorg/deployer.git" ci-deploy deploy.toml resolved-config.json
+
+  # Uncomment for production deployment after staging:
+  #
+  # deploy-production:
+  #   runs-on: ubuntu-latest
+  #   needs: deploy-staging
+  #   environment: production  # requires manual approval in GitHub settings
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ vars.CI_DEPLOY_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION }}
+  #
+  #     - name: Install uv
+  #       uses: astral-sh/setup-uv@v4
+  #
+  #     - name: Fetch resolved config from S3
+  #       run: aws s3 cp "${{ vars.RESOLVED_CONFIG_S3_URI }}" resolved-config.json
+  #
+  #     - name: Login to ECR
+  #       uses: aws-actions/amazon-ecr-login@v2
+  #
+  #     - name: Deploy
+  #       run: uvx --from "git+https://github.com/myorg/deployer.git" ci-deploy deploy.toml resolved-config.json

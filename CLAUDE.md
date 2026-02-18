@@ -21,21 +21,34 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `bin/cognito.py` - Cognito user management (auto-selects AWS profile from config.toml)
 - `bin/ssm-secrets.py` - SSM Parameter Store secrets management
 - `bin/capacity-report.py` - ECS right-sizing recommendations
+- `bin/resolve-config.py` - Resolve config.toml into standalone JSON for CI/CD
+- `src/deployer/cli/ci_deploy.py` - CI/CD deployment entry point (`ci-deploy` console_scripts)
+- `src/deployer/deploy/preflight.py` - Shared preflight checks (used by deploy.py and ci-deploy)
+- `src/deployer/deploy/deployer.py` - Deployer class (shared between deploy.py and ci-deploy)
 - `modules/` - Reusable Terraform/OpenTofu modules
+- `modules/ci/` - GitHub OIDC, S3 bucket, per-project CI IAM roles
 - `DEPLOYER_ENVIRONMENTS_DIR` - Per-environment configurations (set in `.env`)
 - `example-deployer-environments/` - Example environments directory structure
 - `example-deploy.toml` - Example application deploy.toml
+- `examples/github-actions/deploy.yml` - Example CI/CD workflow
 
 ## Common Commands
 
 ```bash
 # Infrastructure (use tofu.sh wrapper - auto-selects AWS profile)
 ./bin/tofu.sh plan myapp-staging
-./bin/tofu.sh apply myapp-staging
-./bin/tofu.sh rollout myapp-staging  # init + plan + apply in one command
+./bin/tofu.sh apply myapp-staging          # also auto-pushes resolved config to S3
+./bin/tofu.sh rollout myapp-staging        # init + plan + apply in one command
 
-# Deployment (uses linked deploy.toml)
+# Local deployment (uses linked deploy.toml)
 uv run python bin/deploy.py myapp-staging
+
+# CI/CD deployment (uses pre-resolved config)
+ci-deploy deploy.toml resolved-config.json
+ci-deploy deploy.toml s3://bucket/myapp-staging/config.json
+
+# Resolve config for CI/CD
+uv run python bin/resolve-config.py myapp-staging --push-s3
 
 # Link environment to deploy.toml (one-time setup)
 uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
@@ -60,6 +73,7 @@ uv run python bin/emergency.py myapp-production rollback --service web
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
 - [HOWTO-PUBLISH.md](docs/internal/HOWTO-PUBLISH.md) - Publishing to the public repository
+- [CI-CD.md](docs/CI-CD.md) - CI/CD deployment setup with GitHub Actions
 - [SOMEDAY-MAYBE.md](docs/internal/SOMEDAY-MAYBE.md) - Future improvement ideas
 - Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
 

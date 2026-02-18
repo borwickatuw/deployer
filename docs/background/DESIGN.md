@@ -335,6 +335,21 @@ circuit_breaker_enabled = true
 
 The `[deployment]` section demonstrates that config.toml isn't just a tofu output mirror—it can hold deployment strategy settings that don't come from infrastructure at all.
 
+## CI/CD Deployment
+
+For CI/CD pipelines, a separate `ci-deploy` tool provides a minimal deployment path that doesn't need OpenTofu, the deployer-environments directory, or infra-level AWS access:
+
+```
+Local (deploy.py):       deploy.toml + config.toml + tofu → Deployer
+CI/CD (ci-deploy):       deploy.toml + resolved-config.json → Deployer
+```
+
+The resolved config JSON is produced by `bin/resolve-config.py` (which resolves all `${tofu:...}` placeholders) and pushed to S3. CI/CD fetches it at deploy time and passes it to the same `Deployer` class used by `deploy.py`.
+
+Authentication uses GitHub OIDC federation — no stored AWS credentials. Each project gets a scoped `deployer-ci-{project}` IAM role that can only access that project's resources (ECR, ECS, SSM, S3 configs).
+
+See [CI-CD.md](../CI-CD.md) for the complete setup guide.
+
 ## Resource Module System
 
 The deployer uses a module system to separate **what an application needs** from **how an environment provides it**.
