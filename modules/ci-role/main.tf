@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # CI Role Module
 #
-# Creates a deployer-ci-{project} IAM role for GitHub Actions CI/CD.
+# Creates a {project}-ci-deploy IAM role for GitHub Actions CI/CD.
 # The role is scoped to one project prefix and trusts a specific GitHub repo
 # via OIDC federation.
 #
@@ -17,6 +17,7 @@
 #     oidc_provider_arn           = data.terraform_remote_state.bootstrap.outputs.oidc_provider_arn
 #     resolved_configs_bucket_arn = data.terraform_remote_state.bootstrap.outputs.resolved_configs_bucket_arn
 #     region                      = var.region
+#     permissions_boundary        = data.terraform_remote_state.bootstrap.outputs.ecs_role_boundary_arn
 #   }
 # ------------------------------------------------------------------------------
 
@@ -57,8 +58,9 @@ data "aws_iam_policy_document" "trust" {
 }
 
 resource "aws_iam_role" "ci_deploy" {
-  name               = "deployer-ci-${var.project_prefix}"
-  assume_role_policy = data.aws_iam_policy_document.trust.json
+  name                 = "${var.project_prefix}-ci-deploy"
+  assume_role_policy   = data.aws_iam_policy_document.trust.json
+  permissions_boundary = var.permissions_boundary
 }
 
 # ------------------------------------------------------------------------------

@@ -27,6 +27,11 @@ variable "region" {
   type        = string
 }
 
+variable "permissions_boundary" {
+  description = "ARN of the IAM permissions boundary to attach to the role (required by infra-admin policy)"
+  type        = string
+}
+
 variable "github_oidc_environments" {
   description = "GitHub environments to allow in OIDC trust policy"
   type        = list(string)
