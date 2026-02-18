@@ -197,6 +197,13 @@ PLAN_FILE="$PLANS_DIR/$ENV_NAME.tfplan"
 # S3 bucket exists. Failure is a warning, not a fatal error.
 post_apply_hook() {
     local env_name="$1"
+
+    # Only resolve config for environments that have a config.toml
+    # (bootstrap, shared-infra, etc. don't have one)
+    if [[ ! -f "$ENV_DIR/config.toml" ]]; then
+        return
+    fi
+
     echo ""
     echo "=== Post-apply: resolving config ==="
     if (cd "$DEPLOYER_ROOT" && uv run python bin/resolve-config.py "$env_name" --push-s3); then
