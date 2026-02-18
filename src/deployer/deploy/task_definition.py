@@ -144,7 +144,7 @@ def get_environment_variables(
     # Check if using new module system (deploy.toml has resource declarations)
     uses_modules = any(
         config.get(section)
-        for section in ["database", "cache", "storage", "cdn", "secrets"]
+        for section in ["database", "cache", "storage", "cdn", "secrets", "autoscale"]
     )
 
     if uses_modules and env_config:
@@ -298,8 +298,7 @@ def get_secrets(
 
     # Check if using new module system
     uses_modules = any(
-        config.get(section)
-        for section in ["database", "cache", "storage", "cdn"]
+        config.get(section) for section in ["database", "cache", "storage", "cdn", "autoscale"]
     )
 
     # Check if using new secrets.names style
@@ -324,14 +323,17 @@ def get_secrets(
 
         # Add module secrets
         for secret in module_output.secrets:
-            secrets.append({
-                "name": secret.name,
-                "valueFrom": secret.value_from,
-            })
+            secrets.append(
+                {
+                    "name": secret.name,
+                    "valueFrom": secret.value_from,
+                }
+            )
 
     elif uses_names_style and env_config:
         # Only using new secrets.names style (no other modules)
         from deployer.modules.secrets import SecretsModule
+
         module = SecretsModule()
         context = ModuleContext(
             region=region,
@@ -341,10 +343,12 @@ def get_secrets(
         )
         output = module.collect(secrets_section, env_config.get("secrets", {}), context)
         for secret in output.secrets:
-            secrets.append({
-                "name": secret.name,
-                "valueFrom": secret.value_from,
-            })
+            secrets.append(
+                {
+                    "name": secret.name,
+                    "valueFrom": secret.value_from,
+                }
+            )
 
     else:
         # Legacy style: [secrets] with explicit ssm:/path or secretsmanager:arn
@@ -394,16 +398,17 @@ def _get_legacy_secrets(
         if result.startswith("ssm:"):
             # SSM Parameter Store: ssm:/path/to/param
             param_path = result[4:]  # Remove "ssm:" prefix
-            secrets.append({
-                "name": name,
-                "valueFrom": f"arn:aws:ssm:{region}:{account_id}:parameter{param_path}"
-            })
+            secrets.append(
+                {
+                    "name": name,
+                    "valueFrom": f"arn:aws:ssm:{region}:{account_id}:parameter{param_path}",
+                }
+            )
         elif result.startswith("secretsmanager:"):
             # Secrets Manager: secretsmanager:arn
-            secrets.append({
-                "name": name,
-                "valueFrom": result[15:]  # Remove "secretsmanager:" prefix
-            })
+            secrets.append(
+                {"name": name, "valueFrom": result[15:]}  # Remove "secretsmanager:" prefix
+            )
 
     return secrets
 
@@ -452,16 +457,27 @@ def build_task_definition(
     # Add account_id to infra_config for module context
     infra_with_account = {**infra_config, "account_id": account_id}
     env_vars = get_environment_variables(
-        config, environment, region, service_name, infra_with_account, env_config,
-        credential_mode=credential_mode
+        config,
+        environment,
+        region,
+        service_name,
+        infra_with_account,
+        env_config,
+        credential_mode=credential_mode,
     )
     task_env = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
     log_debug(f"  Environment variables: {len(env_vars)}")
 
     # Build secrets (modules + legacy)
     secrets = get_secrets(
-        config, environment, region, account_id, service_name, infra_config, env_config,
-        credential_mode=credential_mode
+        config,
+        environment,
+        region,
+        account_id,
+        service_name,
+        infra_config,
+        env_config,
+        credential_mode=credential_mode,
     )
     log_debug(f"  Secrets: {len(secrets)}")
 
@@ -477,17 +493,14 @@ def build_task_definition(
             "options": {
                 "awslogs-group": f"/ecs/{app_name}-{environment}",
                 "awslogs-region": region,
-                "awslogs-stream-prefix": service_name
-            }
-        }
+                "awslogs-stream-prefix": service_name,
+            },
+        },
     }
 
     # Add port mapping if service has a port
     if "port" in service_toml:
-        container_def["portMappings"] = [{
-            "containerPort": service_toml["port"],
-            "protocol": "tcp"
-        }]
+        container_def["portMappings"] = [{"containerPort": service_toml["port"], "protocol": "tcp"}]
 
     # Add command if specified
     if "command" in service_toml:

@@ -2,12 +2,14 @@
 
 import pytest
 
+from deployer.config import DeployConfig
 from deployer.modules import (
     ModuleContext,
     ModuleOutput,
     ModuleRegistry,
     resolve_service_urls,
 )
+from deployer.modules.autoscale import AutoscaleModule
 from deployer.modules.database import DatabaseModule
 from deployer.modules.cache import CacheModule
 from deployer.modules.storage import StorageModule
@@ -534,8 +536,10 @@ class TestServiceUrlResolution:
         }
 
         resolved = resolve_service_urls(
-            env_vars, services, "test.example.com",
-            service_discovery_namespace="myapp-staging.local"
+            env_vars,
+            services,
+            "test.example.com",
+            service_discovery_namespace="myapp-staging.local",
         )
 
         assert resolved["DJANGO_URL"] == "http://web.myapp-staging.local:8000"
@@ -557,8 +561,10 @@ class TestServiceUrlResolution:
         services = {"celery": {"command": ["celery", "-A", "config", "worker"]}}  # No port
 
         resolved = resolve_service_urls(
-            env_vars, services, "test.example.com",
-            service_discovery_namespace="myapp-staging.local"
+            env_vars,
+            services,
+            "test.example.com",
+            service_discovery_namespace="myapp-staging.local",
         )
 
         # Should remain unresolved since service has no port
@@ -576,9 +582,175 @@ class TestServiceUrlResolution:
         }
 
         resolved = resolve_service_urls(
-            env_vars, services, "test.example.com",
-            service_discovery_namespace="myapp-staging.local"
+            env_vars,
+            services,
+            "test.example.com",
+            service_discovery_namespace="myapp-staging.local",
         )
 
         assert resolved["DJANGO_URL"] == "http://web.myapp-staging.local:8000"
         assert resolved["API_BASE_URL"] == "https://test.example.com/api"
+
+
+class TestAutoscaleModule:
+    """Tests for AutoscaleModule."""
+
+    def test_validate_not_declared(self):
+        """Test validation passes when autoscale not declared."""
+        module = AutoscaleModule()
+        errors = module.validate({}, {})
+        assert len(errors) == 0
+
+    def test_validate_enabled_with_namespace(self):
+        """Test validation passes when enabled with namespace."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"enabled": True, "namespace": "havoc-production"}
+
+        errors = module.validate(app_config, env_config)
+
+        assert len(errors) == 0
+
+    def test_validate_disabled(self):
+        """Test validation passes when explicitly disabled."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"enabled": False}
+
+        errors = module.validate(app_config, env_config)
+
+        assert len(errors) == 0
+
+    def test_validate_missing_env_config(self):
+        """Test validation fails when env_config missing."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+
+        errors = module.validate(app_config, {})
+
+        assert any("missing from config.toml" in e for e in errors)
+
+    def test_validate_missing_enabled_key(self):
+        """Test validation fails when enabled key missing."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"namespace": "havoc-production"}
+
+        errors = module.validate(app_config, env_config)
+
+        assert any("explicitly true or false" in e for e in errors)
+
+    def test_validate_enabled_without_namespace(self):
+        """Test validation fails when enabled but no namespace."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"enabled": True}
+
+        errors = module.validate(app_config, env_config)
+
+        assert any("namespace" in e for e in errors)
+
+    def test_validate_services_not_a_list(self):
+        """Test validation fails when services is not a list."""
+        module = AutoscaleModule()
+        app_config = {"services": "transcoder"}
+        env_config = {"enabled": True, "namespace": "havoc-production"}
+
+        errors = module.validate(app_config, env_config)
+
+        assert any("must be a list" in e for e in errors)
+
+    def test_validate_missing_services(self):
+        """Test validation fails when services key missing."""
+        module = AutoscaleModule()
+        app_config = {"other": "value"}
+        env_config = {"enabled": True, "namespace": "havoc-production"}
+
+        errors = module.validate(app_config, env_config)
+
+        assert any("missing 'services'" in e for e in errors)
+
+    def test_collect_enabled(self):
+        """Test collecting autoscale config when enabled."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"enabled": True, "namespace": "havoc-production"}
+        ctx = ModuleContext(
+            region="us-west-2",
+            account_id="123456789",
+            environment="production",
+            app_name="havoc",
+        )
+
+        output = module.collect(app_config, env_config, ctx)
+
+        env_map = {e.name: e.value for e in output.environment}
+        assert env_map["AUTOSCALE_NAMESPACE"] == "havoc-production"
+        assert env_map["AUTOSCALE_SERVICES"] == "transcoder"
+
+    def test_collect_disabled(self):
+        """Test collecting autoscale config when disabled."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder"]}
+        env_config = {"enabled": False}
+        ctx = ModuleContext(
+            region="us-west-2",
+            account_id="123456789",
+            environment="staging",
+            app_name="havoc",
+        )
+
+        output = module.collect(app_config, env_config, ctx)
+
+        assert len(output.environment) == 0
+
+    def test_collect_multiple_services(self):
+        """Test collecting with multiple services produces comma-separated list."""
+        module = AutoscaleModule()
+        app_config = {"services": ["transcoder", "consumer"]}
+        env_config = {"enabled": True, "namespace": "havoc-production"}
+        ctx = ModuleContext(
+            region="us-west-2",
+            account_id="123456789",
+            environment="production",
+            app_name="havoc",
+        )
+
+        output = module.collect(app_config, env_config, ctx)
+
+        env_map = {e.name: e.value for e in output.environment}
+        assert env_map["AUTOSCALE_SERVICES"] == "transcoder,consumer"
+
+
+class TestCheckModules:
+    """Tests for the check_modules preflight step."""
+
+    def test_check_modules_passes(self):
+        """Test check_modules passes with valid config."""
+        from deployer.deploy.preflight import check_modules
+
+        deploy_config = DeployConfig.from_dict(
+            {
+                "application": {"name": "testapp"},
+                "autoscale": {"services": ["transcoder"]},
+            }
+        )
+        env_config = {"autoscale": {"enabled": False}}
+
+        # Should not raise
+        check_modules(deploy_config, env_config)
+
+    def test_check_modules_fails(self):
+        """Test check_modules fails with invalid config."""
+        from deployer.deploy.preflight import check_modules, PreflightError
+
+        deploy_config = DeployConfig.from_dict(
+            {
+                "application": {"name": "testapp"},
+                "autoscale": {"services": ["transcoder"]},
+            }
+        )
+        env_config = {}  # Missing autoscale section
+
+        with pytest.raises(PreflightError, match="module validation failed"):
+            check_modules(deploy_config, env_config)

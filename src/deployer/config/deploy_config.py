@@ -29,6 +29,7 @@ KNOWN_SECTIONS = {
     "cache",
     "storage",
     "cdn",
+    "autoscale",
 }
 
 
@@ -302,6 +303,7 @@ class DeployConfig:
     cache: dict[str, Any] | None = None
     storage: dict[str, Any] | None = None
     cdn: dict[str, Any] | None = None
+    autoscale: dict[str, Any] | None = None
     _warnings: list[str] = field(default_factory=list, repr=False)
     _path: Path | None = field(default=None, repr=False)
 
@@ -407,6 +409,10 @@ class DeployConfig:
         names = self._secrets.get("names", [])
         injected.update(names)
 
+        # Autoscale module: AUTOSCALE_NAMESPACE, AUTOSCALE_SERVICES
+        if self.autoscale:
+            injected.update({"AUTOSCALE_NAMESPACE", "AUTOSCALE_SERVICES"})
+
         return injected
 
     def get_warnings(self) -> list[str]:
@@ -495,6 +501,8 @@ class DeployConfig:
             result["storage"] = self.storage
         if self.cdn:
             result["cdn"] = self.cdn
+        if self.autoscale:
+            result["autoscale"] = self.autoscale
 
         return result
 
@@ -580,6 +588,7 @@ class DeployConfig:
             cache=data.get("cache"),
             storage=data.get("storage"),
             cdn=data.get("cdn"),
+            autoscale=data.get("autoscale"),
             _warnings=warnings,
             _path=path,
         )

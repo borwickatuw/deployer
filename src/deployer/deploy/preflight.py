@@ -144,6 +144,25 @@ def check_ssm_secrets(
     print()
 
 
+def check_modules(deploy_config: DeployConfig, env_config: dict) -> None:
+    """Validate resource module declarations against environment config.
+
+    Raises:
+        PreflightError: If module validation fails.
+    """
+    from deployer.modules import ModuleRegistry
+
+    log("Checking resource modules...")
+    errors = ModuleRegistry.validate_all(deploy_config.get_raw_dict(), env_config)
+    if errors:
+        lines = ["Resource module validation failed:"]
+        for error in errors:
+            lines.append(f"    {error}")
+        raise PreflightError("\n".join(lines))
+    log_success("Resource modules validated")
+    print()
+
+
 def check_ecs_cluster(env_config: dict) -> None:
     """Verify the ECS cluster exists and is active.
 
@@ -198,6 +217,9 @@ def run_preflight_checks(
 
     # Always validate environment config
     check_environment_config(env_config)
+
+    # Resource modules (database, cache, storage, cdn, autoscale, etc.)
+    check_modules(deploy_config, env_config)
 
     # Audit (deploy.toml vs docker-compose.yml)
     if not options.skip_audit:

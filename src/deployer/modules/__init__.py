@@ -37,6 +37,7 @@ from .base import (
     ResourceModule,
     SecretReference,
 )
+from .autoscale import AutoscaleModule
 from .cache import CacheModule
 from .cdn import CdnModule
 from .database import DatabaseModule
@@ -54,6 +55,7 @@ class ModuleRegistry:
         StorageModule(),
         CdnModule(),
         SecretsModule(),
+        AutoscaleModule(),
     ]
 
     @classmethod
@@ -122,8 +124,10 @@ class ModuleRegistry:
                 # Pass credential_mode to database module
                 if module.name == "database":
                     module_output = module.collect(
-                        module_app_config, module_env_config, context,
-                        credential_mode=credential_mode
+                        module_app_config,
+                        module_env_config,
+                        context,
+                        credential_mode=credential_mode,
                     )
                 else:
                     module_output = module.collect(module_app_config, module_env_config, context)
