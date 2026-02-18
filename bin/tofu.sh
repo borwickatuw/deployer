@@ -19,8 +19,16 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks to find the real script location (e.g., when invoked via ~/bin/tofu.sh)
+_source="${BASH_SOURCE[0]}"
+while [[ -L "$_source" ]]; do
+    _dir="$(cd "$(dirname "$_source")" && pwd)"
+    _source="$(readlink "$_source")"
+    [[ "$_source" != /* ]] && _source="$_dir/$_source"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd)"
 DEPLOYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+unset _source _dir
 
 show_help() {
     echo "Usage: $0 <command> <environment> [args...]"
