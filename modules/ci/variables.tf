@@ -1,6 +1,9 @@
 # ------------------------------------------------------------------------------
 # CI Module Variables (Shared Infrastructure)
-#
-# This module has no required variables. All resources are derived from
-# the current AWS account.
 # ------------------------------------------------------------------------------
+
+variable "create_oidc_provider" {
+  type        = bool
+  description = "Create the GitHub OIDC provider. Set to false if it already exists (managed by another project)."
+  default     = false
+}

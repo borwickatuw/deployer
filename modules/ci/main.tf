@@ -20,12 +20,14 @@ data "aws_caller_identity" "current" {}
 # GitHub OIDC Identity Provider
 #
 # Account-wide resource — allows GitHub Actions to assume IAM roles via OIDC.
-# The thumbprint is GitHub's OIDC certificate thumbprint. AWS verifies it
-# automatically for actions.githubusercontent.com since July 2023, but the
-# field is still required by the API.
+# Only one can exist per URL per account. If another project already manages
+# this (e.g., a separate tofu stack), set create_oidc_provider = false to
+# look up the existing one instead.
 # ------------------------------------------------------------------------------
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count = var.create_oidc_provider ? 1 : 0
+
   url = "https://token.actions.githubusercontent.com"
 
   client_id_list = ["sts.amazonaws.com"]
@@ -33,6 +35,11 @@ resource "aws_iam_openid_connect_provider" "github" {
   # AWS verifies GitHub's OIDC thumbprint automatically, but the field is
   # required. This is the well-known thumbprint for GitHub Actions.
   thumbprint_list = ["ffffffffffffffffffffffffffffffffffffffff"]
+}
+
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.create_oidc_provider ? 0 : 1
+  url   = "https://token.actions.githubusercontent.com"
 }
 
 # ------------------------------------------------------------------------------

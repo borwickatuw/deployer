@@ -14,5 +14,9 @@ output "resolved_configs_bucket_arn" {
 
 output "oidc_provider_arn" {
   description = "ARN of the GitHub OIDC identity provider (passed to ci-role modules)"
-  value       = aws_iam_openid_connect_provider.github.arn
+  value = (
+    var.create_oidc_provider
+    ? aws_iam_openid_connect_provider.github[0].arn
+    : data.aws_iam_openid_connect_provider.github[0].arn
+  )
 }
