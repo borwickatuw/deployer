@@ -46,6 +46,14 @@ route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 ecr_repository_names = ["web"]
 
 # ------------------------------------------------------------------------------
+# CI/CD Configuration (optional)
+# Uncomment if you enabled the ci_role module in main.tf.
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# github_repo = "myorg/myapp"  # GitHub org/repo for OIDC deployment
+
+# ------------------------------------------------------------------------------
 # WAF Configuration
 # ------------------------------------------------------------------------------
 

@@ -225,6 +225,45 @@ module "infrastructure" {
 }
 
 # ------------------------------------------------------------------------------
+# CI/CD Role (optional)
+#
+# Uncomment to create a GitHub Actions CI deploy role for this project.
+# Requires: modules/ci in bootstrap (creates OIDC provider + S3 bucket).
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# data "terraform_remote_state" "bootstrap" {
+#   backend = "s3"
+#   config = {
+#     bucket = "deployer-terraform-state-123456789012"  # Update with your account ID
+#     key    = "bootstrap/terraform.tfstate"
+#     region = "us-west-2"
+#   }
+# }
+
+# variable "github_repo" {
+#   description = "GitHub org/repo for CI/CD deployment (e.g., 'myorg/myapp')"
+#   type        = string
+#   default     = ""
+# }
+
+# module "ci_role" {
+#   source = "../../deployer/modules/ci-role"
+#   count  = var.github_repo != "" ? 1 : 0
+#
+#   project_prefix              = var.project_name
+#   github_repo                 = var.github_repo
+#   oidc_provider_arn           = data.terraform_remote_state.bootstrap.outputs.oidc_provider_arn
+#   resolved_configs_bucket_arn = data.terraform_remote_state.bootstrap.outputs.resolved_configs_bucket_arn
+#   region                      = "us-west-2"
+# }
+
+# output "ci_role_arn" {
+#   value       = var.github_repo != "" ? module.ci_role[0].role_arn : null
+#   description = "CI deploy IAM role ARN for GitHub Actions"
+# }
+
+# ------------------------------------------------------------------------------
 # Outputs for deploy script
 # ------------------------------------------------------------------------------
 
