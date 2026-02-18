@@ -8,7 +8,6 @@ import pytest
 
 from deployer.utils import (
     Colors,
-    get_staging_environments,
     log,
     log_error,
     log_info,
@@ -132,84 +131,3 @@ class TestRunCommand:
         assert output  # Should have error message
 
 
-class TestGetStagingEnvironments:
-    """Tests for get_staging_environments function."""
-
-    @staticmethod
-    def _make_env(tmp_path, name, env_type="staging"):
-        """Helper to create an environment directory with typed config.toml."""
-        d = tmp_path / name
-        d.mkdir()
-        d.joinpath("config.toml").write_text(
-            f'[environment]\ntype = "{env_type}"\n'
-        )
-
-    def test_find_staging_environments(self, tmp_path):
-        """Test finding staging environment directories."""
-        self._make_env(tmp_path, "app-staging", "staging")
-        self._make_env(tmp_path, "other-staging", "staging")
-        self._make_env(tmp_path, "production", "production")
-
-        result = get_staging_environments(tmp_path)
-
-        assert "app-staging" in result
-        assert "other-staging" in result
-        assert "production" not in result
-
-    def test_no_environments_directory(self, tmp_path):
-        """Test when environments directory doesn't exist."""
-        nonexistent = tmp_path / "nonexistent"
-        result = get_staging_environments(nonexistent)
-        assert result == []
-
-    def test_no_staging_environments(self, tmp_path):
-        """Test when no staging environments exist."""
-        self._make_env(tmp_path, "app-production", "production")
-        self._make_env(tmp_path, "app-development", "development")
-
-        result = get_staging_environments(tmp_path)
-        assert result == []
-
-    def test_results_are_sorted(self, tmp_path):
-        """Test that results are returned in sorted order."""
-        self._make_env(tmp_path, "z-staging", "staging")
-        self._make_env(tmp_path, "a-staging", "staging")
-        self._make_env(tmp_path, "m-staging", "staging")
-
-        result = get_staging_environments(tmp_path)
-
-        assert result == ["a-staging", "m-staging", "z-staging"]
-
-    def test_only_directories(self, tmp_path):
-        """Test that only directories are returned, not files."""
-        self._make_env(tmp_path, "real-staging", "staging")
-        (tmp_path / "fake-staging.txt").write_text("not a dir")
-
-        result = get_staging_environments(tmp_path)
-
-        assert result == ["real-staging"]
-
-    def test_name_independent_of_type(self, tmp_path):
-        """Test that environment type comes from config.toml, not the name."""
-        self._make_env(tmp_path, "my-test-env", "staging")
-        self._make_env(tmp_path, "staging-backup", "production")
-        self._make_env(tmp_path, "real-staging", "staging")
-
-        result = get_staging_environments(tmp_path)
-
-        assert "my-test-env" in result
-        assert "real-staging" in result
-        assert "staging-backup" not in result
-
-    def test_multi_hyphen_app_names(self, tmp_path):
-        """Test that multi-hyphen app names work correctly."""
-        self._make_env(tmp_path, "my-cool-app-staging", "staging")
-        self._make_env(tmp_path, "api-v2-staging", "staging")
-        self._make_env(tmp_path, "simple-staging", "staging")
-
-        result = get_staging_environments(tmp_path)
-
-        assert "my-cool-app-staging" in result
-        assert "api-v2-staging" in result
-        assert "simple-staging" in result
-        assert len(result) == 3

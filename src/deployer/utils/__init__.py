@@ -11,9 +11,7 @@ from .environment import (
     get_all_environments,
     get_deployer_root,
     get_environment_path,
-    get_environments_by_type,
     get_environments_dir,
-    get_staging_environments,
     validate_environment_deployed,
 )
 from .links import (
@@ -53,8 +51,6 @@ __all__ = [
     "get_environments_dir",
     "get_linked_deploy_toml",
     "get_links_file",
-    "get_environments_by_type",
-    "get_staging_environments",
     "is_verbose",
     "log",
     "log_debug",

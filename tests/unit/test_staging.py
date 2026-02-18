@@ -60,60 +60,6 @@ class TestGenerateTempPassword:
         assert len(unique_passwords) == 10
 
 
-class TestGetStagingEnvironments:
-    """Tests for get_staging_environments function from deployer.utils."""
-
-    @staticmethod
-    def _make_env(tmp_path, name, env_type="staging"):
-        d = tmp_path / name
-        d.mkdir()
-        d.joinpath("config.toml").write_text(
-            f'[environment]\ntype = "{env_type}"\n'
-        )
-
-    def test_find_staging_environments(self, tmp_path):
-        """Test finding staging environment directories."""
-        from deployer.utils import get_staging_environments
-
-        self._make_env(tmp_path, "myapp-staging", "staging")
-        self._make_env(tmp_path, "other-staging", "staging")
-        self._make_env(tmp_path, "production", "production")
-
-        result = get_staging_environments(tmp_path)
-
-        assert "myapp-staging" in result
-        assert "other-staging" in result
-        assert "production" not in result
-
-    def test_no_environments_directory(self, tmp_path):
-        """Test when environments directory doesn't exist."""
-        from deployer.utils import get_staging_environments
-
-        nonexistent = tmp_path / "nonexistent"
-        result = get_staging_environments(nonexistent)
-        assert result == []
-
-    def test_no_staging_environments(self, tmp_path):
-        """Test when no staging environments exist."""
-        from deployer.utils import get_staging_environments
-
-        self._make_env(tmp_path, "production", "production")
-
-        result = get_staging_environments(tmp_path)
-        assert result == []
-
-    def test_results_are_sorted(self, tmp_path):
-        """Test that results are returned in sorted order."""
-        from deployer.utils import get_staging_environments
-
-        self._make_env(tmp_path, "z-staging", "staging")
-        self._make_env(tmp_path, "a-staging", "staging")
-        self._make_env(tmp_path, "m-staging", "staging")
-
-        result = get_staging_environments(tmp_path)
-
-        assert result == ["a-staging", "m-staging", "z-staging"]
-
 
 class TestRunCommand:
     """Tests for run_command function."""
