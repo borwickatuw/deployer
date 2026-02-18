@@ -1,4 +1,4 @@
-"""Tests for environment.py and cognito.py functions."""
+"""Tests for bin/ scripts (cognito.py, environment.py)."""
 
 import string
 import sys
