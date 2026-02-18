@@ -468,3 +468,21 @@ variable "service_discovery_enabled" {
   type        = bool
   default     = false
 }
+
+# Service definitions (for infrastructure provisioning)
+
+variable "services" {
+  description = "Service definitions for infrastructure provisioning (target groups, SG rules, service discovery)"
+  type = map(object({
+    cpu                  = optional(number)
+    memory               = optional(number)
+    replicas             = optional(number)
+    load_balanced        = optional(bool, false)
+    port                 = optional(number)
+    health_check_path    = optional(string, "/")
+    path_pattern         = optional(string)
+    health_check_matcher = optional(string)
+    service_discovery    = optional(bool, false)
+  }))
+  default = {}
+}

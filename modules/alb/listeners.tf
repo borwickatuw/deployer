@@ -96,3 +96,25 @@ resource "aws_lb_listener_rule" "health_check" {
     }
   }
 }
+
+# ------------------------------------------------------------------------------
+# Path-Based Routing Rules (for additional target groups)
+# ------------------------------------------------------------------------------
+
+resource "aws_lb_listener_rule" "service_route" {
+  for_each = { for k, v in var.additional_target_groups : k => v if local.https_enabled }
+
+  listener_arn = local.active_https_listener_arn
+  priority     = each.value.priority
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.service[each.key].arn
+  }
+
+  condition {
+    path_pattern {
+      values = [each.value.path_pattern]
+    }
+  }
+}

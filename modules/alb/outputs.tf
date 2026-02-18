@@ -56,3 +56,8 @@ output "target_group_arn_suffix" {
   description = "Default target group ARN suffix (for CloudWatch metrics)"
   value       = aws_lb_target_group.default.arn_suffix
 }
+
+output "service_target_group_arns" {
+  description = "Map of service names to their target group ARNs (for path-based routing)"
+  value       = { for k, v in aws_lb_target_group.service : k => v.arn }
+}

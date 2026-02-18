@@ -98,3 +98,15 @@ variable "access_logs_prefix" {
   type        = string
   default     = "alb-logs"
 }
+
+variable "additional_target_groups" {
+  description = "Additional target groups with path-based routing rules"
+  type = map(object({
+    port                 = number
+    path_pattern         = string
+    health_check_path    = optional(string, "/")
+    health_check_matcher = optional(string)
+    priority             = number
+  }))
+  default = {}
+}

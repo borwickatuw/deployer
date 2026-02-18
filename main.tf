@@ -47,6 +47,35 @@ locals {
       user_pool_domain    = module.cognito[0].domain
     } : null
   )
+
+  # Services needing their own target group (have path_pattern + port)
+  service_routes = {
+    for name, svc in var.services : name => {
+      port                 = svc.port
+      path_pattern         = svc.path_pattern
+      health_check_path    = svc.health_check_path
+      health_check_matcher = svc.health_check_matcher
+    } if svc.path_pattern != null && svc.port != null
+  }
+
+  # Auto-assign listener rule priorities: 10, 20, 30, ...
+  service_routes_with_priority = {
+    for idx, name in sort(keys(local.service_routes)) : name => merge(
+      local.service_routes[name], { priority = (idx + 1) * 10 }
+    )
+  }
+
+  # All unique ports from load-balanced services (for SG rules)
+  alb_ingress_ports = length(var.services) > 0 ? toset([
+    for name, svc in var.services : tostring(svc.port)
+    if svc.port != null && svc.load_balanced
+  ]) : toset([tostring(var.container_port)])
+
+  # Services that need service discovery
+  discovery_services = {
+    for name, svc in var.services : name => true
+    if svc.service_discovery && var.service_discovery_enabled
+  }
 }
 
 # State migration: Route 53 record moved from inline resource to module
@@ -128,6 +157,9 @@ module "alb" {
   # Cognito authentication (optional)
   # Prefer external cognito_auth if provided, otherwise use local pool if enabled
   cognito_auth = local.cognito_auth_config
+
+  # Additional target groups for path-based routing (derived from services variable)
+  additional_target_groups = local.service_routes_with_priority
 }
 
 # RDS PostgreSQL
@@ -415,15 +447,22 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
-# Allow ALB to reach ECS tasks on the application port
+# Allow ALB to reach ECS tasks on application ports
 resource "aws_security_group_rule" "alb_to_ecs" {
+  for_each                 = local.alb_ingress_ports
   type                     = "ingress"
-  from_port                = var.container_port
-  to_port                  = var.container_port
+  from_port                = tonumber(each.value)
+  to_port                  = tonumber(each.value)
   protocol                 = "tcp"
   source_security_group_id = module.alb.security_group_id
   security_group_id        = module.ecs_cluster.security_group_id
-  description              = "Allow ALB to reach ECS tasks on port ${var.container_port}"
+  description              = "Allow ALB to reach ECS on port ${each.value}"
+}
+
+# State migration: SG rule moved from single resource to for_each
+moved {
+  from = aws_security_group_rule.alb_to_ecs
+  to   = aws_security_group_rule.alb_to_ecs["8000"]
 }
 
 # WAF (optional)
@@ -488,5 +527,43 @@ resource "aws_service_discovery_private_dns_namespace" "main" {
 
   tags = {
     Name = "${local.name_prefix}-service-discovery"
+  }
+}
+
+# Service Discovery services (auto-created from services variable)
+resource "aws_service_discovery_service" "services" {
+  for_each = local.discovery_services
+
+  name = each.key
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.main[0].id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {}
+
+  tags = {
+    Name = "${local.name_prefix}-${each.key}-discovery"
+  }
+
+  lifecycle {
+    ignore_changes = [health_check_custom_config]
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      for instance_id in $(aws servicediscovery list-instances --service-id ${self.id} --query 'Instances[].Id' --output text 2>/dev/null); do
+        aws servicediscovery deregister-instance --service-id ${self.id} --instance-id $instance_id || true
+      done
+      sleep 2
+    EOT
   }
 }

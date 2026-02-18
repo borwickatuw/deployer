@@ -9,7 +9,7 @@ locals {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Service Temporarily Unavailable</title>
+      <title>${var.name_prefix} - Service Temporarily Unavailable</title>
       <style>
         * {
           margin: 0;
@@ -48,28 +48,35 @@ locals {
           line-height: 1.6;
           margin-bottom: 24px;
         }
-        .status {
+        ul {
+          text-align: left;
           display: inline-block;
-          background: #fed7d7;
-          color: #c53030;
-          padding: 8px 16px;
+          margin: 0 0 24px 0;
+          color: #4a5568;
+        }
+        .env-badge {
+          display: inline-block;
+          background: #e2e8f0;
+          color: #4a5568;
+          padding: 4px 12px;
           border-radius: 9999px;
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 500;
+          margin-bottom: 24px;
         }
       </style>
     </head>
     <body>
       <main class="container" role="main">
         <div class="icon" aria-hidden="true">&#9888;&#65039;</div>
+        <div class="env-badge">${var.name_prefix}</div>
         <h1>Service Temporarily Unavailable</h1>
         <p>
-          This non-production environment is currently unavailable. Possible reasons:
+          This staging environment is currently unavailable. Possible reasons:
         </p>
-        <ul style="text-align: left; display: inline-block; margin: 0 0 24px 0; color: #4a5568;">
+        <ul>
           <li>Scheduled downtime outside business hours (Pacific Time)</li>
           <li>Deployment or maintenance in progress</li>
-          <li>This is a volatile development/staging environment</li>
         </ul>
         <p>
           Please try again later or contact the development team if this is unexpected.

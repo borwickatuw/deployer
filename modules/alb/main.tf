@@ -57,3 +57,28 @@ resource "aws_lb_target_group" "default" {
     matcher             = "200-399"
   }
 }
+
+# ------------------------------------------------------------------------------
+# Additional Target Groups (for path-based routing)
+# ------------------------------------------------------------------------------
+
+resource "aws_lb_target_group" "service" {
+  for_each = var.additional_target_groups
+
+  name        = "${var.name_prefix}-${each.key}"
+  port        = each.value.port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  deregistration_delay = var.deregistration_delay
+
+  health_check {
+    path                = each.value.health_check_path
+    healthy_threshold   = var.healthy_threshold
+    unhealthy_threshold = var.unhealthy_threshold
+    timeout             = var.health_check_timeout
+    interval            = var.health_check_interval
+    matcher             = coalesce(each.value.health_check_matcher, "200-399")
+  }
+}

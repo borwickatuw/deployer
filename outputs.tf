@@ -293,3 +293,19 @@ output "service_discovery_namespace_name" {
   description = "AWS Cloud Map namespace name, e.g., 'myapp-staging.local'"
   value       = var.service_discovery_enabled ? aws_service_discovery_private_dns_namespace.main[0].name : null
 }
+
+# Service infrastructure outputs (derived from services variable)
+
+output "service_target_groups" {
+  description = "Map of service names to target group ARNs"
+  value = merge(
+    { for name, svc in var.services : name => module.alb.default_target_group_arn
+      if svc.load_balanced && svc.path_pattern == null && svc.port != null },
+    module.alb.service_target_group_arns
+  )
+}
+
+output "service_discovery_registries" {
+  description = "Map of service names to service discovery registry ARNs"
+  value       = { for k, v in aws_service_discovery_service.services : k => v.arn }
+}
