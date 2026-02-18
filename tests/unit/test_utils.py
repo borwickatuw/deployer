@@ -135,14 +135,20 @@ class TestRunCommand:
 class TestGetStagingEnvironments:
     """Tests for get_staging_environments function."""
 
+    @staticmethod
+    def _make_env(tmp_path, name, env_type="staging"):
+        """Helper to create an environment directory with typed config.toml."""
+        d = tmp_path / name
+        d.mkdir()
+        d.joinpath("config.toml").write_text(
+            f'[environment]\ntype = "{env_type}"\n'
+        )
+
     def test_find_staging_environments(self, tmp_path):
         """Test finding staging environment directories."""
-        (tmp_path / "app-staging").mkdir()
-        (tmp_path / "app-staging" / "config.toml").write_text("")
-        (tmp_path / "other-staging").mkdir()
-        (tmp_path / "other-staging" / "config.toml").write_text("")
-        (tmp_path / "production").mkdir()
-        (tmp_path / "production" / "config.toml").write_text("")
+        self._make_env(tmp_path, "app-staging", "staging")
+        self._make_env(tmp_path, "other-staging", "staging")
+        self._make_env(tmp_path, "production", "production")
 
         result = get_staging_environments(tmp_path)
 
@@ -158,20 +164,17 @@ class TestGetStagingEnvironments:
 
     def test_no_staging_environments(self, tmp_path):
         """Test when no staging environments exist."""
-        (tmp_path / "production").mkdir()
-        (tmp_path / "development").mkdir()
+        self._make_env(tmp_path, "app-production", "production")
+        self._make_env(tmp_path, "app-development", "development")
 
         result = get_staging_environments(tmp_path)
         assert result == []
 
     def test_results_are_sorted(self, tmp_path):
         """Test that results are returned in sorted order."""
-        (tmp_path / "z-staging").mkdir()
-        (tmp_path / "z-staging" / "config.toml").write_text("")
-        (tmp_path / "a-staging").mkdir()
-        (tmp_path / "a-staging" / "config.toml").write_text("")
-        (tmp_path / "m-staging").mkdir()
-        (tmp_path / "m-staging" / "config.toml").write_text("")
+        self._make_env(tmp_path, "z-staging", "staging")
+        self._make_env(tmp_path, "a-staging", "staging")
+        self._make_env(tmp_path, "m-staging", "staging")
 
         result = get_staging_environments(tmp_path)
 
@@ -179,37 +182,30 @@ class TestGetStagingEnvironments:
 
     def test_only_directories(self, tmp_path):
         """Test that only directories are returned, not files."""
-        (tmp_path / "real-staging").mkdir()
-        (tmp_path / "real-staging" / "config.toml").write_text("")
+        self._make_env(tmp_path, "real-staging", "staging")
         (tmp_path / "fake-staging.txt").write_text("not a dir")
 
         result = get_staging_environments(tmp_path)
 
         assert result == ["real-staging"]
 
-    def test_staging_in_middle_not_matched(self, tmp_path):
-        """Test that 'staging' in middle of name is not matched."""
-        (tmp_path / "staging-backup").mkdir()
-        (tmp_path / "staging-backup" / "config.toml").write_text("")
-        (tmp_path / "my-staging-test").mkdir()
-        (tmp_path / "my-staging-test" / "config.toml").write_text("")
-        (tmp_path / "real-staging").mkdir()
-        (tmp_path / "real-staging" / "config.toml").write_text("")
+    def test_name_independent_of_type(self, tmp_path):
+        """Test that environment type comes from config.toml, not the name."""
+        self._make_env(tmp_path, "my-test-env", "staging")
+        self._make_env(tmp_path, "staging-backup", "production")
+        self._make_env(tmp_path, "real-staging", "staging")
 
         result = get_staging_environments(tmp_path)
 
-        assert "staging-backup" not in result
-        assert "my-staging-test" not in result
+        assert "my-test-env" in result
         assert "real-staging" in result
+        assert "staging-backup" not in result
 
     def test_multi_hyphen_app_names(self, tmp_path):
         """Test that multi-hyphen app names work correctly."""
-        (tmp_path / "my-cool-app-staging").mkdir()
-        (tmp_path / "my-cool-app-staging" / "config.toml").write_text("")
-        (tmp_path / "api-v2-staging").mkdir()
-        (tmp_path / "api-v2-staging" / "config.toml").write_text("")
-        (tmp_path / "simple-staging").mkdir()
-        (tmp_path / "simple-staging" / "config.toml").write_text("")
+        self._make_env(tmp_path, "my-cool-app-staging", "staging")
+        self._make_env(tmp_path, "api-v2-staging", "staging")
+        self._make_env(tmp_path, "simple-staging", "staging")
 
         result = get_staging_environments(tmp_path)
 

@@ -525,31 +525,6 @@ def get_environment_type(env_config: dict) -> str:
     return env_type
 
 
-def derive_environment_from_env_name(env_name: str) -> str:
-    """Derive the environment type (staging/production) from env name.
-
-    .. deprecated::
-        Use :func:`get_environment_type` instead, which reads from config.toml.
-
-    Args:
-        env_name: Environment name like 'myapp-staging' or 'myapp-production'.
-
-    Returns:
-        'staging' or 'production'.
-
-    Raises:
-        ValueError: If environment type cannot be determined.
-    """
-    if env_name.endswith("-staging"):
-        return "staging"
-    elif env_name.endswith("-production"):
-        return "production"
-    else:
-        raise ValueError(
-            f"Cannot derive environment from '{env_name}'. "
-            "Expected name to end with '-staging' or '-production'."
-        )
-
 
 def load_deploy_toml(deploy_toml_path: Path) -> dict:
     """Load an application's deploy.toml file.

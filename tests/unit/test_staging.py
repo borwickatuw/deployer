@@ -63,16 +63,21 @@ class TestGenerateTempPassword:
 class TestGetStagingEnvironments:
     """Tests for get_staging_environments function from deployer.utils."""
 
+    @staticmethod
+    def _make_env(tmp_path, name, env_type="staging"):
+        d = tmp_path / name
+        d.mkdir()
+        d.joinpath("config.toml").write_text(
+            f'[environment]\ntype = "{env_type}"\n'
+        )
+
     def test_find_staging_environments(self, tmp_path):
         """Test finding staging environment directories."""
         from deployer.utils import get_staging_environments
 
-        (tmp_path / "myapp-staging").mkdir()
-        (tmp_path / "myapp-staging" / "config.toml").write_text("")
-        (tmp_path / "other-staging").mkdir()
-        (tmp_path / "other-staging" / "config.toml").write_text("")
-        (tmp_path / "production").mkdir()
-        (tmp_path / "production" / "config.toml").write_text("")
+        self._make_env(tmp_path, "myapp-staging", "staging")
+        self._make_env(tmp_path, "other-staging", "staging")
+        self._make_env(tmp_path, "production", "production")
 
         result = get_staging_environments(tmp_path)
 
@@ -92,8 +97,7 @@ class TestGetStagingEnvironments:
         """Test when no staging environments exist."""
         from deployer.utils import get_staging_environments
 
-        (tmp_path / "production").mkdir()
-        (tmp_path / "production" / "config.toml").write_text("")
+        self._make_env(tmp_path, "production", "production")
 
         result = get_staging_environments(tmp_path)
         assert result == []
@@ -102,12 +106,9 @@ class TestGetStagingEnvironments:
         """Test that results are returned in sorted order."""
         from deployer.utils import get_staging_environments
 
-        (tmp_path / "z-staging").mkdir()
-        (tmp_path / "z-staging" / "config.toml").write_text("")
-        (tmp_path / "a-staging").mkdir()
-        (tmp_path / "a-staging" / "config.toml").write_text("")
-        (tmp_path / "m-staging").mkdir()
-        (tmp_path / "m-staging" / "config.toml").write_text("")
+        self._make_env(tmp_path, "z-staging", "staging")
+        self._make_env(tmp_path, "a-staging", "staging")
+        self._make_env(tmp_path, "m-staging", "staging")
 
         result = get_staging_environments(tmp_path)
 

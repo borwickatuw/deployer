@@ -24,7 +24,6 @@ from .cognito import (
     generate_temp_password,
 )
 from .config import (
-    derive_environment_from_env_name,
     get_cluster_name_from_config,
     get_cognito_auth_token,
     get_cognito_test_credentials,
@@ -72,7 +71,6 @@ __all__ = [
     "format_welcome_message",
     "generate_temp_password",
     # config
-    "derive_environment_from_env_name",
     "get_environment_type",
     "get_cluster_name_from_config",
     "get_cognito_auth_token",

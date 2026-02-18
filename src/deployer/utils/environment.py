@@ -73,20 +73,52 @@ def get_all_environments(environments_dir: Path) -> list[str]:
     return sorted(envs)
 
 
+def get_environments_by_type(
+    environments_dir: Path, env_type: str
+) -> list[str]:
+    """Find all environment directories of a given type.
+
+    Reads [environment].type from each environment's config.toml to determine
+    its type, rather than relying on naming conventions.
+
+    Args:
+        environments_dir: Directory containing environment subdirectories.
+        env_type: Environment type to filter by (e.g., "staging", "production").
+
+    Returns:
+        Sorted list of environment names matching the given type.
+    """
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
+
+    results = []
+    for env_name in get_all_environments(environments_dir):
+        config_path = environments_dir / env_name / "config.toml"
+        try:
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+            if config.get("environment", {}).get("type") == env_type:
+                results.append(env_name)
+        except Exception:
+            continue
+    return sorted(results)
+
+
 def get_staging_environments(environments_dir: Path) -> list[str]:
     """Find all staging environment directories.
 
-    Environment directories follow the pattern <app-name>-<env-type>, where
-    env-type is the last hyphen-separated component. This function returns
-    environments where env-type is "staging".
+    Reads [environment].type from each config.toml to identify staging
+    environments.
 
     Args:
         environments_dir: Directory containing environment subdirectories.
 
     Returns:
-        Sorted list of environment names ending with '-staging'.
+        Sorted list of staging environment names.
     """
-    return [env for env in get_all_environments(environments_dir) if env.endswith("-staging")]
+    return get_environments_by_type(environments_dir, "staging")
 
 
 def validate_environment_deployed(env_name: str) -> tuple[Path | None, str | None]:
