@@ -7,7 +7,7 @@ Application declares:
 Environment provides:
     [autoscale]
     enabled = true
-    namespace = "havoc-production"
+    namespace = "myapp-production"
 
 Injects: AUTOSCALE_NAMESPACE, AUTOSCALE_SERVICES
 """

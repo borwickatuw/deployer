@@ -22,14 +22,6 @@ git log public/main..main --oneline
 git diff public/main..main
 ```
 
-Verify `docs/internal/` is excluded (these files are not published):
-
-```bash
-# Check if any docs/internal/ files appear in the diff
-git diff public/main..main --name-only | grep '^docs/internal/'
-# If any show up, they should be removed from the public branch
-```
-
 Search for content that should not be published:
 
 ```bash
