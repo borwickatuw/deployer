@@ -191,12 +191,12 @@ post_apply_hook() {
     local env_name="$1"
     echo ""
     echo "=== Post-apply: resolving config ==="
-    if uv run python "$DEPLOYER_ROOT/bin/resolve-config.py" "$env_name" --push-s3; then
+    if (cd "$DEPLOYER_ROOT" && uv run python bin/resolve-config.py "$env_name" --push-s3); then
         echo ""
     else
         echo "" >&2
         echo "Warning: Failed to push resolved config to S3." >&2
-        echo "You can push manually: uv run python bin/resolve-config.py $env_name --push-s3" >&2
+        echo "You can push manually: cd $DEPLOYER_ROOT && uv run python bin/resolve-config.py $env_name --push-s3" >&2
         echo "" >&2
     fi
 }
