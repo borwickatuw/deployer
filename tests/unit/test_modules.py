@@ -605,7 +605,7 @@ class TestAutoscaleModule:
         """Test validation passes when enabled with namespace."""
         module = AutoscaleModule()
         app_config = {"services": ["transcoder"]}
-        env_config = {"enabled": True, "namespace": "havoc-production"}
+        env_config = {"enabled": True, "namespace": "myapp-production"}
 
         errors = module.validate(app_config, env_config)
 
@@ -634,7 +634,7 @@ class TestAutoscaleModule:
         """Test validation fails when enabled key missing."""
         module = AutoscaleModule()
         app_config = {"services": ["transcoder"]}
-        env_config = {"namespace": "havoc-production"}
+        env_config = {"namespace": "myapp-production"}
 
         errors = module.validate(app_config, env_config)
 
@@ -654,7 +654,7 @@ class TestAutoscaleModule:
         """Test validation fails when services is not a list."""
         module = AutoscaleModule()
         app_config = {"services": "transcoder"}
-        env_config = {"enabled": True, "namespace": "havoc-production"}
+        env_config = {"enabled": True, "namespace": "myapp-production"}
 
         errors = module.validate(app_config, env_config)
 
@@ -664,7 +664,7 @@ class TestAutoscaleModule:
         """Test validation fails when services key missing."""
         module = AutoscaleModule()
         app_config = {"other": "value"}
-        env_config = {"enabled": True, "namespace": "havoc-production"}
+        env_config = {"enabled": True, "namespace": "myapp-production"}
 
         errors = module.validate(app_config, env_config)
 
@@ -674,18 +674,18 @@ class TestAutoscaleModule:
         """Test collecting autoscale config when enabled."""
         module = AutoscaleModule()
         app_config = {"services": ["transcoder"]}
-        env_config = {"enabled": True, "namespace": "havoc-production"}
+        env_config = {"enabled": True, "namespace": "myapp-production"}
         ctx = ModuleContext(
             region="us-west-2",
             account_id="123456789",
             environment="production",
-            app_name="havoc",
+            app_name="testapp",
         )
 
         output = module.collect(app_config, env_config, ctx)
 
         env_map = {e.name: e.value for e in output.environment}
-        assert env_map["AUTOSCALE_NAMESPACE"] == "havoc-production"
+        assert env_map["AUTOSCALE_NAMESPACE"] == "myapp-production"
         assert env_map["AUTOSCALE_SERVICES"] == "transcoder"
 
     def test_collect_disabled(self):
@@ -697,7 +697,7 @@ class TestAutoscaleModule:
             region="us-west-2",
             account_id="123456789",
             environment="staging",
-            app_name="havoc",
+            app_name="testapp",
         )
 
         output = module.collect(app_config, env_config, ctx)
@@ -708,12 +708,12 @@ class TestAutoscaleModule:
         """Test collecting with multiple services produces comma-separated list."""
         module = AutoscaleModule()
         app_config = {"services": ["transcoder", "consumer"]}
-        env_config = {"enabled": True, "namespace": "havoc-production"}
+        env_config = {"enabled": True, "namespace": "myapp-production"}
         ctx = ModuleContext(
             region="us-west-2",
             account_id="123456789",
             environment="production",
-            app_name="havoc",
+            app_name="testapp",
         )
 
         output = module.collect(app_config, env_config, ctx)
