@@ -40,18 +40,3 @@ trusted_user_arns = [
 # ------------------------------------------------------------------------------
 
 create_iam_roles = true
-
-# ------------------------------------------------------------------------------
-# CI/CD GitHub Repositories (optional)
-#
-# Map of project prefix to GitHub org/repo for CI/CD deployment.
-# Each entry creates a deployer-ci-{project} IAM role that GitHub Actions
-# can assume via OIDC (no stored AWS credentials needed).
-#
-# Leave empty or omit to skip CI/CD setup.
-# ------------------------------------------------------------------------------
-
-# github_ci_repos = {
-#   myapp = "myorg/myapp"
-#   # otherapp = "myorg/otherapp"
-# }

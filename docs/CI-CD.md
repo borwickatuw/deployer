@@ -48,60 +48,84 @@ tofu.sh apply myapp-staging         git push (app code)
 - A GitHub repository with a `deploy.toml` in the app root
 - The deployer infrastructure already set up (`tofu apply` has been run)
 
-## Step 1: Enable the CI Module in Bootstrap
+## Step 1: Enable CI Shared Infrastructure in Bootstrap
 
-The CI infrastructure is provided by `modules/ci` in the deployer repo.
-Add it to your bootstrap configuration.
+The shared CI infrastructure (OIDC provider + S3 bucket) is provided by
+`modules/ci`. Add it to your bootstrap configuration.
 
-In your bootstrap instance's `main.tf`, add the module:
+In your bootstrap instance's `main.tf`:
 
 ```hcl
 module "ci" {
   source = "../../deployer/modules/ci"
-
-  region          = var.region
-  github_ci_repos = var.github_ci_repos
 }
 ```
 
-Add the variable (in `main.tf` or `variables.tf`):
+Add outputs for environments to reference via remote state:
 
 ```hcl
-variable "github_ci_repos" {
-  type    = map(string)
-  default = {}
+output "oidc_provider_arn" {
+  value = module.ci.oidc_provider_arn
+}
+
+output "resolved_configs_bucket" {
+  value = module.ci.resolved_configs_bucket
+}
+
+output "resolved_configs_bucket_arn" {
+  value = module.ci.resolved_configs_bucket_arn
 }
 ```
 
-Add to your bootstrap `terraform.tfvars`:
-
-```hcl
-github_ci_repos = {
-  myapp      = "myorg/myapp"
-  anotherapp = "myorg/anotherapp"
-}
-```
-
-Run `tofu apply` in your bootstrap directory. The module creates:
+Run `tofu apply` in your bootstrap directory. This creates:
 
 - A GitHub OIDC identity provider (account-wide, created once)
-- A per-project `deployer-ci-{project}` IAM role for each entry
 - An S3 bucket for resolved configs (versioned, encrypted)
 
-Note the outputs:
+## Step 2: Add a CI Role to Your Environment
 
+Per-project CI roles are created using `modules/ci-role`, instantiated in
+each environment's tofu config. This keeps the GitHub repo name defined
+alongside the environment it deploys to.
+
+In your environment's `terraform.tfvars`, add:
+
+```hcl
+github_repo = "myorg/myapp"
 ```
-ci_deploy_role_arns = {
-  myapp      = "arn:aws:iam::123456789012:role/deployer-ci-myapp"
-  anotherapp = "arn:aws:iam::123456789012:role/deployer-ci-anotherapp"
+
+In your environment's `main.tf`, add:
+
+```hcl
+variable "github_repo" {
+  description = "GitHub org/repo for CI/CD deployment"
+  type        = string
+  default     = ""
 }
-resolved_configs_bucket = "deployer-resolved-configs-123456789012"
+
+module "ci_role" {
+  source = "../../deployer/modules/ci-role"
+  count  = var.github_repo != "" ? 1 : 0
+
+  project_prefix              = "myapp"
+  github_repo                 = var.github_repo
+  oidc_provider_arn           = data.terraform_remote_state.bootstrap.outputs.oidc_provider_arn
+  resolved_configs_bucket_arn = data.terraform_remote_state.bootstrap.outputs.resolved_configs_bucket_arn
+  region                      = var.region
+}
 ```
 
-Each role can only access its own project's resources — myapp's CI role
-cannot see anotherapp's resolved configs, ECR repos, or ECS services.
+Run `tofu apply`. The module creates a `deployer-ci-myapp` IAM role that
+only GitHub Actions from `myorg/myapp` can assume, with permissions scoped
+to `myapp-*` resources.
 
-## Step 2: Resolve and Push Config
+Note the output:
+
+```
+ci_role_arn = "arn:aws:iam::123456789012:role/deployer-ci-myapp"
+```
+
+## Step 3: Resolve and Push Config
 
 After any `tofu apply` that changes infrastructure, the resolved config is
 automatically pushed to S3 via the `tofu.sh` post-apply hook. No manual
@@ -125,7 +149,7 @@ To verify the stored config is still fresh (hashes match current tofu state):
 uv run python bin/resolve-config.py myapp-staging --verify --verify-file resolved.json
 ```
 
-## Step 3: Configure GitHub Repository
+## Step 4: Configure GitHub Repository
 
 In your app repo's GitHub settings, create environments and add variables
 (Settings > Environments > create "staging" and/or "production"):
@@ -138,7 +162,7 @@ In your app repo's GitHub settings, create environments and add variables
 
 No AWS access keys needed — OIDC handles authentication.
 
-## Step 4: Add GitHub Actions Workflow
+## Step 5: Add GitHub Actions Workflow
 
 Create `.github/workflows/deploy.yml` in your app repo:
 
@@ -181,7 +205,7 @@ jobs:
         run: uvx --from "git+https://github.com/myorg/deployer.git" ci-deploy deploy.toml resolved-config.json
 ```
 
-## Step 5: Multi-Environment Setup
+## Step 6: Multi-Environment Setup
 
 For deploying to both staging and production, use GitHub environments with
 protection rules:
@@ -247,12 +271,13 @@ Options:
 `resolve-config.py --push-s3`) to refresh. The config becomes stale when
 infrastructure changes but nobody re-resolves.
 
-**"Could not assume role"** — Check that your repo is listed in
-`github_ci_repos` in bootstrap tfvars and that `tofu apply` has been run.
+**"Could not assume role"** — Check that `modules/ci-role` is instantiated
+in the environment's tofu config with the correct `github_repo`, and that
+`tofu apply` has been run.
 
 **"Access denied fetching S3"** — The deployer-ci role needs `s3:GetObject`
-on the resolved-configs bucket. Check that the CI module is instantiated in
-bootstrap.
+on the resolved-configs bucket. Check that `modules/ci` is instantiated in
+bootstrap and `modules/ci-role` in the environment.
 
 **"Missing required field: infrastructure.*"** — The resolved config is
 incomplete. Re-resolve: `uv run python bin/resolve-config.py <env> --push-s3`

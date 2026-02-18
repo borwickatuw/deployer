@@ -26,7 +26,8 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `src/deployer/deploy/preflight.py` - Shared preflight checks (used by deploy.py and ci-deploy)
 - `src/deployer/deploy/deployer.py` - Deployer class (shared between deploy.py and ci-deploy)
 - `modules/` - Reusable Terraform/OpenTofu modules
-- `modules/ci/` - GitHub OIDC, S3 bucket, per-project CI IAM roles
+- `modules/ci/` - GitHub OIDC provider and S3 bucket (shared CI infra, in bootstrap)
+- `modules/ci-role/` - Per-project CI IAM role (instantiated per-environment)
 - `DEPLOYER_ENVIRONMENTS_DIR` - Per-environment configurations (set in `.env`)
 - `example-deployer-environments/` - Example environments directory structure
 - `example-deploy.toml` - Example application deploy.toml
@@ -76,6 +77,18 @@ uv run python bin/emergency.py myapp-production rollback --service web
 - [CI-CD.md](docs/CI-CD.md) - CI/CD deployment setup with GitHub Actions
 - [SOMEDAY-MAYBE.md](docs/internal/SOMEDAY-MAYBE.md) - Future improvement ideas
 - Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
+
+## Generic Codebase
+
+This repository is published as a generic, reusable tool. **Never use real project names, org names, account IDs, or other internal identifiers in code, docs, examples, or comments.** Use generic placeholders:
+
+- Project names: `myapp`, `otherapp`, `anotherapp`
+- Organizations: `myorg`
+- Account IDs: `123456789012`
+- Domains: `example.com`, `myapp.example.com`
+- Users: `deployer`, `admin`
+
+The `local/` directory is gitignored and may contain real project names — that's fine. Everything else must be generic.
 
 ## Design Principles
 

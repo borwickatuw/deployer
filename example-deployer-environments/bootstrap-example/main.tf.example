@@ -30,12 +30,10 @@ module "bootstrap" {
   create_iam_roles  = var.create_iam_roles
 }
 
-# CI/CD infrastructure (optional — enable by setting github_ci_repos)
+# CI/CD shared infrastructure (optional — creates OIDC provider + S3 bucket)
+# Per-project CI roles are created in each environment using modules/ci-role.
 module "ci" {
   source = "../../deployer/modules/ci"
-
-  region          = var.region
-  github_ci_repos = var.github_ci_repos
 }
 
 # Pass through variables
@@ -55,11 +53,6 @@ variable "trusted_user_arns" {
 variable "create_iam_roles" {
   type    = bool
   default = true
-}
-
-variable "github_ci_repos" {
-  type    = map(string)
-  default = {}
 }
 
 # Pass through outputs
@@ -87,11 +80,15 @@ output "cognito_admin_role_arn" {
   value = module.bootstrap.cognito_admin_role_arn
 }
 
-# CI outputs (only populated when github_ci_repos is set)
-output "ci_deploy_role_arns" {
-  value = module.ci.ci_deploy_role_arns
+# CI outputs (for environments to reference via remote state)
+output "oidc_provider_arn" {
+  value = module.ci.oidc_provider_arn
 }
 
 output "resolved_configs_bucket" {
   value = module.ci.resolved_configs_bucket
+}
+
+output "resolved_configs_bucket_arn" {
+  value = module.ci.resolved_configs_bucket_arn
 }
