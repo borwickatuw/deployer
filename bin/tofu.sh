@@ -171,6 +171,15 @@ else
     exit 1
 fi
 
+if [[ ! -f "$ENV_DIR/config.toml" ]]; then
+    echo "" >&2
+    echo "Warning: $ENV_NAME has no config.toml — this doesn't look like an app environment." >&2
+    echo "If this is a bootstrap or module directory, run tofu directly:" >&2
+    echo "  AWS_PROFILE=admin tofu -chdir=$ENV_DIR $TOFU_CMD" >&2
+    echo "" >&2
+    exit 1
+fi
+
 # Determine which profile to use
 # Priority: AWS_PROFILE > config.toml [aws].infra_profile > default
 if [[ -n "$AWS_PROFILE" ]]; then
