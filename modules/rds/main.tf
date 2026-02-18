@@ -88,6 +88,7 @@ variable "storage_encrypted" {
   default     = true
 }
 
+
 # Subnet group
 resource "aws_db_subnet_group" "main" {
   name       = "${var.name_prefix}-db-subnet"
@@ -104,17 +105,20 @@ resource "aws_security_group" "rds" {
   description = "Security group for RDS"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "PostgreSQL access from ECS tasks"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [var.ecs_security_group]
-  }
-
   tags = {
     Name = "${var.name_prefix}-rds-sg"
   }
+}
+
+# Use standalone rules to avoid conflicts with other modules adding rules
+resource "aws_security_group_rule" "ecs_to_rds" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds.id
+  source_security_group_id = var.ecs_security_group
+  description              = "PostgreSQL access from ECS tasks"
 }
 
 # IAM Role for RDS Enhanced Monitoring
