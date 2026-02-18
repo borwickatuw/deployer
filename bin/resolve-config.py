@@ -28,8 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from deployer.core.config import (
-    derive_environment_from_env_name,
     get_all_tofu_outputs,
+    get_environment_type,
     load_environment_config,
 )
 from deployer.utils import (
@@ -90,9 +90,6 @@ def resolve_config(environment: str) -> dict:
     if not env_path.exists():
         raise FileNotFoundError(f"Environment directory not found: {env_path}")
 
-    # Derive environment type
-    environment_type = derive_environment_from_env_name(environment)
-
     # Read raw config.toml for hashing
     config_toml_path = env_path / "config.toml"
     if not config_toml_path.exists():
@@ -105,6 +102,9 @@ def resolve_config(environment: str) -> dict:
 
     # Resolve the config
     resolved = load_environment_config(env_path)
+
+    # Get environment type from the resolved config
+    environment_type = get_environment_type(resolved)
 
     # Strip the [aws] section — CI/CD doesn't use named profiles
     resolved.pop("aws", None)

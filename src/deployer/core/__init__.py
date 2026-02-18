@@ -30,6 +30,7 @@ from .config import (
     get_cognito_test_credentials,
     get_cognito_user_pool_id_from_config,
     get_ecr_prefix_from_config,
+    get_environment_type,
     get_rds_instance_id_from_config,
     get_service_replicas_from_config,
     get_ssm_parameter,
@@ -72,6 +73,7 @@ __all__ = [
     "generate_temp_password",
     # config
     "derive_environment_from_env_name",
+    "get_environment_type",
     "get_cluster_name_from_config",
     "get_cognito_auth_token",
     "get_cognito_test_credentials",

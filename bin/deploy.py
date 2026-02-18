@@ -35,7 +35,7 @@ import requests
 from deployer.config import parse_deploy_config
 from deployer.core import run_audit
 from deployer.core.config import (
-    derive_environment_from_env_name,
+    get_environment_type,
     load_environment_config,
 )
 from deployer.deploy import (
@@ -677,9 +677,9 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
         log_error(f"Failed to load deployment config: {e}")
         sys.exit(1)
 
-    # Derive environment type (staging/production) from env name
+    # Get environment type from config.toml [environment].type
     try:
-        environment_type = derive_environment_from_env_name(environment)
+        environment_type = get_environment_type(env_config)
         log(f"Environment type: {environment_type}")
     except ValueError as e:
         log_error(str(e))

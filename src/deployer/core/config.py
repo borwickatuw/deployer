@@ -501,8 +501,35 @@ def get_cognito_auth_token(resolved_config: dict) -> str | None:
         raise RuntimeError(f"Cognito authentication failed: {error_code} - {error_msg}")
 
 
+def get_environment_type(env_config: dict) -> str:
+    """Get the environment type from a loaded config.toml.
+
+    Reads [environment].type from the config. This is the canonical source
+    for environment type — no naming conventions required.
+
+    Args:
+        env_config: Loaded and resolved environment config dict.
+
+    Returns:
+        Environment type string (e.g., 'staging', 'production').
+
+    Raises:
+        ValueError: If [environment].type is not set in config.toml.
+    """
+    env_type = env_config.get("environment", {}).get("type")
+    if not env_type:
+        raise ValueError(
+            "Missing [environment].type in config.toml. "
+            "Add 'type = \"staging\"' (or \"production\") to the [environment] section."
+        )
+    return env_type
+
+
 def derive_environment_from_env_name(env_name: str) -> str:
     """Derive the environment type (staging/production) from env name.
+
+    .. deprecated::
+        Use :func:`get_environment_type` instead, which reads from config.toml.
 
     Args:
         env_name: Environment name like 'myapp-staging' or 'myapp-production'.
