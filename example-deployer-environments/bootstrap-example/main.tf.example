@@ -33,7 +33,7 @@ module "bootstrap" {
 # CI/CD shared infrastructure (optional — OIDC provider + S3 bucket)
 # Per-project CI roles are created in each environment using modules/ci-role.
 module "ci" {
-  source = "../../deployer/modules/ci"
+  source = "../modules/ci"
 
   # Set to true if no other project manages the GitHub OIDC provider
   # create_oidc_provider = true

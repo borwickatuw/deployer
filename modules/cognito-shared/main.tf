@@ -5,7 +5,7 @@
 #
 # Usage:
 #   module "cognito_shared" {
-#     source      = "../../deployer/modules/cognito-shared"
+#     source      = "../modules/cognito-shared"
 #     name_prefix = "staging-shared"
 #     app_domains = {
 #       myapp      = "myapp-staging.example.com"

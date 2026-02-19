@@ -57,7 +57,7 @@ In your bootstrap instance's `main.tf`:
 
 ```hcl
 module "ci" {
-  source = "../../deployer/modules/ci"
+  source = "../modules/ci"
 }
 ```
 
@@ -104,7 +104,7 @@ variable "github_repo" {
 }
 
 module "ci_role" {
-  source = "../../deployer/modules/ci-role"
+  source = "../modules/ci-role"
   count  = var.github_repo != "" ? 1 : 0
 
   project_prefix              = "myapp"

@@ -485,7 +485,7 @@ deployer-environments/bootstrap/  ← instantiates the module
 
    ```hcl
    module "ci" {
-     source = "../../deployer/modules/ci"
+     source = "../modules/ci"
 
      github_ci_repos  = var.github_ci_repos
      project_prefixes = var.project_prefixes
@@ -548,7 +548,7 @@ In `bootstrap/main.tf` (or your bootstrap instance), add the module:
 
 ```hcl
 module "ci" {
-  source = "../../deployer/modules/ci"
+  source = "../modules/ci"
 
   github_ci_repos  = var.github_ci_repos
   project_prefixes = var.project_prefixes

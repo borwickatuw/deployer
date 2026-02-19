@@ -10,7 +10,7 @@
 #
 # Usage (in an environment's main.tf):
 #   module "ci_role" {
-#     source = "../../deployer/modules/ci-role"
+#     source = "../modules/ci-role"
 #
 #     project_prefix              = "myapp"
 #     github_repo                 = "myorg/myapp"

@@ -157,7 +157,7 @@ module "app" {
 # }
 
 # module "ci_role" {
-#   source = "../../deployer/modules/ci-role"
+#   source = "../modules/ci-role"
 #   count  = var.github_repo != "" ? 1 : 0
 #
 #   project_prefix              = var.app_name

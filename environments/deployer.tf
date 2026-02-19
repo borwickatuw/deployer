@@ -11,9 +11,9 @@
 # Setup (automatic):
 #   uv run python bin/init.py environment --app-name myapp --env-type staging
 #
-# Setup (manual — assumes deployer and deployer-environments are siblings):
+# Setup (manual):
 #   cd ~/code/deployer-environments/<env>
-#   ln -s ../../deployer/environments/deployer.tf deployer.tf
+#   ln -s $DEPLOYER_DIR/environments/deployer.tf deployer.tf
 # ==============================================================================
 
 # ------------------------------------------------------------------------------

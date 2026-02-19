@@ -7,7 +7,7 @@
 # modules, and outputs.
 #
 # To set up the symlink:
-#   ln -s ../../deployer/environments/deployer.tf deployer.tf
+#   ln -s $DEPLOYER_DIR/environments/deployer.tf deployer.tf
 #
 # Only the backend block belongs here (backend config cannot use variables).
 # ==============================================================================
