@@ -68,19 +68,21 @@ environments/
 ### Creating Your First Shared Environment
 
 ```bash
-# Create an app with shared infrastructure
-# This will prompt to create shared-infra-staging if it doesn't exist
+# Step 1: Create shared infrastructure
+uv run python bin/init.py environment \
+    --template shared-infra-staging \
+    --domain staging.example.com
+
+# Step 2: Create per-app environment
 uv run python bin/init.py environment \
     --app-name myapp \
-    --env-type staging \
-    --shared \
+    --template shared-app-staging \
     --domain myapp.staging.example.com
 ```
 
 **First time setup output:**
 
 ```
-Shared infrastructure 'shared-infra-staging' doesn't exist. Create it? [y/N] y
 Created: environments/shared-infra-staging/main.tf
 Created: environments/shared-infra-staging/terraform.tfvars
 
@@ -100,8 +102,7 @@ Created: environments/myapp-staging/terraform.tfvars
 # Shared infra already exists, so just creates per-app environment
 uv run python bin/init.py environment \
     --app-name otherapp \
-    --env-type staging \
-    --shared \
+    --template shared-app-staging \
     --domain otherapp.staging.example.com
 ```
 
@@ -186,7 +187,7 @@ app2.staging.example.com → app2 target group (priority 200)
 app3.staging.example.com → app3 target group (priority 300)
 ```
 
-**Important:** Each app must have a unique `listener_rule_priority`. The init script auto-assigns priorities (100, 200, 300, ...) when using `--shared`.
+**Important:** Each app must have a unique `listener_rule_priority`. The init script auto-assigns priorities (100, 200, 300, ...) when using `--template shared-app-*`.
 
 ### Wildcard Certificate
 
@@ -313,7 +314,7 @@ This is useful when most apps can share but one needs dedicated resources.
 
 | Aspect           | Standalone           | Shared                        |
 | ---------------- | -------------------- | ----------------------------- |
-| `bin/init.py`    | `--env-type staging` | `--env-type staging --shared` |
+| `bin/init.py`    | `--template standalone-staging` | `--template shared-app-staging` |
 | VPC              | Own                  | Shared                        |
 | NAT Gateway      | Own (~$32/mo)        | Shared                        |
 | ALB              | Own (~$20/mo)        | Shared (listener rule)        |
@@ -330,10 +331,8 @@ To migrate an existing standalone environment to shared infrastructure:
 
    ```bash
    uv run python bin/init.py environment \
-       --app-name placeholder \
-       --env-type staging \
-       --shared
-   # Say 'y' to create shared infra, then cancel
+       --template shared-infra-staging \
+       --domain staging.example.com
    ```
 
 1. **Deploy shared infrastructure**
@@ -347,8 +346,7 @@ To migrate an existing standalone environment to shared infrastructure:
    ```bash
    uv run python bin/init.py environment \
        --app-name existingapp \
-       --env-type staging \
-       --shared \
+       --template shared-app-staging \
        --domain existingapp.staging.example.com
    ```
 

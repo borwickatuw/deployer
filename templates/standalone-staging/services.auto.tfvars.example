@@ -39,13 +39,23 @@ route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 # Service Configuration
 # ------------------------------------------------------------------------------
 
-{{services_block}}
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
 
 # ------------------------------------------------------------------------------
 # Auto-Scaling (disabled in staging)
 # ------------------------------------------------------------------------------
 
-{{scaling_block}}
+# Auto-scaling disabled in staging
+scaling = {}
 
 # ------------------------------------------------------------------------------
 # ECR Repositories

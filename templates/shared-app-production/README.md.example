@@ -1,0 +1,64 @@
+# {{app_name | title}} {{env_type | title}} Environment
+
+This environment uses shared infrastructure from `shared-infra-{{env_type}}`.
+
+## What's Created Here (Per-App)
+
+- RDS database
+- ALB target group and listener rule
+- ECR repository
+- IAM roles (execution and task roles)
+- Route53 DNS record (if configured)
+
+## What's Shared (From shared-infra-{{env_type}})
+
+- VPC with NAT Gateway
+- ECS Cluster
+- Application Load Balancer
+- Cognito authentication (if enabled)
+- ElastiCache (if enabled)
+
+## Prerequisites
+
+The shared infrastructure must be deployed first:
+```bash
+./bin/tofu.sh plan shared-infra-{{env_type}}
+./bin/tofu.sh apply shared-infra-{{env_type}}
+```
+
+## Quick Commands
+
+```bash
+# Deploy this app's infrastructure
+./bin/tofu.sh plan {{env_name}}
+./bin/tofu.sh apply {{env_name}}
+
+# Deploy application
+uv run python bin/deploy.py {{env_name}}
+
+# Check status
+uv run python bin/environment.py status {{env_name}}
+```
+
+## Configuration Files
+
+- `main.tf` - Infrastructure module configuration (references shared state)
+- `config.toml` - Deployment configuration (bridges tofu outputs to deploy script)
+- `terraform.tfvars` - Service sizing and credentials (DO NOT commit)
+
+## Before First Deployment
+
+1. Edit `terraform.tfvars`:
+   - Set database credentials
+   - Configure domain
+   - Verify listener_rule_priority is unique
+
+2. Create SSM parameters for secrets:
+   ```bash
+   aws ssm put-parameter --name "/{{app_name}}/{{env_type}}/secret-key" --value "..." --type SecureString
+   ```
+
+## Notes
+
+- terraform.tfvars contains sensitive data - do not commit to git
+- Listener rule priority must be unique across all apps in the shared environment

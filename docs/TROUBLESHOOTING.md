@@ -95,7 +95,7 @@ AWS_PROFILE=deployer-app aws sts get-caller-identity
    ```
 1. Create the environment if needed:
    ```bash
-   uv run python bin/init.py environment --app-name myapp --env-type staging
+   uv run python bin/init.py environment --app-name myapp --template standalone-staging
    ```
 
 ______________________________________________________________________

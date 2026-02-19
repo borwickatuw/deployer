@@ -537,10 +537,10 @@ Each environment directory contains a `config.toml` that provides deployment con
 
 **Example files:**
 
-- Standalone environments: [example-deployer-environments/myapp-staging/config.toml.example](../example-deployer-environments/myapp-staging/config.toml.example)
-- Shared environments: [example-deployer-environments/app-on-shared-staging/config.toml.example](../example-deployer-environments/app-on-shared-staging/config.toml.example)
+- Standalone environments: [templates/standalone-staging/config.toml.example](../templates/standalone-staging/config.toml.example)
+- Shared environments: [templates/shared-app-staging/config.toml.example](../templates/shared-app-staging/config.toml.example)
 
-> **Maintainer note:** When updating the config.toml structure, update both this documentation and the example files in `example-deployer-environments/`.
+> **Maintainer note:** When updating the config.toml structure, update both this documentation and the template files in `templates/`.
 
 ### Location
 

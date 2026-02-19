@@ -28,8 +28,9 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 - `modules/` - Reusable Terraform/OpenTofu modules
 - `modules/ci/` - GitHub OIDC provider and S3 bucket (shared CI infra, in bootstrap)
 - `modules/ci-role/` - Per-project CI IAM role (instantiated per-environment)
+- `templates/` - Environment templates (standalone, shared-app, shared-infra for staging/production)
 - `DEPLOYER_ENVIRONMENTS_DIR` - Per-environment configurations (set in `.env`)
-- `example-deployer-environments/` - Example environments directory structure
+- `example-deployer-environments/` - Bootstrap example and IAM bootstrap directory
 - `example-deploy.toml` - Example application deploy.toml
 - `examples/github-actions/deploy.yml` - Example CI/CD workflow
 
@@ -50,6 +51,11 @@ ci-deploy deploy.toml s3://bucket/myapp-staging/config.json
 
 # Resolve config for CI/CD
 uv run python bin/resolve-config.py myapp-staging --push-s3
+
+# Initialize new environment from template
+uv run python bin/init.py environment --list-templates
+uv run python bin/init.py environment --app-name myapp --template standalone-staging
+uv run python bin/init.py update-services myapp-staging --deploy-toml /path/to/deploy.toml
 
 # Link environment to deploy.toml (one-time setup)
 uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
@@ -116,8 +122,8 @@ Environment configs are stored separately, configured via `DEPLOYER_ENVIRONMENTS
 
 When changing the environment config.toml structure, update:
 
-1. `example-deployer-environments/myapp-staging/config.toml.example`
-1. `example-deployer-environments/app-on-shared-staging/config.toml.example`
+1. `templates/standalone-staging/config.toml.example` (and production)
+1. `templates/shared-app-staging/config.toml.example` (and production)
 1. `docs/CONFIG-REFERENCE.md` (Environment config.toml Reference section)
 1. All existing `*/config.toml` files in the environments directory
 

@@ -1,0 +1,42 @@
+# {{app_name | title}} {{env_type | title}} Environment
+
+## Quick Commands
+
+```bash
+# Deploy infrastructure
+./bin/tofu.sh plan {{env_name}}
+./bin/tofu.sh apply {{env_name}}
+
+# Deploy application
+uv run python bin/deploy.py {{env_name}}
+
+# Check status
+uv run python bin/environment.py status {{env_name}}
+```
+
+## Configuration Files
+
+- `main.tf` - Backend-only stub (backend config cannot use variables)
+- `deployer.tf` - Symlink to shared environment config (variables, modules, outputs)
+- `services.auto.tfvars` - Service sizing, domain, WAF (tracked in git)
+- `terraform.tfvars` - Database credentials (DO NOT commit)
+- `config.toml` - Deployment configuration (bridges tofu outputs to deploy script)
+
+## Before First Deployment
+
+1. Edit `services.auto.tfvars`:
+   - Configure domain and Route53 zone ID
+   - Adjust service sizing if needed
+
+2. Edit `terraform.tfvars`:
+   - Set database credentials
+
+3. Create SSM parameters for secrets:
+   ```bash
+   aws ssm put-parameter --name "/{{app_name}}/{{env_type}}/secret-key" --value "..." --type SecureString
+   ```
+
+## Notes
+
+- terraform.tfvars contains sensitive data - do not commit to git
+- Use `./bin/tofu.sh` for auto-selecting AWS profile

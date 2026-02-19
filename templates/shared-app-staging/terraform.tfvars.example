@@ -60,10 +60,20 @@ listener_rule_priority = {{listener_priority}}
 # Service Configuration
 # ------------------------------------------------------------------------------
 
-{{services_block}}
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
 
 # ------------------------------------------------------------------------------
 # Auto-Scaling
 # ------------------------------------------------------------------------------
 
-{{scaling_block}}
+# Auto-scaling disabled in staging
+scaling = {}

@@ -10,21 +10,36 @@ Usage:
     python bin/init.py deploy-toml --from-compose docker-compose.yml --dry-run
     python bin/init.py deploy-toml --from-compose docker-compose.yml --app-name myapp
 
-    # Create environment directory
-    python bin/init.py environment --app-name myapp --env-type staging --dry-run
-    python bin/init.py environment --app-name myapp --env-type staging --domain myapp.example.com
-    python bin/init.py environment --app-name myapp --env-type staging --deploy-toml /path/to/deploy.toml
+    # List available templates
+    python bin/init.py environment --list-templates
+
+    # Create environment directory from template
+    python bin/init.py environment --app-name myapp --template standalone-staging --dry-run
+    python bin/init.py environment --app-name myapp --template standalone-staging --domain myapp.example.com
+    python bin/init.py environment --app-name myapp --template standalone-staging --deploy-toml /path/to/deploy.toml
+
+    # Shared infrastructure (two steps)
+    python bin/init.py environment --template shared-infra-staging --domain staging.example.com
+    python bin/init.py environment --app-name myapp --template shared-app-staging --domain myapp.staging.example.com
+
+    # Update services in existing environment from deploy.toml
+    python bin/init.py update-services myapp-staging --deploy-toml /path/to/deploy.toml --dry-run
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-from deployer.init import generate_deploy_toml, generate_environment, generate_shared_infrastructure
+from deployer.init import (
+    generate_deploy_toml,
+    generate_environment,
+    list_templates,
+    update_services,
+)
 from deployer.init.deploy_toml import format_deploy_toml
 from deployer.init.environment import create_deployer_tf_symlink, get_next_listener_priority
+from deployer.init.template import extract_env_type
 from deployer.utils import ensure_environments_symlinks, get_environments_dir
-
 
 # =============================================================================
 # Commands
@@ -85,22 +100,50 @@ def cmd_deploy_toml(args) -> int:
     print("Next steps:")
     print("  1. Review and customize the generated deploy.toml")
     print("  2. Create environment directory:")
-    print(f"     uv run python bin/init.py environment --app-name {config['application']['name']} --env-type staging")
+    print(
+        f"     uv run python bin/init.py environment --app-name {config['application']['name']} --template standalone-staging"
+    )
     return 0
 
 
 def cmd_environment(args) -> int:
     """Create environment directory structure."""
-    # Validate environment type
-    if args.env_type not in ("staging", "production"):
+    # Handle --list-templates
+    if args.list_templates:
+        templates = list_templates()
+        print("Available templates:")
+        for name in templates:
+            print(f"  {name}")
+        return 0
+
+    template_name = args.template
+    if not template_name:
         print(
-            f"Error: --env-type must be 'staging' or 'production', got '{args.env_type}'",
-            file=sys.stderr,
+            "Error: --template is required (use --list-templates to see options)", file=sys.stderr
         )
         return 1
 
-    # Check if environment already exists
-    env_name = f"{args.app_name}-{args.env_type}"
+    # Validate template exists
+    try:
+        env_type = extract_env_type(template_name)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    is_shared_infra = template_name.startswith("shared-infra-")
+    is_shared_app = template_name.startswith("shared-app-")
+
+    # Validate --app-name
+    if not is_shared_infra and not args.app_name:
+        print("Error: --app-name is required for non-shared-infra templates", file=sys.stderr)
+        return 1
+
+    # Compute env_name for existence check
+    if is_shared_infra:
+        env_name = template_name
+    else:
+        env_name = f"{args.app_name}-{env_type}"
+
     env_path = get_environments_dir() / env_name
     if env_path.exists() and not args.dry_run:
         print(f"Error: Environment directory already exists: {env_path}", file=sys.stderr)
@@ -115,70 +158,23 @@ def cmd_environment(args) -> int:
             print(f"Error: deploy.toml not found at {deploy_toml_path}", file=sys.stderr)
             return 1
 
-    # Handle shared infrastructure mode
-    shared_infra_created = False
-    if args.shared:
-        shared_infra_name = f"shared-infra-{args.env_type}"
-        shared_infra_path = get_environments_dir() / shared_infra_name
+    # Auto-assign listener priority for shared-app templates
+    listener_priority = None
+    if is_shared_app:
+        listener_priority = get_next_listener_priority(env_type)
 
-        if not shared_infra_path.exists():
-            # Prompt to create shared infrastructure
-            if args.dry_run:
-                print(f"Would create shared infrastructure: {shared_infra_path}")
-            else:
-                response = input(
-                    f"Shared infrastructure '{shared_infra_name}' doesn't exist. Create it? [y/N] "
-                )
-                if response.lower() == "y":
-                    # Generate shared infrastructure files
-                    shared_files = generate_shared_infrastructure(
-                        env_type=args.env_type,
-                        domain_base=args.domain.rsplit(".", 2)[-2] + "." + args.domain.rsplit(".", 1)[-1]
-                        if args.domain and args.domain.count(".") >= 2
-                        else None,
-                    )
-
-                    # Create directory and write files
-                    shared_infra_path.mkdir(parents=True, exist_ok=True)
-                    for filepath, content in shared_files.items():
-                        Path(filepath).write_text(content)
-                        print(f"Created: {filepath}")
-
-                    shared_infra_created = True
-                    print()
-                    print("Next steps for shared infrastructure:")
-                    print(f"  1. Edit {shared_infra_path}/terraform.tfvars")
-                    print("     - Set domain and Route53 zone ID")
-                    print("     - Configure Cognito if needed")
-                    print()
-                    print(f"  2. Deploy: ./bin/tofu.sh -chdir={shared_infra_path} init && ./bin/tofu.sh -chdir={shared_infra_path} apply")
-                    print()
-                else:
-                    print("Shared infrastructure is required for --shared mode.")
-                    return 1
-        else:
-            print(f"Using existing shared infrastructure: {shared_infra_name}")
-
-        # Get next available listener priority
-        listener_priority = get_next_listener_priority(args.env_type)
-
-        # Generate per-app environment using shared module
+    # Generate environment files
+    try:
         files = generate_environment(
             app_name=args.app_name,
-            env_type=args.env_type,
+            template_name=template_name,
             deploy_toml_path=deploy_toml_path,
             domain=args.domain,
-            shared=True,
             listener_priority=listener_priority,
         )
-    else:
-        # Generate standalone environment (existing behavior)
-        files = generate_environment(
-            app_name=args.app_name,
-            env_type=args.env_type,
-            deploy_toml_path=deploy_toml_path,
-            domain=args.domain,
-        )
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
     if args.dry_run:
         print("=" * 60)
@@ -197,9 +193,10 @@ def cmd_environment(args) -> int:
         return 0
 
     # Ensure root-level symlinks exist for external environments directory
-    created_symlinks = ensure_environments_symlinks()
-    if created_symlinks:
-        print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
+    if template_name.startswith("standalone-"):
+        created_symlinks = ensure_environments_symlinks()
+        if created_symlinks:
+            print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
 
     # Create directory
     env_path.mkdir(parents=True, exist_ok=True)
@@ -209,52 +206,83 @@ def cmd_environment(args) -> int:
         Path(filepath).write_text(content)
         print(f"Created: {filepath}")
 
-    # Create deployer.tf symlink (standalone environments only)
-    if not args.shared:
+    # Create deployer.tf symlink (standalone templates only)
+    if template_name.startswith("standalone-"):
         if create_deployer_tf_symlink(env_path):
             print(f"Created: {env_path}/deployer.tf -> shared environment config")
 
     print()
-    if args.shared:
-        print("Next steps:")
-        print(f"  1. Edit {env_path}/terraform.tfvars:")
+    _print_next_steps(env_name, env_path, env_type, args.app_name, template_name)
+    return 0
+
+
+def _print_next_steps(
+    env_name: str,
+    env_path: Path,
+    env_type: str,
+    app_name: str | None,
+    template_name: str,
+) -> None:
+    """Print next steps after environment creation."""
+    is_shared_infra = template_name.startswith("shared-infra-")
+    is_standalone = template_name.startswith("standalone-")
+
+    print("Next steps:")
+    step = 1
+
+    if is_standalone:
+        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
         print("     - Set database credentials")
+        step += 1
         print()
-        print(f"  2. Edit {env_path}/services.auto.tfvars:")
+        print(f"  {step}. Edit {env_path}/services.auto.tfvars:")
         print("     - Configure domain and Route53 zone ID")
         print("     - Adjust service sizing if needed")
-        print()
-        if shared_infra_created:
-            print("  3. First deploy shared infrastructure (see above)")
-            print()
-            print("  4. Then deploy app infrastructure:")
-        else:
-            print("  3. Deploy app infrastructure:")
-        step = "5" if shared_infra_created else "4"
-        print(f"     ./bin/tofu.sh -chdir={env_path} init")
-        print(f"     ./bin/tofu.sh -chdir={env_path} plan")
-        print(f"     ./bin/tofu.sh -chdir={env_path} apply")
+        step += 1
+    elif is_shared_infra:
+        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
+        print("     - Set domain and Route53 zone ID")
+        print("     - Configure Cognito if needed")
+        step += 1
+    else:
+        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
+        print("     - Set database credentials")
+        print("     - Configure domain and Route53 zone ID")
+        print("     - Verify listener_rule_priority is unique")
+        step += 1
+
+    print()
+    print(f"  {step}. Deploy infrastructure:")
+    print(f"     ./bin/tofu.sh plan {env_name}")
+    print(f"     ./bin/tofu.sh apply {env_name}")
+    step += 1
+
+    if not is_shared_infra and app_name:
         print()
         print(f"  {step}. Create SSM secrets and deploy:")
-        print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
-        print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
-    else:
-        print("Next steps:")
-        print(f"  1. Edit {env_path}/terraform.tfvars:")
-        print("     - Set database credentials")
-        print()
-        print(f"  2. Edit {env_path}/services.auto.tfvars:")
-        print("     - Configure domain and Route53 zone ID")
-        print("     - Adjust service sizing if needed")
-        print()
-        print("  3. Deploy infrastructure:")
-        print(f"     ./bin/tofu.sh -chdir={env_path} init")
-        print(f"     ./bin/tofu.sh -chdir={env_path} plan")
-        print(f"     ./bin/tofu.sh -chdir={env_path} apply")
-        print()
-        print("  4. Create SSM secrets and deploy:")
-        print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
-        print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
+        print(
+            f'     aws ssm put-parameter --name "/{app_name}/{env_type}/secret-key" --value "..." --type SecureString'
+        )
+        print(f"     uv run python bin/deploy.py {env_name}")
+
+
+def cmd_update_services(args) -> int:
+    """Update services block in an existing environment from deploy.toml."""
+    deploy_toml_path = Path(args.deploy_toml).resolve()
+    if not deploy_toml_path.exists():
+        print(f"Error: deploy.toml not found at {deploy_toml_path}", file=sys.stderr)
+        return 1
+
+    try:
+        update_services(
+            env_name=args.env_name,
+            deploy_toml_path=deploy_toml_path,
+            dry_run=args.dry_run,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
     return 0
 
 
@@ -275,12 +303,23 @@ Examples:
   # Generate deploy.toml with custom app name
   %(prog)s deploy-toml --from-compose docker-compose.yml --app-name myapp
 
-  # Create staging environment directory (preview)
-  %(prog)s environment --app-name myapp --env-type staging --dry-run
+  # List available templates
+  %(prog)s environment --list-templates
+
+  # Create standalone staging environment (preview)
+  %(prog)s environment --app-name myapp --template standalone-staging --dry-run
 
   # Create staging environment with deploy.toml for service sizing
-  %(prog)s environment --app-name myapp --env-type staging \\
+  %(prog)s environment --app-name myapp --template standalone-staging \\
       --deploy-toml /path/to/deploy.toml --domain myapp-staging.example.com
+
+  # Create shared infrastructure and app (two commands)
+  %(prog)s environment --template shared-infra-staging --domain staging.example.com
+  %(prog)s environment --app-name myapp --template shared-app-staging \\
+      --domain myapp.staging.example.com
+
+  # Update services in existing environment
+  %(prog)s update-services myapp-staging --deploy-toml /path/to/deploy.toml --dry-run
 
 For detailed guidance, see docs/DEPLOYMENT-GUIDE.md
         """,
@@ -328,30 +367,37 @@ The generator will:
     # environment subcommand
     env_parser = subparsers.add_parser(
         "environment",
-        help="Create environment directory in deployer",
+        help="Create environment directory from a template",
         description="""
 Create an environment directory with scaffolded configuration files.
 
-Creates:
-- main.tf - Backend-only stub (backend config cannot use variables)
-- deployer.tf - Symlink to shared environment config (variables, modules, outputs)
-- services.auto.tfvars - Service sizing, domain, WAF config (tracked in git)
-- terraform.tfvars - Database credentials only (gitignored)
-- config.toml - Deployment configuration with ${tofu:...} placeholders
-- README.md - Environment-specific notes
+Use --list-templates to see available templates. Templates are self-contained
+directories that define all files for an environment type.
+
+Examples:
+  # Standalone (own VPC, ALB, ECS cluster)
+  init.py environment --app-name myapp --template standalone-staging
+
+  # Shared infrastructure + app (two steps)
+  init.py environment --template shared-infra-staging
+  init.py environment --app-name myapp --template shared-app-staging
         """,
     )
     env_parser.add_argument(
         "--app-name",
-        required=True,
         metavar="NAME",
-        help="Application name",
+        help="Application name (required except for shared-infra templates)",
     )
     env_parser.add_argument(
-        "--env-type",
-        required=True,
-        choices=["staging", "production"],
-        help="Environment type",
+        "--template",
+        "-t",
+        metavar="NAME",
+        help="Template to use (e.g., standalone-staging). Use --list-templates to see options.",
+    )
+    env_parser.add_argument(
+        "--list-templates",
+        action="store_true",
+        help="List available templates and exit",
     )
     env_parser.add_argument(
         "--deploy-toml",
@@ -369,10 +415,34 @@ Creates:
         action="store_true",
         help="Show what would be created without writing files",
     )
-    env_parser.add_argument(
-        "--shared",
+
+    # update-services subcommand
+    update_services_parser = subparsers.add_parser(
+        "update-services",
+        help="Update services block in an existing environment from deploy.toml",
+        description="""
+Update the services block in an existing environment's tfvars file
+based on service definitions from deploy.toml.
+
+This reads the current service sizing (cpu, memory, replicas) as defaults
+and replaces the services block with entries from deploy.toml.
+        """,
+    )
+    update_services_parser.add_argument(
+        "env_name",
+        help="Environment name (e.g., myapp-staging)",
+    )
+    update_services_parser.add_argument(
+        "--deploy-toml",
+        required=True,
+        metavar="PATH",
+        help="Path to deploy.toml",
+    )
+    update_services_parser.add_argument(
+        "--dry-run",
+        "-n",
         action="store_true",
-        help="Use shared infrastructure (creates shared-infra-{env_type} if needed)",
+        help="Show what would change without writing files",
     )
 
     args = parser.parse_args()
@@ -381,6 +451,7 @@ Creates:
     commands = {
         "deploy-toml": cmd_deploy_toml,
         "environment": cmd_environment,
+        "update-services": cmd_update_services,
     }
 
     handler = commands.get(args.command)

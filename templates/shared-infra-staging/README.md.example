@@ -1,0 +1,42 @@
+# Shared Infrastructure - {{env_type | title}}
+
+This environment contains shared infrastructure for multiple {{env_type}} apps.
+
+## What's Included
+
+- VPC with NAT Gateway
+- ECS Cluster
+- Application Load Balancer
+- Optional: Cognito authentication (for staging)
+- Optional: Shared ElastiCache
+
+## What's NOT Included (Per-App)
+
+Each app creates its own:
+- RDS database
+- ALB target group and listener rule
+- ECR repository
+- IAM roles
+
+## Quick Commands
+
+```bash
+# Deploy shared infrastructure
+./bin/tofu.sh plan shared-infra-{{env_type}}
+./bin/tofu.sh apply shared-infra-{{env_type}}
+```
+
+## Adding a New App
+
+```bash
+uv run python bin/init.py environment \
+    --app-name myapp \
+    --template shared-app-{{env_type}} \
+    --domain myapp.{{env_type}}.example.com
+```
+
+## Notes
+
+- terraform.tfvars may contain sensitive data - do not commit to git
+- Apps reference this infrastructure via terraform_remote_state
+- Listener rule priorities must be unique per app (auto-assigned)

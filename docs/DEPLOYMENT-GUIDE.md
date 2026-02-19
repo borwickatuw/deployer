@@ -136,7 +136,7 @@ docker build -t myapp-test .
 cd /path/to/deployer
 uv run python bin/init.py environment \
   --app-name myapp \
-  --env-type staging \
+  --template standalone-staging \
   --deploy-toml /path/to/app/deploy.toml \
   --domain staging.myapp.com
 ```
