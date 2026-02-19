@@ -60,6 +60,15 @@ task_role_arn = "${tofu:ecs_task_role_arn}"
 # Load balancer target group
 target_group_arn = "${tofu:alb_target_group_arn}"
 
+# Service target groups (map of service name -> target group ARN)
+# Used by deploy.py to register services with the correct target group
+service_target_groups = "${tofu:service_target_groups}"
+
+# Service discovery (for internal service-to-service communication)
+# Only present if service_discovery_enabled = true in terraform.tfvars
+service_discovery_registries = "${tofu:service_discovery_registries}"
+service_discovery_namespace = "${tofu:service_discovery_namespace_name}"
+
 # ALB DNS name (fallback URL when domain_name not available)
 alb_dns_name = "${tofu:alb_dns_name}"
 
@@ -128,8 +137,9 @@ url = "${tofu:redis_url}"
 # ------------------------------------------------------------------------------
 
 # Uncomment if your application uses S3 for media storage
-[storage]
-media_bucket = "${tofu:s3_media_bucket}"
+# (requires s3_buckets in terraform.tfvars)
+# [storage]
+# media_bucket = "${tofu:s3_media_bucket}"
 
 # ------------------------------------------------------------------------------
 # Secrets (SSM Parameter Store)

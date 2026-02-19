@@ -14,6 +14,12 @@
 project_name = "{{app_name}}"
 
 # ------------------------------------------------------------------------------
+# Network
+# ------------------------------------------------------------------------------
+
+vpc_cidr = "10.0.0.0/16"  # Must be unique across all environments
+
+# ------------------------------------------------------------------------------
 # Database Credentials (sensitive)
 # ------------------------------------------------------------------------------
 
@@ -46,6 +52,34 @@ route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
 ecr_repository_names = ["web"]
 
 # ------------------------------------------------------------------------------
+# Storage (optional)
+# Uncomment if your app needs S3 buckets (e.g., media uploads)
+# ------------------------------------------------------------------------------
+
+# s3_buckets = {
+#   "media" = {
+#     versioning = false
+#   }
+# }
+
+# ------------------------------------------------------------------------------
+# Feature Flags (uncomment to override defaults)
+# ------------------------------------------------------------------------------
+
+# service_discovery_enabled = true    # Enable AWS Cloud Map for service-to-service discovery
+# cloudfront_alb_enabled    = false   # Disable CloudFront custom error pages
+# cache_enabled             = false   # Disable ElastiCache Redis
+
+# ------------------------------------------------------------------------------
+# Scheduler (stop/start to save costs)
+# Default: Mon-Fri 7am-7pm Pacific
+# ------------------------------------------------------------------------------
+
+# stop_schedule  = "cron(0 3 ? * TUE-SAT *)"   # UTC - stop at 7pm Pacific
+# start_schedule = "cron(0 15 ? * MON-FRI *)"   # UTC - start at 7am Pacific
+# scheduler_enabled = false                       # Disable automatic scheduling
+
+# ------------------------------------------------------------------------------
 # CI/CD Configuration (optional)
 # Uncomment if you enabled the ci_role module in main.tf.
 # See docs/CI-CD.md for setup instructions.
@@ -62,3 +96,6 @@ waf_rate_limit_requests  = 2000   # Max requests per IP per 5 minutes
 waf_geo_block_countries  = []     # e.g., ["RU", "CN", "KP"]
 waf_ip_allowlist         = []     # CIDRs that bypass WAF (e.g., office IPs)
 waf_rule_action_override = "none" # Set to "count" to test without blocking
+
+# Uncomment to exclude specific rules (e.g., for large file uploads)
+# waf_common_rules_excluded = ["SizeRestrictions_BODY"]

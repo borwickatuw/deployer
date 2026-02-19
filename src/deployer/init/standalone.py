@@ -61,6 +61,12 @@ def _format_services_block(services: dict) -> str:
         if config.get("port"):
             lines.append(f"    port              = {config['port']}")
             lines.append(f'    health_check_path = "{config.get("health_check_path", "/health/")}"')
+        if config.get("path_pattern"):
+            lines.append(f'    path_pattern      = "{config["path_pattern"]}"')
+        if config.get("health_check_matcher"):
+            lines.append(f'    health_check_matcher = "{config["health_check_matcher"]}"')
+        if config.get("service_discovery"):
+            lines.append(f"    service_discovery = true")
         lines.append("  }")
     lines.append("}")
     return "\n".join(lines)
@@ -124,6 +130,14 @@ def generate_tfvars(
                 service_config["health_check_path"] = svc.get("health_check_path", "/health/")
             else:
                 service_config["load_balanced"] = False
+
+            # Pass through path_pattern, health_check_matcher, service_discovery
+            if svc.get("path_pattern"):
+                service_config["path_pattern"] = svc["path_pattern"]
+            if svc.get("health_check_matcher"):
+                service_config["health_check_matcher"] = svc["health_check_matcher"]
+            if svc.get("service_discovery"):
+                service_config["service_discovery"] = True
 
             services[name] = service_config
     else:

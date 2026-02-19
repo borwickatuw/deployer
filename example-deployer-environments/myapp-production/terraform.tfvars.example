@@ -14,6 +14,12 @@
 project_name = "{{app_name}}"
 
 # ------------------------------------------------------------------------------
+# Network
+# ------------------------------------------------------------------------------
+
+vpc_cidr = "10.1.0.0/16"  # Must be unique across all environments
+
+# ------------------------------------------------------------------------------
 # Database Credentials (sensitive)
 # ------------------------------------------------------------------------------
 
@@ -68,6 +74,33 @@ scaling = {
 ecr_repository_names = ["web"]
 
 # ------------------------------------------------------------------------------
+# Storage (optional)
+# Uncomment if your app needs S3 buckets (e.g., media uploads)
+# ------------------------------------------------------------------------------
+
+# s3_buckets = {
+#   "media" = {
+#     versioning = true
+#   }
+# }
+
+# ------------------------------------------------------------------------------
+# Feature Flags (uncomment to override defaults)
+# ------------------------------------------------------------------------------
+
+# service_discovery_enabled = true    # Enable AWS Cloud Map for service-to-service discovery
+# cloudfront_alb_enabled    = false   # Disable CloudFront custom error pages
+# cache_enabled             = false   # Disable ElastiCache Redis
+
+# ------------------------------------------------------------------------------
+# CI/CD Configuration (optional)
+# Uncomment if you enabled the ci_role module in main.tf.
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# github_repo = "myorg/myapp"  # GitHub org/repo for OIDC deployment
+
+# ------------------------------------------------------------------------------
 # WAF Configuration
 # ------------------------------------------------------------------------------
 
@@ -76,3 +109,6 @@ waf_rate_limit_requests  = 2000   # Max requests per IP per 5 minutes
 waf_geo_block_countries  = []     # e.g., ["RU", "CN", "KP"]
 waf_ip_allowlist         = []     # CIDRs that bypass WAF (e.g., office IPs)
 waf_rule_action_override = "none" # Set to "count" to test without blocking
+
+# Uncomment to exclude specific rules (e.g., for large file uploads)
+# waf_common_rules_excluded = ["SizeRestrictions_BODY"]

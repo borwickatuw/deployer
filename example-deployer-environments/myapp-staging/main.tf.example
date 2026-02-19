@@ -1,13 +1,7 @@
-# {{app_name | title}} {{env_type | title}} Environment
+# Staging Environment
 #
-# This instantiates the infrastructure for a standalone staging environment.
+# This instantiates the shared infrastructure for the staging environment.
 # Application deployments are handled separately by the deploy.py script.
-#
-# Usage:
-#   cd ~/code/deployer-environments/{{env_name}}
-#   ../bin/tofu.sh init
-#   ../bin/tofu.sh plan
-#   ../bin/tofu.sh apply
 
 terraform {
   required_version = ">= 1.6.0"
@@ -27,6 +21,16 @@ terraform {
 
 data "aws_caller_identity" "current" {}
 
+# Uncomment if using shared Cognito from bootstrap
+# data "terraform_remote_state" "bootstrap" {
+#   backend = "s3"
+#   config = {
+#     bucket = "deployer-terraform-state-123456789012"
+#     key    = "bootstrap-staging/terraform.tfstate"
+#     region = "us-west-2"
+#   }
+# }
+
 # ------------------------------------------------------------------------------
 # Health Check Presets
 # Staging: optimized for fast deployment feedback
@@ -34,12 +38,12 @@ data "aws_caller_identity" "current" {}
 
 locals {
   health_check = {
-    interval             = 10  # 10s between checks
-    timeout              = 5   # 5s timeout
-    healthy_threshold    = 2   # 2 successes = healthy
-    unhealthy_threshold  = 3   # 3 failures = unhealthy
-    deregistration_delay = 15  # 15s drain time
-    grace_period         = 60  # 60s before ECS starts health checking
+    interval             = 10 # 10s between checks
+    timeout              = 5  # 5s timeout
+    healthy_threshold    = 2  # 2 successes = healthy
+    unhealthy_threshold  = 3  # 3 failures = unhealthy
+    deregistration_delay = 15 # 15s drain time
+    grace_period         = 60 # 60s before ECS starts health checking (container startup time)
   }
 }
 
@@ -75,7 +79,7 @@ variable "db_password" {
 
 variable "domain_name" {
   type        = string
-  description = "Domain name for the staging environment (e.g., {{app_name}}-staging.example.com)"
+  description = "Domain name for the staging environment"
 }
 
 variable "route53_zone_id" {
@@ -87,13 +91,15 @@ variable "route53_zone_id" {
 # Service configuration - sizing that varies by environment
 variable "services" {
   type = map(object({
-    cpu               = number
-    memory            = number
-    replicas          = number
-    load_balanced     = bool
-    port              = optional(number)
-    health_check_path = optional(string, "/")
-    path_pattern      = optional(string)
+    cpu                  = number
+    memory               = number
+    replicas             = number
+    load_balanced        = bool
+    port                 = optional(number)
+    health_check_path    = optional(string, "/")
+    path_pattern         = optional(string)
+    health_check_matcher = optional(string)
+    service_discovery    = optional(bool, false)
   }))
   description = "Service sizing configuration (cpu, memory, replicas)"
 }
@@ -120,6 +126,13 @@ variable "health_check" {
   })
   default     = {}
   description = "Global health check defaults"
+}
+
+# ALB idle timeout for large file uploads
+variable "alb_idle_timeout" {
+  type        = number
+  default     = 60
+  description = "ALB idle timeout in seconds. Increase for large file uploads (default 60, max 4000)."
 }
 
 # ECR repositories to create
@@ -160,6 +173,77 @@ variable "waf_rule_action_override" {
   default     = "none"
 }
 
+variable "waf_common_rules_excluded" {
+  type        = list(string)
+  description = "Rules to exclude from AWSManagedRulesCommonRuleSet (e.g., ['SizeRestrictions_BODY'] to allow file uploads)"
+  default     = []
+}
+
+# VPC configuration
+variable "vpc_cidr" {
+  type        = string
+  description = "CIDR block for the VPC"
+}
+
+# Storage
+variable "s3_buckets" {
+  type = map(object({
+    versioning           = optional(bool, false)
+    public               = optional(bool, false)
+    cors_allowed_origins = optional(list(string), [])
+    cors_allowed_methods = optional(list(string), ["GET", "HEAD"])
+  }))
+  default     = {}
+  description = "Map of S3 bucket configurations"
+}
+
+# Service Discovery
+variable "service_discovery_enabled" {
+  type        = bool
+  default     = false
+  description = "Enable AWS Cloud Map service discovery"
+}
+
+# CloudFront ALB
+variable "cloudfront_alb_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable CloudFront in front of ALB for custom error pages"
+}
+
+# Cache
+variable "cache_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable ElastiCache Redis"
+}
+
+# Scheduler
+variable "stop_schedule" {
+  type        = string
+  default     = "cron(0 3 ? * TUE-SAT *)"
+  description = "Cron expression for stopping the environment (UTC)"
+}
+
+variable "start_schedule" {
+  type        = string
+  default     = "cron(0 15 ? * MON-FRI *)"
+  description = "Cron expression for starting the environment (UTC)"
+}
+
+variable "scheduler_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable automatic start/stop scheduling"
+}
+
+# CI/CD
+variable "github_repo" {
+  description = "GitHub org/repo for CI/CD deployment (e.g., 'myorg/myapp')"
+  type        = string
+  default     = ""
+}
+
 # ------------------------------------------------------------------------------
 # Infrastructure Module
 # ------------------------------------------------------------------------------
@@ -172,7 +256,7 @@ module "infrastructure" {
   aws_region   = "us-west-2"
 
   # VPC
-  vpc_cidr           = "10.0.0.0/16"
+  vpc_cidr           = var.vpc_cidr
   availability_zones = ["us-west-2a", "us-west-2b"]
 
   # Database
@@ -183,26 +267,30 @@ module "infrastructure" {
   db_password          = var.db_password
 
   # Cache
-  cache_enabled   = true
+  cache_enabled   = var.cache_enabled
   cache_node_type = "cache.t3.micro"
 
   # Storage
   s3_buckets = {
-    "media" = {
-      versioning           = false
-      public               = false
-      cors_allowed_origins = ["https://${var.domain_name}"]
-    }
+    for name, config in var.s3_buckets : name => merge(config, {
+      cors_allowed_origins = length(config.cors_allowed_origins) > 0 ? config.cors_allowed_origins : ["https://${var.domain_name}"]
+    })
   }
 
   # HTTPS and Authentication
   domain_name     = var.domain_name
   route53_zone_id = var.route53_zone_id
 
-  # Enable Cognito authentication for staging
+  # Enable Cognito authentication for staging (per-environment pool)
   cognito_auth_enabled = true
+  # Or use shared pool from bootstrap:
+  # cognito_auth = {
+  #   user_pool_arn       = data.terraform_remote_state.bootstrap.outputs.cognito_user_pool_arn
+  #   user_pool_client_id = data.terraform_remote_state.bootstrap.outputs.cognito_app_clients[var.project_name].client_id
+  #   user_pool_domain    = data.terraform_remote_state.bootstrap.outputs.cognito_domain
+  # }
 
-  # Health check settings from staging preset
+  # Health check settings from staging preset (see locals above)
   default_health_check_path = "/health/"
   health_check_interval     = local.health_check.interval
   health_check_timeout      = local.health_check.timeout
@@ -210,43 +298,40 @@ module "infrastructure" {
   unhealthy_threshold       = local.health_check.unhealthy_threshold
   deregistration_delay      = local.health_check.deregistration_delay
 
+  # ALB idle timeout
+  alb_idle_timeout = var.alb_idle_timeout
+
   # ECR repositories
   ecr_repository_names = var.ecr_repository_names
 
   # WAF configuration
-  waf_enabled              = var.waf_enabled
-  waf_rate_limit_requests  = var.waf_rate_limit_requests
-  waf_geo_block_countries  = var.waf_geo_block_countries
-  waf_ip_allowlist         = var.waf_ip_allowlist
-  waf_rule_action_override = var.waf_rule_action_override
+  waf_enabled               = var.waf_enabled
+  waf_rate_limit_requests   = var.waf_rate_limit_requests
+  waf_geo_block_countries   = var.waf_geo_block_countries
+  waf_ip_allowlist          = var.waf_ip_allowlist
+  waf_rule_action_override  = var.waf_rule_action_override
+  waf_common_rules_excluded = var.waf_common_rules_excluded
+
+  # Service definitions (target groups, SG rules, service discovery)
+  services = var.services
+
+  # Service Discovery (for internal service-to-service communication)
+  service_discovery_enabled = var.service_discovery_enabled
+
+  # CloudFront for custom error pages (shows friendly 503 when services are stopped)
+  cloudfront_alb_enabled = var.cloudfront_alb_enabled
 
   # IAM permissions boundary (required for role creation)
   iam_permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
 }
 
 # ------------------------------------------------------------------------------
-# CI/CD Role (optional)
-#
-# Uncomment to create a GitHub Actions CI deploy role for this project.
+# CI/CD Role (optional — set github_repo in services.auto.tfvars to enable)
 # Requires: modules/ci in bootstrap (creates OIDC provider + S3 bucket).
 # See docs/CI-CD.md for setup instructions.
 # ------------------------------------------------------------------------------
 
-# data "terraform_remote_state" "bootstrap" {
-#   backend = "s3"
-#   config = {
-#     bucket = "deployer-terraform-state-123456789012"  # Update with your account ID
-#     key    = "bootstrap/terraform.tfstate"
-#     region = "us-west-2"
-#   }
-# }
-
-# variable "github_repo" {
-#   description = "GitHub org/repo for CI/CD deployment (e.g., 'myorg/myapp')"
-#   type        = string
-#   default     = ""
-# }
-
+# Uncomment when using bootstrap remote state:
 # module "ci_role" {
 #   source = "../../deployer/modules/ci-role"
 #   count  = var.github_repo != "" ? 1 : 0
@@ -259,170 +344,8 @@ module "infrastructure" {
 #   permissions_boundary        = data.terraform_remote_state.bootstrap.outputs.ecs_role_boundary_arn
 # }
 
-# output "ci_role_arn" {
-#   value       = var.github_repo != "" ? module.ci_role[0].role_arn : null
-#   description = "CI deploy IAM role ARN for GitHub Actions"
-# }
-
 # ------------------------------------------------------------------------------
-# Outputs for deploy script
-# ------------------------------------------------------------------------------
-
-# Database (detailed format for ECS secrets injection)
-output "db_host" {
-  value       = module.infrastructure.db_host
-  description = "Database host endpoint"
-}
-
-output "db_port" {
-  value       = module.infrastructure.db_port
-  description = "Database port"
-}
-
-output "db_name" {
-  value       = var.project_name
-  description = "Database name"
-}
-
-output "db_password_secret_arn" {
-  value       = module.infrastructure.db_password_secret_arn
-  description = "ARN for database password in Secrets Manager"
-}
-
-output "db_username_secret_arn" {
-  value       = module.infrastructure.db_username_secret_arn
-  description = "ARN for database username in Secrets Manager"
-}
-
-# Legacy database_url output (for backwards compatibility)
-output "database_url" {
-  value     = module.infrastructure.database_url
-  sensitive = true
-}
-
-# Cache
-output "redis_url" {
-  value = module.infrastructure.redis_endpoint != null ? "redis://${module.infrastructure.redis_endpoint}:6379" : ""
-}
-
-# Storage
-output "s3_media_bucket" {
-  value       = module.infrastructure.s3_bucket_names["media"]
-  description = "S3 bucket name for media uploads"
-}
-
-# ECS Infrastructure
-output "ecs_cluster_name" {
-  value = module.infrastructure.ecs_cluster_name
-}
-
-output "ecs_security_group_id" {
-  value       = module.infrastructure.ecs_security_group_id
-  description = "Security group ID for ECS tasks"
-}
-
-output "ecs_execution_role_arn" {
-  value       = module.infrastructure.ecs_execution_role_arn
-  description = "ARN of the ECS task execution role"
-}
-
-output "ecs_task_role_arn" {
-  value       = module.infrastructure.ecs_task_role_arn
-  description = "ARN of the ECS task role"
-}
-
-# ALB
-output "alb_dns_name" {
-  value = module.infrastructure.alb_dns_name
-}
-
-output "alb_target_group_arn" {
-  value       = module.infrastructure.alb_target_group_arn
-  description = "ARN of the default ALB target group"
-}
-
-# Networking
-output "vpc_id" {
-  value = module.infrastructure.vpc_id
-}
-
-output "private_subnet_ids" {
-  value = module.infrastructure.private_subnet_ids
-}
-
-# Domain
-output "domain_name" {
-  value       = var.domain_name
-  description = "Domain name for this environment"
-}
-
-output "https_enabled" {
-  value       = module.infrastructure.https_enabled
-  description = "Whether HTTPS is enabled"
-}
-
-# Cognito
-output "cognito_user_pool_id" {
-  value       = module.infrastructure.cognito_user_pool_id
-  description = "Cognito user pool ID"
-}
-
-output "cognito_user_pool_client_id" {
-  value       = module.infrastructure.cognito_user_pool_client_id
-  description = "Cognito user pool client ID"
-}
-
-# RDS (for scheduler)
-output "rds_instance_id" {
-  value       = module.infrastructure.rds_instance_id
-  description = "RDS instance identifier for scheduling"
-}
-
-# Service configuration outputs
-output "service_config" {
-  value       = var.services
-  description = "Service sizing configuration for deploy.py"
-}
-
-output "scaling_config" {
-  value       = var.scaling
-  description = "Auto-scaling configuration for deploy.py"
-}
-
-output "health_check_config" {
-  value       = local.health_check
-  description = "Health check defaults for deploy.py"
-}
-
-# ECR
-output "ecr_repository_urls" {
-  value       = module.infrastructure.ecr_repository_urls
-  description = "Map of ECR repository names to their URLs"
-}
-
-output "ecr_prefix" {
-  value       = "${var.project_name}-{{env_type}}"
-  description = "ECR repository prefix"
-}
-
-# WAF
-output "waf_enabled" {
-  value       = module.infrastructure.waf_enabled
-  description = "Whether WAF is enabled"
-}
-
-output "waf_web_acl_arn" {
-  value       = module.infrastructure.waf_web_acl_arn
-  description = "WAF Web ACL ARN"
-}
-
-output "waf_log_group_name" {
-  value       = module.infrastructure.waf_log_group_name
-  description = "CloudWatch log group for WAF logs"
-}
-
-# ------------------------------------------------------------------------------
-# Automatic Scheduling (optional - stop at night to save costs)
+# Automatic Scheduling (stop at night, start in morning)
 # ------------------------------------------------------------------------------
 
 module "scheduler" {
@@ -438,18 +361,244 @@ module "scheduler" {
   rds_instance_id = module.infrastructure.rds_instance_id
 
   # Schedule (all times in UTC)
-  # Default: Mon-Fri 7am-7pm Pacific
-  stop_schedule  = "cron(0 3 ? * TUE-SAT *)"  # Stop 7pm Pacific (3am UTC next day)
-  start_schedule = "cron(0 15 ? * MON-FRI *)" # Start 7am Pacific (3pm UTC same day)
+  stop_schedule  = var.stop_schedule
+  start_schedule = var.start_schedule
 
   # Set to false to disable automatic scheduling
-  enabled = true
+  enabled = var.scheduler_enabled
 
   # Required permissions boundary for IAM role creation
   permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
 }
 
+# ------------------------------------------------------------------------------
+# Outputs
+# ------------------------------------------------------------------------------
+
+# Infrastructure
+output "database_url" {
+  value     = module.infrastructure.database_url
+  sensitive = true
+}
+
+output "redis_url" {
+  value = module.infrastructure.redis_endpoint != null ? "redis://${module.infrastructure.redis_endpoint}:6379" : ""
+}
+
+# Database credentials (two-tier: app + migrate)
+output "db_app_username_secret_arn" {
+  value       = module.infrastructure.db_app_username_secret_arn
+  description = "ARN for app database username (DML only, for runtime services)"
+}
+
+output "db_app_password_secret_arn" {
+  value       = module.infrastructure.db_app_password_secret_arn
+  description = "ARN for app database password (DML only, for runtime services)"
+}
+
+output "db_migrate_username_secret_arn" {
+  value       = module.infrastructure.db_migrate_username_secret_arn
+  description = "ARN for migrate database username (DDL + DML, for migrations)"
+}
+
+output "db_migrate_password_secret_arn" {
+  value       = module.infrastructure.db_migrate_password_secret_arn
+  description = "ARN for migrate database password (DDL + DML, for migrations)"
+}
+
+output "db_users_lambda_function_name" {
+  value       = module.infrastructure.db_users_lambda_function_name
+  description = "Lambda function name for creating database extensions"
+}
+
+output "db_host" {
+  value       = module.infrastructure.db_host
+  description = "Database host endpoint"
+}
+
+output "db_port" {
+  value       = module.infrastructure.db_port
+  description = "Database port"
+}
+
+output "db_name" {
+  value       = var.project_name
+  description = "Database name"
+}
+
+# S3 buckets (conditional — not all envs have storage)
+output "s3_bucket_names" {
+  value       = module.infrastructure.s3_bucket_names
+  description = "Map of S3 bucket names"
+}
+
+output "s3_media_bucket" {
+  value       = try(module.infrastructure.s3_bucket_names["media"], null)
+  description = "S3 bucket name for media"
+}
+
+# ECS
+output "ecs_cluster_name" {
+  value = module.infrastructure.ecs_cluster_name
+}
+
+output "alb_dns_name" {
+  value = module.infrastructure.alb_dns_name
+}
+
+output "domain_name" {
+  value       = var.domain_name
+  description = "Domain name for this environment"
+}
+
+output "vpc_id" {
+  value = module.infrastructure.vpc_id
+}
+
+output "private_subnet_ids" {
+  value = module.infrastructure.private_subnet_ids
+}
+
+# Service configuration output - used by deploy.py
+output "service_config" {
+  value       = var.services
+  description = "Service sizing configuration for deploy.py to merge with deploy.toml"
+}
+
+output "scaling_config" {
+  value       = var.scaling
+  description = "Auto-scaling configuration for deploy.py"
+}
+
+output "health_check_config" {
+  value       = local.health_check
+  description = "Health check defaults for deploy.py"
+}
+
+# Authentication
+output "cognito_user_pool_id" {
+  value       = module.infrastructure.cognito_user_pool_id
+  description = "Cognito user pool ID"
+}
+
+output "cognito_user_pool_client_id" {
+  value       = module.infrastructure.cognito_user_pool_client_id
+  description = "Cognito user pool client ID"
+}
+
+output "https_enabled" {
+  value       = module.infrastructure.https_enabled
+  description = "Whether HTTPS is enabled"
+}
+
+output "rds_instance_id" {
+  value       = module.infrastructure.rds_instance_id
+  description = "RDS instance identifier for scheduling"
+}
+
+# ECS deployment outputs
+output "ecs_security_group_id" {
+  value       = module.infrastructure.ecs_security_group_id
+  description = "Security group ID for ECS tasks"
+}
+
+output "alb_target_group_arn" {
+  value       = module.infrastructure.alb_target_group_arn
+  description = "ARN of the default ALB target group"
+}
+
+output "ecs_execution_role_arn" {
+  value       = module.infrastructure.ecs_execution_role_arn
+  description = "ARN of the ECS task execution role"
+}
+
+output "ecs_task_role_arn" {
+  value       = module.infrastructure.ecs_task_role_arn
+  description = "ARN of the ECS task role"
+}
+
+# Service target groups and discovery (from root module)
+output "service_target_groups" {
+  value       = module.infrastructure.service_target_groups
+  description = "Map of service names to target group ARNs"
+}
+
+output "service_discovery_namespace_name" {
+  value       = module.infrastructure.service_discovery_namespace_name
+  description = "Service discovery namespace name"
+}
+
+output "service_discovery_registries" {
+  value       = module.infrastructure.service_discovery_registries
+  description = "Map of service names to service discovery registry ARNs"
+}
+
+# ECR outputs
+output "ecr_repository_urls" {
+  value       = module.infrastructure.ecr_repository_urls
+  description = "Map of ECR repository names to their URLs"
+}
+
+output "ecr_prefix" {
+  value       = "${var.project_name}-{{env_type}}"
+  description = "ECR repository prefix (name_prefix)"
+}
+
+# WAF outputs
+output "waf_enabled" {
+  value       = module.infrastructure.waf_enabled
+  description = "Whether WAF is enabled"
+}
+
+output "waf_web_acl_arn" {
+  value       = module.infrastructure.waf_web_acl_arn
+  description = "ARN of the WAF Web ACL"
+}
+
+output "waf_log_group_name" {
+  value       = module.infrastructure.waf_log_group_name
+  description = "CloudWatch log group for WAF logs"
+}
+
+# CloudFront ALB outputs
+output "cloudfront_alb_distribution_id" {
+  value       = module.infrastructure.cloudfront_alb_distribution_id
+  description = "CloudFront distribution ID for custom error pages"
+}
+
+output "cloudfront_alb_domain_name" {
+  value       = module.infrastructure.cloudfront_alb_domain_name
+  description = "CloudFront distribution domain name"
+}
+
+output "cloudfront_alb_error_bucket" {
+  value       = module.infrastructure.cloudfront_alb_error_bucket
+  description = "S3 bucket for error pages"
+}
+
+# CI/CD
+output "ci_role_arn" {
+  value       = null # var.github_repo != "" ? module.ci_role[0].role_arn : null
+  description = "CI deploy IAM role ARN for GitHub Actions"
+}
+
+# Scheduler
 output "scheduler_enabled" {
   value       = module.scheduler.scheduling_enabled
   description = "Whether automatic scheduling is enabled"
+}
+
+output "scheduler_start_schedule" {
+  value       = module.scheduler.start_schedule
+  description = "Cron expression for when the environment starts"
+}
+
+output "scheduler_stop_schedule" {
+  value       = module.scheduler.stop_schedule
+  description = "Cron expression for when the environment stops"
+}
+
+output "scheduler_lambda" {
+  value       = module.scheduler.lambda_function_name
+  description = "Name of the scheduler Lambda function"
 }
