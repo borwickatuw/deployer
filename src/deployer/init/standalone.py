@@ -21,7 +21,7 @@ PRODUCTION_DEFAULTS = {
 
 
 def generate_main_tf(app_name: str, env_type: str, domain: str | None = None) -> str:
-    """Generate main.tf for a standalone environment.
+    """Generate main.tf backend-only stub for a standalone environment.
 
     Args:
         app_name: Application name.
@@ -93,27 +93,16 @@ def _format_scaling_block(env_type: str) -> str:
         return "# Auto-scaling disabled in staging\nscaling = {}"
 
 
-def generate_tfvars(
-    app_name: str,
-    env_type: str,
-    deploy_config: dict | None = None,
-    domain: str | None = None,
-) -> str:
-    """Generate terraform.tfvars for a standalone environment.
+def _build_services(deploy_config: dict | None, defaults: dict) -> dict:
+    """Build services dict from deploy.toml config or defaults.
 
     Args:
-        app_name: Application name.
-        env_type: Environment type ('staging' or 'production').
         deploy_config: Optional deploy.toml configuration dict.
-        domain: Optional domain name.
+        defaults: Default service sizing.
 
     Returns:
-        terraform.tfvars content as string.
+        Services configuration dict.
     """
-    defaults = STAGING_DEFAULTS if env_type == "staging" else PRODUCTION_DEFAULTS
-    env_name = f"{app_name}-{env_type}"
-
-    # Extract services from deploy.toml if provided
     services = {}
     if deploy_config and "services" in deploy_config:
         for name, svc in deploy_config["services"].items():
@@ -150,12 +139,35 @@ def generate_tfvars(
             "port": 8000,
             "health_check_path": "/health/",
         }
+    return services
 
+
+def generate_services_tfvars(
+    app_name: str,
+    env_type: str,
+    deploy_config: dict | None = None,
+    domain: str | None = None,
+) -> str:
+    """Generate services.auto.tfvars (non-sensitive, tracked in git).
+
+    Args:
+        app_name: Application name.
+        env_type: Environment type ('staging' or 'production').
+        deploy_config: Optional deploy.toml configuration dict.
+        domain: Optional domain name.
+
+    Returns:
+        services.auto.tfvars content as string.
+    """
+    defaults = STAGING_DEFAULTS if env_type == "staging" else PRODUCTION_DEFAULTS
+    env_name = f"{app_name}-{env_type}"
+
+    services = _build_services(deploy_config, defaults)
     services_block = _format_services_block(services)
     scaling_block = _format_scaling_block(env_type)
     domain_value = domain or f"{app_name}-{env_type}.example.com"
 
-    template = load_template("standalone", env_type, "terraform.tfvars.example")
+    template = load_template("standalone", env_type, "services.auto.tfvars.example")
     return substitute(
         template,
         app_name=app_name,
@@ -164,6 +176,34 @@ def generate_tfvars(
         domain=domain_value,
         services_block=services_block,
         scaling_block=scaling_block,
+    )
+
+
+def generate_tfvars(
+    app_name: str,
+    env_type: str,
+    deploy_config: dict | None = None,
+    domain: str | None = None,
+) -> str:
+    """Generate terraform.tfvars (secrets only, gitignored).
+
+    Args:
+        app_name: Application name.
+        env_type: Environment type ('staging' or 'production').
+        deploy_config: Unused, kept for API compatibility.
+        domain: Unused, kept for API compatibility.
+
+    Returns:
+        terraform.tfvars content as string.
+    """
+    env_name = f"{app_name}-{env_type}"
+
+    template = load_template("standalone", env_type, "terraform.tfvars.example")
+    return substitute(
+        template,
+        app_name=app_name,
+        env_type=env_type,
+        env_name=env_name,
     )
 
 
@@ -199,18 +239,22 @@ uv run python bin/environment.py status {env_name}
 
 ## Configuration Files
 
-- `main.tf` - Infrastructure module configuration
+- `main.tf` - Backend-only stub (backend config cannot use variables)
+- `deployer.tf` - Symlink to shared environment config (variables, modules, outputs)
+- `services.auto.tfvars` - Service sizing, domain, WAF (tracked in git)
+- `terraform.tfvars` - Database credentials (DO NOT commit)
 - `config.toml` - Deployment configuration (bridges tofu outputs to deploy script)
-- `terraform.tfvars` - Service sizing and credentials (DO NOT commit)
 
 ## Before First Deployment
 
-1. Edit `terraform.tfvars`:
-   - Set database credentials
+1. Edit `services.auto.tfvars`:
    - Configure domain and Route53 zone ID
    - Adjust service sizing if needed
 
-2. Create SSM parameters for secrets:
+2. Edit `terraform.tfvars`:
+   - Set database credentials
+
+3. Create SSM parameters for secrets:
    ```bash
    aws ssm put-parameter --name "/{app_name}/{env_type}/secret-key" --value "..." --type SecureString
    ```

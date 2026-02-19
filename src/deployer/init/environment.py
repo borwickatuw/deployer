@@ -6,6 +6,7 @@ This module provides entry points for generating different types of environments
 - Shared app environments (use shared infrastructure, own RDS and target group)
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -14,7 +15,7 @@ try:
 except ImportError:
     import tomli as tomllib
 
-from deployer.utils import get_environments_dir
+from deployer.utils import get_deployer_root, get_environments_dir
 from .template import load_template, substitute
 
 # Import generators
@@ -63,6 +64,34 @@ def get_next_listener_priority(env_type: str) -> int:
     return max(existing_priorities) + 100
 
 
+def create_deployer_tf_symlink(env_dir: Path) -> bool:
+    """Create deployer.tf symlink in an environment directory.
+
+    Creates a relative symlink from env_dir/deployer.tf to the shared
+    deployer/environments/deployer.tf, computing the relative path
+    dynamically from get_deployer_root().
+
+    Args:
+        env_dir: Path to the environment directory.
+
+    Returns:
+        True if symlink was created, False if it already exists.
+    """
+    link_path = env_dir / "deployer.tf"
+    if link_path.exists():
+        return False
+
+    deployer_root = get_deployer_root()
+    target = deployer_root / "environments" / "deployer.tf"
+
+    try:
+        relative_target = os.path.relpath(target, env_dir)
+        link_path.symlink_to(relative_target)
+        return True
+    except OSError:
+        return False
+
+
 def generate_environment(
     app_name: str,
     env_type: str,
@@ -105,14 +134,24 @@ def generate_environment(
     # Generate standalone environment
     files = {}
 
-    # Generate main.tf
+    # Generate main.tf (backend-only stub)
     files[str(env_dir / "main.tf")] = standalone.generate_main_tf(app_name, env_type, domain)
 
     # Generate config.toml
     files[str(env_dir / "config.toml")] = generate_config_toml(app_name, env_type, domain, shared=False)
 
-    # Generate terraform.tfvars
+    # Generate services.auto.tfvars (non-sensitive, tracked in git)
+    files[str(env_dir / "services.auto.tfvars")] = standalone.generate_services_tfvars(
+        app_name, env_type, deploy_config, domain
+    )
+
+    # Generate terraform.tfvars (secrets only, gitignored)
     files[str(env_dir / "terraform.tfvars")] = standalone.generate_tfvars(
+        app_name, env_type, deploy_config, domain
+    )
+
+    # Generate terraform.tfvars.example (for team members to copy)
+    files[str(env_dir / "terraform.tfvars.example")] = standalone.generate_tfvars(
         app_name, env_type, deploy_config, domain
     )
 

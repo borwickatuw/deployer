@@ -22,8 +22,8 @@ from pathlib import Path
 
 from deployer.init import generate_deploy_toml, generate_environment, generate_shared_infrastructure
 from deployer.init.deploy_toml import format_deploy_toml
-from deployer.init.environment import get_next_listener_priority
-from deployer.utils import ensure_environments_symlinks, get_environments_dir, load_dotenv_if_exists
+from deployer.init.environment import create_deployer_tf_symlink, get_next_listener_priority
+from deployer.utils import ensure_environments_symlinks, get_environments_dir
 
 
 # =============================================================================
@@ -196,7 +196,7 @@ def cmd_environment(args) -> int:
             print()
         return 0
 
-    # Ensure symlinks exist for external environments directory
+    # Ensure root-level symlinks exist for external environments directory
     created_symlinks = ensure_environments_symlinks()
     if created_symlinks:
         print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
@@ -209,39 +209,50 @@ def cmd_environment(args) -> int:
         Path(filepath).write_text(content)
         print(f"Created: {filepath}")
 
+    # Create deployer.tf symlink (standalone environments only)
+    if not args.shared:
+        if create_deployer_tf_symlink(env_path):
+            print(f"Created: {env_path}/deployer.tf -> shared environment config")
+
     print()
     if args.shared:
         print("Next steps:")
         print(f"  1. Edit {env_path}/terraform.tfvars:")
         print("     - Set database credentials")
+        print()
+        print(f"  2. Edit {env_path}/services.auto.tfvars:")
+        print("     - Configure domain and Route53 zone ID")
         print("     - Adjust service sizing if needed")
         print()
         if shared_infra_created:
-            print("  2. First deploy shared infrastructure (see above)")
+            print("  3. First deploy shared infrastructure (see above)")
             print()
-            print("  3. Then deploy app infrastructure:")
+            print("  4. Then deploy app infrastructure:")
         else:
-            print("  2. Deploy app infrastructure:")
+            print("  3. Deploy app infrastructure:")
+        step = "5" if shared_infra_created else "4"
         print(f"     ./bin/tofu.sh -chdir={env_path} init")
         print(f"     ./bin/tofu.sh -chdir={env_path} plan")
         print(f"     ./bin/tofu.sh -chdir={env_path} apply")
         print()
-        print(f"  {'4' if shared_infra_created else '3'}. Create SSM secrets and deploy:")
+        print(f"  {step}. Create SSM secrets and deploy:")
         print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
         print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
     else:
         print("Next steps:")
         print(f"  1. Edit {env_path}/terraform.tfvars:")
         print("     - Set database credentials")
+        print()
+        print(f"  2. Edit {env_path}/services.auto.tfvars:")
         print("     - Configure domain and Route53 zone ID")
         print("     - Adjust service sizing if needed")
         print()
-        print("  2. Deploy infrastructure:")
+        print("  3. Deploy infrastructure:")
         print(f"     ./bin/tofu.sh -chdir={env_path} init")
         print(f"     ./bin/tofu.sh -chdir={env_path} plan")
         print(f"     ./bin/tofu.sh -chdir={env_path} apply")
         print()
-        print("  3. Create SSM secrets and deploy:")
+        print("  4. Create SSM secrets and deploy:")
         print(f"     aws ssm put-parameter --name \"/{args.app_name}/{args.env_type}/secret-key\" --value \"...\" --type SecureString")
         print(f"     uv run python bin/deploy.py /path/to/deploy.toml {env_name}")
     return 0
@@ -253,9 +264,6 @@ def cmd_environment(args) -> int:
 
 
 def main():
-    # Load .env for DEPLOYER_ENVIRONMENTS_DIR
-    load_dotenv_if_exists()
-
     parser = argparse.ArgumentParser(
         description="Initialize deployment configuration for new applications",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -325,9 +333,11 @@ The generator will:
 Create an environment directory with scaffolded configuration files.
 
 Creates:
-- main.tf - Infrastructure module configuration
+- main.tf - Backend-only stub (backend config cannot use variables)
+- deployer.tf - Symlink to shared environment config (variables, modules, outputs)
+- services.auto.tfvars - Service sizing, domain, WAF config (tracked in git)
+- terraform.tfvars - Database credentials only (gitignored)
 - config.toml - Deployment configuration with ${tofu:...} placeholders
-- terraform.tfvars - Service sizing (cpu, memory, replicas)
 - README.md - Environment-specific notes
         """,
     )

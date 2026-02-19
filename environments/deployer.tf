@@ -8,7 +8,10 @@
 # All environment-specific values are set via tfvars. This file should NOT
 # be edited per-environment.
 #
-# Setup:
+# Setup (automatic):
+#   uv run python bin/init.py environment --app-name myapp --env-type staging
+#
+# Setup (manual — assumes deployer and deployer-environments are siblings):
 #   cd ~/code/deployer-environments/<env>
 #   ln -s ../../deployer/environments/deployer.tf deployer.tf
 # ==============================================================================
@@ -368,7 +371,7 @@ module "infrastructure" {
 # ------------------------------------------------------------------------------
 
 module "ci_role" {
-  source = "../../deployer/modules/ci-role"
+  source = "../modules/ci-role"
   count  = var.github_repo != "" && var.bootstrap_state_config != null ? 1 : 0
 
   project_prefix              = var.project_name
