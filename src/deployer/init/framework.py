@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 # Framework detection patterns based on environment variables
 FRAMEWORK_ENV_PATTERNS = {
     "django": ["DJANGO_SETTINGS_MODULE", "DJANGO_SECRET_KEY"],

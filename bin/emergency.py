@@ -73,7 +73,6 @@ from deployer.utils import (
     validate_environment_deployed,
 )
 
-
 # =============================================================================
 # Rollback Command
 # =============================================================================
@@ -257,9 +256,7 @@ def cmd_rollback(args) -> int:
 
     # Perform rollback
     log(f"Rolling back {service_name} to revision {target_revision_num}...")
-    logger.ecs(
-        f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}"
-    )
+    logger.ecs(f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}")
 
     if not update_service_task_definition(cluster_name, service_name, target_arn):
         logger.error(f"Failed to update service {service_name}")
@@ -485,9 +482,7 @@ def cmd_restore_db(args) -> int:
                 print()
                 print(f"{Colors.YELLOW}Important:{Colors.NC}")
                 print("  - The original database is NOT modified")
-                print(
-                    "  - To use the restored database, update your application's DATABASE_URL"
-                )
+                print("  - To use the restored database, update your application's DATABASE_URL")
                 print(f"  - To delete the restored instance if not needed:")
                 print(
                     f"    aws rds delete-db-instance --db-instance-identifier {result['instance_id']} --skip-final-snapshot"
@@ -528,9 +523,7 @@ def cmd_restore_db(args) -> int:
                 print()
                 print(f"{Colors.YELLOW}Important:{Colors.NC}")
                 print("  - The original database is NOT modified")
-                print(
-                    "  - To use the restored database, update your application's DATABASE_URL"
-                )
+                print("  - To use the restored database, update your application's DATABASE_URL")
                 print(f"  - To delete the restored instance if not needed:")
                 print(
                     f"    aws rds delete-db-instance --db-instance-identifier {result['instance_id']} --skip-final-snapshot"
@@ -573,9 +566,7 @@ def cmd_restore_db(args) -> int:
 
         print("Options:")
         print("  Enter a number to restore from that snapshot")
-        print(
-            "  Or enter a time in ISO format (e.g., 2026-02-04T12:00:00Z) for point-in-time"
-        )
+        print("  Or enter a time in ISO format (e.g., 2026-02-04T12:00:00Z) for point-in-time")
         print()
 
         try:
@@ -688,14 +679,10 @@ def cmd_revert(args) -> int:
     # Restore each service
     for name, state in checkpoint.services.items():
         log(f"Restoring {name}...")
-        logger.ecs(
-            f"Restoring {name} to revision {state.task_definition.split(':')[-1]}"
-        )
+        logger.ecs(f"Restoring {name} to revision {state.task_definition.split(':')[-1]}")
 
         # Update task definition
-        if not update_service_task_definition(
-            cluster_name, name, state.task_definition
-        ):
+        if not update_service_task_definition(cluster_name, name, state.task_definition):
             logger.error(f"Failed to update task definition for {name}")
             log_error(f"Failed to update task definition for {name}")
             continue
@@ -833,29 +820,19 @@ Examples:
     rollback_parser.add_argument(
         "--service", "-s", help="Service name (interactive if not specified)"
     )
-    rollback_parser.add_argument(
-        "--revision", "-r", type=int, help="Specific revision number"
-    )
-    rollback_parser.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation"
-    )
+    rollback_parser.add_argument("--revision", "-r", type=int, help="Specific revision number")
+    rollback_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
 
     # scale command
     scale_parser = subparsers.add_parser("scale", help="Scale services")
     scale_parser.add_argument("--service", "-s", help="Service name")
     scale_parser.add_argument("--count", "-c", type=int, help="Target count")
-    scale_parser.add_argument(
-        "--all", "-a", action="store_true", help="Scale all services"
-    )
+    scale_parser.add_argument("--all", "-a", action="store_true", help="Scale all services")
     scale_parser.add_argument(
         "--multiplier", "-m", type=float, help="Scale by multiplier (with --all)"
     )
-    scale_parser.add_argument(
-        "--reset", action="store_true", help="Reset to configured replicas"
-    )
-    scale_parser.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation"
-    )
+    scale_parser.add_argument("--reset", action="store_true", help="Reset to configured replicas")
+    scale_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
 
     # snapshot command
     snapshot_parser = subparsers.add_parser("snapshot", help="Create RDS snapshot")
@@ -868,9 +845,7 @@ Examples:
         "restore-db", help="Restore database (creates new instance)"
     )
     restore_parser.add_argument("--snapshot", help="Snapshot ID to restore from")
-    restore_parser.add_argument(
-        "--time", help="Point-in-time to restore to (ISO format)"
-    )
+    restore_parser.add_argument("--time", help="Point-in-time to restore to (ISO format)")
 
     # revert command
     revert_parser = subparsers.add_parser("revert", help="Revert to checkpoint")
@@ -878,21 +853,15 @@ Examples:
         "--list", "-l", action="store_true", help="List available checkpoints"
     )
     revert_parser.add_argument("--checkpoint", help="Checkpoint filename to revert to")
-    revert_parser.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation"
-    )
+    revert_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
 
     # force-deploy command
-    force_deploy_parser = subparsers.add_parser(
-        "force-deploy", help="Force new deployment"
-    )
+    force_deploy_parser = subparsers.add_parser("force-deploy", help="Force new deployment")
     force_deploy_parser.add_argument("--service", "-s", help="Service name")
     force_deploy_parser.add_argument(
         "--all", "-a", action="store_true", help="Force deploy all services"
     )
-    force_deploy_parser.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation"
-    )
+    force_deploy_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
 
     args = parser.parse_args()
 

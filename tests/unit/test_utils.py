@@ -129,5 +129,3 @@ class TestRunCommand:
         success, output = run_command(["ls", "/nonexistent_dir_xyz"])
         assert success is False
         assert output  # Should have error message
-
-

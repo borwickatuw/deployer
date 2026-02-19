@@ -88,27 +88,47 @@ class DatabaseModule(ResourceModule):
         if credentials == "secretsmanager":
             # Two-account model: require app and migrate credentials
             if not env_config.get("app_username_secret"):
-                errors.append("[database] using secretsmanager but missing 'app_username_secret' in config.toml")
+                errors.append(
+                    "[database] using secretsmanager but missing 'app_username_secret' in config.toml"
+                )
             if not env_config.get("app_password_secret"):
-                errors.append("[database] using secretsmanager but missing 'app_password_secret' in config.toml")
+                errors.append(
+                    "[database] using secretsmanager but missing 'app_password_secret' in config.toml"
+                )
             if not env_config.get("migrate_username_secret"):
-                errors.append("[database] using secretsmanager but missing 'migrate_username_secret' in config.toml")
+                errors.append(
+                    "[database] using secretsmanager but missing 'migrate_username_secret' in config.toml"
+                )
             if not env_config.get("migrate_password_secret"):
-                errors.append("[database] using secretsmanager but missing 'migrate_password_secret' in config.toml")
+                errors.append(
+                    "[database] using secretsmanager but missing 'migrate_password_secret' in config.toml"
+                )
         elif credentials == "ssm":
             # SSM mode: require app and migrate params
             if not env_config.get("app_username_param"):
-                errors.append("[database] using ssm but missing 'app_username_param' in config.toml")
+                errors.append(
+                    "[database] using ssm but missing 'app_username_param' in config.toml"
+                )
             if not env_config.get("app_password_param"):
-                errors.append("[database] using ssm but missing 'app_password_param' in config.toml")
+                errors.append(
+                    "[database] using ssm but missing 'app_password_param' in config.toml"
+                )
             if not env_config.get("migrate_username_param"):
-                errors.append("[database] using ssm but missing 'migrate_username_param' in config.toml")
+                errors.append(
+                    "[database] using ssm but missing 'migrate_username_param' in config.toml"
+                )
             if not env_config.get("migrate_password_param"):
-                errors.append("[database] using ssm but missing 'migrate_password_param' in config.toml")
+                errors.append(
+                    "[database] using ssm but missing 'migrate_password_param' in config.toml"
+                )
         elif credentials:
-            errors.append(f"[database] credentials '{credentials}' not supported (use 'secretsmanager' or 'ssm')")
+            errors.append(
+                f"[database] credentials '{credentials}' not supported (use 'secretsmanager' or 'ssm')"
+            )
         else:
-            errors.append("[database] section missing 'credentials' in config.toml (use 'secretsmanager' or 'ssm')")
+            errors.append(
+                "[database] section missing 'credentials' in config.toml (use 'secretsmanager' or 'ssm')"
+            )
 
         return errors
 
@@ -165,13 +185,17 @@ class DatabaseModule(ResourceModule):
                 username_param = env_config["migrate_username_param"]
                 password_param = env_config["migrate_password_param"]
 
-            secrets.append(SecretReference(
-                "DB_USERNAME",
-                f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{username_param}"
-            ))
-            secrets.append(SecretReference(
-                "DB_PASSWORD",
-                f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{password_param}"
-            ))
+            secrets.append(
+                SecretReference(
+                    "DB_USERNAME",
+                    f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{username_param}",
+                )
+            )
+            secrets.append(
+                SecretReference(
+                    "DB_PASSWORD",
+                    f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{password_param}",
+                )
+            )
 
         return ModuleOutput(environment=env_vars, secrets=secrets)

@@ -92,13 +92,17 @@ def print_users_table(users: list[dict], indent: str = "") -> None:
     email_width = max(email_width, len("Email"))
 
     # Header
-    print(f"{indent}{'Username':<{username_width}}  {'Email':<{email_width}}  {'Status':<20}  {'Enabled':<8}  {'Created':<16}")
+    print(
+        f"{indent}{'Username':<{username_width}}  {'Email':<{email_width}}  {'Status':<20}  {'Enabled':<8}  {'Created':<16}"
+    )
     print(f"{indent}{'-' * username_width}  {'-' * email_width}  {'-' * 20}  {'-' * 8}  {'-' * 16}")
 
     # Rows
     for user in users:
         enabled_str = "Yes" if user["enabled"] else "NO"
-        print(f"{indent}{user['username']:<{username_width}}  {user['email']:<{email_width}}  {user['status']:<20}  {enabled_str:<8}  {user['created'] or 'N/A':<16}")
+        print(
+            f"{indent}{user['username']:<{username_width}}  {user['email']:<{email_width}}  {user['status']:<20}  {enabled_str:<8}  {user['created'] or 'N/A':<16}"
+        )
 
 
 def resolve_environment(env_name: str) -> tuple[Path, str, dict] | None:
@@ -129,6 +133,7 @@ def resolve_environment(env_name: str) -> tuple[Path, str, dict] | None:
 # =============================================================================
 # Commands
 # =============================================================================
+
 
 def cmd_list(args) -> int:
     """List users in Cognito-enabled environments."""
@@ -213,7 +218,10 @@ def cmd_create(args) -> int:
     # Validate email format
     if "@" not in email:
         if not args.email:
-            print(f"Error: Invalid email address: {email} (using username as email since --email not provided)", file=sys.stderr)
+            print(
+                f"Error: Invalid email address: {email} (using username as email since --email not provided)",
+                file=sys.stderr,
+            )
         else:
             print(f"Error: Invalid email address: {email}", file=sys.stderr)
         return 1
@@ -398,6 +406,7 @@ def cmd_reset_password(args) -> int:
 # Main
 # =============================================================================
 
+
 def main():
     # Parse arguments first to get the environment name for profile configuration
     parser = argparse.ArgumentParser(
@@ -421,16 +430,21 @@ Examples:
 
     # list
     list_parser = subparsers.add_parser("list", help="List users in Cognito-enabled environments")
-    list_parser.add_argument("environment", nargs="?", help="Specific environment (default: all with Cognito)")
+    list_parser.add_argument(
+        "environment", nargs="?", help="Specific environment (default: all with Cognito)"
+    )
 
     # create
     create_parser = subparsers.add_parser("create", help="Create a new user")
     create_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
     create_parser.add_argument("--username", "-u", required=True, help="Username (typically email)")
     create_parser.add_argument("--email", help="Email address (defaults to username)")
-    create_parser.add_argument("-p", "--password", help="Set permanent password (otherwise temporary is generated)")
     create_parser.add_argument(
-        "-c", "--clipboard",
+        "-p", "--password", help="Set permanent password (otherwise temporary is generated)"
+    )
+    create_parser.add_argument(
+        "-c",
+        "--clipboard",
         action="store_true",
         help="Copy welcome message with credentials to clipboard",
     )
@@ -439,7 +453,9 @@ Examples:
     delete_parser = subparsers.add_parser("delete", help="Delete a user")
     delete_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
     delete_parser.add_argument("--username", "-u", required=True, help="Username to delete")
-    delete_parser.add_argument("-f", "--force", action="store_true", help="Skip confirmation prompt")
+    delete_parser.add_argument(
+        "-f", "--force", action="store_true", help="Skip confirmation prompt"
+    )
 
     # disable
     disable_parser = subparsers.add_parser("disable", help="Disable a user (prevent login)")
@@ -456,14 +472,16 @@ Examples:
     reset_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
     reset_parser.add_argument("--username", "-u", required=True, help="Username")
     reset_parser.add_argument("-p", "--password", help="New password (otherwise generated)")
-    reset_parser.add_argument("--permanent", action="store_true", help="Set as permanent (no change required)")
+    reset_parser.add_argument(
+        "--permanent", action="store_true", help="Set as permanent (no change required)"
+    )
 
     args = parser.parse_args()
 
     # Configure AWS profile before any boto3 clients are created
     # Uses environment-specific profile from config.toml if available
     # Note: 'list' command may not have an environment, so fall back to default
-    env_name = getattr(args, 'environment', None)
+    env_name = getattr(args, "environment", None)
     if env_name:
         configure_aws_profile_for_environment("cognito", env_name)
     else:

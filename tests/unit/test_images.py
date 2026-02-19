@@ -1,12 +1,12 @@
 """Tests for deployer.deploy.images module."""
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from botocore.exceptions import ClientError
 
 from deployer.config import ImageConfig
-from deployer.deploy.images import validate_ecr_repositories, format_missing_ecr_error
+from deployer.deploy.images import format_missing_ecr_error, validate_ecr_repositories
 
 
 class TestValidateEcrRepositories:
@@ -180,17 +180,23 @@ class TestImageConfigGetTarget:
 
     def test_dict_target_returns_environment_value(self):
         """Test that dict target returns environment-specific value."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "target": {"staging": "dev", "production": "prod"},
-        })
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "target": {"staging": "dev", "production": "prod"},
+            },
+        )
         assert img.get_target("staging") == "dev"
         assert img.get_target("production") == "prod"
 
     def test_dict_target_missing_environment_returns_none(self):
         """Test that dict target returns None for undefined environment."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "target": {"staging": "dev"},
-        })
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "target": {"staging": "dev"},
+            },
+        )
         assert img.get_target("production") is None

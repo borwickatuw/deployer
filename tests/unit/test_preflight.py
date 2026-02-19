@@ -1,23 +1,23 @@
 """Tests for deployer.deploy.preflight module."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from deployer.config import parse_deploy_config
 from deployer.deploy.preflight import (
     PreflightError,
     PreflightOptions,
-    check_environment_config,
     check_ecr_repositories,
     check_ecs_cluster,
+    check_environment_config,
     check_ssm_secrets,
     run_preflight_checks,
 )
 
-
 # --- Minimal valid env_config for tests ---
+
 
 def make_env_config(**overrides):
     """Create a minimal valid env config dict."""

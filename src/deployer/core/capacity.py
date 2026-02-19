@@ -128,9 +128,7 @@ def get_recommended_cpu(current: int, avg_util: float, p95_util: float) -> int |
     return valid_values[-1] if valid_values[-1] != current else None
 
 
-def get_recommended_memory(
-    current: int, avg_util: float, p95_util: float, cpu: int
-) -> int | None:
+def get_recommended_memory(current: int, avg_util: float, p95_util: float, cpu: int) -> int | None:
     """Calculate recommended memory based on utilization and CPU.
 
     Args:
@@ -168,9 +166,7 @@ def get_recommended_memory(
     return valid_values[-1] if valid_values[-1] != current else None
 
 
-def estimate_savings(
-    services: list[ServiceMetrics], hourly_rate_per_cpu: float = 0.04048
-) -> float:
+def estimate_savings(services: list[ServiceMetrics], hourly_rate_per_cpu: float = 0.04048) -> float:
     """Estimate monthly savings from right-sizing recommendations.
 
     Default rate is Fargate on-demand pricing for us-west-2 (~$0.04048/vCPU/hour).
@@ -226,9 +222,7 @@ def generate_tfvars_diff(
 
         # Compare tfvars CPU vs running
         if tfvars.cpu != svc.cpu_allocated:
-            service_diffs.append(
-                f"  cpu: tfvars={tfvars.cpu} → running={svc.cpu_allocated}"
-            )
+            service_diffs.append(f"  cpu: tfvars={tfvars.cpu} → running={svc.cpu_allocated}")
 
         # Compare tfvars memory vs running
         if tfvars.memory != svc.memory_allocated:

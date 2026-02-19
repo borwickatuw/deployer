@@ -110,8 +110,14 @@ def cmd_check(args) -> int:
             print(f"Using linked deploy.toml: {deploy_toml_path}")
         else:
             print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
-            print(f"\nTo link: python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
-            print(f"Or specify: ssm-secrets.py check {args.environment} --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+            print(
+                f"\nTo link: python bin/link-environments.py {args.environment} /path/to/deploy.toml",
+                file=sys.stderr,
+            )
+            print(
+                f"Or specify: ssm-secrets.py check {args.environment} --deploy-toml /path/to/deploy.toml",
+                file=sys.stderr,
+            )
             return 1
 
     if not deploy_toml_path.exists():
@@ -397,7 +403,7 @@ In deploy.toml, reference secrets using:
     check_parser.add_argument(
         "--deploy-toml",
         metavar="PATH",
-        help="Path to deploy.toml (optional if environment is linked)"
+        help="Path to deploy.toml (optional if environment is linked)",
     )
 
     # put
@@ -407,7 +413,8 @@ In deploy.toml, reference secrets using:
     put_parser.add_argument("-v", "--value", help="Secret value (prompts if not provided)")
     put_parser.add_argument("--from-file", help="Read secret value from file")
     put_parser.add_argument(
-        "-r", "--random",
+        "-r",
+        "--random",
         nargs="?",
         const=32,
         type=int,
@@ -435,7 +442,7 @@ In deploy.toml, reference secrets using:
 
     # Configure AWS profile before any boto3 clients are created
     # Uses environment-specific profile from config.toml if available
-    env_name = getattr(args, 'environment', None)
+    env_name = getattr(args, "environment", None)
     if env_name:
         configure_aws_profile_for_environment("secrets", env_name)
     else:

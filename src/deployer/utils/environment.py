@@ -73,7 +73,6 @@ def get_all_environments(environments_dir: Path) -> list[str]:
     return sorted(envs)
 
 
-
 def validate_environment_deployed(env_name: str) -> tuple[Path | None, str | None]:
     """Check if environment directory and terraform state exist.
 

@@ -55,6 +55,7 @@ def validate_environment_config(config: dict) -> list[str]:
 
     return errors
 
+
 # Regex to match ${tofu:output_name} placeholders
 TOFU_PLACEHOLDER_PATTERN = re.compile(r"\$\{tofu:([^}]+)\}")
 
@@ -78,7 +79,8 @@ def get_all_tofu_outputs(env_path: Path) -> dict[str, Any]:
         RuntimeError: If tofu command fails.
     """
     import os
-    from ..utils.aws_profile import get_environment_aws_profile, PROFILE_DEFAULTS
+
+    from ..utils.aws_profile import PROFILE_DEFAULTS, get_environment_aws_profile
 
     # tofu needs the infra profile to access S3 backend
     # Save current profile and temporarily switch to infra profile
@@ -213,15 +215,10 @@ def resolve_tofu_placeholders(
         return TOFU_PLACEHOLDER_PATTERN.sub(replace_placeholder, value)
 
     elif isinstance(value, dict):
-        return {
-            k: resolve_tofu_placeholders(v, env_path, tofu_outputs)
-            for k, v in value.items()
-        }
+        return {k: resolve_tofu_placeholders(v, env_path, tofu_outputs) for k, v in value.items()}
 
     elif isinstance(value, list):
-        return [
-            resolve_tofu_placeholders(item, env_path, tofu_outputs) for item in value
-        ]
+        return [resolve_tofu_placeholders(item, env_path, tofu_outputs) for item in value]
 
     else:
         # Preserve other types (int, float, bool, None)
@@ -520,10 +517,9 @@ def get_environment_type(env_config: dict) -> str:
     if not env_type:
         raise ValueError(
             "Missing [environment].type in config.toml. "
-            "Add 'type = \"staging\"' (or \"production\") to the [environment] section."
+            'Add \'type = "staging"\' (or "production") to the [environment] section.'
         )
     return env_type
-
 
 
 def load_deploy_toml(deploy_toml_path: Path) -> dict:
@@ -573,21 +569,15 @@ def get_commands_from_deploy_toml(deploy_toml: dict) -> dict[str, list[str]]:
         if isinstance(value, list):
             # Simple format: command = ["python", "manage.py", "migrate"]
             if not all(isinstance(arg, str) for arg in value):
-                raise ValueError(
-                    f"Command '{name}' must be a list of strings"
-                )
+                raise ValueError(f"Command '{name}' must be a list of strings")
             result[name] = value
         elif isinstance(value, dict):
             # Extended format: command = { command = [...], ddl = true }
             if "command" not in value:
-                raise ValueError(
-                    f"Command '{name}' in dict format must have a 'command' key"
-                )
+                raise ValueError(f"Command '{name}' in dict format must have a 'command' key")
             args = value["command"]
             if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
-                raise ValueError(
-                    f"Command '{name}' must have a list of strings as 'command'"
-                )
+                raise ValueError(f"Command '{name}' must have a list of strings as 'command'")
             result[name] = args
         else:
             raise ValueError(

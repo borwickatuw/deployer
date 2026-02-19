@@ -135,9 +135,7 @@ def list_task_definition_revisions(
         # Get registered timestamps by describing each task definition
         for item in result:
             try:
-                desc_response = client.describe_task_definition(
-                    taskDefinition=item["arn"]
-                )
+                desc_response = client.describe_task_definition(taskDefinition=item["arn"])
                 task_def = desc_response.get("taskDefinition", {})
                 registered_at = task_def.get("registeredAt")
                 if registered_at:

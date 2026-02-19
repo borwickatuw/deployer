@@ -38,10 +38,10 @@ from deployer.utils import (
     validate_environment_deployed,
 )
 
-
 # =============================================================================
 # Commands
 # =============================================================================
+
 
 def cmd_status(args) -> int:
     """Show status of environments."""
@@ -86,7 +86,9 @@ def cmd_status(args) -> int:
                 print(f"  {'Service':<30} {'Desired':<10} {'Running':<10} {'Status':<15}")
                 print(f"  {'-' * 30} {'-' * 10} {'-' * 10} {'-' * 15}")
                 for svc in services:
-                    print(f"  {svc['name']:<30} {svc['desired_count']:<10} {svc['running_count']:<10} {svc['status']:<15}")
+                    print(
+                        f"  {svc['name']:<30} {svc['desired_count']:<10} {svc['running_count']:<10} {svc['status']:<15}"
+                    )
             else:
                 print("  No ECS services found")
         else:
@@ -215,7 +217,9 @@ def cmd_start(args) -> int:
                 print("   RDS stopped, now starting...")
                 if rds.start(rds_id):
                     print("   Waiting for RDS to become available...")
-                    if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
+                    if rds.wait_for_status(
+                        rds_id, "available", status_callback=rds_status_callback
+                    ):
                         print("   RDS is now available")
                     else:
                         print("   Warning: Timeout waiting for RDS", file=sys.stderr)
@@ -262,6 +266,7 @@ def cmd_start(args) -> int:
 # =============================================================================
 # Main
 # =============================================================================
+
 
 def main():
     # Load .env and configure AWS profile

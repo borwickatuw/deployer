@@ -4,7 +4,7 @@ import string
 
 import pytest
 
-from deployer.config import AuditConfig
+from deployer.config import AuditConfig, TfvarsService
 from deployer.core import (
     ServiceMetrics,
     audit_env_vars,
@@ -22,7 +22,6 @@ from deployer.core import (
     run_audit,
     topological_sort,
 )
-from deployer.config import TfvarsService
 
 
 class TestTopologicalSort:
@@ -365,9 +364,7 @@ class TestAuditEnvVars:
 
     def test_all_accounted_for(self):
         """Test no issues when all env vars accounted for."""
-        compose = {
-            "web": {"has_build": True, "environment": ["DATABASE_URL"], "profiles": []}
-        }
+        compose = {"web": {"has_build": True, "environment": ["DATABASE_URL"], "profiles": []}}
         env_vars = {"DATABASE_URL"}
         config = AuditConfig(ignore_env_vars=set(), ignore_services=set())
         assert audit_env_vars(compose, env_vars, config) == []

@@ -72,9 +72,7 @@ def audit_services(
     for name in deploy_service_names:
         original_name = reverse_mapping.get(name, name)
         if original_name not in compose_services and name not in compose_services:
-            issues.append(
-                f"Service '{name}' in deploy.toml not found in docker-compose"
-            )
+            issues.append(f"Service '{name}' in deploy.toml not found in docker-compose")
 
     return issues
 
@@ -95,11 +93,7 @@ def audit_images(
         List of issue strings describing missing images.
     """
     issues = []
-    ignore = (
-        DEFAULT_IGNORE_SERVICES
-        | audit_config.ignore_services
-        | audit_config.ignore_images
-    )
+    ignore = DEFAULT_IGNORE_SERVICES | audit_config.ignore_services | audit_config.ignore_images
 
     # Get all build contexts from docker-compose
     compose_contexts = {}
@@ -233,16 +227,12 @@ def run_audit(
     ):
         log_section("Audit Configuration")
         if audit_config.ignore_services:
-            log_info(
-                f"Ignoring services: {', '.join(sorted(audit_config.ignore_services))}"
-            )
+            log_info(f"Ignoring services: {', '.join(sorted(audit_config.ignore_services))}")
         if audit_config.service_mapping:
             mappings = [f"{k}→{v}" for k, v in audit_config.service_mapping.items()]
             log_info(f"Service mappings: {', '.join(mappings)}")
         if audit_config.ignore_env_vars:
-            log_info(
-                f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}"
-            )
+            log_info(f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}")
 
     total_issues = 0
 
@@ -292,11 +282,7 @@ def run_audit(
             print(f"  {Colors.GREEN}No issues found!{Colors.NC}")
         else:
             print(f"  {Colors.YELLOW}{total_issues} issue(s) found{Colors.NC}")
-            print(
-                f"\n  To acknowledge intentional differences, add an [audit] section"
-            )
-            print(
-                f"  to deploy.toml. Run with --help or see script docstring for examples."
-            )
+            print(f"\n  To acknowledge intentional differences, add an [audit] section")
+            print(f"  to deploy.toml. Run with --help or see script docstring for examples.")
 
     return (total_issues, all_issues)

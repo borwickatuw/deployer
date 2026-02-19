@@ -33,7 +33,7 @@ import boto3
 import requests
 
 from deployer.config import parse_deploy_config
-from deployer.core import run_audit
+from deployer.core import get_staging_url_from_config, run_audit
 from deployer.core.config import (
     get_environment_type,
     load_environment_config,
@@ -57,7 +57,6 @@ from deployer.utils import (
     log_warning,
     set_verbose,
 )
-from deployer.core import get_staging_url_from_config
 
 
 def cmd_audit(args: list[str]) -> int:
@@ -219,9 +218,13 @@ class CognitoAuthenticator:
         form_action = html_module.unescape(form_match.group(1))
 
         hidden_fields = {}
-        for match in re.finditer(r'<input[^>]+type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"', page_html):
+        for match in re.finditer(
+            r'<input[^>]+type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"', page_html
+        ):
             hidden_fields[match.group(1)] = html_module.unescape(match.group(2))
-        for match in re.finditer(r'<input[^>]+name="([^"]+)"[^>]*type="hidden"[^>]*value="([^"]*)"', page_html):
+        for match in re.finditer(
+            r'<input[^>]+name="([^"]+)"[^>]*type="hidden"[^>]*value="([^"]*)"', page_html
+        ):
             hidden_fields[match.group(1)] = html_module.unescape(match.group(2))
 
         login_data = {
@@ -245,7 +248,9 @@ class CognitoAuthenticator:
 
         if "AWSELBAuthSessionCookie" not in str(session.cookies):
             if "error" in resp.url.lower() or resp.status_code >= 400:
-                raise RuntimeError(f"Login failed. Response URL: {resp.url}, Status: {resp.status_code}")
+                raise RuntimeError(
+                    f"Login failed. Response URL: {resp.url}, Status: {resp.status_code}"
+                )
             log_warning(f"No AWSELBAuthSessionCookie found, but got status {resp.status_code}")
 
         return session
@@ -377,7 +382,9 @@ Examples:
     parser.add_argument("--marker", help="Use specific marker (auto-generated if not specified)")
     parser.add_argument("--dry-run", action="store_true", help="Skip actual deployment")
     parser.add_argument("--skip-auth", action="store_true", help="Skip Cognito authentication")
-    parser.add_argument("--poll-interval", type=float, default=2.0, help="Seconds between polls (default: 2.0)")
+    parser.add_argument(
+        "--poll-interval", type=float, default=2.0, help="Seconds between polls (default: 2.0)"
+    )
 
     parsed = parser.parse_args(args)
 
@@ -545,66 +552,53 @@ Examples:
 
 Link environments to deploy.toml with: python bin/link-environments.py <env> <path>
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "environment",
-        help="Environment name (e.g., myapp-staging, myapp-production)"
+        "environment", help="Environment name (e.g., myapp-staging, myapp-production)"
     )
     parser.add_argument(
         "--deploy-toml",
         metavar="PATH",
-        help="Path to deploy.toml (optional if environment is linked)"
+        help="Path to deploy.toml (optional if environment is linked)",
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be done without making changes"
+        "--dry-run", action="store_true", help="Show what would be done without making changes"
     )
     parser.add_argument(
         "--ignore-audit",
         action="store_true",
-        help="Skip the deploy.toml vs docker-compose.yml audit check"
+        help="Skip the deploy.toml vs docker-compose.yml audit check",
     )
     parser.add_argument(
-        "--skip-secrets-check",
-        action="store_true",
-        help="Skip the SSM secrets existence check"
+        "--skip-secrets-check", action="store_true", help="Skip the SSM secrets existence check"
     )
     parser.add_argument(
-        "--skip-ecr-check",
-        action="store_true",
-        help="Skip the ECR repository existence check"
+        "--skip-ecr-check", action="store_true", help="Skip the ECR repository existence check"
     )
     parser.add_argument(
-        "--skip-cluster-check",
-        action="store_true",
-        help="Skip the ECS cluster existence check"
+        "--skip-cluster-check", action="store_true", help="Skip the ECS cluster existence check"
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Deploy even if infrastructure is unavailable (database down, etc.)"
+        help="Deploy even if infrastructure is unavailable (database down, etc.)",
     )
     parser.add_argument(
         "--force-build",
         action="store_true",
-        help="Force rebuilding images even if unchanged (skip cache check)"
+        help="Force rebuilding images even if unchanged (skip cache check)",
     )
     parser.add_argument(
         "--timing-output",
         metavar="FILE",
-        help="Save timing report to JSON file (also prints to stdout)"
+        help="Save timing report to JSON file (also prints to stdout)",
     )
     parser.add_argument(
-        "--run-id",
-        metavar="ID",
-        help="Run ID for timing report (auto-generated if not specified)"
+        "--run-id", metavar="ID", help="Run ID for timing report (auto-generated if not specified)"
     )
     parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show detailed debug information"
+        "--verbose", "-v", action="store_true", help="Show detailed debug information"
     )
 
     args = parser.parse_args()
@@ -630,7 +624,9 @@ Link environments to deploy.toml with: python bin/link-environments.py <env> <pa
             log(f"Using linked deploy.toml: {config_path}")
         else:
             log_error(f"No deploy.toml linked for '{environment}'")
-            log_error(f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml")
+            log_error(
+                f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml"
+            )
             log_error(f"Or specify: deploy.py {environment} --deploy-toml /path/to/deploy.toml")
             sys.exit(1)
 

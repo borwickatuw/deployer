@@ -30,6 +30,7 @@ Example usage:
 import re
 from typing import Any
 
+from .autoscale import AutoscaleModule
 from .base import (
     EnvironmentVariable,
     ModuleContext,
@@ -37,7 +38,6 @@ from .base import (
     ResourceModule,
     SecretReference,
 )
-from .autoscale import AutoscaleModule
 from .cache import CacheModule
 from .cdn import CdnModule
 from .database import DatabaseModule

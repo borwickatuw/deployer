@@ -13,6 +13,7 @@ from typing import Any
 @dataclass
 class EnvironmentVariable:
     """An environment variable to inject into a container."""
+
     name: str
     value: str
 
@@ -20,6 +21,7 @@ class EnvironmentVariable:
 @dataclass
 class SecretReference:
     """A reference to a secret (SSM or Secrets Manager)."""
+
     name: str
     value_from: str  # SSM path or Secrets Manager ARN
 
@@ -27,6 +29,7 @@ class SecretReference:
 @dataclass
 class ModuleOutput:
     """Output from a module's collect method."""
+
     environment: list[EnvironmentVariable] = field(default_factory=list)
     secrets: list[SecretReference] = field(default_factory=list)
 
@@ -96,6 +99,7 @@ class ResourceModule(ABC):
 @dataclass
 class ModuleContext:
     """Context available to all modules during collection."""
+
     region: str
     account_id: str
     environment: str  # "staging" or "production"

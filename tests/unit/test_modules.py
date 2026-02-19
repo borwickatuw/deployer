@@ -10,11 +10,11 @@ from deployer.modules import (
     resolve_service_urls,
 )
 from deployer.modules.autoscale import AutoscaleModule
-from deployer.modules.database import DatabaseModule
 from deployer.modules.cache import CacheModule
-from deployer.modules.storage import StorageModule
 from deployer.modules.cdn import CdnModule
+from deployer.modules.database import DatabaseModule
 from deployer.modules.secrets import SecretsModule, normalize_secret_name
+from deployer.modules.storage import StorageModule
 
 
 class TestModuleContext:
@@ -742,7 +742,7 @@ class TestCheckModules:
 
     def test_check_modules_fails(self):
         """Test check_modules fails with invalid config."""
-        from deployer.deploy.preflight import check_modules, PreflightError
+        from deployer.deploy.preflight import PreflightError, check_modules
 
         deploy_config = DeployConfig.from_dict(
             {

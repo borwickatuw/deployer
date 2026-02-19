@@ -210,7 +210,8 @@ Examples:
         help="Environment name (e.g., myapp-staging)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         metavar="FILE",
         help="Write resolved config to file (default: stdout)",
     )
@@ -260,7 +261,9 @@ Examples:
             log_success(f"Config is fresh (resolved at {meta.get('resolved_at', 'unknown')})")
             sys.exit(0)
         else:
-            log_error("Config is STALE — infrastructure or config.toml has changed since resolution")
+            log_error(
+                "Config is STALE — infrastructure or config.toml has changed since resolution"
+            )
             log_error("Re-run: python resolve-config.py {environment} --output {file}")
             sys.exit(1)
 

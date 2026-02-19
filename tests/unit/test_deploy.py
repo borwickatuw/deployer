@@ -9,6 +9,9 @@ import pytest
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
+# Import Deployer class for integration tests
+from importlib.util import module_from_spec, spec_from_file_location
+
 # Import from the new module structure
 from deployer.config import ImageConfig
 from deployer.core import topological_sort
@@ -17,9 +20,6 @@ from deployer.deploy import (
     get_service_sizing,
 )
 from deployer.deploy.task_definition import _resolve_legacy_placeholders
-
-# Import Deployer class for integration tests
-from importlib.util import spec_from_file_location, module_from_spec
 
 _spec = spec_from_file_location("deploy", bin_dir / "deploy.py")
 deploy = module_from_spec(_spec)
@@ -130,11 +130,7 @@ class TestGetServiceSizing:
 
     def test_get_service_sizing_defaults(self):
         """Test that defaults are applied when no config exists."""
-        config = {
-            "services": {
-                "web": {}
-            }
-        }
+        config = {"services": {"web": {}}}
         service_config = {}
 
         sizing = get_service_sizing("web", config, service_config)
@@ -146,14 +142,8 @@ class TestGetServiceSizing:
 
     def test_get_service_sizing_from_env(self):
         """Test that SERVICE_CONFIG overrides deploy.toml."""
-        config = {
-            "services": {
-                "web": {"cpu": 256, "memory": 512}
-            }
-        }
-        service_config = {
-            "web": {"cpu": 1024, "memory": 2048, "replicas": 2}
-        }
+        config = {"services": {"web": {"cpu": 256, "memory": 512}}}
+        service_config = {"web": {"cpu": 1024, "memory": 2048, "replicas": 2}}
 
         sizing = get_service_sizing("web", config, service_config)
 
@@ -163,14 +153,8 @@ class TestGetServiceSizing:
 
     def test_min_cpu_validation_passes(self):
         """Test that config meeting minimum CPU passes validation."""
-        config = {
-            "services": {
-                "web": {"min_cpu": 512}
-            }
-        }
-        service_config = {
-            "web": {"cpu": 1024, "memory": 2048}
-        }
+        config = {"services": {"web": {"min_cpu": 512}}}
+        service_config = {"web": {"cpu": 1024, "memory": 2048}}
 
         sizing = get_service_sizing("web", config, service_config)
 
@@ -179,14 +163,8 @@ class TestGetServiceSizing:
 
     def test_min_cpu_validation_fails(self):
         """Test that config below minimum CPU raises ValueError."""
-        config = {
-            "services": {
-                "web": {"min_cpu": 512}
-            }
-        }
-        service_config = {
-            "web": {"cpu": 256, "memory": 512}
-        }
+        config = {"services": {"web": {"min_cpu": 512}}}
+        service_config = {"web": {"cpu": 256, "memory": 512}}
 
         with pytest.raises(ValueError) as exc_info:
             get_service_sizing("web", config, service_config)
@@ -196,14 +174,8 @@ class TestGetServiceSizing:
 
     def test_min_memory_validation_fails(self):
         """Test that config below minimum memory raises ValueError."""
-        config = {
-            "services": {
-                "worker": {"min_memory": 1024}
-            }
-        }
-        service_config = {
-            "worker": {"cpu": 512, "memory": 512}
-        }
+        config = {"services": {"worker": {"min_memory": 1024}}}
+        service_config = {"worker": {"cpu": 512, "memory": 512}}
 
         with pytest.raises(ValueError) as exc_info:
             get_service_sizing("worker", config, service_config)
@@ -213,11 +185,7 @@ class TestGetServiceSizing:
 
     def test_no_minimum_specified(self):
         """Test that validation is skipped when no minimums are specified."""
-        config = {
-            "services": {
-                "web": {}
-            }
-        }
+        config = {"services": {"web": {}}}
         service_config = {}
 
         # Should not raise - defaults apply and no minimums to check
@@ -228,11 +196,7 @@ class TestGetServiceSizing:
 
     def test_min_cpu_with_default(self):
         """Test that min_cpu validates against default cpu=256."""
-        config = {
-            "services": {
-                "transcoder": {"min_cpu": 512}
-            }
-        }
+        config = {"services": {"transcoder": {"min_cpu": 512}}}
         # No service_config means default cpu=256 will be used
         service_config = {}
 
@@ -277,10 +241,7 @@ class TestImageConfigGetBuildArgs:
 
     def test_no_build_args(self):
         """Test image with no build args returns empty dict."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "dockerfile": "Dockerfile"
-        })
+        img = ImageConfig.from_dict("web", {"context": ".", "dockerfile": "Dockerfile"})
 
         build_args = img.get_build_args("staging")
 
@@ -288,11 +249,14 @@ class TestImageConfigGetBuildArgs:
 
     def test_base_build_args(self):
         """Test image with base build args only."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "dockerfile": "Dockerfile",
-            "build_args": {"PYTHON_VERSION": "3.12", "NODE_VERSION": "20"}
-        })
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "dockerfile": "Dockerfile",
+                "build_args": {"PYTHON_VERSION": "3.12", "NODE_VERSION": "20"},
+            },
+        )
 
         build_args = img.get_build_args("staging")
 
@@ -300,15 +264,18 @@ class TestImageConfigGetBuildArgs:
 
     def test_environment_specific_build_args(self):
         """Test that environment-specific build args override base."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "dockerfile": "Dockerfile",
-            "build_args": {
-                "PYTHON_VERSION": "3.12",
-                "staging": {"UV_INSTALL_ARGS": "--group dev"},
-                "production": {"UV_INSTALL_ARGS": ""}
-            }
-        })
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "dockerfile": "Dockerfile",
+                "build_args": {
+                    "PYTHON_VERSION": "3.12",
+                    "staging": {"UV_INSTALL_ARGS": "--group dev"},
+                    "production": {"UV_INSTALL_ARGS": ""},
+                },
+            },
+        )
 
         # Test staging
         build_args = img.get_build_args("staging")
@@ -322,14 +289,14 @@ class TestImageConfigGetBuildArgs:
 
     def test_environment_override_base_arg(self):
         """Test that environment-specific build args can override base args."""
-        img = ImageConfig.from_dict("web", {
-            "context": ".",
-            "dockerfile": "Dockerfile",
-            "build_args": {
-                "DEBUG": "false",
-                "staging": {"DEBUG": "true"}
-            }
-        })
+        img = ImageConfig.from_dict(
+            "web",
+            {
+                "context": ".",
+                "dockerfile": "Dockerfile",
+                "build_args": {"DEBUG": "false", "staging": {"DEBUG": "true"}},
+            },
+        )
 
         build_args = img.get_build_args("staging")
 
@@ -342,11 +309,7 @@ class TestGetEnvironmentVariables:
     def test_merge_environment_overrides(self):
         """Test that environment-specific values override base values."""
         config = {
-            "environment": {
-                "DEBUG": "false",
-                "LOG_LEVEL": "info",
-                "staging": {"DEBUG": "true"}
-            }
+            "environment": {"DEBUG": "false", "LOG_LEVEL": "info", "staging": {"DEBUG": "true"}}
         }
 
         env_vars = get_environment_variables(config, "staging", "us-west-2")
@@ -357,16 +320,8 @@ class TestGetEnvironmentVariables:
     def test_service_specific_environment(self):
         """Test service-specific environment variables."""
         config = {
-            "environment": {
-                "APP_NAME": "testapp"
-            },
-            "services": {
-                "web": {
-                    "environment": {
-                        "WORKER_COUNT": "4"
-                    }
-                }
-            }
+            "environment": {"APP_NAME": "testapp"},
+            "services": {"web": {"environment": {"WORKER_COUNT": "4"}}},
         }
 
         env_vars = get_environment_variables(config, "staging", "us-west-2", "web")

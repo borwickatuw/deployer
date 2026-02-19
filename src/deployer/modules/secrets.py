@@ -64,12 +64,14 @@ class SecretsModule(ResourceModule):
             return errors
 
         # Validate that names look like environment variable names
-        env_var_pattern = re.compile(r'^[A-Z][A-Z0-9_]*$')
+        env_var_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
         for name in names:
             if not isinstance(name, str):
                 errors.append(f"[secrets] name must be a string, got {type(name).__name__}")
             elif not env_var_pattern.match(name):
-                errors.append(f"[secrets] name '{name}' should be uppercase with underscores (e.g., SECRET_KEY)")
+                errors.append(
+                    f"[secrets] name '{name}' should be uppercase with underscores (e.g., SECRET_KEY)"
+                )
 
         # Check env config provides required fields
         if not env_config:
@@ -111,9 +113,10 @@ class SecretsModule(ResourceModule):
             param_name = normalize_secret_name(name)
             param_path = f"{path_prefix}/{param_name}"
 
-            secrets.append(SecretReference(
-                name,
-                f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{param_path}"
-            ))
+            secrets.append(
+                SecretReference(
+                    name, f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{param_path}"
+                )
+            )
 
         return ModuleOutput(secrets=secrets)

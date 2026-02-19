@@ -8,9 +8,9 @@ try:
 except ImportError:
     import tomli as tomllib
 
-from deployer.config.compose import parse_docker_compose, get_compose_services
-from .framework import detect_framework, get_migration_command, get_default_port
+from deployer.config.compose import get_compose_services, parse_docker_compose
 
+from .framework import detect_framework, get_default_port, get_migration_command
 
 # Infrastructure services that should not be deployed to ECS
 INFRASTRUCTURE_SERVICES = {
@@ -230,9 +230,7 @@ def _build_environment_config(all_env_vars: set, app_name: str) -> tuple[dict, d
     return environment, secrets
 
 
-def _build_migrations_config(
-    framework: str, deploy_services: dict, app_name: str
-) -> dict | None:
+def _build_migrations_config(framework: str, deploy_services: dict, app_name: str) -> dict | None:
     """Build the migrations section if framework detected."""
     migration_cmd = get_migration_command(framework)
     if not migration_cmd:

@@ -111,6 +111,7 @@ def get_log_groups_for_environment(environment: str) -> list[str]:
     except ClientError as e:
         # Log the error for debugging but don't fail
         import sys
+
         print(f"  Warning: Error listing log groups: {e}", file=sys.stderr)
 
     return result

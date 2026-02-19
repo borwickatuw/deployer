@@ -62,9 +62,7 @@ class Checkpoint:
             "action": self.action,
             "reason": self.reason,
             "state": {
-                "services": {
-                    name: asdict(state) for name, state in self.services.items()
-                },
+                "services": {name: asdict(state) for name, state in self.services.items()},
             },
         }
         if self.rds:
@@ -238,9 +236,7 @@ def cleanup_old_checkpoints(
 
         # Parse timestamp and check if older than cutoff
         try:
-            ts = datetime.fromisoformat(
-                checkpoint.timestamp.replace("Z", "+00:00")
-            ).timestamp()
+            ts = datetime.fromisoformat(checkpoint.timestamp.replace("Z", "+00:00")).timestamp()
             if ts < cutoff and checkpoint.filename:
                 filepath = checkpoint_dir / checkpoint.filename
                 filepath.unlink()

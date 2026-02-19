@@ -17,9 +17,13 @@ def get_status(instance_id: str) -> dict | None:
         Dict with identifier, status, instance_class, engine, or None if not found.
     """
     cmd = [
-        "aws", "rds", "describe-db-instances",
-        "--db-instance-identifier", instance_id,
-        "--region", AWS_REGION,
+        "aws",
+        "rds",
+        "describe-db-instances",
+        "--db-instance-identifier",
+        instance_id,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -49,9 +53,13 @@ def stop(instance_id: str) -> bool:
         True if the stop command succeeded, False otherwise.
     """
     cmd = [
-        "aws", "rds", "stop-db-instance",
-        "--db-instance-identifier", instance_id,
-        "--region", AWS_REGION,
+        "aws",
+        "rds",
+        "stop-db-instance",
+        "--db-instance-identifier",
+        instance_id,
+        "--region",
+        AWS_REGION,
     ]
     success, _ = run_command(cmd)
     return success
@@ -67,9 +75,13 @@ def start(instance_id: str) -> bool:
         True if the start command succeeded, False otherwise.
     """
     cmd = [
-        "aws", "rds", "start-db-instance",
-        "--db-instance-identifier", instance_id,
-        "--region", AWS_REGION,
+        "aws",
+        "rds",
+        "start-db-instance",
+        "--db-instance-identifier",
+        instance_id,
+        "--region",
+        AWS_REGION,
     ]
     success, _ = run_command(cmd)
     return success

@@ -65,9 +65,7 @@ def get_image_scan_findings(
         image_scan = response.get("imageScanFindings", {})
         result["image_digest"] = response.get("imageId", {}).get("imageDigest")
         result["scan_status"] = response.get("imageScanStatus", {}).get("status")
-        result["vulnerability_counts"] = image_scan.get(
-            "findingSeverityCounts", {}
-        )
+        result["vulnerability_counts"] = image_scan.get("findingSeverityCounts", {})
 
         for finding in image_scan.get("findings", []):
             severity = finding.get("severity", "")
@@ -191,9 +189,7 @@ def list_repositories_for_environment(
                 # Try each one individually
                 for repo_name in repo_names:
                     try:
-                        response = client.describe_repositories(
-                            repositoryNames=[repo_name]
-                        )
+                        response = client.describe_repositories(repositoryNames=[repo_name])
                         for repo in response.get("repositories", []):
                             result.append(repo.get("repositoryName", ""))
                     except ClientError:

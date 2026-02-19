@@ -42,7 +42,8 @@ def compute_migrations_hash(source_dir: Path) -> str | None:
         # Filter to only migration .py files (excluding __pycache__)
         all_files = result.stdout.strip().split("\n")
         migration_files = [
-            f for f in all_files
+            f
+            for f in all_files
             if "/migrations/" in f and f.endswith(".py") and "__pycache__" not in f
         ]
 

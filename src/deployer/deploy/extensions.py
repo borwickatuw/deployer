@@ -59,12 +59,12 @@ def create_database_extensions(
         print("    1. Add the extensions_lambda line to your config.toml")
         print("    2. Add the db_users_lambda_function_name output to your main.tf")
         print("    3. Run 'tofu apply' to create the output")
-        raise RuntimeError(
-            "Missing extensions_lambda in config.toml [database] section"
-        )
+        raise RuntimeError("Missing extensions_lambda in config.toml [database] section")
 
     if dry_run:
-        log_warning(f"DRY RUN: Would invoke Lambda '{lambda_name}' to create extensions: {extensions}")
+        log_warning(
+            f"DRY RUN: Would invoke Lambda '{lambda_name}' to create extensions: {extensions}"
+        )
         return
 
     payload = {
@@ -92,9 +92,7 @@ def create_database_extensions(
             print("    - The Lambda function was deleted")
             print()
             print("  Run 'tofu apply' in your environment directory, then retry.")
-            raise RuntimeError(
-                f"Lambda function '{lambda_name}' not found"
-            ) from e
+            raise RuntimeError(f"Lambda function '{lambda_name}' not found") from e
 
         if error_code == "AccessDeniedException":
             log_error(f"Permission denied invoking Lambda '{lambda_name}'.")
@@ -103,14 +101,10 @@ def create_database_extensions(
             print("  for this Lambda function. Apply the bootstrap IAM changes:")
             print("    cd deployer-environments/bootstrap-staging")
             print("    tofu apply")
-            raise RuntimeError(
-                f"Access denied invoking Lambda '{lambda_name}'"
-            ) from e
+            raise RuntimeError(f"Access denied invoking Lambda '{lambda_name}'") from e
 
         log_error(f"Failed to invoke Lambda '{lambda_name}': {error_code} - {error_message}")
-        raise RuntimeError(
-            f"Lambda invocation failed: {error_code} - {error_message}"
-        ) from e
+        raise RuntimeError(f"Lambda invocation failed: {error_code} - {error_message}") from e
     except Exception as e:
         log_error(f"Unexpected error invoking Lambda '{lambda_name}': {e}")
         print()
@@ -129,9 +123,7 @@ def create_database_extensions(
         print("  The Lambda function ran but failed to create extensions.")
         print("  Check the Lambda's CloudWatch logs for details:")
         print(f"    aws logs tail /aws/lambda/{lambda_name} --since 5m")
-        raise RuntimeError(
-            f"Extensions Lambda failed: {error_type} - {error_message}"
-        )
+        raise RuntimeError(f"Extensions Lambda failed: {error_type} - {error_message}")
 
     # Parse successful response
     result = json.loads(response["Payload"].read().decode())

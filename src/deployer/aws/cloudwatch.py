@@ -70,11 +70,17 @@ def get_log_events(
         or None if the stream doesn't exist or an error occurred.
     """
     cmd = [
-        "aws", "logs", "get-log-events",
-        "--log-group-name", log_group,
-        "--log-stream-name", log_stream,
-        "--limit", str(limit),
-        "--region", AWS_REGION,
+        "aws",
+        "logs",
+        "get-log-events",
+        "--log-group-name",
+        log_group,
+        "--log-stream-name",
+        log_stream,
+        "--limit",
+        str(limit),
+        "--region",
+        AWS_REGION,
     ]
 
     if start_time:
@@ -144,8 +150,17 @@ def search_logs_for_oom(
     filter_pattern = '?"SIGKILL" ?"signal 9" ?"exit code 137" ?"WorkerLostError" ?"OutOfMemory" ?"killed" ?"OOMKilled"'
 
     if cloudwatch_client:
-        return _search_logs_boto3(log_group, start_time_ms, end_time_ms, filter_pattern, cloudwatch_client, log_stream_prefix)
-    return _search_logs_cli(log_group, start_time_ms, end_time_ms, filter_pattern, log_stream_prefix)
+        return _search_logs_boto3(
+            log_group,
+            start_time_ms,
+            end_time_ms,
+            filter_pattern,
+            cloudwatch_client,
+            log_stream_prefix,
+        )
+    return _search_logs_cli(
+        log_group, start_time_ms, end_time_ms, filter_pattern, log_stream_prefix
+    )
 
 
 def _search_logs_cli(
@@ -157,13 +172,21 @@ def _search_logs_cli(
 ) -> list[dict]:
     """Search logs using AWS CLI."""
     cmd = [
-        "aws", "logs", "filter-log-events",
-        "--log-group-name", log_group,
-        "--start-time", str(start_time_ms),
-        "--end-time", str(end_time_ms),
-        "--filter-pattern", filter_pattern,
-        "--limit", "100",
-        "--region", AWS_REGION,
+        "aws",
+        "logs",
+        "filter-log-events",
+        "--log-group-name",
+        log_group,
+        "--start-time",
+        str(start_time_ms),
+        "--end-time",
+        str(end_time_ms),
+        "--filter-pattern",
+        filter_pattern,
+        "--limit",
+        "100",
+        "--region",
+        AWS_REGION,
     ]
 
     if log_stream_prefix:
@@ -219,11 +242,13 @@ def _search_logs_boto3(
             events = response.get("events", [])
 
             for e in events:
-                all_events.append({
-                    "timestamp": e.get("timestamp"),
-                    "message": e.get("message", "").strip(),
-                    "log_stream": e.get("logStreamName", ""),
-                })
+                all_events.append(
+                    {
+                        "timestamp": e.get("timestamp"),
+                        "message": e.get("message", "").strip(),
+                        "log_stream": e.get("logStreamName", ""),
+                    }
+                )
 
             # Check for more pages
             next_token = response.get("nextToken")

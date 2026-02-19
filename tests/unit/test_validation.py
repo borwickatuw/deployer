@@ -1,12 +1,12 @@
 """Tests for deployment validation functions."""
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from botocore.exceptions import ClientError
 
-from deployer.deploy.validation import validate_ecs_cluster
 from deployer.core.config import validate_environment_config
+from deployer.deploy.validation import validate_ecs_cluster
 
 
 class TestValidateEcsCluster:

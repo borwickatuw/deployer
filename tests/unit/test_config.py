@@ -329,9 +329,7 @@ class TestGetComposeServices:
     def test_env_as_dict(self):
         """Test environment as dictionary."""
         compose = {
-            "services": {
-                "app": {"build": ".", "environment": {"PORT": "8000", "DEBUG": "true"}}
-            }
+            "services": {"app": {"build": ".", "environment": {"PORT": "8000", "DEBUG": "true"}}}
         }
         result = get_compose_services(compose)
         assert "PORT" in result["app"]["environment"]

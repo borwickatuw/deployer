@@ -59,7 +59,6 @@ from deployer.utils import (
     validate_environment_deployed,
 )
 
-
 # =============================================================================
 # Status Command
 # =============================================================================
@@ -82,9 +81,7 @@ def cmd_status(args) -> int:
         print(f"{Colors.BLUE}ECS Services:{Colors.NC}")
         services = get_all_services_state(cluster_name)
         if services:
-            print(
-                f"  {'Service':<25} {'Running':<10} {'Desired':<10} {'Task Definition'}"
-            )
+            print(f"  {'Service':<25} {'Running':<10} {'Desired':<10} {'Task Definition'}")
             print(f"  {'-' * 25} {'-' * 10} {'-' * 10} {'-' * 40}")
             for name, state in sorted(services.items()):
                 # Extract revision from task definition ARN
@@ -109,9 +106,7 @@ def cmd_status(args) -> int:
                     if registered and "T" in registered:
                         # Parse and format timestamp
                         try:
-                            dt = datetime.fromisoformat(
-                                registered.replace("Z", "+00:00")
-                            )
+                            dt = datetime.fromisoformat(registered.replace("Z", "+00:00"))
                             registered = dt.strftime("%Y-%m-%d %H:%M UTC")
                         except ValueError:
                             pass
@@ -413,9 +408,7 @@ def cmd_ecr(args) -> int:
         print(f"  {repo_short}:")
         print(f"    Tag: {latest['image_tag']}")
         print(f"    Scan: {scan_status}")
-        print(
-            f"    Vulnerabilities: {status_color}CRITICAL={critical}, HIGH={high}{Colors.NC}"
-        )
+        print(f"    Vulnerabilities: {status_color}CRITICAL={critical}, HIGH={high}{Colors.NC}")
 
         # If there are findings and verbose mode, show details
         if args.verbose and (critical > 0 or high > 0):
@@ -571,12 +564,8 @@ For commands that modify production, see bin/emergency.py.
     )
 
     # audit command (super-command)
-    audit_parser = subparsers.add_parser(
-        "audit", help="Run all read-only checks"
-    )
-    audit_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show detailed output"
-    )
+    audit_parser = subparsers.add_parser("audit", help="Run all read-only checks")
+    audit_parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
 
     args = parser.parse_args()
 

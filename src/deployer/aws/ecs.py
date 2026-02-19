@@ -66,9 +66,13 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[dict]
 def _get_services_cli(cluster_name: str) -> list[dict]:
     """List ECS services using AWS CLI."""
     cmd = [
-        "aws", "ecs", "list-services",
-        "--cluster", cluster_name,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "list-services",
+        "--cluster",
+        cluster_name,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -82,10 +86,15 @@ def _get_services_cli(cluster_name: str) -> list[dict]:
 
     # Get detailed service info
     cmd = [
-        "aws", "ecs", "describe-services",
-        "--cluster", cluster_name,
-        "--services", *service_arns,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "describe-services",
+        "--cluster",
+        cluster_name,
+        "--services",
+        *service_arns,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -127,11 +136,17 @@ def scale_service(cluster_name: str, service_name: str, desired_count: int) -> b
         True if successful, False otherwise.
     """
     cmd = [
-        "aws", "ecs", "update-service",
-        "--cluster", cluster_name,
-        "--service", service_name,
-        "--desired-count", str(desired_count),
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "update-service",
+        "--cluster",
+        cluster_name,
+        "--service",
+        service_name,
+        "--desired-count",
+        str(desired_count),
+        "--region",
+        AWS_REGION,
     ]
     success, _ = run_command(cmd)
     return success
@@ -157,9 +172,13 @@ def get_task_definition_resources(
 def _get_task_def_resources_cli(task_def_arn: str) -> tuple[int, int]:
     """Get task definition resources using AWS CLI."""
     cmd = [
-        "aws", "ecs", "describe-task-definition",
-        "--task-definition", task_def_arn,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "describe-task-definition",
+        "--task-definition",
+        task_def_arn,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -195,10 +214,15 @@ def get_service_network_config(cluster_name: str, service_name: str) -> dict | N
         Network configuration dict suitable for run_task, or None if not found.
     """
     cmd = [
-        "aws", "ecs", "describe-services",
-        "--cluster", cluster_name,
-        "--services", service_name,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "describe-services",
+        "--cluster",
+        cluster_name,
+        "--services",
+        service_name,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -234,10 +258,15 @@ def get_service_task_definition(cluster_name: str, service_name: str) -> str | N
         Task definition ARN, or None if not found.
     """
     cmd = [
-        "aws", "ecs", "describe-services",
-        "--cluster", cluster_name,
-        "--services", service_name,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "describe-services",
+        "--cluster",
+        cluster_name,
+        "--services",
+        service_name,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -271,9 +300,7 @@ def _format_container_definitions(containers: list[dict]) -> list[dict]:
     ]
 
 
-def get_task_containers(
-    task_definition: str, ecs_client: Any | None = None
-) -> list[dict]:
+def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> list[dict]:
     """Get container names and info from a task definition.
 
     Args:
@@ -458,7 +485,9 @@ def get_oom_events(
         List of OOM event dicts with task_arn, stopped_at, reason, exit_code.
     """
     if ecs_client:
-        return _get_oom_events_boto3(cluster_name, service_name, since_hours, since_datetime, ecs_client)
+        return _get_oom_events_boto3(
+            cluster_name, service_name, since_hours, since_datetime, ecs_client
+        )
     return _get_oom_events_cli(cluster_name, service_name, since_hours, since_datetime)
 
 
@@ -470,11 +499,17 @@ def _get_oom_events_cli(
 
     # List stopped tasks for this service
     cmd = [
-        "aws", "ecs", "list-tasks",
-        "--cluster", cluster_name,
-        "--service-name", service_name,
-        "--desired-status", "STOPPED",
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "list-tasks",
+        "--cluster",
+        cluster_name,
+        "--service-name",
+        service_name,
+        "--desired-status",
+        "STOPPED",
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -488,10 +523,15 @@ def _get_oom_events_cli(
 
     # Describe tasks to get stop reasons
     cmd = [
-        "aws", "ecs", "describe-tasks",
-        "--cluster", cluster_name,
-        "--tasks", *task_arns,
-        "--region", AWS_REGION,
+        "aws",
+        "ecs",
+        "describe-tasks",
+        "--cluster",
+        cluster_name,
+        "--tasks",
+        *task_arns,
+        "--region",
+        AWS_REGION,
     ]
     success, output = run_command(cmd)
     if not success:
@@ -509,7 +549,11 @@ def _get_oom_events_cli(
 
 
 def _get_oom_events_boto3(
-    cluster_name: str, service_name: str, since_hours: int, since_datetime: Any | None, ecs_client: Any
+    cluster_name: str,
+    service_name: str,
+    since_hours: int,
+    since_datetime: Any | None,
+    ecs_client: Any,
 ) -> list[dict]:
     """Get OOM events using boto3 client."""
     from datetime import datetime, timedelta, timezone
@@ -601,12 +645,18 @@ def _filter_oom_tasks(tasks: list[dict], cutoff) -> list[dict]:
                     break
 
         if is_oom:
-            oom_events.append({
-                "task_arn": task.get("taskArn", ""),
-                "stopped_at": stopped_at.isoformat() if hasattr(stopped_at, "isoformat") else str(stopped_at),
-                "reason": oom_reason or stopped_reason,
-                "stop_code": stop_code,
-            })
+            oom_events.append(
+                {
+                    "task_arn": task.get("taskArn", ""),
+                    "stopped_at": (
+                        stopped_at.isoformat()
+                        if hasattr(stopped_at, "isoformat")
+                        else str(stopped_at)
+                    ),
+                    "reason": oom_reason or stopped_reason,
+                    "stop_code": stop_code,
+                }
+            )
 
     return oom_events
 

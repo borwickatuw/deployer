@@ -179,13 +179,10 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     _, password = decoded.split(":", 1)
 
     # Use docker login
-    cmd = [
-        "docker", "login",
-        "--username", "AWS",
-        "--password-stdin",
-        registry
-    ]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cmd = ["docker", "login", "--username", "AWS", "--password-stdin", registry]
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     proc.communicate(input=password.encode())
 
     if proc.returncode != 0:
@@ -237,9 +234,7 @@ def build_and_push_images(
     if isinstance(config, DeployConfig):
         images = config.images
         # Convert to dict format for topological_sort
-        images_for_sort = {
-            name: {"depends_on": img.depends_on} for name, img in images.items()
-        }
+        images_for_sort = {name: {"depends_on": img.depends_on} for name, img in images.items()}
     else:
         images = config.get("images", {})
         images_for_sort = images
@@ -270,7 +265,9 @@ def build_and_push_images(
             build_args = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
             build_args.update(build_args_config.get(environment, {}))
             target_config = image_config.get("target")
-            target = target_config.get(environment) if isinstance(target_config, dict) else target_config
+            target = (
+                target_config.get(environment) if isinstance(target_config, dict) else target_config
+            )
 
         # Compute content hash for cache key
         content_hash = compute_context_hash(context, dockerfile)
@@ -310,10 +307,14 @@ def build_and_push_images(
         # Note: We rely on content-based hashing to detect changes, so Docker layer
         # caching is safe and speeds up rebuilds when only some files change.
         build_cmd = [
-            "docker", "build",
-            "--platform", "linux/amd64",
-            "-t", local_tag,
-            "-f", str(context / dockerfile),
+            "docker",
+            "build",
+            "--platform",
+            "linux/amd64",
+            "-t",
+            local_tag,
+            "-f",
+            str(context / dockerfile),
         ]
 
         # Add target if specified (for multi-stage builds)
@@ -441,8 +442,7 @@ def format_missing_ecr_error(missing_repos: list[str], environment: str) -> str:
     """
     repo_list = "\n".join(f"  - {repo}" for repo in missing_repos)
     create_commands = "\n".join(
-        f"  aws ecr create-repository --repository-name {repo}"
-        for repo in missing_repos
+        f"  aws ecr create-repository --repository-name {repo}" for repo in missing_repos
     )
 
     return f"""Missing ECR repositories:

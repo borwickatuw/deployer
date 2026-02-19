@@ -11,7 +11,7 @@ bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
 # Import using importlib for bin scripts
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 
 _access_spec = spec_from_file_location("cognito", bin_dir / "cognito.py")
 access = module_from_spec(_access_spec)
@@ -60,13 +60,13 @@ class TestGenerateTempPassword:
         assert len(unique_passwords) == 10
 
 
-
 class TestRunCommand:
     """Tests for run_command function."""
 
     def test_successful_command(self):
         """Test running a successful command."""
         from deployer.utils import run_command
+
         success, output = run_command(["echo", "hello"])
         assert success is True
         assert "hello" in output
@@ -74,12 +74,14 @@ class TestRunCommand:
     def test_failed_command(self):
         """Test running a command that fails."""
         from deployer.utils import run_command
+
         success, output = run_command(["false"])
         assert success is False
 
     def test_command_with_cwd(self, tmp_path):
         """Test running a command with working directory."""
         from deployer.utils import run_command
+
         success, output = run_command(["pwd"], cwd=str(tmp_path))
         assert success is True
         assert str(tmp_path) in output
@@ -87,6 +89,7 @@ class TestRunCommand:
     def test_nonexistent_command(self):
         """Test running a command that doesn't exist."""
         from deployer.utils import run_command
+
         success, output = run_command(["nonexistent_command_12345"])
         assert success is False
 

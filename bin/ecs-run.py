@@ -278,9 +278,9 @@ def cmd_run(args, base_path: Path) -> int:
     """Run a named command from deploy.toml [commands] section."""
     # Handle --list-commands that may have been captured by REMAINDER
     # (argparse REMAINDER grabs flags that appear after positional args)
-    if hasattr(args, 'extra_args') and '--list-commands' in args.extra_args:
+    if hasattr(args, "extra_args") and "--list-commands" in args.extra_args:
         args.list_commands = True
-        args.extra_args = [a for a in args.extra_args if a != '--list-commands']
+        args.extra_args = [a for a in args.extra_args if a != "--list-commands"]
 
     # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
     deploy_toml_path = None
@@ -299,7 +299,10 @@ def cmd_run(args, base_path: Path) -> int:
 
     # For --list-commands without environment, we need --deploy-toml
     if args.list_commands and not deploy_toml_path:
-        print("Error: --deploy-toml is required when using --list-commands without environment", file=sys.stderr)
+        print(
+            "Error: --deploy-toml is required when using --list-commands without environment",
+            file=sys.stderr,
+        )
         return 1
 
     if not deploy_toml_path:
@@ -310,9 +313,15 @@ def cmd_run(args, base_path: Path) -> int:
         else:
             print(f"Error: No deploy.toml linked for '{args.environment}'", file=sys.stderr)
             print(f"\nTo link this environment to its deploy.toml:", file=sys.stderr)
-            print(f"  python bin/link-environments.py {args.environment} /path/to/deploy.toml", file=sys.stderr)
+            print(
+                f"  python bin/link-environments.py {args.environment} /path/to/deploy.toml",
+                file=sys.stderr,
+            )
             print(f"\nOr specify --deploy-toml explicitly:", file=sys.stderr)
-            print(f"  ecs-run.py run {args.environment} <command> --deploy-toml /path/to/deploy.toml", file=sys.stderr)
+            print(
+                f"  ecs-run.py run {args.environment} <command> --deploy-toml /path/to/deploy.toml",
+                file=sys.stderr,
+            )
         return 1
 
     # Load deploy.toml
@@ -408,10 +417,16 @@ def cmd_exec(args, base_path: Path) -> int:
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add common arguments to a subparser."""
     parser.add_argument("-s", "--service", default="web", help="Service name (default: web)")
-    parser.add_argument("-c", "--container", help="Container name override (default: first container)")
+    parser.add_argument(
+        "-c", "--container", help="Container name override (default: first container)"
+    )
     parser.add_argument("--no-wait", action="store_true", help="Don't wait for task completion")
-    parser.add_argument("--no-logs", action="store_true", help="Don't fetch and display logs after completion")
-    parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")
+    parser.add_argument(
+        "--no-logs", action="store_true", help="Don't fetch and display logs after completion"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=300, help="Timeout in seconds (default: 300)"
+    )
 
 
 def main():
@@ -448,38 +463,37 @@ Use 'run --list-commands' to see available commands for an application.
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # list
-    list_parser = subparsers.add_parser("list", help="List services and containers in an environment")
+    list_parser = subparsers.add_parser(
+        "list", help="List services and containers in an environment"
+    )
     list_parser.add_argument("environment", help="Environment name (e.g., myapp-staging)")
 
     # run
     run_parser = subparsers.add_parser(
-        "run",
-        help="Run a named command from deploy.toml [commands] section"
+        "run", help="Run a named command from deploy.toml [commands] section"
     )
     run_parser.add_argument(
         "--deploy-toml",
         metavar="PATH",
-        help="Path to deploy.toml (optional if environment is linked)"
+        help="Path to deploy.toml (optional if environment is linked)",
     )
     run_parser.add_argument(
         "--list-commands",
         action="store_true",
-        help="List available commands from deploy.toml instead of running one"
+        help="List available commands from deploy.toml instead of running one",
     )
     run_parser.add_argument(
         "environment",
         nargs="?",  # Optional when using --list-commands with --deploy-toml
-        help="Environment name (e.g., myapp-staging)"
+        help="Environment name (e.g., myapp-staging)",
     )
     run_parser.add_argument(
         "command_name",
         nargs="?",  # Optional when using --list-commands
-        help="Command name defined in [commands] section (e.g., migrate, collectstatic)"
+        help="Command name defined in [commands] section (e.g., migrate, collectstatic)",
     )
     run_parser.add_argument(
-        "extra_args",
-        nargs=argparse.REMAINDER,
-        help="Additional arguments to pass to the command"
+        "extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to the command"
     )
     add_common_args(run_parser)
 

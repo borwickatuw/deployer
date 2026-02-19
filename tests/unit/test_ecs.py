@@ -8,7 +8,6 @@ from botocore.exceptions import ClientError, WaiterError
 
 from deployer.aws import ecs
 
-
 # Sample AWS response data for mocking
 SAMPLE_SERVICE_RESPONSE = {
     "services": [
@@ -420,9 +419,7 @@ class TestWaitForTask:
     def test_returns_minus_one_on_timeout(self, mock_ecs_client):
         """Test returns -1 when task times out."""
         mock_waiter = MagicMock()
-        mock_waiter.wait.side_effect = WaiterError(
-            "TasksStopped", "Max attempts exceeded", {}
-        )
+        mock_waiter.wait.side_effect = WaiterError("TasksStopped", "Max attempts exceeded", {})
         mock_ecs_client.get_waiter.return_value = mock_waiter
 
         result = ecs.wait_for_task(

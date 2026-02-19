@@ -87,7 +87,7 @@ class CdnModule(ResourceModule):
         secrets = [
             SecretReference(
                 "CLOUDFRONT_PRIVATE_KEY",
-                f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{private_key_param}"
+                f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{private_key_param}",
             )
         ]
 

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from botocore.exceptions import ClientError
 
 from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
-
 from .migrations import should_skip_migrations, store_migrations_hash
 from .task_definition import build_task_definition, get_service_sizing
 
@@ -98,10 +97,7 @@ def ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name: 
         True if AZ rebalancing was disabled, False if it was already disabled or service doesn't exist.
     """
     try:
-        response = ecs_client.describe_services(
-            cluster=cluster_name,
-            services=[service_name]
-        )
+        response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
         if not response.get("services"):
             return False
 
@@ -113,14 +109,22 @@ def ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name: 
         if az_rebalancing == "ENABLED":
             # Use subprocess to call AWS CLI since botocore doesn't support this parameter yet
             import subprocess
+
             cmd = [
-                "aws", "ecs", "update-service",
-                "--cluster", cluster_name,
-                "--service", service_name,
-                "--availability-zone-rebalancing", "DISABLED",
+                "aws",
+                "ecs",
+                "update-service",
+                "--cluster",
+                cluster_name,
+                "--service",
+                service_name,
+                "--availability-zone-rebalancing",
+                "DISABLED",
                 "--no-force-new-deployment",
-                "--query", "service.serviceName",
-                "--output", "text"
+                "--query",
+                "service.serviceName",
+                "--output",
+                "text",
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
@@ -145,10 +149,7 @@ def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
         True if service exists and is not INACTIVE.
     """
     try:
-        response = ecs_client.describe_services(
-            cluster=cluster_name,
-            services=[service_name]
-        )
+        response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
         # Service exists if it's in the response and not INACTIVE
         for svc in response.get("services", []):
             if svc["serviceName"] == service_name and svc["status"] != "INACTIVE":
@@ -195,13 +196,23 @@ def register_task_definition(
         The task definition ARN.
     """
     task_def = build_task_definition(
-        service_name, image_uri, config, service_config, infra_config,
-        app_name, environment, region, account_id, env_config,
-        credential_mode=credential_mode
+        service_name,
+        image_uri,
+        config,
+        service_config,
+        infra_config,
+        app_name,
+        environment,
+        region,
+        account_id,
+        env_config,
+        credential_mode=credential_mode,
     )
 
     if dry_run:
-        print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs register-task-definition --family {task_def['family']}")
+        print(
+            f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs register-task-definition --family {task_def['family']}"
+        )
         return f"arn:aws:ecs:{region}:{account_id}:task-definition/{task_def['family']}:dry-run"
 
     response = ecs_client.register_task_definition(**task_def)
@@ -260,7 +271,7 @@ def create_service(
             "awsvpcConfiguration": {
                 "subnets": subnet_ids,
                 "securityGroups": [security_group_id],
-                "assignPublicIp": "DISABLED"
+                "assignPublicIp": "DISABLED",
             }
         },
         "deploymentConfiguration": {
@@ -280,13 +291,17 @@ def create_service(
     if service_cfg.get("load_balanced") and "port" in service_toml:
         # Use per-service target group if available, otherwise default
         service_target_groups = infra_config.get("service_target_groups", {})
-        target_group_arn = service_target_groups.get(service_name) or infra_config.get("target_group_arn", "")
+        target_group_arn = service_target_groups.get(service_name) or infra_config.get(
+            "target_group_arn", ""
+        )
         if target_group_arn:
-            create_params["loadBalancers"] = [{
-                "targetGroupArn": target_group_arn,
-                "containerName": service_name,
-                "containerPort": service_toml["port"]
-            }]
+            create_params["loadBalancers"] = [
+                {
+                    "targetGroupArn": target_group_arn,
+                    "containerName": service_name,
+                    "containerPort": service_toml["port"],
+                }
+            ]
             # Add health check grace period for load-balanced services
             # This gives the container time to start before health checks begin
             health_check_cfg = infra_config.get("health_check_config", {})
@@ -299,12 +314,16 @@ def create_service(
     service_discovery_registries = infra_config.get("service_discovery_registries", {})
     registry_arn = service_discovery_registries.get(service_name)
     if registry_arn:
-        create_params["serviceRegistries"] = [{
-            "registryArn": registry_arn,
-        }]
+        create_params["serviceRegistries"] = [
+            {
+                "registryArn": registry_arn,
+            }
+        ]
 
     if dry_run:
-        print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs create-service --service-name {service_name}")
+        print(
+            f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs create-service --service-name {service_name}"
+        )
         return
 
     ecs_client.create_service(**create_params)
@@ -364,8 +383,18 @@ def deploy_services(
 
         # Register task definition
         task_def_arn = register_task_definition(
-            ecs_client, service_name, image_uri, config, service_config, infra_config,
-            app_name, environment, region, account_id, dry_run, env_config
+            ecs_client,
+            service_name,
+            image_uri,
+            config,
+            service_config,
+            infra_config,
+            app_name,
+            environment,
+            region,
+            account_id,
+            dry_run,
+            env_config,
         )
 
         # Check if service exists
@@ -385,9 +414,15 @@ def deploy_services(
                 ensure_az_rebalancing_disabled(ecs_client, cluster_name, service_name)
 
             if dry_run:
-                print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs update-service --service {service_name} --task-definition {task_def_arn}")
-                print(f"    cpu={service_cfg.get('cpu')}, memory={service_cfg.get('memory')}, replicas={service_cfg.get('replicas')}")
-                print(f"    deployment: minHealthy={min_healthy}%, maxPercent={max_percent}%, circuitBreaker={circuit_breaker}")
+                print(
+                    f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs update-service --service {service_name} --task-definition {task_def_arn}"
+                )
+                print(
+                    f"    cpu={service_cfg.get('cpu')}, memory={service_cfg.get('memory')}, replicas={service_cfg.get('replicas')}"
+                )
+                print(
+                    f"    deployment: minHealthy={min_healthy}%, maxPercent={max_percent}%, circuitBreaker={circuit_breaker}"
+                )
             else:
                 try:
                     update_params = {
@@ -411,12 +446,16 @@ def deploy_services(
                     # Add service discovery registration if configured
                     # This ensures existing services get updated with service discovery
                     # Note: For A record DNS routing, only registryArn is needed (no containerPort)
-                    service_discovery_registries = infra_config.get("service_discovery_registries", {})
+                    service_discovery_registries = infra_config.get(
+                        "service_discovery_registries", {}
+                    )
                     registry_arn = service_discovery_registries.get(service_name)
                     if registry_arn:
-                        update_params["serviceRegistries"] = [{
-                            "registryArn": registry_arn,
-                        }]
+                        update_params["serviceRegistries"] = [
+                            {
+                                "registryArn": registry_arn,
+                            }
+                        ]
 
                     ecs_client.update_service(**update_params)
                     log_status(service_name, "deployment started")
@@ -426,8 +465,14 @@ def deploy_services(
         else:
             # Create new service
             create_service(
-                ecs_client, cluster_name, service_name, task_def_arn,
-                config, service_config, infra_config, dry_run
+                ecs_client,
+                cluster_name,
+                service_name,
+                task_def_arn,
+                config,
+                service_config,
+                infra_config,
+                dry_run,
             )
             log_status(service_name, "service created")
 
@@ -523,10 +568,7 @@ def start_migrations(
 
     # Get network configuration from an existing service
     try:
-        services = ecs_client.describe_services(
-            cluster=cluster_name,
-            services=[migration_service]
-        )
+        services = ecs_client.describe_services(cluster=cluster_name, services=[migration_service])
         if not services["services"]:
             log_error(f"No {migration_service} service found to get network configuration")
             return None
@@ -544,11 +586,10 @@ def start_migrations(
         launchType="FARGATE",
         networkConfiguration=network_config,
         overrides={
-            "containerOverrides": [{
-                "name": "migrate",  # Container name matches task family
-                "command": command
-            }]
-        }
+            "containerOverrides": [
+                {"name": "migrate", "command": command}  # Container name matches task family
+            ]
+        },
     )
 
     task_arn = response["tasks"][0]["taskArn"]
@@ -926,10 +967,7 @@ def _wait_for_service_stable(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            response = ecs_client.describe_services(
-                cluster=cluster_name,
-                services=[service_name]
-            )
+            response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
         except ClientError as e:
             log_error(f"Failed to describe service {service_name}: {e}")
             raise
@@ -1033,10 +1071,7 @@ def _get_service_target_group(ecs_client, cluster_name: str, service_name: str) 
         Target group ARN or None if not load balanced.
     """
     try:
-        response = ecs_client.describe_services(
-            cluster=cluster_name,
-            services=[service_name]
-        )
+        response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
     except ClientError:
         return None
 
@@ -1075,9 +1110,7 @@ def _wait_for_target_group_healthy(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            response = elbv2_client.describe_target_health(
-                TargetGroupArn=target_group_arn
-            )
+            response = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
         except ClientError as e:
             log_warning(f"Could not check target health: {e}")
             return True  # Don't fail deployment if we can't check

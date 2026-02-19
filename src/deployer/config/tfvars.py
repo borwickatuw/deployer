@@ -53,9 +53,7 @@ def parse_tfvars(tfvars_path: Path) -> dict[str, TfvarsService]:
 
     # Find each service definition
     # Pattern matches: service_name = { ... }
-    service_pattern = re.compile(
-        r"(\w+)\s*=\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", re.DOTALL
-    )
+    service_pattern = re.compile(r"(\w+)\s*=\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", re.DOTALL)
 
     for match in service_pattern.finditer(services_block):
         service_name = match.group(1)

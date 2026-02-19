@@ -10,7 +10,7 @@ bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
 # Import using importlib since the filename has hyphens
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 
 _spec = spec_from_file_location("capacity", bin_dir / "capacity-report.py")
 capacity = module_from_spec(_spec)

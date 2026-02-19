@@ -42,8 +42,8 @@ from typing import Any
 import boto3
 
 from deployer.aws import cloudwatch, ecs
-from deployer.aws.ecs import get_oom_events
 from deployer.aws.cloudwatch import search_logs_for_oom
+from deployer.aws.ecs import get_oom_events
 from deployer.config import TfvarsService, parse_tfvars
 from deployer.core import (
     ServiceMetrics,
@@ -57,8 +57,13 @@ from deployer.core import (
     get_recommended_memory,
     load_environment_config,
 )
-from deployer.utils import Colors, configure_aws_profile, get_all_environments, get_environment_path, get_environments_dir
-
+from deployer.utils import (
+    Colors,
+    configure_aws_profile,
+    get_all_environments,
+    get_environment_path,
+    get_environments_dir,
+)
 
 # Fargate-compatible memory values by CPU allocation
 FARGATE_MEMORY_BY_CPU = {
@@ -135,7 +140,9 @@ def _build_recommendations(services: list[ServiceMetrics]) -> list[str]:
             if svc.memory_recommendation:
                 parts.append(f"memory={svc.memory_recommendation}")
             if parts:
-                recommendations.append(f"  {svc.service_name}: Consider reducing to {', '.join(parts)}")
+                recommendations.append(
+                    f"  {svc.service_name}: Consider reducing to {', '.join(parts)}"
+                )
         elif svc.status == "UNDER_PROVISIONED":
             parts = []
             if svc.cpu_recommendation:
@@ -143,7 +150,9 @@ def _build_recommendations(services: list[ServiceMetrics]) -> list[str]:
             if svc.memory_recommendation:
                 parts.append(f"memory={svc.memory_recommendation}")
             if parts:
-                recommendations.append(f"  {svc.service_name}: Consider increasing to {', '.join(parts)}")
+                recommendations.append(
+                    f"  {svc.service_name}: Consider increasing to {', '.join(parts)}"
+                )
     return recommendations
 
 
@@ -151,8 +160,12 @@ def _print_zero_utilization_warning(services: list[ServiceMetrics]) -> None:
     """Print warning if all services show zero utilization."""
     all_zero = all(svc.cpu_avg == 0 and svc.memory_avg == 0 for svc in services)
     if all_zero:
-        print(f"{Colors.YELLOW}Note: All services show 0% utilization. Services may have been stopped during this period.")
-        print(f"      'OVER-PROVISIONED' status may be inaccurate. Check CloudWatch or Celery Results for OOM errors.{Colors.NC}")
+        print(
+            f"{Colors.YELLOW}Note: All services show 0% utilization. Services may have been stopped during this period."
+        )
+        print(
+            f"      'OVER-PROVISIONED' status may be inaccurate. Check CloudWatch or Celery Results for OOM errors.{Colors.NC}"
+        )
         print()
 
 
@@ -177,9 +190,13 @@ def _print_oom_summary(services: list[ServiceMetrics]) -> None:
     print()
 
     if total_oom > 0:
-        print(f"{Colors.RED}OOM Detection: {total_oom} OOM kill(s) since last deployment{Colors.NC}")
+        print(
+            f"{Colors.RED}OOM Detection: {total_oom} OOM kill(s) since last deployment{Colors.NC}"
+        )
     else:
-        print(f"OOM Detection: No OOM kills since last deployment (note: ECS only retains stopped tasks for ~1 hour)")
+        print(
+            f"OOM Detection: No OOM kills since last deployment (note: ECS only retains stopped tasks for ~1 hour)"
+        )
     print()
 
 
@@ -219,10 +236,18 @@ def print_text_report(
     print("-" * 110)
 
     for svc in sorted(services, key=lambda s: s.service_name):
-        print(format_table_row(
-            svc.service_name, svc.cpu_allocated, svc.cpu_avg, svc.cpu_p95,
-            svc.memory_allocated, svc.memory_avg, svc.memory_p95, svc.status,
-        ))
+        print(
+            format_table_row(
+                svc.service_name,
+                svc.cpu_allocated,
+                svc.cpu_avg,
+                svc.cpu_p95,
+                svc.memory_allocated,
+                svc.memory_avg,
+                svc.memory_p95,
+                svc.status,
+            )
+        )
     print()
 
     _print_zero_utilization_warning(services)
@@ -284,11 +309,15 @@ def print_json_report(
                 "recommendation_mb": svc.memory_recommendation,
             },
             "status": svc.status,
-            "oom_kills": {
-                "count": svc.oom_kill_count,
-                "events": svc.oom_events,
-                "note": "Only includes OOM kills since last deployment",
-            } if svc.oom_kill_count > 0 else None,
+            "oom_kills": (
+                {
+                    "count": svc.oom_kill_count,
+                    "events": svc.oom_events,
+                    "note": "Only includes OOM kills since last deployment",
+                }
+                if svc.oom_kill_count > 0
+                else None
+            ),
         }
 
         if tfvars:
@@ -299,8 +328,7 @@ def print_json_report(
                 "cpu_differs": tfvars.cpu != svc.cpu_allocated,
                 "memory_differs": tfvars.memory != svc.memory_allocated,
                 "cpu_recommendation_differs": (
-                    svc.cpu_recommendation is not None
-                    and svc.cpu_recommendation != tfvars.cpu
+                    svc.cpu_recommendation is not None and svc.cpu_recommendation != tfvars.cpu
                 ),
                 "memory_recommendation_differs": (
                     svc.memory_recommendation is not None
@@ -345,10 +373,20 @@ def _collect_service_metrics(
 
     # Get CPU and memory metrics
     cpu_values = cloudwatch.get_container_insights_metrics(
-        cloudwatch_client, cluster_name, service_name, "CpuUtilized", start_time, end_time,
+        cloudwatch_client,
+        cluster_name,
+        service_name,
+        "CpuUtilized",
+        start_time,
+        end_time,
     )
     memory_values = cloudwatch.get_container_insights_metrics(
-        cloudwatch_client, cluster_name, service_name, "MemoryUtilized", start_time, end_time,
+        cloudwatch_client,
+        cluster_name,
+        service_name,
+        "MemoryUtilized",
+        start_time,
+        end_time,
     )
 
     # Calculate statistics
@@ -368,7 +406,8 @@ def _collect_service_metrics(
 
     # Check for OOM kills since last deployment
     oom_events = get_oom_events(
-        cluster_name, service_name,
+        cluster_name,
+        service_name,
         since_hours=days * 24,
         since_datetime=deployment_cutoff,
         ecs_client=ecs_client,
@@ -379,7 +418,11 @@ def _collect_service_metrics(
     # Format deployment time for storage
     deployment_str = None
     if deployment_cutoff:
-        deployment_str = deployment_cutoff.isoformat() if hasattr(deployment_cutoff, "isoformat") else str(deployment_cutoff)
+        deployment_str = (
+            deployment_cutoff.isoformat()
+            if hasattr(deployment_cutoff, "isoformat")
+            else str(deployment_cutoff)
+        )
 
     metrics = ServiceMetrics(
         service_name=service_name,
@@ -404,9 +447,13 @@ def _collect_service_metrics(
     metrics.status = classify_service(metrics)
     if metrics.status in ("OVER_PROVISIONED", "UNDER_PROVISIONED"):
         metrics.cpu_recommendation = get_recommended_cpu(cpu_allocated, cpu_avg, cpu_p95)
-        metrics.memory_recommendation = get_recommended_memory(memory_allocated, memory_avg, memory_p95, cpu_allocated)
+        metrics.memory_recommendation = get_recommended_memory(
+            memory_allocated, memory_avg, memory_p95, cpu_allocated
+        )
     elif metrics.status == "OOM_KILLS":
-        metrics.memory_recommendation = calculate_oom_memory_recommendation(cpu_allocated, memory_allocated)
+        metrics.memory_recommendation = calculate_oom_memory_recommendation(
+            cpu_allocated, memory_allocated
+        )
 
     return metrics
 
@@ -437,7 +484,9 @@ def _search_cloudwatch_logs_for_oom(
         # Use deployment time as start if available, otherwise use global start_time
         if svc.last_deployment_at:
             try:
-                deployment_dt = datetime.fromisoformat(svc.last_deployment_at.replace("Z", "+00:00"))
+                deployment_dt = datetime.fromisoformat(
+                    svc.last_deployment_at.replace("Z", "+00:00")
+                )
                 svc_start_time_ms = int(deployment_dt.timestamp() * 1000)
             except (ValueError, AttributeError):
                 svc_start_time_ms = int(start_time.timestamp() * 1000)
@@ -446,18 +495,24 @@ def _search_cloudwatch_logs_for_oom(
 
         log_stream_prefix = f"{svc.service_name}/"
         service_oom_events = search_logs_for_oom(
-            log_group, svc_start_time_ms, end_time_ms,
+            log_group,
+            svc_start_time_ms,
+            end_time_ms,
             cloudwatch_client=logs_client,
             log_stream_prefix=log_stream_prefix,
         )
 
         if service_oom_events:
-            print(f"  Found {len(service_oom_events)} OOM event(s) for {svc.service_name} (from CloudWatch Logs)")
+            print(
+                f"  Found {len(service_oom_events)} OOM event(s) for {svc.service_name} (from CloudWatch Logs)"
+            )
             svc.oom_kill_count = len(service_oom_events)
             svc.oom_events = service_oom_events
             svc.status = classify_service(svc)
             if svc.status == "OOM_KILLS":
-                svc.memory_recommendation = calculate_oom_memory_recommendation(svc.cpu_allocated, svc.memory_allocated)
+                svc.memory_recommendation = calculate_oom_memory_recommendation(
+                    svc.cpu_allocated, svc.memory_allocated
+                )
 
     total_oom = sum(svc.oom_kill_count for svc in service_metrics)
     if total_oom > 0:
@@ -524,8 +579,14 @@ def generate_report_for_environment(
     # Collect metrics for each service
     service_metrics = [
         _collect_service_metrics(
-            service, cluster_name, start_time, end_time, days,
-            ecs_client, cloudwatch_client, tfvars_config,
+            service,
+            cluster_name,
+            start_time,
+            end_time,
+            days,
+            ecs_client,
+            cloudwatch_client,
+            tfvars_config,
         )
         for service in services
     ]
@@ -612,7 +673,9 @@ Examples:
         print()
         print(f"{'=' * 60}")
         print(f"Environment: {env_name}")
-        print(f"Period: {start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')} ({args.days} days)")
+        print(
+            f"Period: {start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')} ({args.days} days)"
+        )
         print(f"{'=' * 60}")
 
         if not env_path.exists():

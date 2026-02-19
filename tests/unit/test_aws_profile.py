@@ -1,9 +1,9 @@
 """Tests for AWS profile validation utilities."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 import boto3
+import pytest
 from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound
 
 from deployer.utils.aws_profile import validate_aws_profile

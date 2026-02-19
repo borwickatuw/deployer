@@ -48,9 +48,7 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
         with patch("deployer.deploy.extensions.boto3") as mock_boto3:
-            create_database_extensions(
-                config, env_config, "us-west-2", dry_run=True
-            )
+            create_database_extensions(config, env_config, "us-west-2", dry_run=True)
             mock_boto3.client.assert_not_called()
 
     @patch("deployer.deploy.extensions.boto3")
@@ -75,10 +73,12 @@ class TestCreateDatabaseExtensions:
         mock_client.invoke.assert_called_once_with(
             FunctionName="myapp-staging-create-db-users",
             InvocationType="RequestResponse",
-            Payload=json.dumps({
-                "action": "create_extensions",
-                "extensions": ["unaccent", "pg_bigm"],
-            }),
+            Payload=json.dumps(
+                {
+                    "action": "create_extensions",
+                    "extensions": ["unaccent", "pg_bigm"],
+                }
+            ),
         )
 
     @patch("deployer.deploy.extensions.boto3")

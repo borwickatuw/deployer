@@ -8,6 +8,11 @@ from .images import (
     format_missing_ecr_error,
     validate_ecr_repositories,
 )
+from .preflight import (
+    PreflightError,
+    PreflightOptions,
+    run_preflight_checks,
+)
 from .service import (
     DeploymentError,
     MigrationTask,
@@ -26,11 +31,6 @@ from .task_definition import (
     get_environment_variables,
     get_secrets,
     get_service_sizing,
-)
-from .preflight import (
-    PreflightError,
-    PreflightOptions,
-    run_preflight_checks,
 )
 from .validation import (
     validate_ecs_cluster,

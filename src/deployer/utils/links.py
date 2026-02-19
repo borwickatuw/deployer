@@ -141,4 +141,8 @@ def get_all_links() -> dict[str, str]:
     except Exception:
         return {}
 
-    return {env: config.get("deploy_toml", "") for env, config in links.items() if config.get("deploy_toml")}
+    return {
+        env: config.get("deploy_toml", "")
+        for env, config in links.items()
+        if config.get("deploy_toml")
+    }

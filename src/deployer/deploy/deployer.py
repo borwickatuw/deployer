@@ -143,7 +143,9 @@ class Deployer:
         log("Service configuration:")
         for service_name in self.config.get("services", {}):
             cfg = get_service_sizing(service_name, self.config, self.service_config)
-            sizing = f"cpu={cfg.get('cpu')}, memory={cfg.get('memory')}, replicas={cfg.get('replicas')}"
+            sizing = (
+                f"cpu={cfg.get('cpu')}, memory={cfg.get('memory')}, replicas={cfg.get('replicas')}"
+            )
             lb = "load_balanced" if cfg.get("load_balanced") else "no ALB"
             print(f"  {service_name}: {sizing} ({lb})")
         print()
@@ -154,12 +156,18 @@ class Deployer:
 
         log("Global environment variables:")
         env_vars = get_environment_variables(
-            self.config, self.environment, self.region,
-            infra_config=self.infra_config, env_config=self.env_config
+            self.config,
+            self.environment,
+            self.region,
+            infra_config=self.infra_config,
+            env_config=self.env_config,
         )
         for key, value in sorted(env_vars.items()):
             # Mask sensitive values
-            if any(s in key.lower() for s in ["secret", "password", "key", "token", "url", "database", "connection"]):
+            if any(
+                s in key.lower()
+                for s in ["secret", "password", "key", "token", "url", "database", "connection"]
+            ):
                 display_value = "***"
             elif value.startswith("ssm:") or value.startswith("secretsmanager:"):
                 display_value = value  # Show reference, not actual value
@@ -182,9 +190,7 @@ class Deployer:
         rds_instance_id = self.infra_config.get("rds_instance_id")
         if rds_instance_id:
             try:
-                response = self.rds.describe_db_instances(
-                    DBInstanceIdentifier=rds_instance_id
-                )
+                response = self.rds.describe_db_instances(DBInstanceIdentifier=rds_instance_id)
                 if response["DBInstances"]:
                     status = response["DBInstances"][0]["DBInstanceStatus"]
                     if status != "available":
@@ -235,7 +241,9 @@ class Deployer:
                 print()
                 print("  The database must be running for migrations to succeed.")
                 print("  Start the environment first:")
-                print(f"    uv run python bin/environment.py {self.app_name}-{self.environment} start")
+                print(
+                    f"    uv run python bin/environment.py {self.app_name}-{self.environment} start"
+                )
                 print()
                 print("  Or use --force to deploy anyway (migrations will fail).")
                 raise RuntimeError("Infrastructure unavailable")
@@ -306,8 +314,11 @@ class Deployer:
         if self.timer:
             with self.timer.step("start_migrations"):
                 migration_task = start_migrations(
-                    self.ecs, self.cluster_name, self.config,
-                    self.app_name, self.environment,
+                    self.ecs,
+                    self.cluster_name,
+                    self.config,
+                    self.app_name,
+                    self.environment,
                     image_uris=image_uris,
                     service_config=self.service_config,
                     infra_config=self.infra_config,
@@ -319,8 +330,11 @@ class Deployer:
                 )
         else:
             migration_task = start_migrations(
-                self.ecs, self.cluster_name, self.config,
-                self.app_name, self.environment,
+                self.ecs,
+                self.cluster_name,
+                self.config,
+                self.app_name,
+                self.environment,
                 image_uris=image_uris,
                 service_config=self.service_config,
                 infra_config=self.infra_config,
@@ -386,9 +400,13 @@ class Deployer:
         # Step 7: Wait for services to stabilize (parallel)
         if self.timer:
             with self.timer.step("wait_for_stable"):
-                health_failures = wait_for_stable(self.ecs, self.cluster_name, self.config, self.dry_run)
+                health_failures = wait_for_stable(
+                    self.ecs, self.cluster_name, self.config, self.dry_run
+                )
         else:
-            health_failures = wait_for_stable(self.ecs, self.cluster_name, self.config, self.dry_run)
+            health_failures = wait_for_stable(
+                self.ecs, self.cluster_name, self.config, self.dry_run
+            )
         print()
 
         if self.timer:
@@ -396,7 +414,9 @@ class Deployer:
 
         if health_failures:
             print(f"{Colors.YELLOW}Deployment completed with warnings:{Colors.NC}")
-            print(f"  The following services did not pass health checks: {', '.join(health_failures)}")
+            print(
+                f"  The following services did not pass health checks: {', '.join(health_failures)}"
+            )
             print(f"  Services may still become healthy - check the AWS console.")
             return image_uris, health_failures
         else:

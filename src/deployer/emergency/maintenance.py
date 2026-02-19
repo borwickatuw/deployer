@@ -53,9 +53,7 @@ def get_rds_pending_maintenance(instance_id: str) -> list[dict]:
         instance_arn = instances[0].get("DBInstanceArn", "")
 
         # Then get pending maintenance
-        response = client.describe_pending_maintenance_actions(
-            ResourceIdentifier=instance_arn
-        )
+        response = client.describe_pending_maintenance_actions(ResourceIdentifier=instance_arn)
 
         for resource in response.get("PendingMaintenanceActions", []):
             for action in resource.get("PendingMaintenanceActionDetails", []):
@@ -138,9 +136,7 @@ def get_elasticache_pending_maintenance(cluster_id: str) -> list[dict]:
                         "action": update_name,
                         "description": update.get("ServiceUpdateDescription", ""),
                         "severity": severity,
-                        "recommended_apply_by": update.get(
-                            "ServiceUpdateRecommendedApplyByDate"
-                        ),
+                        "recommended_apply_by": update.get("ServiceUpdateRecommendedApplyByDate"),
                         "opt_in_status": update.get("ServiceUpdateStatus", ""),
                     }
                 )

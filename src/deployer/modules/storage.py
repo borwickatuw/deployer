@@ -67,7 +67,9 @@ class StorageModule(ResourceModule):
         for bucket_name in buckets:
             config_key = f"{bucket_name}_bucket"
             if not env_config.get(config_key):
-                errors.append(f"[storage] missing '{config_key}' in config.toml for declared bucket '{bucket_name}'")
+                errors.append(
+                    f"[storage] missing '{config_key}' in config.toml for declared bucket '{bucket_name}'"
+                )
 
         return errors
 

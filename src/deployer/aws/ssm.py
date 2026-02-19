@@ -109,13 +109,15 @@ def list_parameters(path_prefix: str) -> tuple[list[dict], str | None]:
             ]
         ):
             for param in page["Parameters"]:
-                parameters.append({
-                    "name": param["Name"],
-                    "description": param.get("Description", ""),
-                    "type": param["Type"],
-                    "last_modified": param.get("LastModifiedDate"),
-                    "version": param.get("Version"),
-                })
+                parameters.append(
+                    {
+                        "name": param["Name"],
+                        "description": param.get("Description", ""),
+                        "type": param["Type"],
+                        "last_modified": param.get("LastModifiedDate"),
+                        "version": param.get("Version"),
+                    }
+                )
 
         return parameters, None
     except ClientError as e:
