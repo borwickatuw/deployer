@@ -25,14 +25,8 @@ data "terraform_remote_state" "bootstrap" {
   config  = var.bootstrap_state_config
 }
 
-# State migration: bootstrap data source moved from unconditional to count
-moved {
-  from = data.terraform_remote_state.bootstrap
-  to   = data.terraform_remote_state.bootstrap[0]
-}
-
 # ------------------------------------------------------------------------------
-# Environment Variables (new — set in services.auto.tfvars)
+# Environment Variables (set in services.auto.tfvars)
 # ------------------------------------------------------------------------------
 
 variable "env_type" {

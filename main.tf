@@ -78,12 +78,6 @@ locals {
   }
 }
 
-# State migration: Route 53 record moved from inline resource to module
-moved {
-  from = aws_route53_record.main[0]
-  to   = module.route53[0].aws_route53_record.alias["main"]
-}
-
 # VPC and networking
 module "vpc" {
   source = "./modules/vpc"
@@ -457,12 +451,6 @@ resource "aws_security_group_rule" "alb_to_ecs" {
   source_security_group_id = module.alb.security_group_id
   security_group_id        = module.ecs_cluster.security_group_id
   description              = "Allow ALB to reach ECS on port ${each.value}"
-}
-
-# State migration: SG rule moved from single resource to for_each
-moved {
-  from = aws_security_group_rule.alb_to_ecs
-  to   = aws_security_group_rule.alb_to_ecs["8000"]
 }
 
 # WAF (optional)
