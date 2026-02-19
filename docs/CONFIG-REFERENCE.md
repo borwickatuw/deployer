@@ -576,8 +576,12 @@ private_subnet_ids = "${tofu:private_subnet_ids}"
 execution_role_arn = "${tofu:ecs_execution_role_arn}"
 task_role_arn = "${tofu:ecs_task_role_arn}"
 target_group_arn = "${tofu:alb_target_group_arn}"
+service_target_groups = "${tofu:service_target_groups}"
+service_discovery_registries = "${tofu:service_discovery_registries}"
+service_discovery_namespace = "${tofu:service_discovery_namespace_name}"
 alb_dns_name = "${tofu:alb_dns_name}"  # Fallback URL
 rds_instance_id = "${tofu:rds_instance_id}"  # Staging only - for start/stop
+ecr_prefix = "${tofu:ecr_prefix}"
 
 [services]
 config = "${tofu:service_config}"
@@ -599,8 +603,8 @@ migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
 [cache]
 url = "${tofu:redis_url}"
 
-[storage]
-media_bucket = "${tofu:s3_media_bucket}"  # Optional
+# [storage]  # Uncomment if app uses S3
+# media_bucket = "${tofu:s3_media_bucket}"
 
 [cognito]
 enabled = true  # or false for production
@@ -647,16 +651,20 @@ For multi-account setups (e.g., staging and production in different AWS accounts
 
 Core ECS infrastructure references.
 
-| Field                | Tofu Output              | Description                                   |
-| -------------------- | ------------------------ | --------------------------------------------- |
-| `cluster_name`       | `ecs_cluster_name`       | ECS cluster name                              |
-| `security_group_id`  | `ecs_security_group_id`  | Security group for ECS tasks                  |
-| `private_subnet_ids` | `private_subnet_ids`     | List of private subnet IDs                    |
-| `execution_role_arn` | `ecs_execution_role_arn` | ECS task execution role ARN                   |
-| `task_role_arn`      | `ecs_task_role_arn`      | ECS task role ARN                             |
-| `target_group_arn`   | `alb_target_group_arn`   | ALB target group ARN                          |
-| `alb_dns_name`       | `alb_dns_name`           | ALB DNS name (fallback URL)                   |
-| `rds_instance_id`    | `rds_instance_id`        | RDS instance ID for start/stop (staging only) |
+| Field                            | Tofu Output                        | Description                                                 |
+| -------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| `cluster_name`                   | `ecs_cluster_name`                 | ECS cluster name                                            |
+| `security_group_id`              | `ecs_security_group_id`            | Security group for ECS tasks                                |
+| `private_subnet_ids`             | `private_subnet_ids`               | List of private subnet IDs                                  |
+| `execution_role_arn`             | `ecs_execution_role_arn`           | ECS task execution role ARN                                 |
+| `task_role_arn`                  | `ecs_task_role_arn`                | ECS task role ARN                                           |
+| `target_group_arn`               | `alb_target_group_arn`             | ALB target group ARN (default)                              |
+| `service_target_groups`          | `service_target_groups`            | Map of service name to target group ARN (for path routing)  |
+| `service_discovery_registries`   | `service_discovery_registries`     | Map of service name to discovery registry ARN (optional)    |
+| `service_discovery_namespace`    | `service_discovery_namespace_name` | Service discovery namespace name (optional)                 |
+| `alb_dns_name`                   | `alb_dns_name`                     | ALB DNS name (fallback URL)                                 |
+| `rds_instance_id`                | `rds_instance_id`                  | RDS instance ID for start/stop (staging only)               |
+| `ecr_prefix`                     | `ecr_prefix`                       | ECR repository prefix for image naming                      |
 
 #### `[services]`
 
@@ -833,15 +841,17 @@ Service sizing and scaling are configured in `terraform.tfvars` files in the dep
 
 Map of service configurations. Each service needs sizing information.
 
-| Field               | Type   | Required | Description                                         |
-| ------------------- | ------ | -------- | --------------------------------------------------- |
-| `cpu`               | number | Yes      | CPU units (256 = 0.25 vCPU, 1024 = 1 vCPU).         |
-| `memory`            | number | Yes      | Memory in MB. Must be compatible with CPU.          |
-| `replicas`          | number | Yes      | Desired task count.                                 |
-| `load_balanced`     | bool   | Yes      | Whether to receive traffic from ALB.                |
-| `port`              | number | No       | Container port. Required if `load_balanced = true`. |
-| `health_check_path` | string | No       | ALB health check path. Default: `/`.                |
-| `path_pattern`      | string | No       | ALB path-based routing pattern.                     |
+| Field                  | Type   | Required | Description                                                              |
+| ---------------------- | ------ | -------- | ------------------------------------------------------------------------ |
+| `cpu`                  | number | Yes      | CPU units (256 = 0.25 vCPU, 1024 = 1 vCPU).                              |
+| `memory`               | number | Yes      | Memory in MB. Must be compatible with CPU.                               |
+| `replicas`             | number | Yes      | Desired task count.                                                      |
+| `load_balanced`        | bool   | Yes      | Whether to receive traffic from ALB.                                     |
+| `port`                 | number | No       | Container port. Required if `load_balanced = true`.                      |
+| `health_check_path`    | string | No       | ALB health check path. Default: `/`.                                     |
+| `path_pattern`         | string | No       | ALB path-based routing pattern (auto-creates target group + rule).       |
+| `health_check_matcher` | string | No       | HTTP status codes for healthy response (e.g., `"200-499"`). Default: 200 |
+| `service_discovery`    | bool   | No       | Register with Cloud Map for service-to-service communication.            |
 
 #### CPU/Memory Combinations
 

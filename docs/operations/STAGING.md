@@ -183,41 +183,15 @@ When staging environments are stopped (ECS scaled to 0, RDS stopped), the ALB re
 
 ### Enabling CloudFront Error Pages
 
-In your environment's `main.tf`, add to the `module "infrastructure"` block:
+In your environment's `main.tf`, set `cloudfront_alb_enabled` in the `module "infrastructure"` block (this is the default in the standardized template):
 
 ```hcl
-# CloudFront for custom error pages (shows friendly 503 when services are stopped)
-cloudfront_alb_enabled            = true
-cloudfront_alb_error_page_content = file("${path.module}/error-503.html")
+cloudfront_alb_enabled = var.cloudfront_alb_enabled  # default: true
 ```
 
-### Custom Error Page
+The module automatically generates an error page that includes the environment name (derived from `name_prefix`). No per-environment `error-503.html` file is needed.
 
-Create an `error-503.html` file in your environment directory. This is a standalone HTML file that you can preview in a browser. The file is version-controlled and independently editable per environment.
-
-If you omit `cloudfront_alb_error_page_content`, a generic default page is used (defined in the `cloudfront-alb` module).
-
-### Required Outputs
-
-Add these outputs to your environment's `main.tf`:
-
-```hcl
-# CloudFront ALB outputs
-output "cloudfront_alb_distribution_id" {
-  value       = module.infrastructure.cloudfront_alb_distribution_id
-  description = "CloudFront distribution ID for custom error pages"
-}
-
-output "cloudfront_alb_domain_name" {
-  value       = module.infrastructure.cloudfront_alb_domain_name
-  description = "CloudFront distribution domain name"
-}
-
-output "cloudfront_alb_error_bucket" {
-  value       = module.infrastructure.cloudfront_alb_error_bucket
-  description = "S3 bucket for error pages"
-}
-```
+The standardized `main.tf` template already includes all required CloudFront ALB outputs.
 
 ______________________________________________________________________
 
