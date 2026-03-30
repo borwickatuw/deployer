@@ -6,12 +6,10 @@ For first-time AWS account setup (IAM roles, bootstrap infrastructure), see [GET
 
 ## Quick Start Checklist
 
-- [ ] AWS account configured ([GETTING-STARTED.md](GETTING-STARTED.md))
-- [ ] Prerequisites completed (Docker, AWS CLI, uv, OpenTofu)
-- [ ] `deploy.toml` created in your app repository
-- [ ] Environment directory created in deployer (`environments/<app>-<env>/`)
-- [ ] Infrastructure deployed via OpenTofu
-- [ ] First deployment successful
+1. [Prerequisites](#prerequisites) — complete GETTING-STARTED.md, verify tools
+2. [Initial Setup](#initial-setup) — create deploy.toml, environment directory, apply infrastructure
+3. [Deploying](#deploying) — build images and deploy to ECS
+4. [Verification](#verification) — confirm services are healthy
 
 ______________________________________________________________________
 
