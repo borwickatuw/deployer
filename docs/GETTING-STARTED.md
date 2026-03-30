@@ -6,13 +6,15 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ## Prerequisites
 
-| Tool     | Version | Installation               | Purpose                |
-| -------- | ------- | -------------------------- | ---------------------- |
-| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts         |
-| uv       | Latest  | `brew install uv`          | Python package manager |
-| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code |
-| AWS CLI  | v2      | `brew install awscli`      | AWS operations         |
-| Docker   | Latest  | `brew install docker`      | Container builds       |
+Clone this repository and install the required tools:
+
+| Tool     | Version | Installation               | Purpose                                  |
+| -------- | ------- | -------------------------- | ---------------------------------------- |
+| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts                           |
+| uv       | Latest  | `brew install uv`          | Python package manager                   |
+| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code (like Terraform)  |
+| AWS CLI  | v2      | `brew install awscli`      | Command-line access to AWS               |
+| Docker   | Latest  | `brew install docker`      | Container builds                         |
 
 **Verify your setup:**
 
@@ -36,7 +38,24 @@ If you already have an AWS CLI profile with admin access, set it for the duratio
 export AWS_PROFILE=your-admin-profile
 ```
 
-If you don't have one yet, create one by adding your admin credentials to `~/.aws/credentials` and a profile to `~/.aws/config`. See [AWS CLI documentation](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) for details.
+If you don't have one yet:
+
+1. Log into the [AWS Console](https://console.aws.amazon.com/)
+2. Go to **IAM > Users > your user > Security credentials**
+3. Click **Create access key** and save the access key ID and secret
+4. Add them to `~/.aws/credentials`:
+
+```ini
+[admin]
+aws_access_key_id = YOUR_ADMIN_ACCESS_KEY
+aws_secret_access_key = YOUR_ADMIN_SECRET_KEY
+```
+
+5. Set the profile for the rest of this guide:
+
+```bash
+export AWS_PROFILE=admin
+```
 
 Verify it works:
 
@@ -56,21 +75,29 @@ Edit `.env` and set `DEPLOYER_ENVIRONMENTS_DIR` to where you want environment co
 
 ### 3. Create Route 53 Hosted Zone
 
-**Why:** Every environment needs a domain for HTTPS access and TLS certificate validation. Route 53 hosted zones must exist before any environment infrastructure can be created, because environments reference the zone ID to create DNS records and validate ACM certificates automatically. This can't be automated because most accounts already have a hosted zone, and DNS delegation is account-specific.
+**Why:** Every environment needs a domain for HTTPS access. Route 53 is AWS's DNS service — it hosts the DNS records that point your domain to your application and validates TLS (HTTPS) certificates. The hosted zone must exist before creating any environment, because environments reference its ID.
 
-If you don't already have a Route 53 hosted zone for your domain:
+If you already have a hosted zone, find its ID:
+
+```bash
+aws route53 list-hosted-zones
+```
+
+The zone ID is the value after `/hostedzone/` in the `Id` field (e.g., if the output shows `/hostedzone/Z1234567890ABC`, the zone ID is `Z1234567890ABC`).
+
+If you don't have one yet, create it:
 
 ```bash
 aws route53 create-hosted-zone \
   --name example.com \
-  --caller-reference "initial-setup-$(date +%s)"
+  --caller-reference "$(date +%s)"
 ```
 
-Note the hosted zone ID from the output — you'll need it for environment configuration.
+Note the zone ID from the output — you'll need it when configuring environments.
 
 ### 4. Create an IAM User for Deployer
 
-**Why:** The deployer uses a dedicated IAM user with minimal permissions. This user is **not an administrator** — its only power is assuming three scoped roles that the bootstrap step creates. This separation means day-to-day deployment operations never use admin credentials, and the deployer can only access resources matching your project prefixes.
+**Why:** The deployer uses a dedicated IAM user with minimal permissions. This user is **not an administrator** — its only power is temporarily switching to three limited-permission roles that the bootstrap step creates. This means day-to-day deployment operations never use admin credentials, and the deployer can only access resources matching your project names.
 
 ```bash
 aws iam create-user --user-name deployer
@@ -90,8 +117,8 @@ aws_secret_access_key = YOUR_SECRET_KEY
 **Why:** Bootstrap creates the foundational resources that all environments depend on:
 
 - **S3 bucket** for storing OpenTofu state (so infrastructure state isn't just on your laptop)
-- **Permissions boundary** that caps what any ECS task role can do, regardless of what permissions it's given
-- **Three IAM roles** scoped to specific operations:
+- **Permissions boundary** — a safety ceiling that limits what any container task can do, regardless of what permissions it's given
+- **Three IAM roles** limited to specific operations:
   - `deployer-app-deploy` — deploy containers (used by `deploy.py`)
   - `deployer-infra-admin` — manage infrastructure (used by `tofu.sh`)
   - `deployer-cognito-admin` — manage user pools (used by `cognito.py`)
@@ -103,7 +130,7 @@ Generate the bootstrap configuration interactively:
 uv run python bin/init.py bootstrap
 ```
 
-This prompts for your AWS account ID, region, project prefixes, and the deployer user ARN. After generating the files, it offers to run `tofu init && tofu apply` for you.
+This prompts for your AWS account ID, region, project prefixes, and the deployer user's ARN (which looks like `arn:aws:iam::123456789012:user/deployer`). After generating the files, it offers to run `tofu init && tofu apply` for you.
 
 If you decline the interactive apply, run manually:
 
@@ -113,7 +140,7 @@ tofu init
 tofu apply
 ```
 
-Then enable the S3 backend so state is stored remotely:
+Then enable the S3 backend so state is stored remotely. (The S3 bucket didn't exist until the apply above created it, so OpenTofu has to start with local state and then migrate.)
 
 ```bash
 uv run python bin/init.py bootstrap --migrate-state bootstrap-staging
@@ -149,7 +176,11 @@ This checks all tool versions, confirms `DEPLOYER_ENVIRONMENTS_DIR` is set, veri
 
 **Why:** Admin access was only needed for the one-time bootstrap setup. Going forward, all operations use the scoped deployer roles, which are restricted to your configured project prefixes. Removing admin access ensures that deployment operations can't accidentally modify IAM policies or access resources outside the deployer's scope.
 
-Once you've verified all roles work correctly, remove AdministratorAccess from any existing IAM user.
+Once you've verified all roles work correctly, remove the admin profile you created in Step 1. Delete the `[admin]` section from `~/.aws/credentials` and unset the environment variable:
+
+```bash
+unset AWS_PROFILE
+```
 
 ## Re-granting Administrator Access
 
@@ -158,7 +189,7 @@ You'll need admin access again in two situations:
 - **Adding a new application** to the deployer (see [Adding New Applications](#adding-new-applications) below)
 - **Modifying the deployer IAM policies** themselves (changing what the roles can do)
 
-To temporarily restore admin access, set `AWS_PROFILE` to your admin profile before running the relevant commands. Remove or unset it when you're done.
+To temporarily restore admin access, add admin credentials back to `~/.aws/credentials` and set `AWS_PROFILE` to that profile before running the relevant commands. Remove or unset it when you're done.
 
 ## Adding New Applications
 
