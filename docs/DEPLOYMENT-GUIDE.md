@@ -107,6 +107,21 @@ docker build -t myapp-test .
 
 ### 2. Create Environment Directory
 
+Choose a template based on how your application's infrastructure is organized:
+
+| Template | Use when |
+| --- | --- |
+| `standalone-staging` | App gets its own VPC, database, load balancer, etc. Most common for a first deployment. |
+| `standalone-production` | Production version of the above. |
+| `shared-infra-staging` | Creates shared infrastructure (VPC, ALB, database) that multiple apps will use. |
+| `shared-infra-production` | Production version of the above. |
+| `shared-app-staging` | App runs on existing shared infrastructure (requires `shared-infra` first). |
+| `shared-app-production` | Production version of the above. |
+
+To see all available templates: `uv run python bin/init.py environment --list-templates`
+
+For shared infrastructure setups (multiple apps sharing a database and load balancer), see [SHARED-ENVIRONMENTS.md](operations/SHARED-ENVIRONMENTS.md).
+
 **Option A: Use init script (recommended)**
 
 ```bash
