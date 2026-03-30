@@ -1,0 +1,241 @@
+# Shared Infrastructure - {{env_type | title}}
+#
+# This creates shared infrastructure for multiple production apps:
+# - VPC with NAT Gateway
+# - ECS Cluster
+# - Application Load Balancer
+# - Optional: Shared ElastiCache
+#
+# Per-app resources (RDS, target groups, etc.) are created separately.
+# See app-on-shared-production/ for an example per-app environment.
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # Uncomment and configure for remote state
+  # backend "s3" {
+  #   bucket         = "deployer-terraform-state-123456789012"
+  #   key            = "shared-infra-{{env_type}}/terraform.tfstate"
+  #   region         = "us-west-2"
+  #   encrypt        = true
+  # }
+}
+
+# ------------------------------------------------------------------------------
+# Variables
+# ------------------------------------------------------------------------------
+
+variable "name_prefix" {
+  type        = string
+  description = "Prefix for resource names"
+  default     = "shared-infra-{{env_type}}"
+}
+
+variable "domain_name" {
+  type        = string
+  description = "Primary domain name (e.g., example.com)"
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "Route 53 hosted zone ID for DNS and certificate validation"
+  default     = null
+}
+
+variable "certificate_san" {
+  type        = list(string)
+  description = "Additional domain names for the certificate (e.g., ['*.example.com'])"
+  default     = []
+}
+
+variable "cognito_auth_enabled" {
+  type        = bool
+  description = "Enable Cognito authentication (typically disabled for production)"
+  default     = false
+}
+
+variable "cache_enabled" {
+  type        = bool
+  description = "Enable shared ElastiCache"
+  default     = false
+}
+
+# WAF Configuration
+variable "waf_preset" {
+  type        = string
+  description = "WAF protection level: 'off', 'standard', or 'strict'"
+  default     = "standard"
+}
+
+variable "waf_geo_block_countries" {
+  type        = list(string)
+  description = "Country codes to block (e.g., ['RU', 'CN'])"
+  default     = []
+}
+
+variable "waf_ip_allowlist" {
+  type        = list(string)
+  description = "CIDR blocks that bypass WAF (e.g., office IPs)"
+  default     = []
+}
+
+# ------------------------------------------------------------------------------
+# Shared Infrastructure Module
+# ------------------------------------------------------------------------------
+
+module "shared_infra" {
+  source = "../../modules/shared-infrastructure"
+
+  name_prefix          = var.name_prefix
+  domain_name          = var.domain_name
+  route53_zone_id      = var.route53_zone_id
+  certificate_san      = var.certificate_san
+  cognito_auth_enabled = var.cognito_auth_enabled
+  cache_enabled        = var.cache_enabled
+
+  # VPC configuration
+  vpc_cidr           = "10.0.0.0/16"
+  availability_zones = ["us-west-2a", "us-west-2b"]
+
+  # Health check settings (production-conservative)
+  health_check = {
+    interval             = 30
+    timeout              = 10
+    healthy_threshold    = 2
+    unhealthy_threshold  = 5
+    deregistration_delay = 120
+  }
+
+  # WAF configuration
+  waf_preset              = var.waf_preset
+  waf_geo_block_countries = var.waf_geo_block_countries
+  waf_ip_allowlist        = var.waf_ip_allowlist
+}
+
+# ------------------------------------------------------------------------------
+# Outputs
+# ------------------------------------------------------------------------------
+
+# VPC
+output "vpc_id" {
+  value = module.shared_infra.vpc_id
+}
+
+output "public_subnet_ids" {
+  value = module.shared_infra.public_subnet_ids
+}
+
+output "private_subnet_ids" {
+  value = module.shared_infra.private_subnet_ids
+}
+
+# ECS
+output "ecs_cluster_name" {
+  value = module.shared_infra.ecs_cluster_name
+}
+
+output "ecs_cluster_arn" {
+  value = module.shared_infra.ecs_cluster_arn
+}
+
+output "ecs_security_group_id" {
+  value = module.shared_infra.ecs_security_group_id
+}
+
+# ALB
+output "alb_arn" {
+  value = module.shared_infra.alb_arn
+}
+
+output "alb_dns_name" {
+  value = module.shared_infra.alb_dns_name
+}
+
+output "alb_zone_id" {
+  value = module.shared_infra.alb_zone_id
+}
+
+output "alb_security_group_id" {
+  value = module.shared_infra.alb_security_group_id
+}
+
+output "alb_http_listener_arn" {
+  value = module.shared_infra.alb_http_listener_arn
+}
+
+output "alb_https_listener_arn" {
+  value = module.shared_infra.alb_https_listener_arn
+}
+
+output "alb_default_target_group_arn" {
+  value = module.shared_infra.alb_default_target_group_arn
+}
+
+output "https_enabled" {
+  value = module.shared_infra.https_enabled
+}
+
+# Cognito (disabled for production by default)
+output "cognito_user_pool_id" {
+  value = module.shared_infra.cognito_user_pool_id
+}
+
+output "cognito_user_pool_arn" {
+  value = module.shared_infra.cognito_user_pool_arn
+}
+
+output "cognito_user_pool_client_id" {
+  value = module.shared_infra.cognito_user_pool_client_id
+}
+
+output "cognito_user_pool_client_secret" {
+  value     = module.shared_infra.cognito_user_pool_client_secret
+  sensitive = true
+}
+
+output "cognito_domain" {
+  value = module.shared_infra.cognito_domain
+}
+
+output "cognito_auth_enabled" {
+  value = module.shared_infra.cognito_auth_enabled
+}
+
+# Cache
+output "redis_endpoint" {
+  value = module.shared_infra.redis_endpoint
+}
+
+output "redis_url" {
+  value = module.shared_infra.redis_url
+}
+
+# DNS
+output "domain_name" {
+  value = module.shared_infra.domain_name
+}
+
+output "certificate_arn" {
+  value = module.shared_infra.certificate_arn
+}
+
+output "route53_zone_id" {
+  value = module.shared_infra.route53_zone_id
+}
+
+output "name_prefix" {
+  value = module.shared_infra.name_prefix
+}
+
+# WAF
+output "waf_enabled" {
+  value = module.shared_infra.waf_enabled
+}
+
+output "waf_web_acl_arn" {
+  value = module.shared_infra.waf_web_acl_arn
+}
+
+output "waf_log_group_name" {
+  value = module.shared_infra.waf_log_group_name
+}

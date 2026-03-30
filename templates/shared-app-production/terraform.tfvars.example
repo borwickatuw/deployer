@@ -1,0 +1,67 @@
+# {{app_name | title}} {{env_type | title}} Environment (Shared Infrastructure)
+# DO NOT commit this file to version control (contains sensitive data)
+
+# ------------------------------------------------------------------------------
+# App Identity
+# ------------------------------------------------------------------------------
+
+app_name    = "{{app_name}}"
+environment = "{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Database Configuration
+#
+# See app-on-shared-staging/terraform.tfvars.example for detailed documentation.
+# ------------------------------------------------------------------------------
+
+# Option 1: Separate RDS instance (default)
+use_shared_rds = false
+db_username    = "{{app_name}}_admin"
+db_password    = "CHANGE-ME-generate-a-secure-password"  # openssl rand -base64 24
+
+# Option 2: Shared RDS instance
+# use_shared_rds = true
+# db_username    = ""
+# db_password    = ""
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "{{app_name}}.example.com"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# ------------------------------------------------------------------------------
+# ALB Routing
+# ------------------------------------------------------------------------------
+
+# Priority must be unique across all apps in the shared environment
+# Convention: first app = 100, second app = 200, etc.
+listener_rule_priority = {{listener_priority}}
+
+# ------------------------------------------------------------------------------
+# Service Configuration
+# ------------------------------------------------------------------------------
+
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Auto-Scaling (enabled for production)
+# ------------------------------------------------------------------------------
+
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}

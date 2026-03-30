@@ -1,0 +1,59 @@
+# Sample deploy.toml for testing
+
+[application]
+name = "testapp"
+source = "."
+
+[images]
+web = { context = ".", dockerfile = "Dockerfile" }
+worker = { context = ".", dockerfile = "Dockerfile.worker" }
+base = { context = "docker/base", dockerfile = "Dockerfile", push = false }
+
+[images.dependent]
+context = "."
+dockerfile = "Dockerfile.dependent"
+depends_on = ["base"]
+
+[images.with_build_args]
+context = "."
+dockerfile = "Dockerfile"
+
+[images.with_build_args.build_args]
+PYTHON_VERSION = "3.12"
+
+[images.with_build_args.build_args.staging]
+UV_INSTALL_ARGS = "--group dev"
+
+[images.with_build_args.build_args.production]
+UV_INSTALL_ARGS = ""
+
+[services]
+web = { image = "web", port = 8000, command = ["gunicorn", "app:app"] }
+celery = { image = "worker", command = ["celery", "-A", "app", "worker"] }
+scheduler = { image = "worker", command = ["celery", "-A", "app", "beat"] }
+
+[environment]
+DJANGO_SETTINGS_MODULE = "app.settings"
+AWS_REGION = "${aws_region}"
+DATABASE_URL = "${database_url}"
+REDIS_URL = "${redis_url}"
+
+[environment.staging]
+DEBUG = "true"
+
+[environment.production]
+DEBUG = "false"
+
+[secrets]
+SECRET_KEY = "ssm:/testapp/secret_key"
+API_TOKEN = "secretsmanager:testapp/api_token"
+
+[migrations]
+enabled = true
+service = "web"
+command = ["python", "manage.py", "migrate"]
+
+[audit]
+ignore_services = ["postgres", "redis"]
+service_mapping = { "testapp" = "web", "celery-worker" = "celery" }
+ignore_env_vars = ["DEBUG", "UV_LINK_MODE"]

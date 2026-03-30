@@ -1,0 +1,25 @@
+# ==============================================================================
+# DO NOT ADD CODE TO THIS FILE
+#
+# This is a backend-only stub. All infrastructure configuration is in
+# deployer.tf (symlinked from the deployer repo). OpenTofu merges all .tf
+# files in a directory, so the symlinked deployer.tf provides all variables,
+# modules, and outputs.
+#
+# To set up the symlink:
+#   ln -s $DEPLOYER_DIR/environments/deployer.tf deployer.tf
+#
+# Only the backend block belongs here (backend config cannot use variables).
+# ==============================================================================
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # Uncomment and configure for remote state (recommended for team environments)
+  # backend "s3" {
+  #   bucket  = "deployer-terraform-state-123456789012"  # Update with your account ID
+  #   key     = "{{env_name}}/terraform.tfstate"
+  #   region  = "us-west-2"
+  #   encrypt = true
+  # }
+}

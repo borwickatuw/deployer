@@ -1,0 +1,147 @@
+# {{app_name | title}} {{env_type | title}} - Service Configuration
+#
+# This file is tracked in git. It contains non-sensitive configuration.
+# Secrets (db credentials) are in terraform.tfvars (gitignored).
+
+# ------------------------------------------------------------------------------
+# Environment Type
+# ------------------------------------------------------------------------------
+
+env_type = "production"
+
+# ------------------------------------------------------------------------------
+# Bootstrap State (shared OIDC provider for CI/CD)
+# Uncomment if using shared bootstrap resources.
+# ------------------------------------------------------------------------------
+
+# bootstrap_state_config = {
+#   bucket = "deployer-terraform-state-123456789012"
+#   key    = "bootstrap-production/terraform.tfstate"
+#   region = "us-west-2"
+# }
+
+# No Cognito for production (public access)
+# cognito_auth_enabled = false
+
+# ------------------------------------------------------------------------------
+# Project Settings
+# ------------------------------------------------------------------------------
+
+project_name = "{{app_name}}"
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "{{app_name}}.example.com"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# ------------------------------------------------------------------------------
+# Infrastructure Sizing (production defaults)
+# ------------------------------------------------------------------------------
+
+db_instance_class    = "db.t3.small"
+db_allocated_storage = 50
+
+# ------------------------------------------------------------------------------
+# Health Check Settings (production — conservative for availability)
+# ------------------------------------------------------------------------------
+
+health_check = {
+  interval             = 30
+  timeout              = 10
+  healthy_threshold    = 2
+  unhealthy_threshold  = 5
+  deregistration_delay = 120
+  grace_period         = 120
+}
+
+# ------------------------------------------------------------------------------
+# Scheduler (disabled for production — always running)
+# ------------------------------------------------------------------------------
+
+scheduler_enabled = false
+
+# ------------------------------------------------------------------------------
+# Service Configuration
+# ------------------------------------------------------------------------------
+
+services = {
+  web = {
+    cpu               = 1024
+    memory            = 2048
+    replicas          = 2
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+  # Example: background worker
+  # worker = {
+  #   cpu           = 512
+  #   memory        = 1024
+  #   replicas      = 2
+  #   load_balanced = false
+  # }
+}
+
+# ------------------------------------------------------------------------------
+# Auto-Scaling (enabled for production)
+# ------------------------------------------------------------------------------
+
+scaling = {
+  web = {
+    min_replicas = 2
+    max_replicas = 10
+    cpu_target   = 70
+  }
+}
+
+# ------------------------------------------------------------------------------
+# ECR Repositories
+# ------------------------------------------------------------------------------
+
+ecr_repository_names = ["web"]
+
+# ------------------------------------------------------------------------------
+# VPC Configuration
+# ------------------------------------------------------------------------------
+
+vpc_cidr = "10.1.0.0/16"  # Must be unique across all environments
+
+# ------------------------------------------------------------------------------
+# Storage (optional)
+# Uncomment if your app needs S3 buckets (e.g., media uploads)
+# ------------------------------------------------------------------------------
+
+# s3_buckets = {
+#   "media" = {
+#     versioning = true
+#   }
+# }
+
+# ------------------------------------------------------------------------------
+# Feature Flags (uncomment to override defaults)
+# ------------------------------------------------------------------------------
+
+# service_discovery_enabled = true    # Enable AWS Cloud Map for service-to-service discovery
+# cloudfront_alb_enabled    = false   # Disable CloudFront custom error pages
+# cache_enabled             = false   # Disable ElastiCache Redis
+
+# ------------------------------------------------------------------------------
+# CI/CD Configuration (optional)
+# Requires bootstrap_state_config for OIDC provider.
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# github_repo = "myorg/myapp"  # GitHub org/repo for OIDC deployment
+
+# ------------------------------------------------------------------------------
+# WAF Configuration
+# ------------------------------------------------------------------------------
+
+waf_preset             = "standard" # "off", "standard", or "strict"
+waf_geo_block_countries = []        # e.g., ["RU", "CN", "KP"]
+waf_ip_allowlist        = []        # CIDRs that bypass WAF (e.g., office IPs)
+
+# Advanced: override specific preset settings
+# waf_overrides = { common_rules_excluded = ["SizeRestrictions_BODY"], rule_action_override = "count" }

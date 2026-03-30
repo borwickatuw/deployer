@@ -1,0 +1,5 @@
+# Shared Cognito User Pool Configuration
+#
+# App domains for the shared Cognito user pool
+# Users created in this pool can access all {{env_type}} environments
+cognito_app_domains = {{cognito_app_domains_hcl}}

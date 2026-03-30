@@ -1,0 +1,109 @@
+# Bootstrap Instance for {{env_type | title}} Account
+#
+# This instantiates the bootstrap module for a specific AWS account.
+# Each AWS account needs its own bootstrap instance with account-specific configuration.
+#
+# Usage:
+#   cd $DEPLOYER_ENVIRONMENTS_DIR/{{env_name}}
+#   AWS_PROFILE=admin tofu init
+#   AWS_PROFILE=admin tofu plan
+#   AWS_PROFILE=admin tofu apply
+#
+# To import existing resources (if IAM roles were created manually):
+#   ./import-existing.sh
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # BOOTSTRAP-BACKEND-START
+  # backend "s3" {
+  #   bucket  = "deployer-terraform-state-{{account_id}}"
+  #   key     = "{{env_name}}/terraform.tfstate"
+  #   region  = "{{region}}"
+  #   encrypt = true
+  # }
+  # BOOTSTRAP-BACKEND-END
+}
+
+module "bootstrap" {
+  source = "../modules/bootstrap"
+
+  region            = var.region
+  project_prefixes  = var.project_prefixes
+  trusted_user_arns = var.trusted_user_arns
+  create_iam_roles  = var.create_iam_roles
+}
+
+# CI/CD shared infrastructure (OIDC provider + S3 bucket for resolved configs)
+# Per-project CI roles are created in each environment using modules/ci-role.
+module "ci" {
+  source = "../modules/ci"
+}
+
+# Variables with defaults from tfvars
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "{{region}}"
+}
+
+variable "project_prefixes" {
+  description = "Project name prefixes for IAM policies"
+  type        = list(string)
+}
+
+variable "trusted_user_arns" {
+  description = "IAM user ARNs that can assume deployer roles"
+  type        = list(string)
+}
+
+variable "create_iam_roles" {
+  description = "Whether to create IAM roles"
+  type        = bool
+  default     = true
+}
+
+# Outputs from the bootstrap module
+output "state_bucket_name" {
+  value = module.bootstrap.state_bucket_name
+}
+
+output "ecs_role_boundary_arn" {
+  value = module.bootstrap.ecs_role_boundary_arn
+}
+
+output "account_id" {
+  value = module.bootstrap.account_id
+}
+
+output "region" {
+  value = module.bootstrap.region
+}
+
+output "app_deploy_role_arn" {
+  value = module.bootstrap.app_deploy_role_arn
+}
+
+output "infra_admin_role_arn" {
+  value = module.bootstrap.infra_admin_role_arn
+}
+
+output "cognito_admin_role_arn" {
+  value = module.bootstrap.cognito_admin_role_arn
+}
+
+# CI outputs (for environments to reference via remote state)
+output "oidc_provider_arn" {
+  value       = module.ci.oidc_provider_arn
+  description = "GitHub OIDC provider ARN (for ci-role modules)"
+}
+
+output "resolved_configs_bucket" {
+  value       = module.ci.resolved_configs_bucket
+  description = "S3 bucket name for resolved configs"
+}
+
+output "resolved_configs_bucket_arn" {
+  value       = module.ci.resolved_configs_bucket_arn
+  description = "S3 bucket ARN for resolved configs (for ci-role modules)"
+}

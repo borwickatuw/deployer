@@ -1,0 +1,117 @@
+# {{app_name | title}} {{env_type | title}} - Service Configuration
+#
+# This file is tracked in git. It contains non-sensitive configuration.
+# Secrets (db credentials) are in terraform.tfvars (gitignored).
+
+# ------------------------------------------------------------------------------
+# Environment Type
+# ------------------------------------------------------------------------------
+
+env_type = "staging"
+
+# ------------------------------------------------------------------------------
+# Bootstrap State (shared Cognito, OIDC provider)
+# Uncomment if using shared bootstrap resources.
+# ------------------------------------------------------------------------------
+
+# bootstrap_state_config = {
+#   bucket = "deployer-terraform-state-123456789012"
+#   key    = "bootstrap-staging/terraform.tfstate"
+#   region = "us-west-2"
+# }
+
+# cognito_auth_enabled = true
+
+# ------------------------------------------------------------------------------
+# Project Settings
+# ------------------------------------------------------------------------------
+
+project_name = "{{app_name}}"
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "{{domain}}"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# ------------------------------------------------------------------------------
+# Service Configuration
+# ------------------------------------------------------------------------------
+
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Auto-Scaling (disabled in staging)
+# ------------------------------------------------------------------------------
+
+# Auto-scaling disabled in staging
+scaling = {}
+
+# ------------------------------------------------------------------------------
+# ECR Repositories
+# ------------------------------------------------------------------------------
+
+ecr_repository_names = ["web"]
+
+# ------------------------------------------------------------------------------
+# VPC Configuration
+# ------------------------------------------------------------------------------
+
+vpc_cidr = "10.0.0.0/16"  # Must be unique across all environments
+
+# ------------------------------------------------------------------------------
+# Storage (optional)
+# Uncomment if your app needs S3 buckets (e.g., media uploads)
+# ------------------------------------------------------------------------------
+
+# s3_buckets = {
+#   "media" = {
+#     versioning = false
+#   }
+# }
+
+# ------------------------------------------------------------------------------
+# Feature Flags (uncomment to override defaults)
+# ------------------------------------------------------------------------------
+
+# service_discovery_enabled = true    # Enable AWS Cloud Map for service-to-service discovery
+# cloudfront_alb_enabled    = false   # Disable CloudFront custom error pages
+# cache_enabled             = false   # Disable ElastiCache Redis
+
+# ------------------------------------------------------------------------------
+# Scheduler (stop/start to save costs)
+# Default: Mon-Fri 7am-7pm Pacific
+# ------------------------------------------------------------------------------
+
+# stop_schedule  = "cron(0 3 ? * TUE-SAT *)"   # UTC - stop at 7pm Pacific
+# start_schedule = "cron(0 15 ? * MON-FRI *)"   # UTC - start at 7am Pacific
+# scheduler_enabled = false                       # Disable automatic scheduling
+
+# ------------------------------------------------------------------------------
+# CI/CD Configuration (optional)
+# Requires bootstrap_state_config for OIDC provider.
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# github_repo = "myorg/myapp"  # GitHub org/repo for OIDC deployment
+
+# ------------------------------------------------------------------------------
+# WAF Configuration
+# ------------------------------------------------------------------------------
+
+waf_preset             = "standard" # "off", "standard", or "strict"
+waf_geo_block_countries = []        # e.g., ["RU", "CN", "KP"]
+waf_ip_allowlist        = []        # CIDRs that bypass WAF (e.g., office IPs)
+
+# Advanced: override specific preset settings
+# waf_overrides = { common_rules_excluded = ["SizeRestrictions_BODY"], rule_action_override = "count" }

@@ -1,0 +1,14 @@
+# Bootstrap configuration for {{env_type}} account
+#
+# Customize these values for your AWS account.
+
+region = "{{region}}"
+
+# Project prefixes - add new projects here when needed
+project_prefixes = {{project_prefixes_hcl}}
+
+# IAM user ARNs that can assume the deployer roles
+trusted_user_arns = {{trusted_user_arns_hcl}}
+
+# Set to false if you need to import existing roles first
+# create_iam_roles = false

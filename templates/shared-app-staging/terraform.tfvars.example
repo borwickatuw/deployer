@@ -1,0 +1,79 @@
+# {{app_name | title}} {{env_type | title}} Environment (Shared Infrastructure)
+# DO NOT commit this file to version control (contains sensitive data)
+
+# ------------------------------------------------------------------------------
+# App Identity
+# ------------------------------------------------------------------------------
+
+app_name    = "{{app_name}}"
+environment = "{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Database Configuration
+#
+# Two modes available:
+#
+# 1. Separate RDS instance (default): Set use_shared_rds = false
+#    - Each app gets its own RDS instance (~$15/mo for db.t3.micro)
+#    - Requires db_username and db_password
+#
+# 2. Shared RDS instance: Set use_shared_rds = true
+#    - App gets a DATABASE on the shared RDS instance
+#    - Credentials auto-generated and stored in Secrets Manager
+#    - Requires shared_rds_enabled = true in shared infrastructure
+# ------------------------------------------------------------------------------
+
+# Option 1: Separate RDS instance (default)
+use_shared_rds = false
+db_username    = "{{app_name}}_admin"
+db_password    = "CHANGE-ME-generate-a-secure-password"  # openssl rand -base64 24
+
+# Option 2: Shared RDS instance (uncomment and set use_shared_rds = true)
+# use_shared_rds = true
+# db_username    = ""  # Not used - credentials auto-generated
+# db_password    = ""  # Not used - credentials auto-generated
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "{{domain}}"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# ------------------------------------------------------------------------------
+# ALB Routing
+# ------------------------------------------------------------------------------
+
+# Priority must be unique across all apps in the shared environment
+# Convention: first app = 100, second app = 200, etc.
+listener_rule_priority = {{listener_priority}}
+
+# ------------------------------------------------------------------------------
+# CI/CD Configuration (optional)
+# Uncomment if you enabled the ci_role module in main.tf.
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# github_repo = "myorg/myapp"  # GitHub org/repo for OIDC deployment
+
+# ------------------------------------------------------------------------------
+# Service Configuration
+# ------------------------------------------------------------------------------
+
+services = {
+  web = {
+    cpu               = 256
+    memory            = 512
+    replicas          = 1
+    load_balanced     = true
+    port              = 8000
+    health_check_path = "/health/"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Auto-Scaling
+# ------------------------------------------------------------------------------
+
+# Auto-scaling disabled in staging
+scaling = {}

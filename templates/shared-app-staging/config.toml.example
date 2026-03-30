@@ -1,0 +1,123 @@
+# Environment Configuration - {{app_name | title}} {{env_type | title}} (Shared Infrastructure)
+#
+# This app uses shared infrastructure from shared-infra-{{env_type}}.
+# Values with ${tofu:...} placeholders are resolved at deploy time
+# by running `tofu output` in this directory.
+
+# ------------------------------------------------------------------------------
+# AWS Configuration
+# ------------------------------------------------------------------------------
+
+[aws]
+deploy_profile = "deployer-app"      # for deploy.py
+infra_profile = "deployer-infra"     # for tofu.sh
+cognito_profile = "deployer-cognito" # for cognito.py
+
+# ------------------------------------------------------------------------------
+# Environment Metadata
+# ------------------------------------------------------------------------------
+
+[environment]
+type = "{{env_type}}"
+domain_name = "${tofu:domain_name}"
+
+# ------------------------------------------------------------------------------
+# Infrastructure (mix of shared and per-app)
+# ------------------------------------------------------------------------------
+
+[infrastructure]
+# Shared infrastructure
+cluster_name = "${tofu:ecs_cluster_name}"
+security_group_id = "${tofu:ecs_security_group_id}"
+private_subnet_ids = "${tofu:private_subnet_ids}"
+alb_dns_name = "${tofu:alb_dns_name}"
+
+# Per-app resources
+execution_role_arn = "${tofu:ecs_execution_role_arn}"
+task_role_arn = "${tofu:ecs_task_role_arn}"
+target_group_arn = "${tofu:alb_target_group_arn}"
+rds_instance_id = "${tofu:rds_instance_id}"
+ecr_prefix = "${tofu:ecr_prefix}"
+
+# ------------------------------------------------------------------------------
+# Services
+# ------------------------------------------------------------------------------
+
+[services]
+config = "${tofu:service_config}"
+scaling = "${tofu:scaling_config}"
+health_check = "${tofu:health_check_config}"
+
+# ------------------------------------------------------------------------------
+# Database
+#
+# This app can use either:
+# 1. Separate RDS instance (use_shared_rds = false in terraform.tfvars)
+# 2. Shared RDS instance (use_shared_rds = true in terraform.tfvars)
+#
+# Both modes use a two-account security model:
+# - App credentials: DML only (SELECT, INSERT, UPDATE, DELETE) - for runtime
+# - Migrate credentials: DDL + DML (CREATE, ALTER, DROP) - for migrations only
+#
+# When using shared RDS, each app gets its own DATABASE on the shared instance.
+# PostgreSQL permissions ensure complete data isolation between apps.
+# ------------------------------------------------------------------------------
+
+[database]
+host = "${tofu:db_host}"
+port = "${tofu:db_port}"
+name = "${tofu:db_name}"
+credentials = "secretsmanager"
+# App credentials (DML only - for runtime services)
+app_username_secret = "${tofu:db_app_username_secret_arn}"
+app_password_secret = "${tofu:db_app_password_secret_arn}"
+# Migrate credentials (DDL + DML - for migrations only)
+migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
+migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
+# Lambda for creating PostgreSQL extensions (invoked before migrations)
+# Only needed if deploy.toml declares [database] extensions
+extensions_lambda = "${tofu:db_users_lambda_function_name}"
+
+# ------------------------------------------------------------------------------
+# Cache (from shared infrastructure, if enabled)
+# ------------------------------------------------------------------------------
+
+[cache]
+url = "${tofu:redis_url}"
+
+# ------------------------------------------------------------------------------
+# Secrets
+# ------------------------------------------------------------------------------
+
+[secrets]
+provider = "ssm"
+path_prefix = "/{{app_name}}/{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Cognito (from shared infrastructure)
+# ------------------------------------------------------------------------------
+
+[cognito]
+enabled = true
+user_pool_id = "${tofu:cognito_user_pool_id}"
+client_id = "${tofu:cognito_user_pool_client_id}"
+test_username = "deployer@test.local"
+test_password_ssm = "/deployer/{{env_name}}/cognito-test-password"
+
+# ------------------------------------------------------------------------------
+# Deployment (Staging Optimization)
+# ------------------------------------------------------------------------------
+
+[deployment]
+minimum_healthy_percent = 0
+maximum_percent = 100
+circuit_breaker_enabled = true
+circuit_breaker_rollback = true
+
+# ------------------------------------------------------------------------------
+# Scheduler (Staging Only)
+# ------------------------------------------------------------------------------
+
+[scheduler]
+enabled = true
+description = "Mon-Fri 7am-7pm Pacific"

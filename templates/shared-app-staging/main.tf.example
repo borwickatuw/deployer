@@ -1,0 +1,283 @@
+# {{app_name | title}} {{env_type | title}} Environment (Shared)
+#
+# This app uses shared infrastructure from shared-infra-{{env_type}}.
+# Only per-app resources are created here: RDS, target group, listener rule, ECR, IAM.
+#
+# See shared-infra-{{env_type}}/ for the shared infrastructure setup.
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  # Uncomment and configure for remote state
+  # backend "s3" {
+  #   bucket         = "deployer-terraform-state-123456789012"
+  #   key            = "{{env_name}}/terraform.tfstate"
+  #   region         = "us-west-2"
+  #   encrypt        = true
+  # }
+}
+
+# ------------------------------------------------------------------------------
+# Variables
+# ------------------------------------------------------------------------------
+
+variable "app_name" {
+  type    = string
+  default = "{{app_name}}"
+}
+
+variable "environment" {
+  type    = string
+  default = "{{env_type}}"
+}
+
+variable "domain_name" {
+  type        = string
+  description = "Domain name for this app (e.g., {{app_name}}.{{env_type}}.example.com)"
+}
+
+variable "db_username" {
+  type      = string
+  sensitive = true
+}
+
+variable "db_password" {
+  type        = string
+  sensitive   = true
+  description = "Database password (min 16 chars, no placeholder values)"
+
+  validation {
+    condition     = length(var.db_password) >= 16
+    error_message = "Database password must be at least 16 characters."
+  }
+
+  validation {
+    condition     = !can(regex("^(password|changeme|example|CHANGE)", lower(var.db_password)))
+    error_message = "Database password cannot be a placeholder value."
+  }
+}
+
+variable "listener_rule_priority" {
+  type        = number
+  description = "ALB listener rule priority (must be unique per app)"
+  default     = {{listener_priority}}
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "Route53 zone ID for creating DNS record (optional)"
+  default     = null
+}
+
+# Service configuration
+variable "services" {
+  type = map(object({
+    cpu               = number
+    memory            = number
+    replicas          = number
+    load_balanced     = bool
+    port              = optional(number)
+    health_check_path = optional(string, "/")
+  }))
+  description = "Service sizing configuration"
+}
+
+variable "scaling" {
+  type = map(object({
+    min_replicas = number
+    max_replicas = number
+    cpu_target   = optional(number, 70)
+  }))
+  default     = {}
+  description = "Auto-scaling policies per service"
+}
+
+variable "health_check" {
+  type = object({
+    interval            = optional(number, 30)
+    timeout             = optional(number, 10)
+    healthy_threshold   = optional(number, 2)
+    unhealthy_threshold = optional(number, 5)
+  })
+  default     = {}
+  description = "Global health check defaults"
+}
+
+# ------------------------------------------------------------------------------
+# App Module (uses shared infrastructure)
+# ------------------------------------------------------------------------------
+
+module "app" {
+  source = "../../modules/app-in-shared-env"
+
+  app_name    = var.app_name
+  environment = var.environment
+  domain_name = var.domain_name
+
+  # Reference shared infrastructure state
+  # Update this path if your shared infra is in a different location
+  shared_state_backend = "local"
+  shared_state_path    = "../shared-infra-{{env_type}}/terraform.tfstate"
+
+  # Database
+  db_username = var.db_username
+  db_password = var.db_password
+
+  # ALB routing
+  listener_rule_priority = var.listener_rule_priority
+  route53_zone_id        = var.route53_zone_id
+
+  # Service config (passed through for outputs)
+  services     = var.services
+  scaling      = var.scaling
+  health_check = var.health_check
+}
+
+# ------------------------------------------------------------------------------
+# CI/CD Role (optional)
+#
+# Uncomment to create a GitHub Actions CI deploy role for this project.
+# Requires: modules/ci in bootstrap (creates OIDC provider + S3 bucket).
+# See docs/CI-CD.md for setup instructions.
+# ------------------------------------------------------------------------------
+
+# data "terraform_remote_state" "bootstrap" {
+#   backend = "s3"
+#   config = {
+#     bucket = "deployer-terraform-state-123456789012"  # Update with your account ID
+#     key    = "bootstrap/terraform.tfstate"
+#     region = "us-west-2"
+#   }
+# }
+
+# variable "github_repo" {
+#   description = "GitHub org/repo for CI/CD deployment (e.g., 'myorg/myapp')"
+#   type        = string
+#   default     = ""
+# }
+
+# module "ci_role" {
+#   source = "../modules/ci-role"
+#   count  = var.github_repo != "" ? 1 : 0
+#
+#   project_prefix              = var.app_name
+#   github_repo                 = var.github_repo
+#   oidc_provider_arn           = data.terraform_remote_state.bootstrap.outputs.oidc_provider_arn
+#   resolved_configs_bucket_arn = data.terraform_remote_state.bootstrap.outputs.resolved_configs_bucket_arn
+#   region                      = "us-west-2"
+#   permissions_boundary        = data.terraform_remote_state.bootstrap.outputs.ecs_role_boundary_arn
+# }
+
+# output "ci_role_arn" {
+#   value       = var.github_repo != "" ? module.ci_role[0].role_arn : null
+#   description = "CI deploy IAM role ARN for GitHub Actions"
+# }
+
+# ------------------------------------------------------------------------------
+# Outputs for deploy script
+# ------------------------------------------------------------------------------
+
+# Infrastructure (from shared)
+output "vpc_id" {
+  value = module.app.vpc_id
+}
+
+output "private_subnet_ids" {
+  value = module.app.private_subnet_ids
+}
+
+output "ecs_cluster_name" {
+  value = module.app.ecs_cluster_name
+}
+
+output "ecs_security_group_id" {
+  value = module.app.ecs_security_group_id
+}
+
+output "alb_dns_name" {
+  value = module.app.alb_dns_name
+}
+
+output "https_enabled" {
+  value = module.app.https_enabled
+}
+
+# Per-app resources
+output "alb_target_group_arn" {
+  value = module.app.alb_target_group_arn
+}
+
+output "ecs_execution_role_arn" {
+  value = module.app.ecs_execution_role_arn
+}
+
+output "ecs_task_role_arn" {
+  value = module.app.ecs_task_role_arn
+}
+
+output "domain_name" {
+  value = module.app.domain_name
+}
+
+# Database (detailed format)
+output "db_host" {
+  value = module.app.db_host
+}
+
+output "db_port" {
+  value = module.app.db_port
+}
+
+output "db_name" {
+  value = module.app.db_name
+}
+
+output "db_username_secret_arn" {
+  value = module.app.db_username_secret_arn
+}
+
+output "db_password_secret_arn" {
+  value = module.app.db_password_secret_arn
+}
+
+# Legacy database_url (backwards compatibility)
+output "database_url" {
+  value     = module.app.database_url
+  sensitive = true
+}
+
+output "rds_instance_id" {
+  value = module.app.rds_instance_id
+}
+
+# ECR
+output "ecr_prefix" {
+  value = module.app.ecr_prefix
+}
+
+# Redis (from shared, if enabled)
+output "redis_url" {
+  value = module.app.redis_url
+}
+
+# Cognito (from shared, if enabled)
+output "cognito_user_pool_id" {
+  value = module.app.cognito_user_pool_id
+}
+
+output "cognito_user_pool_client_id" {
+  value = module.app.cognito_user_pool_client_id
+}
+
+# Service config (for deploy.py)
+output "service_config" {
+  value = module.app.service_config
+}
+
+output "scaling_config" {
+  value = module.app.scaling_config
+}
+
+output "health_check_config" {
+  value = module.app.health_check_config
+}

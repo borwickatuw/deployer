@@ -1,0 +1,38 @@
+
+# Shared Cognito User Pool for {{env_type | title}} Environments
+#
+# Creates a single user pool shared by all {{env_type}} apps.
+# Users created in this pool can access all {{env_type}} environments.
+module "cognito_shared" {
+  source = "../modules/cognito-shared"
+
+  name_prefix = "{{env_type}}-shared"
+  app_domains = var.cognito_app_domains
+}
+
+variable "cognito_app_domains" {
+  description = "Map of app name to domain for shared Cognito user pool"
+  type        = map(string)
+}
+
+# Shared Cognito outputs (for environments to consume)
+output "cognito_user_pool_id" {
+  value       = module.cognito_shared.user_pool_id
+  description = "Shared Cognito user pool ID"
+}
+
+output "cognito_user_pool_arn" {
+  value       = module.cognito_shared.user_pool_arn
+  description = "Shared Cognito user pool ARN"
+}
+
+output "cognito_domain" {
+  value       = module.cognito_shared.domain
+  description = "Shared Cognito domain prefix"
+}
+
+output "cognito_app_clients" {
+  value       = module.cognito_shared.app_clients
+  description = "Map of app name to client configuration (client_id, client_secret)"
+  sensitive   = true
+}

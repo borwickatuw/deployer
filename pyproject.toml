@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deployer"
+version = "0.1.0"
+description = "OpenTofu infrastructure and deployment tooling for AWS ECS applications"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "University of Washington" }]
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.34",
+    "click>=8.1",
+    "dacite>=1.9.2",
+    "pyyaml>=6.0",
+    "tomli_w>=1.0",
+]
+
+[project.scripts]
+ci-deploy = "deployer.cli.ci_deploy:main"
+
+[dependency-groups]
+dev = [
+    # Formatting (local only)
+    "black>=24.0",
+    "isort>=5.13",
+    "ruff",
+    # Security scanning (local only)
+    "bandit>=1.7",
+    "pip-audit>=2.6",
+    "checkov>=3.0",
+    # Code analysis
+    "vulture",
+    "radon",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+    "pytest-cov>=4.1",
+    "moto[ecs,ecr,rds,cloudwatch]>=5.0",
+]
+
+[tool.uv]
+# Don't auto-include dev dependencies in uv run
+default-groups = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["src/deployer"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]
+skips = ["B101"]
+
+[tool.pysmelly]
+# CLI cmd_* functions are dispatched by Click — public naming is conventional
+# AWS_REGION module-level constant is intentional
+# Config dict keys ("infrastructure", "services") are inherent to the data format
+skip = ["internal-only", "shared-mutable-module-state", "scattered-constants"]
+# Test setup boilerplate dominates duplicate-blocks findings
+exclude = ["tests/"]

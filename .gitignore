@@ -1,0 +1,52 @@
+# OpenTofu / Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+**/tfplan
+plans/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+*.egg-info/
+.coverage
+
+# Lambda build artifacts
+**/handler.zip
+**/lambda.zip
+
+# Lambda pip dependencies (installed at build time)
+modules/db-users/lambda/pg8000/
+modules/db-users/lambda/scramp/
+modules/db-users/lambda/asn1crypto/
+modules/db-users/lambda/dateutil/
+modules/db-users/lambda/*.dist-info/
+modules/db-users/lambda/six.py
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific local files (notes, results, custom docs)
+local/

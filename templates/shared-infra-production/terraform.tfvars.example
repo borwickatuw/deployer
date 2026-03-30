@@ -1,0 +1,58 @@
+# Shared Infrastructure - {{env_type | title}}
+# DO NOT commit this file to version control (may contain sensitive data)
+
+# ------------------------------------------------------------------------------
+# Naming
+# ------------------------------------------------------------------------------
+
+name_prefix = "shared-infra-{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "example.com"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# Wildcard certificate for all apps
+certificate_san = ["*.example.com"]
+
+# ------------------------------------------------------------------------------
+# Features
+# ------------------------------------------------------------------------------
+
+cognito_auth_enabled = false  # Cognito disabled for production
+cache_enabled        = false  # Set to true to enable shared Redis
+
+# ------------------------------------------------------------------------------
+# Shared RDS Configuration (Optional)
+#
+# Enable this to create a single RDS instance shared by multiple apps.
+# See shared-infra-staging for detailed documentation.
+#
+# IMPORTANT: For production, enable these protective settings:
+# - deletion_protection = true
+# - skip_final_snapshot = false
+# - multi_az = true (for high availability)
+# - backup_retention_period = 35 (or as required by policy)
+# ------------------------------------------------------------------------------
+
+shared_rds_enabled         = false  # Set to true to enable shared RDS
+# shared_rds_instance_class  = "db.t3.small"
+# shared_rds_allocated_storage = 50
+# shared_rds_master_username = "shared_admin"
+# shared_rds_master_password = "CHANGE-ME-generate-secure-password"  # openssl rand -base64 24
+
+# Production protective settings
+# shared_rds_backup_retention_period = 35
+# shared_rds_skip_final_snapshot     = false
+# shared_rds_deletion_protection     = true
+# shared_rds_multi_az                = true
+
+# ------------------------------------------------------------------------------
+# WAF Configuration
+# ------------------------------------------------------------------------------
+
+waf_preset              = "standard" # "off", "standard", or "strict"
+waf_geo_block_countries = []         # e.g., ["RU", "CN", "KP"]
+waf_ip_allowlist        = []         # CIDRs that bypass WAF (e.g., office IPs)

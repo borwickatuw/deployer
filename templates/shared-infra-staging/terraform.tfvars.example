@@ -1,0 +1,67 @@
+# Shared Infrastructure - {{env_type | title}}
+# DO NOT commit this file to version control (may contain sensitive data)
+
+# ------------------------------------------------------------------------------
+# Naming
+# ------------------------------------------------------------------------------
+
+name_prefix = "shared-infra-{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Domain Configuration
+# ------------------------------------------------------------------------------
+
+domain_name     = "{{domain}}"
+route53_zone_id = "Z1234567890ABC"  # Your Route53 zone ID
+
+# Wildcard certificate for all apps
+certificate_san = ["*.{{domain}}"]
+
+# ------------------------------------------------------------------------------
+# Features
+# ------------------------------------------------------------------------------
+
+cognito_auth_enabled = true   # Enable Cognito for staging authentication
+cache_enabled        = false  # Set to true to enable shared Redis
+
+# ------------------------------------------------------------------------------
+# Shared RDS Configuration (Optional)
+#
+# Enable this to create a single RDS instance shared by multiple apps.
+# Each app gets its own DATABASE on this instance with isolated credentials.
+#
+# Benefits:
+# - Cost savings: One db.t3.small (~$25/mo) vs N db.t3.micro (~$15/mo each)
+# - Simpler management: One instance to monitor, backup, upgrade
+# - Complete isolation: PostgreSQL permissions ensure apps can't see each other
+#
+# When to use:
+# - Multiple small apps with low database usage
+# - Apps owned by the same team
+# - Staging environments where cost optimization matters
+#
+# When NOT to use:
+# - Apps requiring dedicated IOPS or specific instance sizing
+# - Different compliance or backup requirements per app
+# - Apps from different teams needing separate billing
+# ------------------------------------------------------------------------------
+
+shared_rds_enabled         = false  # Set to true to enable shared RDS
+# shared_rds_instance_class  = "db.t3.small"
+# shared_rds_allocated_storage = 20
+# shared_rds_master_username = "shared_admin"
+# shared_rds_master_password = "CHANGE-ME-generate-secure-password"  # openssl rand -base64 24
+
+# Production settings (uncomment for production environments)
+# shared_rds_backup_retention_period = 35
+# shared_rds_skip_final_snapshot     = false
+# shared_rds_deletion_protection     = true
+# shared_rds_multi_az                = true
+
+# ------------------------------------------------------------------------------
+# WAF Configuration
+# ------------------------------------------------------------------------------
+
+waf_preset              = "standard" # "off", "standard", or "strict"
+waf_geo_block_countries = []         # e.g., ["RU", "CN", "KP"]
+waf_ip_allowlist        = []         # CIDRs that bypass WAF (e.g., office IPs)

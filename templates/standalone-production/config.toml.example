@@ -1,0 +1,177 @@
+# Environment Configuration - {{app_name | title}} {{env_type | title}}
+#
+# This file belongs in each environment directory (e.g., {{env_name}}/)
+# and provides the deployment configuration that bridges OpenTofu outputs to the
+# deploy script.
+#
+# Values with ${tofu:...} placeholders are resolved at deploy time by running
+# `tofu output` in the environment directory.
+#
+# IMPORTANT: When updating this example, also update:
+#   - docs/CONFIG-REFERENCE.md (Environment config.toml Reference section)
+#   - Existing environment config.toml files if adding new fields
+
+# ------------------------------------------------------------------------------
+# AWS Configuration
+# ------------------------------------------------------------------------------
+#
+# AWS CLI profiles for different operations.
+# Each operation type has its own profile to support least-privilege access.
+#
+# For multi-account setups (e.g., staging in one account, production in another),
+# configure different profiles per environment.
+
+[aws]
+deploy_profile = "deployer-app-production"      # for deploy.py
+infra_profile = "deployer-infra-production"     # for tofu.sh
+cognito_profile = "deployer-cognito-production" # for cognito.py
+
+# ------------------------------------------------------------------------------
+# Environment Metadata
+# ------------------------------------------------------------------------------
+
+[environment]
+# Environment type: "staging" or "production"
+# Used to derive environment-specific settings in deploy.toml
+type = "{{env_type}}"
+
+# Domain name for this environment (e.g., {{app_name}}.example.com)
+# Used for constructing URLs in scripts
+domain_name = "${tofu:domain_name}"
+
+# ------------------------------------------------------------------------------
+# Infrastructure - Core ECS Configuration
+# ------------------------------------------------------------------------------
+
+[infrastructure]
+# ECS cluster name
+cluster_name = "${tofu:ecs_cluster_name}"
+
+# Security group ID for ECS tasks
+security_group_id = "${tofu:ecs_security_group_id}"
+
+# Private subnet IDs where ECS tasks run (list)
+private_subnet_ids = "${tofu:private_subnet_ids}"
+
+# IAM roles for ECS tasks
+execution_role_arn = "${tofu:ecs_execution_role_arn}"
+task_role_arn = "${tofu:ecs_task_role_arn}"
+
+# Load balancer target group
+target_group_arn = "${tofu:alb_target_group_arn}"
+
+# Service target groups (map of service name -> target group ARN)
+# Used by deploy.py to register services with the correct target group
+service_target_groups = "${tofu:service_target_groups}"
+
+# Service discovery (for internal service-to-service communication)
+# Only present if service_discovery_enabled = true in terraform.tfvars
+service_discovery_registries = "${tofu:service_discovery_registries}"
+service_discovery_namespace = "${tofu:service_discovery_namespace_name}"
+
+# ALB DNS name (fallback URL when domain_name not available)
+alb_dns_name = "${tofu:alb_dns_name}"
+
+# rds_instance_id omitted - production RDS should not be stopped
+
+# ECR repository prefix (required for deployments)
+# Repositories are named {ecr_prefix}-{image_name}
+ecr_prefix = "${tofu:ecr_prefix}"
+
+# ------------------------------------------------------------------------------
+# Services - Sizing and Scaling Configuration
+# ------------------------------------------------------------------------------
+
+[services]
+# Service configuration (cpu, memory, replicas, load_balanced, port, health_check_path)
+# This is a JSON map from terraform.tfvars
+config = "${tofu:service_config}"
+
+# Auto-scaling configuration (min_replicas, max_replicas, cpu_target)
+# This is a JSON map from terraform.tfvars
+scaling = "${tofu:scaling_config}"
+
+# Health check defaults (interval, timeout, thresholds)
+# This is a JSON map from terraform.tfvars
+health_check = "${tofu:health_check_config}"
+
+# ------------------------------------------------------------------------------
+# Database
+#
+# Uses a two-account model for security:
+# - App credentials: DML only (SELECT, INSERT, UPDATE, DELETE) - for runtime
+# - Migrate credentials: DDL + DML (CREATE, ALTER, DROP) - for migrations only
+#
+# This reduces blast radius if the application is compromised - attackers
+# cannot drop tables or alter schema.
+#
+# Credentials are stored in AWS Secrets Manager and injected at runtime.
+# ------------------------------------------------------------------------------
+
+[database]
+host = "${tofu:db_host}"
+port = "${tofu:db_port}"
+name = "${tofu:db_name}"
+credentials = "secretsmanager"
+# App credentials (DML only - for runtime services)
+app_username_secret = "${tofu:db_app_username_secret_arn}"
+app_password_secret = "${tofu:db_app_password_secret_arn}"
+# Migrate credentials (DDL + DML - for migrations only)
+migrate_username_secret = "${tofu:db_migrate_username_secret_arn}"
+migrate_password_secret = "${tofu:db_migrate_password_secret_arn}"
+# Lambda for creating PostgreSQL extensions (invoked before migrations)
+# Only needed if deploy.toml declares [database] extensions
+extensions_lambda = "${tofu:db_users_lambda_function_name}"
+
+# ------------------------------------------------------------------------------
+# Cache (Redis/ElastiCache)
+# ------------------------------------------------------------------------------
+
+[cache]
+url = "${tofu:redis_url}"
+
+# ------------------------------------------------------------------------------
+# Storage (Optional)
+# ------------------------------------------------------------------------------
+
+# Uncomment if your application uses S3 for media storage
+# (requires s3_buckets in terraform.tfvars)
+# [storage]
+# media_bucket = "${tofu:s3_media_bucket}"
+
+# ------------------------------------------------------------------------------
+# Secrets (SSM Parameter Store)
+# ------------------------------------------------------------------------------
+
+[secrets]
+provider = "ssm"
+path_prefix = "/{{app_name}}/{{env_type}}"
+
+# ------------------------------------------------------------------------------
+# Cognito Authentication (Disabled for Production)
+# ------------------------------------------------------------------------------
+
+[cognito]
+enabled = false
+
+# ------------------------------------------------------------------------------
+# Deployment Configuration (Production)
+# ------------------------------------------------------------------------------
+
+# Production deployment settings maintain availability during deployments.
+# These are the defaults, so this section can be omitted.
+
+[deployment]
+# Minimum percentage of healthy tasks during deployment
+# Use 100 to maintain availability (no downtime)
+minimum_healthy_percent = 100
+
+# Maximum percentage of tasks during deployment
+# Use 200 to allow rolling deployments with extra capacity
+maximum_percent = 200
+
+# Enable deployment circuit breaker for faster failure detection
+circuit_breaker_enabled = true
+
+# Automatically rollback on deployment failure
+circuit_breaker_rollback = true
