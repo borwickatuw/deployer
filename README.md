@@ -119,7 +119,16 @@ A single `tofu apply` creates all of this:
 
 ```
 deployer/
-├── modules/                           # Reusable infrastructure modules
+├── bin/
+│   ├── init.py                        # Bootstrap, new apps, and environments
+│   ├── deploy.py                      # Application deployment
+│   ├── tofu.sh                        # OpenTofu wrapper (auto-selects AWS profile)
+│   ├── environment.py                 # Start/stop environments
+│   ├── cognito.py                     # Cognito user management
+│   ├── ssm-secrets.py                 # SSM Parameter Store secrets
+│   └── capacity-report.py             # ECS right-sizing recommendations
+├── modules/                           # Reusable OpenTofu modules
+│   ├── bootstrap/                     # IAM roles, S3 state bucket, permissions boundary
 │   ├── vpc/                           # VPC, subnets, NAT gateway
 │   ├── ecs-cluster/                   # ECS cluster and security groups
 │   ├── ecs-service/                   # Individual ECS service definition
@@ -130,17 +139,7 @@ deployer/
 │   ├── acm/                           # SSL/TLS certificates
 │   ├── cognito/                       # User authentication for staging
 │   ├── waf/                           # Web Application Firewall
-│   ├── compute-optimizer/             # AWS Compute Optimizer integration
 │   └── staging-scheduler/             # Automatic start/stop scheduling
-├── bin/
-│   ├── deploy.py                      # Application deployment
-│   ├── tofu.sh                        # OpenTofu wrapper (auto-selects AWS profile)
-│   ├── init.py                        # Initialize new apps and environments
-│   ├── environment.py                 # Start/stop environments
-│   ├── cognito.py                     # Cognito user management
-│   ├── ssm-secrets.py                 # SSM Parameter Store secrets
-│   └── capacity-report.py             # ECS right-sizing recommendations
-├── modules/                           # Reusable OpenTofu modules (including bootstrap)
 ├── templates/                         # Environment templates for init.py
 └── docs/                              # Documentation
 ```
@@ -149,7 +148,7 @@ deployer/
 
 ```
 ~/code/deployer-environments/          # Set via DEPLOYER_ENVIRONMENTS_DIR
-├── bootstrap/                         # IAM roles and shared resources
+├── bootstrap-staging/                 # IAM roles and shared resources (per account)
 ├── myapp-staging/                     # Per-environment config
 │   ├── main.tf
 │   ├── terraform.tfvars
@@ -210,6 +209,7 @@ Dependencies are managed in `pyproject.toml` and installed automatically when yo
 
 | Module                | Purpose                                                        |
 | --------------------- | -------------------------------------------------------------- |
+| **bootstrap**         | IAM roles, S3 state bucket, ECS permissions boundary           |
 | **vpc**               | VPC with public/private subnets, NAT gateway, route tables     |
 | **ecs-cluster**       | ECS cluster with Fargate capacity providers                    |
 | **ecs-service**       | ECS service with task definition, IAM roles, optional ALB      |
@@ -219,6 +219,7 @@ Dependencies are managed in `pyproject.toml` and installed automatically when yo
 | **s3**                | S3 buckets with configurable versioning                        |
 | **acm**               | SSL/TLS certificates via ACM with Route 53 validation          |
 | **cognito**           | Cognito User Pool for staging authentication                   |
+| **cognito-shared**    | Shared Cognito User Pool across multiple environments          |
 | **waf**               | Web Application Firewall with managed rules                    |
-| **compute-optimizer** | AWS Compute Optimizer for right-sizing                         |
 | **staging-scheduler** | Lambda/EventBridge for automatic start/stop                    |
+| **ci** / **ci-role**  | GitHub OIDC provider and per-project CI IAM roles              |
