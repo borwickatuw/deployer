@@ -1,6 +1,8 @@
 """Verify tool versions and AWS profile configuration."""
 
+import os
 import re
+import subprocess
 import sys
 
 from ..utils.colors import Colors
@@ -64,9 +66,47 @@ def _check_tools() -> bool:
     return all_ok
 
 
+def _check_deployer_config() -> bool:
+    """Check .env configuration and bootstrap directory. Returns True if all pass."""
+    from ..utils.environment import get_environments_dir
+    from .bootstrap import bootstrap_dir_exists
+
+    print("\nChecking deployer configuration...")
+    all_ok = True
+
+    # Check DEPLOYER_ENVIRONMENTS_DIR
+    env_dir_value = os.environ.get("DEPLOYER_ENVIRONMENTS_DIR")
+    if not env_dir_value:
+        print(
+            f"  .env: {Colors.RED}DEPLOYER_ENVIRONMENTS_DIR not set{Colors.NC}\n"
+            f"        Run: cp .env.example .env"
+        )
+        return False
+
+    try:
+        env_dir = get_environments_dir()
+    except RuntimeError:
+        print(f"  .env: {Colors.RED}DEPLOYER_ENVIRONMENTS_DIR not set{Colors.NC}")
+        return False
+
+    print(f"  .env: {Colors.GREEN}DEPLOYER_ENVIRONMENTS_DIR = {env_dir}{Colors.NC}")
+
+    # Check bootstrap directory
+    bootstrap_name = bootstrap_dir_exists()
+    if bootstrap_name:
+        print(f"  bootstrap: {Colors.GREEN}{bootstrap_name}{Colors.NC}")
+    else:
+        print(
+            f"  bootstrap: {Colors.RED}no bootstrap-* directory found{Colors.NC}\n"
+            f"             Run: uv run python bin/init.py bootstrap"
+        )
+        all_ok = False
+
+    return all_ok
+
+
 def _check_aws_profiles() -> bool:
     """Check AWS profile configuration. Returns True if all pass."""
-    # Import here to avoid import errors when boto3 isn't available
     from ..utils.aws_profile import validate_aws_profile
 
     print("\nChecking AWS profiles...")
@@ -85,6 +125,57 @@ def _check_aws_profiles() -> bool:
     return all_ok
 
 
+def _check_bootstrap_plan() -> bool | None:
+    """Run tofu plan on the bootstrap directory to check for drift.
+
+    Returns True if no changes, False if there are changes or errors,
+    None if the check was skipped (no bootstrap dir or not initialized).
+    """
+    from ..utils.environment import get_environments_dir
+    from .bootstrap import bootstrap_dir_exists
+
+    bootstrap_name = bootstrap_dir_exists()
+    if not bootstrap_name:
+        return None
+
+    env_dir = get_environments_dir()
+    bootstrap_path = env_dir / bootstrap_name
+
+    # Check if tofu has been initialized
+    if not (bootstrap_path / ".terraform").exists():
+        print(f"\n  bootstrap plan: {Colors.YELLOW}not initialized (tofu init not run){Colors.NC}")
+        return None
+
+    print(f"\nChecking bootstrap for drift ({bootstrap_name})...")
+    result = subprocess.run(
+        ["tofu", "plan", "-detailed-exitcode", "-no-color"],
+        cwd=str(bootstrap_path),
+        capture_output=True,
+        text=True,
+    )
+
+    # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes present
+    if result.returncode == 0:
+        print(f"  tofu plan: {Colors.GREEN}no changes{Colors.NC}")
+        return True
+    elif result.returncode == 2:
+        print(f"  tofu plan: {Colors.YELLOW}changes detected{Colors.NC}")
+        # Show a summary of what changed
+        for line in result.stdout.splitlines():
+            if line.strip().startswith(("~", "+", "-", "#")):
+                print(f"    {line.rstrip()}")
+        return False
+    else:
+        # Error running plan (e.g., missing admin credentials) — skip, don't fail
+        stderr_first_line = result.stderr.strip().splitlines()[0] if result.stderr.strip() else "unknown error"
+        print(
+            f"  tofu plan: {Colors.YELLOW}skipped{Colors.NC} (could not run plan)\n"
+            f"             {stderr_first_line}\n"
+            f"             Set AWS_PROFILE to your admin profile and re-run to check for drift."
+        )
+        return None
+
+
 def cmd_verify() -> int:
     """Check tool versions and AWS profiles. Returns 0 if all pass, 1 otherwise."""
     tools_ok = _check_tools()
@@ -95,15 +186,27 @@ def cmd_verify() -> int:
             "Install missing tools before continuing.",
             file=sys.stderr,
         )
-        print("Skipping AWS profile checks.", file=sys.stderr)
         return 1
 
+    config_ok = _check_deployer_config()
     aws_ok = _check_aws_profiles()
 
-    if not aws_ok:
+    if not config_ok or not aws_ok:
+        if not aws_ok:
+            print(
+                f"\n{Colors.RED}AWS profile checks failed.{Colors.NC} "
+                "Run 'uv run python bin/init.py setup-profiles' to configure profiles.",
+                file=sys.stderr,
+            )
+        return 1
+
+    # All core checks passed — try bootstrap plan check
+    bootstrap_result = _check_bootstrap_plan()
+
+    if bootstrap_result is False:
         print(
-            f"\n{Colors.RED}AWS profile checks failed.{Colors.NC} "
-            "Run 'uv run python bin/init.py setup-profiles' to configure profiles.",
+            f"\n{Colors.YELLOW}Bootstrap has drift.{Colors.NC} "
+            "Run 'tofu plan' in your bootstrap directory to review.",
             file=sys.stderr,
         )
         return 1

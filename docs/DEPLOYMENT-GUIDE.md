@@ -17,39 +17,19 @@ ______________________________________________________________________
 
 ## Prerequisites
 
-### Required Tools
+Complete [GETTING-STARTED.md](GETTING-STARTED.md) first (one-time AWS account setup). Then verify everything is working:
 
 ```bash
-# OpenTofu (infrastructure as code)
-brew install opentofu
-
-# AWS CLI v2
-brew install awscli
-
-# Docker
-brew install docker
-
-# uv (Python package manager)
-brew install uv
+uv run python bin/init.py verify
 ```
-
-### AWS Configuration
-
-Configure AWS credentials using the least-privilege IAM roles. See [GETTING-STARTED.md](GETTING-STARTED.md) for initial setup.
-
-```bash
-# Verify role assumption works
-AWS_PROFILE=deployer-infra aws sts get-caller-identity
-AWS_PROFILE=deployer-app aws sts get-caller-identity
-```
-
-The deployer scripts automatically select the correct profile via `.env`. Copy `.env.example` to `.env` to configure.
 
 ______________________________________________________________________
 
 ## Initial Setup
 
 These steps are done once per environment.
+
+**First time deploying this application?** If the application name hasn't been registered in the deployer yet, you'll need to add it as a project prefix in bootstrap first. See [Adding New Applications](GETTING-STARTED.md#adding-new-applications) in the Getting Started guide.
 
 ### 1. Create deploy.toml (in your app repo)
 
