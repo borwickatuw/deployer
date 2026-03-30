@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide covers one-time AWS (Amazon Web Services) account setup for the deployer. After completing this guide, you'll have a secure IAM configuration with least-privilege roles.
+This guide covers one-time AWS (Amazon Web Services) account setup for the deployer. After completing this guide, you'll have a secure IAM (Identity and Access Management) configuration with least-privilege roles.
 
 For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
