@@ -133,10 +133,10 @@ uv run python bin/init.py environment \
   --domain staging.myapp.com
 ```
 
-This creates `environments/myapp-staging/` with:
+This creates `$DEPLOYER_ENVIRONMENTS_DIR/myapp-staging/` with:
 
 ```
-environments/myapp-staging/
+$DEPLOYER_ENVIRONMENTS_DIR/myapp-staging/
 ├── main.tf           # Infrastructure module reference
 ├── config.toml       # Deployment configuration with ${tofu:...} placeholders
 ├── terraform.tfvars  # Service sizing (cpu, memory, replicas)
@@ -157,13 +157,13 @@ The deploy scripts parse the environment name by splitting on the *last* hyphen,
 **Option B: Manual setup**
 
 ```bash
-mkdir -p environments/myapp-staging
-cd environments/myapp-staging
+mkdir -p $DEPLOYER_ENVIRONMENTS_DIR/myapp-staging
+cd $DEPLOYER_ENVIRONMENTS_DIR/myapp-staging
 ```
 
 ### 3. Configure terraform.tfvars
 
-Edit `environments/myapp-staging/terraform.tfvars`:
+Edit `$DEPLOYER_ENVIRONMENTS_DIR/myapp-staging/terraform.tfvars`:
 
 ```hcl
 project_name  = "myapp"
@@ -270,7 +270,7 @@ ______________________________________________________________________
 
 ```bash
 # Get the ALB URL
-./bin/tofu.sh -chdir=environments/myapp-staging output -raw alb_dns_name
+./bin/tofu.sh output myapp-staging alb_dns_name
 
 # Check ECS service
 aws ecs describe-services \
