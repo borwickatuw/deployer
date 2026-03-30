@@ -76,7 +76,7 @@ and trusted IAM user ARNs, then generate the bootstrap directory (e.g., `bootstr
 Follow the instructions printed by `init.py bootstrap`:
 
 ```bash
-cd ~/code/deployer-environments/bootstrap-staging
+cd ~/deployer-environments/bootstrap-staging
 AWS_PROFILE=admin tofu init
 AWS_PROFILE=admin tofu apply
 ```
@@ -85,7 +85,7 @@ Then enable the S3 backend:
 
 ```bash
 uv run python bin/init.py bootstrap --migrate-state bootstrap-staging
-cd ~/code/deployer-environments/bootstrap-staging
+cd ~/deployer-environments/bootstrap-staging
 AWS_PROFILE=admin tofu init -migrate-state
 ```
 
@@ -216,7 +216,7 @@ When you need to add a new project (not just a new environment of an existing pr
 1. **Apply the changes**:
 
    ```bash
-   cd ~/code/deployer-environments/bootstrap-staging
+   cd ~/deployer-environments/bootstrap-staging
    AWS_PROFILE=admin tofu plan
    AWS_PROFILE=admin tofu apply
    ```

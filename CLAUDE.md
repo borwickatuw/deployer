@@ -6,7 +6,7 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 
 ## Related Projects
 
-- **deployer-environments** (`~/code/deployer-environments`) - Per-environment tofu configurations that use this repo's modules
+- **deployer-environments** (`~/deployer-environments`) - Per-environment tofu configurations that use this repo's modules
 
 ## Key Files
 
@@ -112,7 +112,7 @@ Example: `ecr_prefix` belongs in the environment's config.toml (infrastructure),
 Environment configs are stored separately, configured via `DEPLOYER_ENVIRONMENTS_DIR` in `.env`:
 
 ```
-~/code/deployer-environments/
+~/deployer-environments/
 ├── bootstrap/                # IAM roles and shared resources
 ├── myapp-staging/
 │   ├── main.tf

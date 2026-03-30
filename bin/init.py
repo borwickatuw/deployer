@@ -110,7 +110,7 @@ def cmd_bootstrap(dry_run: bool) -> int:
         print(
             "Error: DEPLOYER_ENVIRONMENTS_DIR is not set.\n"
             "Add it to your .env file, e.g.:\n"
-            "  DEPLOYER_ENVIRONMENTS_DIR=~/code/deployer-environments",
+            "  DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments",
             file=sys.stderr,
         )
         return 1

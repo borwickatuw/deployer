@@ -146,7 +146,7 @@ deployer/
 **Environment configurations** are stored separately (not in this repo):
 
 ```
-~/code/deployer-environments/          # Set via DEPLOYER_ENVIRONMENTS_DIR
+~/deployer-environments/          # Set via DEPLOYER_ENVIRONMENTS_DIR
 ├── bootstrap-staging/                 # IAM roles and shared resources (per account)
 ├── myapp-staging/                     # Per-environment config
 │   ├── main.tf

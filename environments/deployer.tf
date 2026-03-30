@@ -12,7 +12,7 @@
 #   uv run python bin/init.py environment --app-name myapp --env-type staging
 #
 # Setup (manual):
-#   cd ~/code/deployer-environments/<env>
+#   cd ~/deployer-environments/<env>
 #   ln -s $DEPLOYER_DIR/environments/deployer.tf deployer.tf
 # ==============================================================================
 

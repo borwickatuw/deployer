@@ -41,13 +41,13 @@ The deployer needs to know where your environment configurations are stored:
 1. Edit `.env` and set the path:
 
    ```bash
-   DEPLOYER_ENVIRONMENTS_DIR=~/code/deployer-environments
+   DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments
    ```
 
 1. Ensure the directory exists:
 
    ```bash
-   mkdir -p ~/code/deployer-environments
+   mkdir -p ~/deployer-environments
    ```
 
 ### OpenTofu Not Found

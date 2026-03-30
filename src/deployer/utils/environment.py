@@ -30,7 +30,7 @@ def get_environments_dir() -> Path:
         raise RuntimeError(
             "DEPLOYER_ENVIRONMENTS_DIR environment variable is not set.\n"
             "Set it in your .env file:\n"
-            "  DEPLOYER_ENVIRONMENTS_DIR=~/code/deployer-environments"
+            "  DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments"
         )
     return Path(env_dir).expanduser()
 

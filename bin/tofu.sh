@@ -156,7 +156,7 @@ resolve_env_dir() {
 if [[ -z "$DEPLOYER_ENVIRONMENTS_DIR" ]]; then
     echo "Error: DEPLOYER_ENVIRONMENTS_DIR environment variable is not set." >&2
     echo "Set it in your .env file:" >&2
-    echo "  DEPLOYER_ENVIRONMENTS_DIR=~/code/deployer-environments" >&2
+    echo "  DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments" >&2
     exit 1
 fi
 

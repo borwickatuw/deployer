@@ -49,7 +49,7 @@ deployer-environments/
 Create a new bootstrap instance:
 
 ```bash
-cd ~/code/deployer-environments
+cd ~/deployer-environments
 cp -r bootstrap-staging bootstrap-production
 ```
 
@@ -83,12 +83,12 @@ Apply the bootstrap in each account using admin credentials:
 
 ```bash
 # Staging account
-cd ~/code/deployer-environments/bootstrap-staging
+cd ~/deployer-environments/bootstrap-staging
 AWS_PROFILE=admin-staging tofu init
 AWS_PROFILE=admin-staging tofu apply
 
 # Production account
-cd ~/code/deployer-environments/bootstrap-production
+cd ~/deployer-environments/bootstrap-production
 AWS_PROFILE=admin-production tofu init
 AWS_PROFILE=admin-production tofu apply
 ```
