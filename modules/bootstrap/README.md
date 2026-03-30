@@ -13,6 +13,7 @@ IAM roles and S3 state bucket for the deployer infrastructure.
 | `iam-app-deploy.tf`    | `deployer-app-deploy` role for deploy.py             |
 | `iam-infra-admin.tf`   | `deployer-infra-admin` role for tofu.sh              |
 | `iam-cognito-admin.tf` | `deployer-cognito-admin` role for Cognito management |
+| `iam-user-policy.tf`   | Assume-role policy attached to trusted IAM users     |
 | `variables.tf`         | Input variables                                      |
 | `outputs.tf`           | Module outputs                                       |
 

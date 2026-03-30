@@ -17,16 +17,14 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 **Verify your setup:**
 
 ```bash
-python3 --version    # Should be 3.12 or higher
-uv --version
-tofu --version
-aws --version
-docker --version
+uv run python bin/init.py verify
 ```
+
+This checks all tool versions and (once configured) AWS profile access.
 
 **Additional requirements:**
 
-- AWS account with Administrator access (for initial setup only)
+- AWS account with Administrator access (for initial setup only — see Step 7)
 - AWS CLI configured (`aws configure`)
 
 ## Initial Account Setup
@@ -34,6 +32,8 @@ docker --version
 These steps require Administrator access and only need to be done once.
 
 ### 1. Create Route 53 Hosted Zone
+
+**Why:** Every environment needs a domain for HTTPS access and TLS certificate validation. Route 53 hosted zones must exist before any environment infrastructure can be created, because environments reference the zone ID to create DNS records and validate ACM certificates automatically. This can't be automated because most accounts already have a hosted zone, and DNS delegation is account-specific.
 
 If you don't already have a Route 53 hosted zone for your domain:
 
@@ -43,100 +43,23 @@ aws route53 create-hosted-zone \
   --caller-reference "initial-setup-$(date +%s)"
 ```
 
-Note the hosted zone ID from the output - you'll need it for environment configuration.
+Note the hosted zone ID from the output — you'll need it for environment configuration.
 
 ### 2. Create an IAM User for Deployer
 
-Create an IAM user that will assume the deployer roles:
+**Why:** The deployer uses a dedicated IAM user with minimal permissions. This user is **not an administrator** — its only power is assuming three scoped roles that the bootstrap step creates. This separation means day-to-day deployment operations never use admin credentials, and the deployer can only access resources matching your project prefixes.
+
+You need admin access *to create* this user, but the user itself is intentionally unprivileged.
 
 ```bash
 aws iam create-user --user-name deployer
+```
 
-# Create access keys
+```bash
 aws iam create-access-key --user-name deployer
 ```
 
-Save the access key ID and secret access key securely.
-
-### 3. Configure Bootstrap for Your Account
-
-The bootstrap terraform creates all IAM roles, policies, and shared resources (S3 state bucket, ECS permissions boundary).
-
-Create a bootstrap instance for your account using the init tool:
-
-```bash
-uv run python bin/init.py bootstrap
-```
-
-This will interactively prompt for your AWS account ID, region, project prefixes,
-and trusted IAM user ARNs, then generate the bootstrap directory (e.g., `bootstrap-staging/`).
-
-### 4. Apply Bootstrap Infrastructure
-
-Follow the instructions printed by `init.py bootstrap`:
-
-```bash
-cd ~/deployer-environments/bootstrap-staging
-AWS_PROFILE=admin tofu init
-AWS_PROFILE=admin tofu apply
-```
-
-Then enable the S3 backend:
-
-```bash
-uv run python bin/init.py bootstrap --migrate-state bootstrap-staging
-cd ~/deployer-environments/bootstrap-staging
-AWS_PROFILE=admin tofu init -migrate-state
-```
-
-This creates:
-
-- S3 bucket for terraform state
-- ECS role permissions boundary
-- `deployer-app-deploy` role (for deploy.py)
-- `deployer-infra-admin` role (for OpenTofu)
-- `deployer-cognito-admin` role (for Cognito management)
-
-**Note:** If you have existing IAM resources from a previous setup, run the import script first:
-
-```bash
-AWS_PROFILE=admin ./import-existing.sh
-```
-
-### 5. Allow the IAM User to Assume Roles
-
-Create a policy that lets the deployer user assume the roles:
-
-```bash
-# Get your account ID
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-cat > /tmp/assume-deployer-roles.json << EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "sts:AssumeRole",
-      "Resource": [
-        "arn:aws:iam::${ACCOUNT_ID}:role/deployer-app-deploy",
-        "arn:aws:iam::${ACCOUNT_ID}:role/deployer-infra-admin",
-        "arn:aws:iam::${ACCOUNT_ID}:role/deployer-cognito-admin"
-      ]
-    }
-  ]
-}
-EOF
-
-aws iam put-user-policy \
-  --user-name deployer \
-  --policy-name assume-deployer-roles \
-  --policy-document file:///tmp/assume-deployer-roles.json
-```
-
-### 6. Configure AWS CLI Profiles
-
-Add credentials to `~/.aws/credentials`:
+Save the access key ID and secret access key securely. Add them to `~/.aws/credentials`:
 
 ```ini
 [deployer]
@@ -144,30 +67,69 @@ aws_access_key_id = YOUR_ACCESS_KEY
 aws_secret_access_key = YOUR_SECRET_KEY
 ```
 
-Add profiles to `~/.aws/config` (replace `ACCOUNT_ID` with your actual account ID):
+### 3. Run Bootstrap
 
-```ini
-[profile deployer]
-region = us-west-2
-output = json
+**Why:** Bootstrap creates the foundational resources that all environments depend on:
 
-[profile deployer-app]
-role_arn = arn:aws:iam::ACCOUNT_ID:role/deployer-app-deploy
-source_profile = deployer
-region = us-west-2
+- **S3 bucket** for storing OpenTofu state (so infrastructure state isn't just on your laptop)
+- **Permissions boundary** that caps what any ECS task role can do, regardless of what permissions it's given
+- **Three IAM roles** scoped to specific operations:
+  - `deployer-app-deploy` — deploy containers (used by `deploy.py`)
+  - `deployer-infra-admin` — manage infrastructure (used by `tofu.sh`)
+  - `deployer-cognito-admin` — manage user pools (used by `cognito.py`)
+- **Assume-role policy** on the deployer IAM user, granting it permission to use these three roles
 
-[profile deployer-infra]
-role_arn = arn:aws:iam::ACCOUNT_ID:role/deployer-infra-admin
-source_profile = deployer
-region = us-west-2
+Generate the bootstrap configuration interactively:
 
-[profile deployer-cognito]
-role_arn = arn:aws:iam::ACCOUNT_ID:role/deployer-cognito-admin
-source_profile = deployer
-region = us-west-2
+```bash
+uv run python bin/init.py bootstrap
 ```
 
-### 7. Configure Deployer Environment
+This prompts for your AWS account ID, region, project prefixes, and the deployer user ARN. After generating the files, it offers to run `tofu init && tofu apply` for you.
+
+If you decline the interactive apply, run manually:
+
+```bash
+cd ~/deployer-environments/bootstrap-staging
+AWS_PROFILE=admin tofu init
+```
+
+```bash
+AWS_PROFILE=admin tofu apply
+```
+
+Then enable the S3 backend so state is stored remotely:
+
+```bash
+uv run python bin/init.py bootstrap --migrate-state bootstrap-staging
+```
+
+```bash
+cd ~/deployer-environments/bootstrap-staging
+AWS_PROFILE=admin tofu init -migrate-state
+```
+
+Answer "yes" to copy state to S3. Verify with `AWS_PROFILE=admin tofu plan` — it should show "No changes."
+
+**Note:** If you have existing IAM resources from a previous setup, run the import script first:
+
+```bash
+AWS_PROFILE=admin ./import-existing.sh
+```
+
+### 4. Configure AWS CLI Profiles
+
+**Why:** The deployer scripts automatically select the right AWS profile for each operation (deploy, infrastructure, Cognito) by reading `config.toml`. These profiles tell the AWS CLI to assume the correct role. Without them, you'd have to manually specify `--role-arn` on every command.
+
+Generate the profile entries automatically:
+
+```bash
+uv run python bin/init.py setup-profiles
+```
+
+This detects your account ID, generates the profile blocks, and offers to append them to `~/.aws/config`.
+
+### 5. Configure Deployer Environment
 
 Copy the environment template:
 
@@ -177,24 +139,19 @@ cp .env.example .env
 
 The `.env` file configures the environments directory path. AWS profiles are configured per-environment in each `config.toml` file.
 
-### 8. Test the Roles
+### 6. Verify Everything
 
-Verify each role works:
+Run the full verification to confirm tools and AWS access are working:
 
 ```bash
-# Test app deploy role
-AWS_PROFILE=deployer-app aws sts get-caller-identity
-
-# Test infra admin role
-AWS_PROFILE=deployer-infra aws sts get-caller-identity
-
-# Test cognito admin role
-AWS_PROFILE=deployer-cognito aws sts get-caller-identity
+uv run python bin/init.py verify
 ```
 
-Each should show the assumed role ARN.
+This checks all tool versions and tests that each AWS profile can successfully assume its role.
 
 ## Removing Administrator Access
+
+**Why:** Admin access was only needed for the one-time bootstrap setup. Going forward, all operations use the scoped deployer roles, which are restricted to your configured project prefixes. Removing admin access ensures that deployment operations can't accidentally modify IAM policies or access resources outside the deployer's scope.
 
 Once you've verified all roles work correctly:
 
@@ -202,7 +159,6 @@ Once you've verified all roles work correctly:
 1. **Document** that admin access is only needed for:
    - Modifying the deployer IAM policies themselves
    - Adding new projects (requires updating ARN patterns)
-   - Creating the initial IAM infrastructure
 
 ## Adding New Projects
 
@@ -218,6 +174,9 @@ When you need to add a new project (not just a new environment of an existing pr
    ```bash
    cd ~/deployer-environments/bootstrap-staging
    AWS_PROFILE=admin tofu plan
+   ```
+
+   ```bash
    AWS_PROFILE=admin tofu apply
    ```
 
@@ -226,7 +185,7 @@ When you need to add a new project (not just a new environment of an existing pr
    - IAM policies with the new project ARN patterns
    - ECS permissions boundary
 
-1. **Create the environment** - ECR repositories are created automatically when you run `tofu apply` (via `ecr_repository_names` in terraform.tfvars)
+1. **Create the environment** — ECR repositories are created automatically when you run `tofu apply` (via `ecr_repository_names` in terraform.tfvars)
 
 ## Multi-Account Setup
 
@@ -234,8 +193,7 @@ For staging and production in different AWS accounts, run `init.py bootstrap` on
 
 ```bash
 # Run once for each account (prompts for account-specific values)
-uv run python bin/init.py bootstrap   # creates bootstrap-staging/
-uv run python bin/init.py bootstrap   # creates bootstrap-production/
+uv run python bin/init.py bootstrap
 ```
 
 ```

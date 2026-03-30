@@ -28,10 +28,18 @@ Usage:
 
     # Update services in existing environment from deploy.toml
     python bin/init.py update-services myapp-staging --deploy-toml /path/to/deploy.toml --dry-run
+
+    # Verify tool versions and AWS profiles
+    python bin/init.py verify
+
+    # Generate AWS CLI profiles for deployer roles
+    python bin/init.py setup-profiles
+    python bin/init.py setup-profiles --dry-run
 """
 
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,7 +59,9 @@ from deployer.init.bootstrap import (
 )
 from deployer.init.deploy_toml import format_deploy_toml
 from deployer.init.environment import create_deployer_tf_symlink, get_next_listener_priority
+from deployer.init.setup_profiles import cmd_setup_profiles
 from deployer.init.template import extract_env_type
+from deployer.init.verify import cmd_verify
 from deployer.utils import ensure_environments_symlinks, get_environments_dir
 
 # =============================================================================
@@ -165,13 +175,52 @@ def cmd_bootstrap(dry_run: bool) -> int:
         import_script.chmod(import_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     print()
-    print("Next steps:")
-    print(f"  1. cd {env_path}")
-    print("  2. AWS_PROFILE=admin tofu init")
-    print("  3. AWS_PROFILE=admin tofu apply")
-    print()
-    print("  After successful apply, enable S3 backend:")
-    print(f"    uv run python bin/init.py bootstrap --migrate-state {env_name}")
+
+    # Offer to apply immediately
+    if not click.confirm("Run 'tofu init && tofu apply' now?", default=False):
+        print("Next steps:")
+        print(f"  1. cd {env_path}")
+        print("  2. AWS_PROFILE=admin tofu init")
+        print("  3. AWS_PROFILE=admin tofu apply")
+        print()
+        print("  After successful apply, enable S3 backend:")
+        print(f"    uv run python bin/init.py bootstrap --migrate-state {env_name}")
+        return 0
+
+    admin_profile = click.prompt("AWS admin profile name", default="admin", type=str).strip()
+
+    # tofu init
+    print(f"\nRunning: tofu init (in {env_path})")
+    result = subprocess.run(
+        ["tofu", "init"],
+        cwd=str(env_path),
+        env={**os.environ, "AWS_PROFILE": admin_profile},
+    )
+    if result.returncode != 0:
+        print("Error: 'tofu init' failed.", file=sys.stderr)
+        return 1
+
+    # tofu apply
+    print(f"\nRunning: tofu apply (in {env_path})")
+    result = subprocess.run(
+        ["tofu", "apply"],
+        cwd=str(env_path),
+        env={**os.environ, "AWS_PROFILE": admin_profile},
+    )
+    if result.returncode != 0:
+        print("Error: 'tofu apply' failed.", file=sys.stderr)
+        return 1
+
+    # Enable S3 backend
+    print("\nApply succeeded. Enabling S3 backend...")
+    migrate_result = cmd_bootstrap_migrate(env_name, dry_run=False)
+    if migrate_result != 0:
+        return migrate_result
+
+    print("Next step:")
+    print(f"  cd {env_path}")
+    print(f"  AWS_PROFILE={admin_profile} tofu init -migrate-state")
+    print('  (answer "yes" to copy state to S3)')
     return 0
 
 
@@ -537,6 +586,19 @@ def environment_cmd(app_name, template, list_templates, deploy_toml, domain, dry
 def update_services_cmd(env_name, deploy_toml, dry_run):
     """Update services block in an existing environment from deploy.toml."""
     sys.exit(cmd_update_services(env_name, deploy_toml, dry_run))
+
+
+@cli.command("verify")
+def verify_cmd():
+    """Check tool versions and AWS profile configuration."""
+    sys.exit(cmd_verify())
+
+
+@cli.command("setup-profiles")
+@click.option("--dry-run", "-n", is_flag=True, help="Show what would be added without writing")
+def setup_profiles_cmd(dry_run):
+    """Generate AWS CLI profiles for deployer roles."""
+    sys.exit(cmd_setup_profiles(dry_run))
 
 
 if __name__ == "__main__":
