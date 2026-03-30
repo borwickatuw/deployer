@@ -193,12 +193,12 @@ services = {
 
 ```bash
 # Use the tofu wrapper (auto-selects correct AWS profile)
-./bin/tofu.sh init myapp-staging
-./bin/tofu.sh plan myapp-staging
-./bin/tofu.sh apply myapp-staging
+bin/tofu.sh init myapp-staging
+bin/tofu.sh plan myapp-staging
+bin/tofu.sh apply myapp-staging
 
 # Or use rollout to run init, plan, and apply in sequence
-./bin/tofu.sh rollout myapp-staging
+bin/tofu.sh rollout myapp-staging
 ```
 
 This creates VPC, RDS, ECS cluster, ALB, ECR repositories, CloudWatch log groups, and supporting resources.
@@ -270,7 +270,7 @@ ______________________________________________________________________
 
 ```bash
 # Get the ALB URL
-./bin/tofu.sh output myapp-staging alb_dns_name
+bin/tofu.sh output myapp-staging alb_dns_name
 
 # Check ECS service
 aws ecs describe-services \
