@@ -1,6 +1,8 @@
 # Bootstrap Module
 
-IAM roles and S3 state bucket for the deployer infrastructure.
+IAM roles and S3 state bucket for the deployer infrastructure. Source code is in `modules/bootstrap/`.
+
+For setup instructions, see [GETTING-STARTED.md](GETTING-STARTED.md).
 
 ## File Organization
 
