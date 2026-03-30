@@ -193,6 +193,8 @@ To temporarily restore admin access, add admin credentials back to `~/.aws/crede
 
 ## Adding New Applications
 
+An **application** in the deployer is a codebase that gets its own `deploy.toml`, its own Docker images, and its own set of ECS services. Typically this maps to one Git repository. If you have several repos that share infrastructure (like a database or load balancer), each repo is still its own application — they share the underlying infrastructure but are deployed independently.
+
 The deployer uses **project prefixes** in its IAM policies to control which AWS resources each role can access. When you deploy a new application for the first time, its name must be registered as a project prefix so the deployer roles have permission to manage its resources (ECS clusters, ECR repositories, S3 buckets, etc.).
 
 You do **not** need to do this when creating a new staging or production copy of an application that's already registered — only when deploying an application with a new name.
