@@ -115,31 +115,30 @@ A single `tofu apply` creates all of this:
 - **[Rails](docs/frameworks/rails.md)** - Ruby web framework
 - **[Generic](docs/frameworks/generic.md)** - Any containerized application
 
+## Tools
+
+| Script | Purpose |
+|--------|---------|
+| `bin/init.py` | Bootstrap AWS accounts, generate environments and deploy.toml |
+| `bin/deploy.py` | Build images, run migrations, deploy to ECS |
+| `bin/tofu.sh` | OpenTofu wrapper (auto-selects AWS profile from config.toml) |
+| `bin/ops.py` | Production monitoring: status, health, logs, audit |
+| `bin/emergency.py` | Production modifications: rollback, scale, snapshot, restore |
+| `bin/environment.py` | Start/stop staging environments |
+| `bin/cognito.py` | Cognito user management |
+| `bin/ecs-run.py` | Run commands in ECS containers (migrations, shell, etc.) |
+| `bin/ssm-secrets.py` | SSM Parameter Store secrets management |
+| `bin/link-environments.py` | Link environments to deploy.toml paths (one-time setup) |
+| `bin/capacity-report.py` | ECS right-sizing recommendations |
+| `bin/resolve-config.py` | Resolve config.toml into JSON for CI/CD |
+
 ## Repository Structure
 
 ```
 deployer/
-├── bin/
-│   ├── init.py                        # Bootstrap, new apps, and environments
-│   ├── deploy.py                      # Application deployment
-│   ├── tofu.sh                        # OpenTofu wrapper (auto-selects AWS profile)
-│   ├── environment.py                 # Start/stop environments
-│   ├── cognito.py                     # Cognito user management
-│   ├── ssm-secrets.py                 # SSM Parameter Store secrets
-│   └── capacity-report.py             # ECS right-sizing recommendations
-├── modules/                           # Reusable OpenTofu modules
-│   ├── bootstrap/                     # IAM roles, S3 state bucket, permissions boundary
-│   ├── vpc/                           # VPC, subnets, NAT gateway
-│   ├── ecs-cluster/                   # ECS cluster and security groups
-│   ├── ecs-service/                   # Individual ECS service definition
-│   ├── alb/                           # Application Load Balancer
-│   ├── rds/                           # PostgreSQL database
-│   ├── elasticache/                   # Redis cache
-│   ├── s3/                            # S3 buckets
-│   ├── acm/                           # SSL/TLS certificates
-│   ├── cognito/                       # User authentication for staging
-│   ├── waf/                           # Web Application Firewall
-│   └── staging-scheduler/             # Automatic start/stop scheduling
+├── bin/                               # CLI tools (see Tools section above)
+├── src/deployer/                      # Python library
+├── modules/                           # Reusable OpenTofu modules (see Module Reference below)
 ├── templates/                         # Environment templates for init.py
 └── docs/                              # Documentation
 ```
@@ -207,19 +206,52 @@ Dependencies are managed in `pyproject.toml` and installed automatically when yo
 
 ## Module Reference
 
-| Module                | Purpose                                                        |
-| --------------------- | -------------------------------------------------------------- |
-| **bootstrap**         | IAM roles, S3 state bucket, ECS permissions boundary           |
-| **vpc**               | VPC with public/private subnets, NAT gateway, route tables     |
-| **ecs-cluster**       | ECS cluster with Fargate capacity providers                    |
-| **ecs-service**       | ECS service with task definition, IAM roles, optional ALB      |
-| **alb**               | Application Load Balancer with HTTP/HTTPS and optional Cognito |
-| **rds**               | PostgreSQL RDS instance in private subnets                     |
-| **elasticache**       | Redis ElastiCache cluster in private subnets                   |
-| **s3**                | S3 buckets with configurable versioning                        |
-| **acm**               | SSL/TLS certificates via ACM with Route 53 validation          |
-| **cognito**           | Cognito User Pool for staging authentication                   |
-| **cognito-shared**    | Shared Cognito User Pool across multiple environments          |
-| **waf**               | Web Application Firewall with managed rules                    |
-| **staging-scheduler** | Lambda/EventBridge for automatic start/stop                    |
-| **ci** / **ci-role**  | GitHub OIDC provider and per-project CI IAM roles              |
+### Core Infrastructure
+
+| Module                    | Purpose                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| **bootstrap**             | IAM roles, S3 state bucket, ECS permissions boundary           |
+| **vpc**                   | VPC with public/private subnets, NAT gateway, route tables     |
+| **ecs-cluster**           | ECS cluster with Fargate capacity providers                    |
+| **ecs-service**           | ECS service with task definition, IAM roles, optional ALB      |
+| **alb**                   | Application Load Balancer with HTTP/HTTPS and optional Cognito |
+| **route53**               | DNS records (A alias and CNAME) in Route 53                    |
+| **acm**                   | SSL/TLS certificates via ACM with Route 53 validation          |
+
+### Data
+
+| Module                    | Purpose                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| **rds**                   | PostgreSQL RDS instance in private subnets                     |
+| **elasticache**           | Redis ElastiCache cluster in private subnets                   |
+| **s3**                    | S3 buckets with configurable versioning                        |
+| **ecr**                   | ECR repositories with lifecycle policies                       |
+| **db-secrets**            | RDS master credentials in AWS Secrets Manager                  |
+| **db-users**              | PostgreSQL app/migrate users with least-privilege grants        |
+| **db-on-shared-rds**      | Per-app database on a shared RDS instance                      |
+
+### Security and Auth
+
+| Module                    | Purpose                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| **cognito**               | Cognito User Pool for per-environment authentication           |
+| **cognito-shared**        | Shared Cognito User Pool across multiple environments          |
+| **waf**                   | Web Application Firewall with managed rules                    |
+| **ci** / **ci-role**      | GitHub OIDC provider and per-project CI IAM roles              |
+
+### Monitoring and Cost
+
+| Module                    | Purpose                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| **cloudwatch-alarms**     | Standard production alarms with SNS email notifications        |
+| **ecr-notifications**     | SNS alerts for critical/high ECR vulnerability scan findings   |
+| **cost-budget**           | AWS Budget with email alerts at 80% and 100% threshold         |
+| **staging-scheduler**     | Lambda/EventBridge for automatic start/stop scheduling         |
+
+### Shared and Multi-App
+
+| Module                    | Purpose                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| **shared-infrastructure** | Shared VPC, ECS cluster, ALB, and RDS for multiple apps        |
+| **app-in-shared-env**     | Per-app resources (target group, listener rule, DB) on shared infra |
+| **cloudfront-alb**        | CloudFront distribution in front of ALB for custom error pages |
