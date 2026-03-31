@@ -340,5 +340,5 @@ ______________________________________________________________________
 - **[Operations](operations/)** - Post-deployment tasks, environment lifecycle, common patterns
 - [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - All configuration options
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
-- [SUPPORTED-ARCHITECTURES.md](background/SUPPORTED-ARCHITECTURES.md) - What's supported
-- [DESIGN.md](background/DESIGN.md) - Architecture and design decisions
+- [SUPPORTED-ARCHITECTURES.md](internal/SUPPORTED-ARCHITECTURES.md) - What's supported
+- [DESIGN.md](internal/DESIGN.md) - Architecture and design decisions

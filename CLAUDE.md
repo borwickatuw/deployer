@@ -76,7 +76,7 @@ uv run python bin/emergency.py rollback myapp-production --service web
 
 - [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) - Complete deployment walkthrough
 - [CONFIG-REFERENCE.md](docs/CONFIG-REFERENCE.md) - All configuration options
-- [DESIGN.md](docs/background/DESIGN.md) - Architecture and three-layer config separation
+- [DESIGN.md](docs/internal/DESIGN.md) - Architecture and three-layer config separation
 - [PRODUCTION.md](docs/operations/PRODUCTION.md) - Production operations and maintenance
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure

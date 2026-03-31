@@ -589,4 +589,4 @@ If a second implementation actually materializes and the parsers start diverging
 extracting `deploy_config.py` into a shared package is straightforward -- the
 module is self-contained with no cloud-specific dependencies.
 
-See [DECISIONS.md](../background/DECISIONS.md) (2026-02-19) for the full reasoning.
+See [DECISIONS.md](DECISIONS.md) (2026-02-19) for the full reasoning.

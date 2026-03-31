@@ -115,7 +115,7 @@ Configuration is split between three locations:
 
 The `config.toml` in each environment directory bridges the gap between OpenTofu outputs and the deploy script. It uses `${tofu:...}` placeholders that are resolved at deploy time.
 
-See [DESIGN.md](background/DESIGN.md) for the philosophy behind this separation.
+See [DESIGN.md](internal/DESIGN.md) for the philosophy behind this separation.
 
 ______________________________________________________________________
 

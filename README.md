@@ -77,12 +77,12 @@ A single `tofu apply` creates all of this:
 
 1. **[Getting Started](docs/GETTING-STARTED.md)** - One-time AWS account setup (IAM roles, bootstrap)
 1. **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - Create environments and deploy your first app
-1. **[Design](docs/background/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
+1. **[Design](docs/internal/DESIGN.md)** - Understand the three config files (deploy.toml, terraform.tfvars, config.toml)
 
 **Quick reference:**
 
 - [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
-- [Architecture](docs/background/ARCHITECTURE.md) - AWS infrastructure details
+- [Architecture](docs/internal/ARCHITECTURE.md) - AWS infrastructure details
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - When things go wrong
 
 ## Documentation
@@ -95,10 +95,10 @@ A single `tofu apply` creates all of this:
 
 ### Background (Architecture & Design)
 
-- **[Design](docs/background/DESIGN.md)** - How deployer works and why it's structured this way
-- **[Architecture](docs/background/ARCHITECTURE.md)** - AWS infrastructure details
-- **[Decisions](docs/background/DECISIONS.md)** - Architecture decision records
-- **[Supported Architectures](docs/background/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
+- **[Design](docs/internal/DESIGN.md)** - How deployer works and why it's structured this way
+- **[Architecture](docs/internal/ARCHITECTURE.md)** - AWS infrastructure details
+- **[Decisions](docs/internal/DECISIONS.md)** - Architecture decision records
+- **[Supported Architectures](docs/internal/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
 - **[Resources](docs/resources/README.md)** - Resource module system (deploy.toml)
 
 ### Operations (How-To Guides)

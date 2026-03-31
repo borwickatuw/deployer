@@ -107,7 +107,7 @@ Want to change DEPLOYMENT BEHAVIOR (speed, rollback)?
   → Edit config.toml in $DEPLOYER_ENVIRONMENTS_DIR/
 ```
 
-See [DESIGN.md](../background/DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
+See [DESIGN.md](../internal/DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
 
 ______________________________________________________________________
 
