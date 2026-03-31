@@ -2,6 +2,12 @@
 
 Complete reference for deployment configuration.
 
+**Related docs:**
+- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Step-by-step deployment walkthrough
+- [Resources](resources/README.md) — Resource module system (database, cache, storage, cdn, secrets)
+- [OpenTofu Modules](tofu-modules/README.md) — Infrastructure module reference
+- [Operations](operations/README.md) — Day-to-day commands and "where to make changes"
+
 ## Quick Reference
 
 ### Three Config Files
@@ -12,31 +18,7 @@ Complete reference for deployment configuration.
 | `terraform.tfvars` | Environment directory | How big: cpu, memory, replicas, scaling      | Resizing services, changing capacity             |
 | `config.toml`      | Environment directory | Infrastructure glue: connects deploy to tofu | Rarely (auto-generated)                          |
 
-### Common Commands
-
-```bash
-# Link environment to deploy.toml (one-time setup)
-uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
-
-# Deploy to staging (uses linked deploy.toml)
-uv run python bin/deploy.py myapp-staging
-
-# Dry-run (show what would happen)
-uv run python bin/deploy.py myapp-staging --dry-run
-
-# Infrastructure changes
-./bin/tofu.sh plan myapp-staging
-./bin/tofu.sh apply myapp-staging
-
-# View logs
-aws logs tail /ecs/myapp-staging --follow
-
-# Run commands (uses linked deploy.toml)
-uv run python bin/ecs-run.py run myapp-staging migrate
-
-# List available commands
-uv run python bin/ecs-run.py run myapp-staging --list-commands
-```
+For common commands, see [Operations](operations/README.md).
 
 ### Required OpenTofu Outputs
 
@@ -101,21 +83,7 @@ source = "myapp"
 context = "."  # Relative to source, so this is ./myapp/
 ```
 
-______________________________________________________________________
-
-## Overview
-
-Configuration is split between three locations:
-
-| Configuration         | Location                      | Purpose                                  |
-| --------------------- | ----------------------------- | ---------------------------------------- |
-| **App structure**     | `deploy.toml` (app repo)      | What to run: images, commands, env vars  |
-| **Sizing & capacity** | `terraform.tfvars` (deployer) | How big: cpu, memory, replicas, scaling  |
-| **Deployment glue**   | `config.toml` (deployer env)  | Infrastructure references for deployment |
-
-The `config.toml` in each environment directory bridges the gap between OpenTofu outputs and the deploy script. It uses `${tofu:...}` placeholders that are resolved at deploy time.
-
-See [DESIGN.md](internal/DESIGN.md) for the philosophy behind this separation.
+See [DESIGN.md](internal/DESIGN.md) for the philosophy behind the three-file separation.
 
 ______________________________________________________________________
 
@@ -491,14 +459,12 @@ python bin/ecs-run.py run myapp-staging migrate
 
 ### `[database]`
 
-**Optional.** Declares database requirements. The environment's `config.toml` provides the actual connection details.
+**Optional.** Declares database requirements. The environment's `config.toml` provides the actual connection details. See [Resources: Database](resources/database.md) for the full module reference.
 
 | Field        | Type   | Required | Description                                                                                                                       |
 | ------------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `type`       | string | Yes      | Database type: `"postgresql"`.                                                                                                    |
 | `extensions` | array  | No       | PostgreSQL extensions to create before migrations (e.g., `["unaccent", "pg_bigm"]`). Requires `extensions_lambda` in config.toml. |
-
-Extensions listed here are created via a Lambda function that connects as the RDS master user (which has `rds_superuser` privileges). This is necessary because the migrate user cannot create extensions like `pg_bigm` that require superuser.
 
 **Example:**
 
@@ -507,8 +473,6 @@ Extensions listed here are created via a Lambda function that connects as the RD
 type = "postgresql"
 extensions = ["unaccent", "pg_bigm"]
 ```
-
-The deploy script invokes the Lambda **before** running migrations, so extensions are available for any migration that depends on them.
 
 ### `[migrations]`
 
@@ -719,28 +683,23 @@ Service configuration from OpenTofu.
 
 #### `[database]`
 
-The database module uses a **two-account model** for security:
+Database connection details. Uses a two-account credential model for security — see [Resources: Database](resources/database.md) for details.
 
-- **App credentials**: Used by runtime services. The app user has DML privileges only (SELECT, INSERT, UPDATE, DELETE).
-- **Migrate credentials**: Used by migrations. The migrate user has DDL privileges (CREATE, ALTER, DROP tables).
-
-This reduces blast radius if the application is compromised - attackers cannot drop tables or alter schema.
-
-| Field                     | Tofu Output                      | Description                                                                                             |
-| ------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `host`                    | `db_host`                        | Database hostname                                                                                       |
-| `port`                    | `db_port`                        | Database port (default: 5432)                                                                           |
-| `name`                    | `db_name`                        | Database name                                                                                           |
-| `credentials`             | -                                | Credential source: `secretsmanager` or `ssm`                                                            |
-| `app_username_secret`     | `db_app_username_secret_arn`     | App user username ARN (DML only)                                                                        |
-| `app_password_secret`     | `db_app_password_secret_arn`     | App user password ARN                                                                                   |
-| `migrate_username_secret` | `db_migrate_username_secret_arn` | Migrate user username ARN (DDL + DML)                                                                   |
-| `migrate_password_secret` | `db_migrate_password_secret_arn` | Migrate user password ARN                                                                               |
-| `extensions_lambda`       | `db_users_lambda_function_name`  | Lambda function name for creating PostgreSQL extensions. Required if deploy.toml declares `extensions`. |
-
-When running `ecs-run.py run <env> migrate`, the migrate task definition is used automatically, which has the migrate credentials.
+| Field                     | Tofu Output                      | Description                                  |
+| ------------------------- | -------------------------------- | -------------------------------------------- |
+| `host`                    | `db_host`                        | Database hostname                            |
+| `port`                    | `db_port`                        | Database port (default: 5432)                |
+| `name`                    | `db_name`                        | Database name                                |
+| `credentials`             | -                                | Credential source: `secretsmanager` or `ssm` |
+| `app_username_secret`     | `db_app_username_secret_arn`     | App user username ARN (DML only)             |
+| `app_password_secret`     | `db_app_password_secret_arn`     | App user password ARN                        |
+| `migrate_username_secret` | `db_migrate_username_secret_arn` | Migrate user username ARN (DDL + DML)        |
+| `migrate_password_secret` | `db_migrate_password_secret_arn` | Migrate user password ARN                    |
+| `extensions_lambda`       | `db_users_lambda_function_name`  | Lambda for creating PostgreSQL extensions    |
 
 #### `[cache]`
+
+See [Resources: Cache](resources/cache.md).
 
 | Field | Tofu Output | Description          |
 | ----- | ----------- | -------------------- |
@@ -748,7 +707,7 @@ When running `ecs-run.py run <env> migrate`, the migrate task definition is used
 
 #### `[storage]`
 
-Optional storage configuration.
+See [Resources: Storage](resources/storage.md).
 
 | Field          | Tofu Output       | Description                    |
 | -------------- | ----------------- | ------------------------------ |
