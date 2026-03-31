@@ -107,13 +107,13 @@ A single `tofu apply` creates all of this:
 - **[Staging](docs/operations/STAGING.md)** - Cognito auth and cost-saving scheduling
 - **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
 - **[Multiple AWS Accounts](docs/operations/MULTIPLE-ACCOUNTS.md)** - Staging/production account separation
-- **[WAF](docs/operations/WAF.md)** - Web Application Firewall integration
+### Scenario Guides
 
-### Framework Guides
-
-- **[Django](docs/frameworks/django.md)** - Python web framework
-- **[Rails](docs/frameworks/rails.md)** - Ruby web framework
-- **[Generic](docs/frameworks/generic.md)** - Any containerized application
+- **[Django](docs/scenarios/django.md)** - Python web framework
+- **[Rails](docs/scenarios/rails.md)** - Ruby web framework
+- **[Generic](docs/scenarios/generic.md)** - Any containerized application
+- **[CI/CD](docs/scenarios/ci-cd.md)** - GitHub Actions deployment pipeline
+- **[Passive Deployer](docs/scenarios/passive-deployer.md)** - Using deployer tools with external infrastructure
 
 ## Tools
 

@@ -40,7 +40,7 @@ Added CI/CD deployment support via GitHub Actions with OIDC authentication, elim
 - **`modules/ci-role`** — Per-project CI IAM role scoped to one project prefix. Trusts a specific GitHub repo via OIDC. Instantiated per-environment.
 - **`tofu.sh` post-apply hook** — Automatically pushes resolved config to S3 after successful `tofu apply`.
 - **Staleness detection** — `ci-deploy` warns if resolved config is old; `--max-config-age` and `--strict` flags for enforcement.
-- **`docs/CI-CD.md`** — Full setup guide with example GitHub Actions workflow.
+- **`docs/scenarios/ci-cd.md`** — Full setup guide with example GitHub Actions workflow.
 
 ### Key design decisions
 

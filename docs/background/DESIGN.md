@@ -346,7 +346,7 @@ The resolved config JSON is produced by `bin/resolve-config.py` (which resolves 
 
 Authentication uses GitHub OIDC federation — no stored AWS credentials. Each project gets a scoped `deployer-ci-{project}` IAM role that can only access that project's resources (ECR, ECS, SSM, S3 configs).
 
-See [CI-CD.md](../CI-CD.md) for the complete setup guide.
+See [CI/CD](../scenarios/ci-cd.md) for the complete setup guide.
 
 ## Resource Module System
 

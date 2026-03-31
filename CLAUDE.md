@@ -81,9 +81,8 @@ uv run python bin/emergency.py rollback myapp-production --service web
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
 - [HOWTO-PUBLISH.md](docs/internal/HOWTO-PUBLISH.md) - Publishing to the public repository
-- [CI-CD.md](docs/CI-CD.md) - CI/CD deployment setup with GitHub Actions
 - [SOMEDAY-MAYBE.md](docs/internal/SOMEDAY-MAYBE.md) - Future improvement ideas
-- Framework guides: [Django](docs/frameworks/django.md), [Rails](docs/frameworks/rails.md), [Generic](docs/frameworks/generic.md)
+- Scenario guides: [Django](docs/scenarios/django.md), [Rails](docs/scenarios/rails.md), [Generic](docs/scenarios/generic.md), [CI/CD](docs/scenarios/ci-cd.md), [Passive Deployer](docs/scenarios/passive-deployer.md)
 
 ## Generic Codebase
 

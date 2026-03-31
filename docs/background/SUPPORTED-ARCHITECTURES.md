@@ -62,12 +62,12 @@ Can be deployed with this tool.
 
 | Framework       | Port | Documentation                                     |
 | --------------- | ---- | ------------------------------------------------- |
-| Django (Python) | 8000 | [docs/frameworks/django.md](../frameworks/django.md) |
-| Rails (Ruby)    | 3000 | [docs/frameworks/rails.md](../frameworks/rails.md)   |
+| Django (Python) | 8000 | [Django guide](../scenarios/django.md) |
+| Rails (Ruby)    | 3000 | [Rails guide](../scenarios/rails.md)   |
 
 ### Untested but Supported
 
-These should work with the [generic framework guide](../frameworks/generic.md):
+These should work with the [generic framework guide](../scenarios/generic.md):
 
 | Framework        | Typical Port |
 | ---------------- | ------------ |
