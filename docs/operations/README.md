@@ -1,6 +1,16 @@
 # Operations
 
-Day-to-day operations for deployed applications. For initial deployment, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
+Day-to-day operations for deployed applications. For initial deployment, see [DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md).
+
+## Guides
+
+- [STAGING.md](STAGING.md) — Cognito authentication, cost scheduling, stop/start lifecycle
+- [PRODUCTION.md](PRODUCTION.md) — Production monitoring, maintenance, incident response, rollback
+- [SHARED-ENVIRONMENTS.md](SHARED-ENVIRONMENTS.md) — Multiple apps sharing infrastructure
+- [WAF.md](WAF.md) — Web Application Firewall protection
+- [MULTIPLE-ACCOUNTS.md](MULTIPLE-ACCOUNTS.md) — Staging and production in separate AWS accounts
+
+______________________________________________________________________
 
 ## Post-Deployment Tasks
 
@@ -9,10 +19,7 @@ Day-to-day operations for deployed applications. For initial deployment, see [DE
 Link your environment to its deploy.toml so you don't have to specify `--deploy-toml` on every command:
 
 ```bash
-# Link environment to deploy.toml (stored locally, gitignored)
 uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
-
-# List all links
 uv run python bin/link-environments.py --list
 ```
 
@@ -21,63 +28,21 @@ uv run python bin/link-environments.py --list
 Use `ecs-run.py run` to execute commands defined in your deploy.toml's `[commands]` section:
 
 ```bash
-# List available commands
 uv run python bin/ecs-run.py run myapp-staging --list-commands
-
-# Run migrations
 uv run python bin/ecs-run.py run myapp-staging migrate
-
-# Run Django deployment checks
-uv run python bin/ecs-run.py run myapp-staging check
 ```
 
-If the environment isn't linked, you can still specify `--deploy-toml` explicitly:
+If the environment isn't linked, specify `--deploy-toml` explicitly:
 
 ```bash
 uv run python bin/ecs-run.py run myapp-staging migrate --deploy-toml ../app/deploy.toml
 ```
 
-**Note:** Only non-interactive commands can be run via ecs-run.py. For interactive commands (shell, createsuperuser), use `ecs-run.py exec` with ECS Exec enabled:
+**Note:** Only non-interactive commands can be run via ecs-run.py. For interactive commands (shell, createsuperuser), use `ecs-run.py exec`:
 
 ```bash
-# Run arbitrary command (requires ECS Exec)
 uv run python bin/ecs-run.py exec myapp-staging python manage.py createsuperuser --email admin@example.com
 ```
-
-### Create Cognito User (if using authentication)
-
-```bash
-uv run python bin/cognito.py create myapp-staging \
-  --email user@example.com \
-  --clipboard
-```
-
-See [STAGING.md](operations/STAGING.md) for full user management documentation.
-
-______________________________________________________________________
-
-## Managing Environment Lifecycle
-
-Staging environments can be stopped during off-hours to reduce costs (~50-60% savings on compute).
-
-```bash
-# Check environment status
-uv run python bin/environment.py status myapp-staging
-
-# Stop environment (scales ECS to 0, stops RDS)
-uv run python bin/environment.py stop myapp-staging
-
-# Start environment (starts RDS, waits for it, restores ECS replicas)
-uv run python bin/environment.py start myapp-staging
-```
-
-**Notes:**
-
-- ElastiCache and ALB cannot be stopped (only deleted), so these continue to incur costs
-- RDS auto-restarts after 7 days if stopped (AWS limitation)
-- Start always waits for RDS to be available before scaling ECS back up
-
-See [STAGING.md](operations/STAGING.md) for automated scheduling to stop/start environments on a schedule.
 
 ______________________________________________________________________
 
@@ -143,7 +108,7 @@ Want to change DEPLOYMENT BEHAVIOR (speed, rollback)?
   → Edit config.toml in $DEPLOYER_ENVIRONMENTS_DIR/
 ```
 
-See [DESIGN.md](background/DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
+See [DESIGN.md](../background/DESIGN.md#environment-directory-file-breakdown) for the full explanation of this separation.
 
 ______________________________________________________________________
 
@@ -214,32 +179,3 @@ command = ["gunicorn", "admin:app"]
 health_check_path = "/admin/health"
 path_pattern = "/admin/*"
 ```
-
-______________________________________________________________________
-
-## Rollback
-
-If deployment fails:
-
-1. **Check logs** - View ECS task logs and events
-1. **Rollback to previous revision**:
-   ```bash
-   # Find previous revision
-   aws ecs list-task-definitions --family-prefix myapp-staging-web
-
-   # Update service to use previous revision
-   aws ecs update-service \
-     --cluster myapp-staging-cluster \
-     --service web \
-     --task-definition myapp-staging-web:PREVIOUS_REVISION
-   ```
-1. **Fix and redeploy** - Address the issue and deploy again
-
-______________________________________________________________________
-
-## Next Steps
-
-- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - All configuration options
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
-- [STAGING.md](operations/STAGING.md) - Staging environment management
-- [PRODUCTION.md](operations/PRODUCTION.md) - Production operations

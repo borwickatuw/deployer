@@ -407,4 +407,4 @@ path_prefix = "/myapp/staging"
 | cdn      | `type = "cloudfront"`            | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
 | secrets  | `names = [...]`                  | provider, path_prefix             | Each named secret                                            |
 
-See [MODULES.md](MODULES.md) for complete module reference.
+See [Modules](../modules/README.md) for complete module reference.

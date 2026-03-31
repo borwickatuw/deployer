@@ -364,7 +364,7 @@ ______________________________________________________________________
 - More indirection (modules instead of direct placeholders)
 - App developers must learn the declarative syntax
 
-**See also:** [MODULES.md](MODULES.md), [DESIGN.md](DESIGN.md)
+**See also:** [Modules](../modules/README.md), [DESIGN.md](DESIGN.md)
 
 ______________________________________________________________________
 

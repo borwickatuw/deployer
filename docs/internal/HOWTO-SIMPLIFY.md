@@ -425,10 +425,10 @@ Good documentation uses clear cross-references instead of duplication:
 
 ```markdown
 # Good: Clear cross-reference
-For Cognito user management details, see [STAGING-ENVIRONMENTS.md](STAGING-ENVIRONMENTS.md).
+For Cognito user management details, see [STAGING.md](STAGING.md).
 
 # Bad: Partial duplication
-For Cognito user management, see STAGING-ENVIRONMENTS.md. The main commands are:
+For Cognito user management, see STAGING.md. The main commands are:
 - cognito.py create
 - cognito.py list
 [...repeating what's in the other doc...]
@@ -492,7 +492,7 @@ These are known areas that could benefit from simplification:
 | ------------------------------ | ----- | --------------------------------- |
 | `docs/CONFIG-REFERENCE.md`     | 576   | Reference doc, may be appropriate |
 | `docs/ARCHITECTURE.md`         | 339   | Moderate, acceptable              |
-| `docs/STAGING-ENVIRONMENTS.md` | ~200  | Merged from ACCESS + SCHEDULING   |
+| `docs/STAGING.md` | ~200  | Merged from ACCESS + SCHEDULING   |
 | `CLAUDE.md`                    | 59    | Well under threshold              |
 
 ## Quick Reference
