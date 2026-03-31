@@ -159,43 +159,6 @@ deployer/
 └── myapp-production/
 ```
 
-## Quick Start
-
-See [GETTING-STARTED.md](docs/GETTING-STARTED.md) for first-time AWS account setup,
-then [DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) for the complete deployment walkthrough.
-
-### Bootstrap (one-time per AWS account)
-
-```bash
-uv run python bin/init.py bootstrap
-uv run python bin/init.py bootstrap --migrate-state bootstrap-staging
-```
-
-### Infrastructure
-
-```bash
-# Use the tofu wrapper (auto-selects correct AWS profile from config.toml)
-./bin/tofu.sh init myapp-staging
-./bin/tofu.sh plan myapp-staging
-./bin/tofu.sh apply myapp-staging
-
-# Or use rollout to run init, plan, and apply in sequence
-./bin/tofu.sh rollout myapp-staging
-```
-
-### Deployment
-
-```bash
-# Link environment to deploy.toml (one-time setup)
-uv run python bin/link-environments.py myapp-staging /path/to/app/deploy.toml
-
-# Deploy (uses linked deploy.toml)
-uv run python bin/deploy.py myapp-staging
-
-# Dry-run first
-uv run python bin/deploy.py myapp-staging --dry-run
-```
-
 ## Requirements
 
 | Tool     | Version  | Installation               |
