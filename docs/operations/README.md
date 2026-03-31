@@ -7,7 +7,6 @@ Day-to-day operations for deployed applications. For initial deployment, see [DE
 - [STAGING.md](STAGING.md) — Cognito authentication, cost scheduling, stop/start lifecycle
 - [PRODUCTION.md](PRODUCTION.md) — Production monitoring, maintenance, incident response, rollback
 - [SHARED-ENVIRONMENTS.md](SHARED-ENVIRONMENTS.md) — Multiple apps sharing infrastructure
-- [WAF.md](WAF.md) — Web Application Firewall protection
 - [MULTIPLE-ACCOUNTS.md](MULTIPLE-ACCOUNTS.md) — Staging and production in separate AWS accounts
 
 ______________________________________________________________________

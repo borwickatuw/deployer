@@ -369,7 +369,7 @@ These placeholders are resolved at deploy time from the environment's `config.to
 | `${aws_region}`      | AWS SDK                  | Current AWS region                          |
 | `${environment}`     | `environment` argument   | Deployment environment (staging/production) |
 
-For service URL references like `${services.api.url}`, see [Modules](modules/README.md#service-url-references).
+For service URL references like `${services.api.url}`, see [Resources](resources/README.md#service-url-references).
 
 **Example:**
 

@@ -99,7 +99,7 @@ A single `tofu apply` creates all of this:
 - **[Architecture](docs/background/ARCHITECTURE.md)** - AWS infrastructure details
 - **[Decisions](docs/background/DECISIONS.md)** - Architecture decision records
 - **[Supported Architectures](docs/background/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
-- **[Modules](docs/modules/README.md)** - Resource module system
+- **[Resources](docs/resources/README.md)** - Resource module system (deploy.toml)
 
 ### Operations (How-To Guides)
 
