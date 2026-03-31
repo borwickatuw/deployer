@@ -3,9 +3,9 @@
 Common issues and solutions when deploying applications with deployer.
 
 **Related docs:**
-- [GETTING-STARTED.md](GETTING-STARTED.md) — Initial AWS account setup
-- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Deployment walkthrough
 - [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) — Configuration options
+- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Deployment walkthrough
+- [GETTING-STARTED.md](GETTING-STARTED.md) — Initial AWS account setup
 - [Operations](operations/) — Day-to-day operational tasks
 
 ______________________________________________________________________

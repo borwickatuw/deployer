@@ -152,25 +152,25 @@ here are the output names deployer expects:
 
 | Output Name | Type | Used By |
 |---|---|---|
-| `ecs_cluster_name` | string | All tools |
-| `ecs_security_group_id` | string | deploy.py |
-| `private_subnet_ids` | list(string) | deploy.py |
-| `ecs_execution_role_arn` | string | deploy.py |
-| `ecs_task_role_arn` | string | deploy.py |
-| `alb_target_group_arn` | string | deploy.py, ops.py |
-| `service_target_groups` | map(string) | deploy.py (multi-service) |
-| `service_discovery_registries` | map(string) | deploy.py (if using service discovery) |
-| `rds_instance_id` | string | ops.py, emergency.py, environment.py |
-| `ecr_prefix` | string | deploy.py |
 | `alb_dns_name` | string | ops.py |
-| `domain_name` | string | ops.py |
+| `alb_target_group_arn` | string | deploy.py, ops.py |
 | `db_host` | string | deploy.py |
-| `db_port` | number | deploy.py |
 | `db_name` | string | deploy.py |
-| `redis_url` | string | deploy.py |
-| `service_config` | map(object) | deploy.py |
-| `scaling_config` | map(object) | deploy.py |
+| `db_port` | number | deploy.py |
+| `domain_name` | string | ops.py |
+| `ecr_prefix` | string | deploy.py |
+| `ecs_cluster_name` | string | All tools |
+| `ecs_execution_role_arn` | string | deploy.py |
+| `ecs_security_group_id` | string | deploy.py |
+| `ecs_task_role_arn` | string | deploy.py |
 | `health_check_config` | object | deploy.py |
+| `private_subnet_ids` | list(string) | deploy.py |
+| `rds_instance_id` | string | ops.py, emergency.py, environment.py |
+| `redis_url` | string | deploy.py |
+| `scaling_config` | map(object) | deploy.py |
+| `service_config` | map(object) | deploy.py |
+| `service_discovery_registries` | map(string) | deploy.py (if using service discovery) |
+| `service_target_groups` | map(string) | deploy.py (multi-service) |
 
 You don't need all of these. Only expose what you want to resolve dynamically;
 hardcode the rest in config.toml.
@@ -212,12 +212,12 @@ url = "redis://myapp-staging.xxx.0001.usw2.cache.amazonaws.com:6379"
 
 ## Limitations
 
-- **tofu.sh wrapper**: The `bin/tofu.sh` wrapper is designed for deployer-managed
-  environments. Use your own tofu workflow for infrastructure changes.
-- **resolve-config.py**: Works with `[tofu].dir`, so CI/CD config resolution is
-  supported.
 - **Cognito**: If using deployer's shared Cognito pool from bootstrap, add your
   app to `bootstrap-staging/cognito.auto.tfvars`. The Cognito pool itself is
   independent of your infrastructure.
+- **resolve-config.py**: Works with `[tofu].dir`, so CI/CD config resolution is
+  supported.
 - **SSM secrets**: `bin/ssm-secrets.py` works independently -- it only needs the
   `[secrets].path_prefix` from config.toml.
+- **tofu.sh wrapper**: The `bin/tofu.sh` wrapper is designed for deployer-managed
+  environments. Use your own tofu workflow for infrastructure changes.

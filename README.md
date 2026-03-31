@@ -60,18 +60,18 @@ Deployer builds your Docker image, pushes it to ECR, runs migrations, and update
 
 A single `tofu apply` creates all of this:
 
-- **VPC** with public/private subnets across multiple availability zones
-- **ECS Fargate cluster** running your services in private subnets
-- **Application Load Balancer** with path-based routing, HTTP-to-HTTPS redirect, and health checks
-- **RDS PostgreSQL** in private subnets (Multi-AZ in production)
-- **ElastiCache Redis** in private subnets
-- **S3 buckets** for media and static files
 - **ACM SSL certificates** with automatic DNS validation
-- **WAF** with AWS managed rule sets
+- **Application Load Balancer** with path-based routing, HTTP-to-HTTPS redirect, and health checks
 - **Auto-scaling** based on CPU/memory utilization
-- **Cognito authentication** for staging environments (keep them private)
-- **Staging scheduler** that automatically stops environments nights/weekends to save costs
 - **CI/CD IAM roles** using GitHub OIDC — no stored AWS credentials
+- **Cognito authentication** for staging environments (keep them private)
+- **ECS Fargate cluster** running your services in private subnets
+- **ElastiCache Redis** in private subnets
+- **RDS PostgreSQL** in private subnets (Multi-AZ in production)
+- **S3 buckets** for media and static files
+- **Staging scheduler** that automatically stops environments nights/weekends to save costs
+- **VPC** with public/private subnets across multiple availability zones
+- **WAF** with AWS managed rule sets
 
 ## Getting Started
 
@@ -83,58 +83,58 @@ A single `tofu apply` creates all of this:
 
 **Quick reference:**
 
-- [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
 - [Architecture](docs/internal/ARCHITECTURE.md) - AWS infrastructure details
+- [Configuration Reference](docs/CONFIG-REFERENCE.md) - All TOML options
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - When things go wrong
 
 ## Documentation
 
 ### Core Guides
 
-- **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - First-time setup and deployment walkthrough
 - **[Configuration Reference](docs/CONFIG-REFERENCE.md)** - Complete TOML configuration options
+- **[Deployment Guide](docs/DEPLOYMENT-GUIDE.md)** - First-time setup and deployment walkthrough
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ### Background (Architecture & Design)
 
-- **[Design](docs/internal/DESIGN.md)** - How deployer works and why it's structured this way
 - **[Architecture](docs/internal/ARCHITECTURE.md)** - AWS infrastructure details
 - **[Decisions](docs/internal/DECISIONS.md)** - Architecture decision records
-- **[Supported Architectures](docs/internal/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
+- **[Design](docs/internal/DESIGN.md)** - How deployer works and why it's structured this way
 - **[Resources](docs/resources/README.md)** - Resource module system (deploy.toml)
+- **[Supported Architectures](docs/internal/SUPPORTED-ARCHITECTURES.md)** - What's supported and out of scope
 
 ### Operations (How-To Guides)
 
 - **[Operations](docs/operations/)** — Post-deployment tasks, "where to make changes" reference
-- **[Production](docs/operations/PRODUCTION.md)** — Monitoring, maintenance, emergency procedures
-- **[Staging](docs/operations/STAGING.md)** — Cognito auth and cost-saving scheduling
-- **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** — Multiple apps sharing infrastructure
 - **[Multiple AWS Accounts](docs/operations/MULTIPLE-ACCOUNTS.md)** — Staging/production account separation
+- **[Production](docs/operations/PRODUCTION.md)** — Monitoring, maintenance, emergency procedures
+- **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** — Multiple apps sharing infrastructure
+- **[Staging](docs/operations/STAGING.md)** — Cognito auth and cost-saving scheduling
 
 ### Scenario Guides
 
-- **[Django](docs/scenarios/django.md)** - Python web framework
-- **[Rails](docs/scenarios/rails.md)** - Ruby web framework
-- **[Generic](docs/scenarios/generic.md)** - Any containerized application
 - **[CI/CD](docs/scenarios/ci-cd.md)** - GitHub Actions deployment pipeline
+- **[Django](docs/scenarios/django.md)** - Python web framework
+- **[Generic](docs/scenarios/generic.md)** - Any containerized application
 - **[Passive Deployer](docs/scenarios/passive-deployer.md)** - Using deployer tools with external infrastructure
+- **[Rails](docs/scenarios/rails.md)** - Ruby web framework
 
 ## Tools
 
 | Script | Purpose |
 |--------|---------|
-| `bin/init.py` | Bootstrap AWS accounts, generate environments and deploy.toml |
+| `bin/capacity-report.py` | ECS right-sizing recommendations |
+| `bin/cognito.py` | Cognito user management |
 | `bin/deploy.py` | Build images, run migrations, deploy to ECS |
-| `bin/tofu.sh` | OpenTofu wrapper (auto-selects AWS profile from config.toml) |
-| `bin/ops.py` | Production monitoring: status, health, logs, audit |
+| `bin/ecs-run.py` | Run commands in ECS containers (migrations, shell, etc.) |
 | `bin/emergency.py` | Production modifications: rollback, scale, snapshot, restore |
 | `bin/environment.py` | Start/stop staging environments |
-| `bin/cognito.py` | Cognito user management |
-| `bin/ecs-run.py` | Run commands in ECS containers (migrations, shell, etc.) |
-| `bin/ssm-secrets.py` | SSM Parameter Store secrets management |
+| `bin/init.py` | Bootstrap AWS accounts, generate environments and deploy.toml |
 | `bin/link-environments.py` | Link environments to deploy.toml paths (one-time setup) |
-| `bin/capacity-report.py` | ECS right-sizing recommendations |
+| `bin/ops.py` | Production monitoring: status, health, logs, audit |
 | `bin/resolve-config.py` | Resolve config.toml into JSON for CI/CD |
+| `bin/ssm-secrets.py` | SSM Parameter Store secrets management |
+| `bin/tofu.sh` | OpenTofu wrapper (auto-selects AWS profile from config.toml) |
 
 ## Repository Structure
 
@@ -163,11 +163,11 @@ deployer/
 
 | Tool     | Version  | Installation               |
 | -------- | -------- | -------------------------- |
-| OpenTofu | >= 1.6.0 | `brew install opentofu`    |
 | AWS CLI  | v2       | `brew install awscli`      |
+| Docker   | Latest   | `brew install docker`      |
+| OpenTofu | >= 1.6.0 | `brew install opentofu`    |
 | Python   | 3.11+    | `brew install python@3.11` |
 | uv       | Latest   | `brew install uv`          |
-| Docker   | Latest   | `brew install docker`      |
 
 Dependencies are managed in `pyproject.toml` and installed automatically when you run `uv run`.
 

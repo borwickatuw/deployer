@@ -235,20 +235,20 @@ GitHub environment protection rules can require:
 
 Each `{project}-ci-deploy` IAM role can:
 
-- Push images to ECR (scoped to that project's repos only)
-- Update ECS services and run tasks (scoped to that project's services only)
-- Read SSM parameters (scoped to that project's path prefix)
-- Read from the resolved-configs S3 bucket (scoped to that project's keys)
 - Describe RDS instances (for health checks)
 - Pass ECS task/execution roles (scoped to that project)
+- Push images to ECR (scoped to that project's repos only)
+- Read from the resolved-configs S3 bucket (scoped to that project's keys)
+- Read SSM parameters (scoped to that project's path prefix)
+- Update ECS services and run tasks (scoped to that project's services only)
 
 The role **cannot**:
 
-- Read OpenTofu state
-- Modify IAM roles or policies
+- Access any other project's resources
 - Access the terraform state S3 bucket
 - Create or destroy infrastructure
-- Access any other project's resources
+- Modify IAM roles or policies
+- Read OpenTofu state
 
 ## ci-deploy Reference
 

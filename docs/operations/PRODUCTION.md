@@ -33,14 +33,14 @@ These targets assume:
 
 Before deploying to production, verify:
 
-- [ ] **Infrastructure**: All Terraform/OpenTofu resources planned and reviewed
-- [ ] **Secrets**: All secrets stored in SSM Parameter Store (`bin/ssm-secrets.py`)
-- [ ] **DNS**: Route53 hosted zone configured, domain verified
 - [ ] **Certificates**: ACM certificates issued and validated
 - [ ] **Database**: RDS instance sized appropriately for production load
-- [ ] **Redis**: ElastiCache configured with Multi-AZ
-- [ ] **Networking**: VPC, subnets, and security groups properly configured
+- [ ] **DNS**: Route53 hosted zone configured, domain verified
 - [ ] **IAM**: Task roles and execution roles have correct permissions
+- [ ] **Infrastructure**: All Terraform/OpenTofu resources planned and reviewed
+- [ ] **Networking**: VPC, subnets, and security groups properly configured
+- [ ] **Redis**: ElastiCache configured with Multi-AZ
+- [ ] **Secrets**: All secrets stored in SSM Parameter Store (`bin/ssm-secrets.py`)
 
 ### Production-Specific terraform.tfvars Settings
 
@@ -339,6 +339,6 @@ ______________________________________________________________________
 
 ## Related Documentation
 
-- [DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md) - Deployment procedures
 - [CONFIG-REFERENCE.md](../CONFIG-REFERENCE.md) - Configuration options
+- [DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md) - Deployment procedures
 - [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) - Common issues

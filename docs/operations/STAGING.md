@@ -89,10 +89,10 @@ Staging environments can be stopped during off-hours to reduce costs.
 
 | Resource         | When Stopped  | Savings                         |
 | ---------------- | ------------- | ------------------------------- |
-| ECS Fargate      | Scaled to 0   | 100%                            |
-| RDS PostgreSQL   | Stopped       | ~90% (storage charges continue) |
-| ElastiCache      | Keeps running | 0% (cannot be stopped)          |
 | ALB, NAT Gateway | Keep running  | 0%                              |
+| ECS Fargate      | Scaled to 0   | 100%                            |
+| ElastiCache      | Keeps running | 0% (cannot be stopped)          |
+| RDS PostgreSQL   | Stopped       | ~90% (storage charges continue) |
 
 **Estimated savings:** ~50-60% reduction in staging costs.
 
@@ -238,8 +238,8 @@ Normal - ECS services fail health checks while RDS is starting (5-10 minutes). T
 
 ### Known Limitations
 
-- **RDS auto-restart**: AWS automatically restarts stopped RDS after 7 days. The scheduler will stop it again on the next scheduled stop.
 - **ElastiCache**: Cannot be stopped without deletion. Stays running.
+- **RDS auto-restart**: AWS automatically restarts stopped RDS after 7 days. The scheduler will stop it again on the next scheduled stop.
 - **Sessions**: Cognito sessions last 1 hour by default.
 
 ______________________________________________________________________

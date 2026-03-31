@@ -4,10 +4,10 @@ Day-to-day operations for deployed applications. For initial deployment, see [DE
 
 ## Guides
 
-- [STAGING.md](STAGING.md) — Cognito authentication, cost scheduling, stop/start lifecycle
+- [MULTIPLE-ACCOUNTS.md](MULTIPLE-ACCOUNTS.md) — Staging and production in separate AWS accounts
 - [PRODUCTION.md](PRODUCTION.md) — Production monitoring, maintenance, incident response, rollback
 - [SHARED-ENVIRONMENTS.md](SHARED-ENVIRONMENTS.md) — Multiple apps sharing infrastructure
-- [MULTIPLE-ACCOUNTS.md](MULTIPLE-ACCOUNTS.md) — Staging and production in separate AWS accounts
+- [STAGING.md](STAGING.md) — Cognito authentication, cost scheduling, stop/start lifecycle
 
 ______________________________________________________________________
 

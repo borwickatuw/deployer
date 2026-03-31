@@ -10,11 +10,11 @@ Clone this repository and install the required tools:
 
 | Tool     | Version | Installation               | Purpose                                  |
 | -------- | ------- | -------------------------- | ---------------------------------------- |
-| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts                           |
-| uv       | Latest  | `brew install uv`          | Python package manager                   |
-| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code (like Terraform)  |
 | AWS CLI  | v2      | `brew install awscli`      | Command-line access to AWS               |
 | Docker   | Latest  | `brew install docker`      | Container builds                         |
+| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code (like Terraform)  |
+| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts                           |
+| uv       | Latest  | `brew install uv`          | Python package manager                   |
 
 **Verify your setup:**
 
@@ -254,6 +254,6 @@ The deployer scripts automatically read the appropriate profile from the environ
 Once your AWS account is configured, proceed to deploy your first application:
 
 - **[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md)** — Create environments and deploy applications
-- **Framework guides:** [Django](scenarios/django.md), [Rails](scenarios/rails.md), [Generic](scenarios/generic.md)
+- **Framework guides:** [Django](scenarios/django.md), [Generic](scenarios/generic.md), [Rails](scenarios/rails.md)
 - [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) — Configuration options
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues

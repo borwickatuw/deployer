@@ -36,19 +36,19 @@ path_prefix = "/myapp/staging"
 ## Benefits
 
 - **Applications are infrastructure-agnostic**: Apps don't know if credentials come from SSM, Secrets Manager, or environment files.
-- **Environment controls implementation**: Staging might use one secret store, production another - the app doesn't care.
 - **Clear validation**: Modules validate that config.toml provides what deploy.toml declares.
+- **Environment controls implementation**: Staging might use one secret store, production another - the app doesn't care.
 - **Extensible pattern**: Adding new resource types follows a consistent pattern.
 
 ## Built-in Modules
 
 | Module | App Declares | Environment Provides | Injects |
 | --- | --- | --- | --- |
-| [Database](database.md) | `type = "postgresql"`, `extensions = [...]` | host, port, name, credentials (app + migrate), lambda | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
 | [Cache](cache.md) | `type = "redis"` | url | REDIS_URL |
-| [Storage](storage.md) | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3\_{NAME}\_BUCKET |
 | [CDN](cdn.md) | `type = "cloudfront"` | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
+| [Database](database.md) | `type = "postgresql"`, `extensions = [...]` | host, port, name, credentials (app + migrate), lambda | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
 | [Secrets](secrets.md) | `names = [...]` | provider, path_prefix | Each named secret |
+| [Storage](storage.md) | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3\_{NAME}\_BUCKET |
 
 ## Service URL References
 

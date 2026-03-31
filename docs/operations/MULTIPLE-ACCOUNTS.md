@@ -9,9 +9,9 @@ This guide assumes you've completed [GETTING-STARTED.md](../GETTING-STARTED.md) 
 Separating staging and production into different AWS accounts provides:
 
 - **Blast radius isolation**: A misconfiguration in staging can't affect production resources
+- **Compliance**: Some regulations require environment separation
 - **Cost tracking**: Clear separation of staging vs production costs
 - **IAM isolation**: Staging credentials can't access production resources
-- **Compliance**: Some regulations require environment separation
 
 ## Architecture Overview
 

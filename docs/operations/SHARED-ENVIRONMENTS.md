@@ -6,17 +6,17 @@ This guide explains how to use shared infrastructure for running multiple simple
 
 Shared environments allow multiple small apps to share expensive AWS resources:
 
-- VPC with NAT Gateway
 - Application Load Balancer
 - ECS Cluster
 - Optional: Cognito authentication
-- Optional: Shared ElastiCache
 - Optional: **Shared RDS database**
+- Optional: Shared ElastiCache
+- VPC with NAT Gateway
 
 Each app still gets its own:
 
-- Database (either own RDS instance OR isolated database on shared RDS)
 - ALB target group and listener rule (independent routing)
+- Database (either own RDS instance OR isolated database on shared RDS)
 - ECR repository (separate images)
 - IAM roles (security isolation)
 
@@ -28,19 +28,19 @@ Apps qualify for shared environments if they meet ALL of these criteria:
 
 | Criterion                                      | Rationale                                    |
 | ---------------------------------------------- | -------------------------------------------- |
-| Single container/image                         | Simplifies routing, no worker coordination   |
-| Single ECS service (web only)                  | No celery, no background workers             |
 | Minimal resource needs (≤512 CPU, ≤1GB memory) | Won't overwhelm shared resources             |
 | No special networking                          | No VPC peering, no private link requirements |
-| Standard Django stack                          | PostgreSQL + optional Redis                  |
 | Same team ownership                            | Coordination for shared infra changes        |
+| Single container/image                         | Simplifies routing, no worker coordination   |
+| Single ECS service (web only)                  | No celery, no background workers             |
+| Standard Django stack                          | PostgreSQL + optional Redis                  |
 
 **Do NOT use shared environments for:**
 
-- Multi-container apps (web + celery + beat)
-- High-traffic apps requiring dedicated ALB capacity
-- Apps with strict isolation requirements
 - Apps needing custom VPC configurations
+- Apps with strict isolation requirements
+- High-traffic apps requiring dedicated ALB capacity
+- Multi-container apps (web + celery + beat)
 
 ## Architecture
 
@@ -223,16 +223,16 @@ PostgreSQL's permission model ensures complete isolation:
 
 **Good fit:**
 
-- Multiple small apps with low database usage
 - Apps owned by the same team
-- Staging environments where cost optimization matters
 - Apps that don't need dedicated IOPS or specific instance sizing
+- Multiple small apps with low database usage
+- Staging environments where cost optimization matters
 
 **Not recommended:**
 
+- Apps from different teams needing separate billing
 - Apps requiring dedicated database resources
 - Different compliance or backup requirements per app
-- Apps from different teams needing separate billing
 - Production apps with strict performance requirements
 
 ### Enabling Shared RDS
@@ -314,14 +314,14 @@ This is useful when most apps can share but one needs dedicated resources.
 
 | Aspect           | Standalone           | Shared                        |
 | ---------------- | -------------------- | ----------------------------- |
-| `bin/init.py`    | `--template standalone-staging` | `--template shared-app-staging` |
-| VPC              | Own                  | Shared                        |
-| NAT Gateway      | Own (~$32/mo)        | Shared                        |
 | ALB              | Own (~$20/mo)        | Shared (listener rule)        |
-| ECS Cluster      | Own                  | Shared                        |
-| RDS              | Own                  | Own                           |
+| `bin/init.py`    | `--template standalone-staging` | `--template shared-app-staging` |
 | Cognito          | Own                  | Shared                        |
+| ECS Cluster      | Own                  | Shared                        |
 | Monthly overhead | ~$80-145             | ~$25-35                       |
+| NAT Gateway      | Own (~$32/mo)        | Shared                        |
+| RDS              | Own                  | Own                           |
+| VPC              | Own                  | Shared                        |
 
 ## Migrating Existing Apps
 
@@ -415,9 +415,9 @@ The main savings come from sharing resources that have significant fixed costs r
 
 | Component   | Separate (per app) | Shared (once)           |
 | ----------- | ------------------ | ----------------------- |
-| NAT Gateway | 1 per environment  | 1 shared                |
 | ALB         | 1 per environment  | 1 shared                |
-| RDS         | 1 per app          | 1 per app OR 1 shared   |
 | ElastiCache | 1 per app          | 1 shared                |
+| NAT Gateway | 1 per environment  | 1 shared                |
+| RDS         | 1 per app          | 1 per app OR 1 shared   |
 
 With 10 apps, sharing eliminates 9 NAT Gateways, 9 ALBs, and optionally 9 RDS/ElastiCache instances. Use the [AWS Pricing Calculator](https://calculator.aws/) to estimate savings for your region and instance sizes.

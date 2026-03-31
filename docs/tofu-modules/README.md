@@ -8,20 +8,20 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 
 | Module | Purpose |
 | --- | --- |
-| [vpc](vpc.md) | VPC with public/private subnets, NAT Gateway, and VPC Flow Logs |
-| [ecs-cluster](ecs-cluster.md) | ECS Fargate cluster with Container Insights and capacity providers |
-| [ecs-service](ecs-service.md) | ECS Fargate service with task definition, IAM roles, and CloudWatch logs |
 | [alb](alb.md) | Application Load Balancer with HTTPS, Cognito auth, and path-based routing |
 | [ecr](ecr.md) | ECR repositories with image scanning and lifecycle policies |
+| [ecs-cluster](ecs-cluster.md) | ECS Fargate cluster with Container Insights and capacity providers |
+| [ecs-service](ecs-service.md) | ECS Fargate service with task definition, IAM roles, and CloudWatch logs |
+| [vpc](vpc.md) | VPC with public/private subnets, NAT Gateway, and VPC Flow Logs |
 
 ## Database
 
 | Module | Purpose |
 | --- | --- |
-| [rds](rds.md) | PostgreSQL RDS instance with backups, monitoring, and encryption |
-| [db-users](db-users.md) | Lambda that creates app (DML-only) and migrate (DDL+DML) database users |
-| [db-secrets](db-secrets.md) | Stores RDS master credentials in AWS Secrets Manager |
 | [db-on-shared-rds](db-on-shared-rds.md) | Creates isolated database and users on an existing shared RDS instance |
+| [db-secrets](db-secrets.md) | Stores RDS master credentials in AWS Secrets Manager |
+| [db-users](db-users.md) | Lambda that creates app (DML-only) and migrate (DDL+DML) database users |
+| [rds](rds.md) | PostgreSQL RDS instance with backups, monitoring, and encryption |
 
 ## Caching and Storage
 
@@ -35,8 +35,8 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 | Module | Purpose |
 | --- | --- |
 | [acm](acm.md) | SSL/TLS certificate with Route 53 DNS validation |
-| [route53](route53.md) | DNS records (A alias and CNAME) in Route 53 |
 | [cloudfront-alb](cloudfront-alb.md) | CloudFront distribution in front of ALB with custom error pages |
+| [route53](route53.md) | DNS records (A alias and CNAME) in Route 53 |
 
 ## Authentication
 
@@ -68,14 +68,14 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 
 | Module | Purpose |
 | --- | --- |
-| [shared-infrastructure](shared-infrastructure.md) | Complete shared environment: VPC, ECS, ALB, optional Cognito/WAF/ElastiCache/RDS |
 | [app-in-shared-env](app-in-shared-env.md) | Per-app resources on shared infrastructure: database, ECR, ALB target group, IAM |
+| [shared-infrastructure](shared-infrastructure.md) | Complete shared environment: VPC, ECS, ALB, optional Cognito/WAF/ElastiCache/RDS |
 
 ## Operations
 
 | Module | Purpose |
 | --- | --- |
-| [staging-scheduler](staging-scheduler.md) | Lambda + EventBridge to auto start/stop ECS and RDS on a schedule |
 | [cloudwatch-alarms](cloudwatch-alarms.md) | SNS-based CloudWatch alarms for ALB, RDS, ElastiCache, and ECS |
 | [cost-budget](cost-budget.md) | AWS Budget with email alerts at 80% and 100% of monthly threshold |
 | [ecr-notifications](ecr-notifications.md) | EventBridge rule to SNS for ECR vulnerability scan alerts |
+| [staging-scheduler](staging-scheduler.md) | Lambda + EventBridge to auto start/stop ECS and RDS on a schedule |
