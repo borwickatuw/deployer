@@ -166,4 +166,4 @@ Ideas are collected in `~/code/claude-meta/docs/IDEAS.md` for cross-project revi
 
 ## pysmelly
 
-Read [docs/PYSMELLY.md](docs/PYSMELLY.md) before running pysmelly code smell analysis on this project.
+Read [docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md) before running pysmelly code smell analysis on this project.
