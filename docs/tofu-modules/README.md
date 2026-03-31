@@ -62,7 +62,7 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 
 | Module | Purpose |
 | --- | --- |
-| [bootstrap](bootstrap.md) | S3 state bucket, IAM roles, and permissions boundary. See [BOOTSTRAP.md](../BOOTSTRAP.md) |
+| [bootstrap](bootstrap.md) | S3 state bucket, IAM roles, and permissions boundary |
 
 ## Composite Modules
 
