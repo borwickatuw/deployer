@@ -253,6 +253,7 @@ The deployer scripts automatically read the appropriate profile from the environ
 
 Once your AWS account is configured, proceed to deploy your first application:
 
-- **[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md)** - Create environments and deploy applications
-- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - Configuration options
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
+- **[DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md)** — Create environments and deploy applications
+- **Framework guides:** [Django](scenarios/django.md), [Rails](scenarios/rails.md), [Generic](scenarios/generic.md)
+- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) — Configuration options
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues

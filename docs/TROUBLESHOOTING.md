@@ -2,6 +2,12 @@
 
 Common issues and solutions when deploying applications with deployer.
 
+**Related docs:**
+- [GETTING-STARTED.md](GETTING-STARTED.md) — Initial AWS account setup
+- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Deployment walkthrough
+- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) — Configuration options
+- [Operations](operations/) — Day-to-day operational tasks
+
 ______________________________________________________________________
 
 ## Setup Issues
@@ -568,3 +574,5 @@ aws ecs update-service \
   --service web \
   --task-definition myapp-staging-web:PREVIOUS_REVISION
 ```
+
+For production rollback with checkpoints and monitoring, see [PRODUCTION.md](operations/PRODUCTION.md#rollback-deployment).

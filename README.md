@@ -103,10 +103,12 @@ A single `tofu apply` creates all of this:
 
 ### Operations (How-To Guides)
 
-- **[Production](docs/operations/PRODUCTION.md)** - Production ops, maintenance, and capacity monitoring
-- **[Staging](docs/operations/STAGING.md)** - Cognito auth and cost-saving scheduling
-- **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** - Multiple apps sharing infrastructure
-- **[Multiple AWS Accounts](docs/operations/MULTIPLE-ACCOUNTS.md)** - Staging/production account separation
+- **[Operations](docs/operations/)** — Post-deployment tasks, "where to make changes" reference
+- **[Production](docs/operations/PRODUCTION.md)** — Monitoring, maintenance, emergency procedures
+- **[Staging](docs/operations/STAGING.md)** — Cognito auth and cost-saving scheduling
+- **[Shared Environments](docs/operations/SHARED-ENVIRONMENTS.md)** — Multiple apps sharing infrastructure
+- **[Multiple AWS Accounts](docs/operations/MULTIPLE-ACCOUNTS.md)** — Staging/production account separation
+
 ### Scenario Guides
 
 - **[Django](docs/scenarios/django.md)** - Python web framework
@@ -206,52 +208,6 @@ Dependencies are managed in `pyproject.toml` and installed automatically when yo
 
 ## Module Reference
 
-### Core Infrastructure
+See **[OpenTofu Modules](docs/tofu-modules/README.md)** for the complete reference (25 modules covering core infrastructure, database, networking, auth, CI/CD, and monitoring).
 
-| Module                    | Purpose                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| **bootstrap**             | IAM roles, S3 state bucket, ECS permissions boundary           |
-| **vpc**                   | VPC with public/private subnets, NAT gateway, route tables     |
-| **ecs-cluster**           | ECS cluster with Fargate capacity providers                    |
-| **ecs-service**           | ECS service with task definition, IAM roles, optional ALB      |
-| **alb**                   | Application Load Balancer with HTTP/HTTPS and optional Cognito |
-| **route53**               | DNS records (A alias and CNAME) in Route 53                    |
-| **acm**                   | SSL/TLS certificates via ACM with Route 53 validation          |
-
-### Data
-
-| Module                    | Purpose                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| **rds**                   | PostgreSQL RDS instance in private subnets                     |
-| **elasticache**           | Redis ElastiCache cluster in private subnets                   |
-| **s3**                    | S3 buckets with configurable versioning                        |
-| **ecr**                   | ECR repositories with lifecycle policies                       |
-| **db-secrets**            | RDS master credentials in AWS Secrets Manager                  |
-| **db-users**              | PostgreSQL app/migrate users with least-privilege grants        |
-| **db-on-shared-rds**      | Per-app database on a shared RDS instance                      |
-
-### Security and Auth
-
-| Module                    | Purpose                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| **cognito**               | Cognito User Pool for per-environment authentication           |
-| **cognito-shared**        | Shared Cognito User Pool across multiple environments          |
-| **waf**                   | Web Application Firewall with managed rules                    |
-| **ci** / **ci-role**      | GitHub OIDC provider and per-project CI IAM roles              |
-
-### Monitoring and Cost
-
-| Module                    | Purpose                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| **cloudwatch-alarms**     | Standard production alarms with SNS email notifications        |
-| **ecr-notifications**     | SNS alerts for critical/high ECR vulnerability scan findings   |
-| **cost-budget**           | AWS Budget with email alerts at 80% and 100% threshold         |
-| **staging-scheduler**     | Lambda/EventBridge for automatic start/stop scheduling         |
-
-### Shared and Multi-App
-
-| Module                    | Purpose                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| **shared-infrastructure** | Shared VPC, ECS cluster, ALB, and RDS for multiple apps        |
-| **app-in-shared-env**     | Per-app resources (target group, listener rule, DB) on shared infra |
-| **cloudfront-alb**        | CloudFront distribution in front of ALB for custom error pages |
+See **[Resources](docs/resources/README.md)** for the deploy.toml resource module system (database, cache, storage, CDN, secrets).

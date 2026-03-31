@@ -6,7 +6,9 @@ Complete reference for deployment configuration.
 - [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Step-by-step deployment walkthrough
 - [Resources](resources/README.md) — Resource module system (database, cache, storage, cdn, secrets)
 - [OpenTofu Modules](tofu-modules/README.md) — Infrastructure module reference
-- [Operations](operations/README.md) — Day-to-day commands and "where to make changes"
+- [Operations](operations/) — Day-to-day commands and "where to make changes"
+- [Scenarios](scenarios/) — Framework-specific guides (Django, Rails) and CI/CD
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and solutions
 
 ## Quick Reference
 

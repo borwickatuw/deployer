@@ -2,7 +2,9 @@
 
 Complete guide for deploying applications to AWS ECS. Covers initial setup, ongoing deployments, and verification.
 
-For first-time AWS account setup (IAM roles, bootstrap infrastructure), see [GETTING-STARTED.md](GETTING-STARTED.md).
+**Before you start:** Complete [GETTING-STARTED.md](GETTING-STARTED.md) first (one-time AWS account setup).
+
+**Framework-specific guides:** [Django](scenarios/django.md), [Rails](scenarios/rails.md), [Generic](scenarios/generic.md) | [CI/CD](scenarios/ci-cd.md)
 
 ## Quick Start Checklist
 
@@ -337,8 +339,8 @@ ______________________________________________________________________
 
 ## Next Steps
 
-- **[Operations](operations/)** - Post-deployment tasks, environment lifecycle, common patterns
-- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) - All configuration options
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
-- [SUPPORTED-ARCHITECTURES.md](internal/SUPPORTED-ARCHITECTURES.md) - What's supported
-- [DESIGN.md](internal/DESIGN.md) - Architecture and design decisions
+- **[Operations](operations/)** — Post-deployment tasks, environment lifecycle, common patterns
+- [CONFIG-REFERENCE.md](CONFIG-REFERENCE.md) — All configuration options
+- [Resources](resources/README.md) — Resource module system (database, cache, storage, CDN, secrets)
+- [OpenTofu Modules](tofu-modules/README.md) — Infrastructure module reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and solutions
