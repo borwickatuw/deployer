@@ -10,6 +10,8 @@ Configuration is TOML, not YAML. App developers own `deploy.toml` (what to run),
 
 ## Example
 
+This assumes you've completed the one-time [AWS account setup](docs/GETTING-STARTED.md).
+
 **1. Define your app** in `deploy.toml` (lives in your app repo):
 
 ```toml
