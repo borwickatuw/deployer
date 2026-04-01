@@ -6,7 +6,8 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 
 ## Related Projects
 
-- **deployer-environments** (`~/deployer-environments`) - Per-environment tofu configurations that use this repo's modules
+- **deployer-environments** - Per-environment tofu configurations that use this repo's modules
+- **claude-meta** - Cross-repo standards and audit tooling
 
 ## Key Files
 
@@ -156,13 +157,7 @@ This is infrastructure code. Security focus areas:
 
 ## Cross-Repository Ideas
 
-When you discover a pattern or practice that would benefit other repositories, capture it:
-
-```bash
-claude-idea deployer "Description of the idea"
-```
-
-Ideas are collected in `~/code/claude-meta/docs/IDEAS.md` for cross-project review.
+    claude-idea deployer "Description of the pattern or improvement"
 
 ## pysmelly
 
