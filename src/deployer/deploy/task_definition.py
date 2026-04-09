@@ -117,16 +117,18 @@ def get_service_sizing(
 
     if min_cpu is not None and merged["cpu"] < min_cpu:
         raise ValueError(
-            f"Service '{service_name}' CPU ({merged['cpu']}) is below minimum "
+            f"Service '{service_name}' CPU ({merged['cpu']}) is below minimum "  # noqa: S608 — not SQL
             f"required ({min_cpu}) from deploy.toml.\n"
-            f"  Update terraform.tfvars to set cpu >= {min_cpu} for the {service_name} service."
+            f"  Update terraform.tfvars to set cpu >= {min_cpu} "
+            f"for the {service_name} service."
         )
 
     if min_memory is not None and merged["memory"] < min_memory:
         raise ValueError(
-            f"Service '{service_name}' memory ({merged['memory']}) is below minimum "
+            f"Service '{service_name}' memory ({merged['memory']}) is below minimum "  # noqa: S608 — not SQL
             f"required ({min_memory}) from deploy.toml.\n"
-            f"  Update terraform.tfvars to set memory >= {min_memory} for the {service_name} service."
+            f"  Update terraform.tfvars to set memory >= {min_memory} "
+            f"for the {service_name} service."
         )
 
     # Validate Fargate CPU/memory combination
@@ -166,10 +168,7 @@ def get_environment_variables(
     merged = {}
 
     # Check if using new module system (deploy.toml has resource declarations)
-    uses_modules = any(
-        config.get(section)
-        for section in (*_MODULE_SECTIONS, "secrets")
-    )
+    uses_modules = any(config.get(section) for section in (*_MODULE_SECTIONS, "secrets"))
 
     if uses_modules and env_config:
         # Collect from modules
@@ -275,7 +274,7 @@ def _resolve_legacy_placeholders(
 
 def get_secrets(
     ctx: DeploymentContext,
-    service_name: str | None,
+    _service_name: str | None,
     credential_mode: str = "app",
 ) -> list[dict[str, str]]:
     """Get secrets configuration for a service.

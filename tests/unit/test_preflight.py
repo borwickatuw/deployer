@@ -1,7 +1,6 @@
 """Tests for deployer.deploy.preflight module."""
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -13,7 +12,6 @@ from deployer.deploy.preflight import (
     check_ecr_repositories,
     check_ecs_cluster,
     check_environment_config,
-    check_ssm_secrets,
     run_preflight_checks,
 )
 

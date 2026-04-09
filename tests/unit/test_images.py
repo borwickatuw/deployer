@@ -36,7 +36,7 @@ class TestValidateEcrRepositories:
         """Test that missing repository names are returned."""
         mock_ecr = MagicMock()
 
-        def describe_repos(repositoryNames):
+        def describe_repos(repositoryNames):  # noqa: N803 — matches boto3 API
             repo_name = repositoryNames[0]
             if repo_name == "myapp-web":
                 return {"repositories": [{"repositoryName": repo_name}]}

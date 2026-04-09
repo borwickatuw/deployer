@@ -186,17 +186,33 @@ def push_to_s3(environment: str, config_json: str) -> str:
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         error_msg = e.response["Error"]["Message"]
-        raise RuntimeError(f"Failed to push to s3://{bucket}/{key}: {error_code} - {error_msg}")
+        raise RuntimeError(
+            f"Failed to push to s3://{bucket}/{key}: {error_code} - {error_msg}"
+        ) from e
 
     return f"s3://{bucket}/{key}"
 
 
 @click.command()
 @click.argument("environment")
-@click.option("--output", "-o", "output_file", metavar="FILE", help="Write resolved config to file (default: stdout)")
-@click.option("--push-s3", is_flag=True, help="Push resolved config to the S3 bucket (deployer-resolved-configs-*)")
+@click.option(
+    "--output",
+    "-o",
+    "output_file",
+    metavar="FILE",
+    help="Write resolved config to file (default: stdout)",
+)
+@click.option(
+    "--push-s3",
+    is_flag=True,
+    help="Push resolved config to the S3 bucket (deployer-resolved-configs-*)",
+)
 @click.option("--verify", is_flag=True, help="Verify an existing resolved config is still fresh")
-@click.option("--verify-file", metavar="FILE", help="Path to resolved config JSON to verify (used with --verify)")
+@click.option(
+    "--verify-file",
+    metavar="FILE",
+    help="Path to resolved config JSON to verify (used with --verify)",
+)
 def cli(environment, output_file, push_s3, verify, verify_file):
     """Resolve an environment's config.toml into standalone JSON.
 

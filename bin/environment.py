@@ -36,6 +36,7 @@ from deployer.utils import (
     validate_environment_deployed,
 )
 
+
 def _load_environment_context(environment: str) -> tuple[dict, str, str]:
     """Load config and extract cluster_name and rds_id.
 
@@ -54,7 +55,7 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
         config = load_environment_config(env_path)
     except (FileNotFoundError, RuntimeError) as e:
         print(f"Error loading config: {e}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     cluster_name = config.get("infrastructure", {}).get("cluster_name")
     rds_id = config.get("infrastructure", {}).get("rds_instance_id")
@@ -77,10 +78,7 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
 
 def cmd_status(environment: str | None) -> int:
     """Show status of environments."""
-    if environment:
-        environments = [environment]
-    else:
-        environments = get_all_environments(get_environments_dir())
+    environments = [environment] if environment else get_all_environments(get_environments_dir())
 
     if not environments:
         print("No environments found.", file=sys.stderr)

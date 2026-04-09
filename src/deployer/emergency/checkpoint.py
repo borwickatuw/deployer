@@ -33,6 +33,7 @@ class ServiceState:
 class RdsState:
     """State of RDS at checkpoint time."""
 
+    # pysmelly: ignore write-only-attributes — fields are read during JSON serialization (checkpoint save/load)
     instance_id: str
     status: str
 

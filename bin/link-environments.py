@@ -96,7 +96,7 @@ def cmd_link(environment: str, deploy_toml: str) -> int:
     display_path = str(deploy_toml_path)
     home = str(Path.home())
     if display_path.startswith(home):
-        display_path = "~" + display_path[len(home):]
+        display_path = "~" + display_path[len(home) :]
 
     click.echo(f"Linked: {environment} -> {display_path}")
     return 0

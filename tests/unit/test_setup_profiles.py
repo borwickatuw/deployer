@@ -1,7 +1,5 @@
 """Tests for deployer.init.setup_profiles — AWS CLI profile generation."""
 
-from pathlib import Path
-
 from deployer.init.setup_profiles import (
     _find_existing_profiles,
     generate_profile_config,
@@ -59,7 +57,5 @@ class TestFindExistingProfiles:
 
     def test_ignores_non_deployer_profiles(self, tmp_path):
         config_path = tmp_path / "config"
-        config_path.write_text(
-            "[profile default]\nregion = us-west-2\n"
-        )
+        config_path.write_text("[profile default]\nregion = us-west-2\n")
         assert _find_existing_profiles(config_path) == []

@@ -52,7 +52,9 @@ def _recommend_memory(cpu_allocated: int, current_memory: int) -> int | None:
     return valid_values[-1]
 
 
-def check_environment(env_name: str, env_path, days: int) -> int:
+def check_environment(  # noqa: C901 — checks OOM across all services
+    _env_name: str, env_path, days: int
+) -> int:
     """Check a single environment for OOM kills. Returns 1 if OOM found."""
     try:
         config = load_environment_config(env_path)
@@ -189,10 +191,7 @@ def cli(environment, days):
     """
     configure_aws_profile("infra")
 
-    if environment:
-        environments = [environment]
-    else:
-        environments = get_all_environments(get_environments_dir())
+    environments = [environment] if environment else get_all_environments(get_environments_dir())
 
     if not environments:
         print("No environments found.", file=sys.stderr)

@@ -177,7 +177,7 @@ def audit_env_vars(
     return issues
 
 
-def run_audit(
+def run_audit(  # noqa: C901 — deploy.toml vs docker-compose audit with multiple checks
     project_dir: Path,
     compose_filename: str = "docker-compose.yml",
     deploy_filename: str = "deploy.toml",

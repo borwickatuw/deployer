@@ -301,7 +301,8 @@ def get_oom_events(
     Args:
         cluster_name: Name of the ECS cluster.
         service_name: Name of the service.
-        since_hours: How far back to look (default: 168 = 7 days). Ignored if since_datetime is provided.
+        since_hours: How far back to look (default: 168 = 7 days).
+            Ignored if since_datetime is provided.
         since_datetime: Optional datetime cutoff. If provided, only returns events after this time.
         ecs_client: boto3 ECS client.
 

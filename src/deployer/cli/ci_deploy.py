@@ -26,8 +26,7 @@ import click
 from botocore.exceptions import ClientError
 
 from deployer.config import parse_deploy_config
-from deployer.deploy.deployer import Deployer, handle_push_error
-from deployer.deploy.deployer import common_deploy_options
+from deployer.deploy.deployer import Deployer, common_deploy_options, handle_push_error
 from deployer.deploy.preflight import PreflightError, PreflightOptions, run_preflight_checks
 from deployer.utils import Colors, log, log_error, log_warning
 
@@ -86,7 +85,7 @@ def load_resolved_config(config_path: str) -> tuple[dict, dict]:
         try:
             data = json.load(f)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in resolved config: {e}")
+            raise ValueError(f"Invalid JSON in resolved config: {e}") from e
 
     return _validate_resolved_config(data)
 
@@ -120,7 +119,7 @@ def fetch_from_s3(s3_uri: str) -> str:
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         error_msg = e.response["Error"]["Message"]
-        raise RuntimeError(f"Failed to fetch {s3_uri}: {error_code} - {error_msg}")
+        raise RuntimeError(f"Failed to fetch {s3_uri}: {error_code} - {error_msg}") from e
 
 
 def load_resolved_config_from_s3(s3_uri: str) -> tuple[dict, dict]:
@@ -136,7 +135,7 @@ def load_resolved_config_from_s3(s3_uri: str) -> tuple[dict, dict]:
     try:
         data = json.loads(content)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON from {s3_uri}: {e}")
+        raise ValueError(f"Invalid JSON from {s3_uri}: {e}") from e
 
     return _validate_resolved_config(data, source=s3_uri)
 
@@ -171,9 +170,25 @@ def print_config_age(meta: dict) -> None:
 @click.argument("deploy_toml")
 @click.argument("resolved_config")
 @common_deploy_options
-@click.option("--max-config-age", type=float, metavar="HOURS", help="Warn if resolved config is older than this (hours)")
+@click.option(
+    "--max-config-age",
+    type=float,
+    metavar="HOURS",
+    help="Warn if resolved config is older than this (hours)",
+)
 @click.option("--strict", is_flag=True, help="Treat staleness warnings as errors")
-def main(deploy_toml, resolved_config, dry_run, force, force_build, skip_ecr_check, skip_secrets_check, skip_cluster_check, max_config_age, strict):
+def main(  # noqa: C901 — CI deploy orchestration
+    deploy_toml,
+    resolved_config,
+    dry_run,
+    force,
+    force_build,
+    skip_ecr_check,
+    skip_secrets_check,
+    skip_cluster_check,
+    max_config_age,
+    strict,
+):
     """Deploy an application using a pre-resolved config (for CI/CD pipelines).
 
     \b
@@ -188,7 +203,7 @@ def main(deploy_toml, resolved_config, dry_run, force, force_build, skip_ecr_che
     if not deploy_toml_path.exists():
         log_error(f"deploy.toml not found: {deploy_toml_path}")
         sys.exit(1)
-    if not deploy_toml_path.suffix == ".toml":
+    if deploy_toml_path.suffix != ".toml":
         log_error(f"Expected a .toml file, got: {deploy_toml_path}")
         sys.exit(1)
 
@@ -245,7 +260,7 @@ def main(deploy_toml, resolved_config, dry_run, force, force_build, skip_ecr_che
     )
     try:
         deploy_config = parse_deploy_config(deploy_toml_path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — CLI error handler for deploy.toml parse
         log_error(f"Failed to parse deploy.toml: {e}")
         sys.exit(1)
 

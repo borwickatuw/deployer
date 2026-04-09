@@ -1,8 +1,6 @@
 """Tests for deployer.init package — template loading, substitution, environment generation."""
 
 import os
-import re
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

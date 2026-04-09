@@ -70,7 +70,8 @@ class SecretsModule(ResourceModule):
                 errors.append(f"[secrets] name must be a string, got {type(name).__name__}")
             elif not env_var_pattern.match(name):
                 errors.append(
-                    f"[secrets] name '{name}' should be uppercase with underscores (e.g., SECRET_KEY)"
+                    f"[secrets] name '{name}' should be uppercase "
+                    "with underscores (e.g., SECRET_KEY)"
                 )
 
         # Check env config provides required fields

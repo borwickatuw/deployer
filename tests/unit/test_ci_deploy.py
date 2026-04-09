@@ -6,7 +6,6 @@ import pytest
 
 from deployer.cli.ci_deploy import (
     load_resolved_config,
-    print_config_age,
 )
 
 

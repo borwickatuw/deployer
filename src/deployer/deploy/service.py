@@ -80,7 +80,8 @@ FATAL_ERROR_PATTERNS = [
     (
         r"invalid ssm parameters?: (.+)",
         "missing_ssm_parameters",
-        "Missing SSM parameters: {match}. Create them with: aws ssm put-parameter --name <name> --type SecureString --value <value>",
+        "Missing SSM parameters: {match}. Create them with: "
+        "aws ssm put-parameter --name <name> --type SecureString --value <value>",
     ),
     (
         r"CannotPullContainerError.*repository.*does not exist",
@@ -100,7 +101,8 @@ FATAL_ERROR_PATTERNS = [
     (
         r"ResourceInitializationError.*unable to pull secrets",
         "secrets_pull_failed",
-        "Failed to pull secrets. Check that all SSM parameters exist and IAM permissions are correct.",
+        "Failed to pull secrets. Check that all SSM parameters exist "
+        "and IAM permissions are correct.",
     ),
     (
         r"No Container Instances were found",
@@ -127,7 +129,8 @@ def _ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name:
         service_name: Name of the service.
 
     Returns:
-        True if AZ rebalancing was disabled, False if it was already disabled or service doesn't exist.
+        True if AZ rebalancing was disabled, False if already disabled
+        or service doesn't exist.
     """
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
@@ -157,7 +160,7 @@ def _ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name:
                 "--output",
                 "text",
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 log_status(service_name, "AZ rebalancing disabled")
                 return True
@@ -216,10 +219,12 @@ def register_task_definition(
     )
 
     if ctx.dry_run:
+        family = task_def["family"]
         print(
-            f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs register-task-definition --family {task_def['family']}"
+            f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
+            f"aws ecs register-task-definition --family {family}"
         )
-        return f"arn:aws:ecs:{ctx.region}:{ctx.account_id}:task-definition/{task_def['family']}:dry-run"
+        return f"arn:aws:ecs:{ctx.region}:{ctx.account_id}:task-definition/{family}:dry-run"
 
     response = ctx.ecs_client.register_task_definition(**task_def)
     task_def_arn = response["taskDefinition"]["taskDefinitionArn"]
@@ -322,7 +327,8 @@ def create_service(
 
     if ctx.dry_run:
         print(
-            f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs create-service --service-name {service_name}"
+            f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
+            f"aws ecs create-service --service-name {service_name}"
         )
         return
 
@@ -385,13 +391,18 @@ def deploy_services(
 
             if ctx.dry_run:
                 print(
-                    f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs update-service --service {service_name} --task-definition {task_def_arn}"
+                    f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
+                    f"aws ecs update-service --service {service_name} "
+                    f"--task-definition {task_def_arn}"
                 )
+                cpu = service_cfg.get("cpu")
+                mem = service_cfg.get("memory")
+                reps = service_cfg.get("replicas")
+                print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
                 print(
-                    f"    cpu={service_cfg.get('cpu')}, memory={service_cfg.get('memory')}, replicas={service_cfg.get('replicas')}"
-                )
-                print(
-                    f"    deployment: minHealthy={dep_cfg.min_healthy}%, maxPercent={dep_cfg.max_percent}%, circuitBreaker={dep_cfg.circuit_breaker}"
+                    f"    deployment: minHealthy={dep_cfg.min_healthy}%, "
+                    f"maxPercent={dep_cfg.max_percent}%, "
+                    f"circuitBreaker={dep_cfg.circuit_breaker}"
                 )
             else:
                 try:
@@ -631,10 +642,9 @@ def _display_migration_logs(migration_task: MigrationTask, limit: int = 50) -> N
         else:
             log_warning(f"No logs found. Check CloudWatch log group: {log_group}")
             print(f"  Stream: {stream_prefix}/{container_name}/{task_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — graceful fallback for log fetching
         log_warning(f"Could not fetch logs: {e}")
         print(f"  Check CloudWatch manually: {log_group}")
-
 
 
 def _check_for_fatal_errors(events: list[dict], service_name: str) -> None:
@@ -689,7 +699,7 @@ def _wait_for_service_and_targets(
     ctx: DeploymentContext,
     elbv2_client,
     service_name: str,
-    stability: StabilityConfig = StabilityConfig(),
+    stability: StabilityConfig = StabilityConfig(),  # noqa: B008
 ) -> ServiceWaitResult:
     """Wait for a single service to stabilize and its targets to be healthy.
 
@@ -711,7 +721,7 @@ def _wait_for_service_and_targets(
 
         # Also wait for target group health if service is load balanced
         target_group_arn = _get_service_target_group(ctx.ecs_client, ctx.cluster_name, service_name)
-        if target_group_arn:
+        if target_group_arn:  # noqa: SIM102
             if not _wait_for_target_group_healthy(
                 elbv2_client,
                 target_group_arn,
@@ -735,7 +745,7 @@ def _wait_for_service_and_targets(
 
 def wait_for_stable(
     ctx: DeploymentContext,
-    stability: StabilityConfig = StabilityConfig(),
+    stability: StabilityConfig = StabilityConfig(),  # noqa: B008
 ) -> list[str]:
     """Wait for all services to stabilize with active error detection.
 
@@ -800,7 +810,7 @@ def wait_for_stable(
 def _wait_for_service_stable(
     ctx: DeploymentContext,
     service_name: str,
-    stability: StabilityConfig = StabilityConfig(),
+    stability: StabilityConfig = StabilityConfig(),  # noqa: B008
 ) -> None:
     """Wait for a single service to stabilize.
 
@@ -819,7 +829,7 @@ def _wait_for_service_stable(
     last_status = ""
     consecutive_failures = 0
 
-    for attempt in range(1, stability.max_attempts + 1):
+    for _ in range(1, stability.max_attempts + 1):
         try:
             response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
         except ClientError as e:
@@ -861,11 +871,14 @@ def _wait_for_service_stable(
         pending = deployment.get("pendingCount", 0)
         rollout_state = deployment.get("rolloutState", "")
 
-        if running == desired and pending == 0 and running > 0:
-            # Additional check: ensure rollout is complete
-            if rollout_state == "COMPLETED" or running == desired:
-                log_success(f"{service_name} (stable)")
-                return
+        if (
+            running == desired
+            and pending == 0
+            and running > 0
+            and (rollout_state == "COMPLETED" or running == desired)
+        ):
+            log_success(f"{service_name} (stable)")
+            return
 
         # Check for persistent failures
         if failed >= stability.failure_threshold:
@@ -890,17 +903,17 @@ def _wait_for_service_stable(
         # Track consecutive polls with no progress
         if running == 0 and failed > 0:
             consecutive_failures += 1
-            if consecutive_failures >= 3:
+            if consecutive_failures >= 3 and events:
                 # 3 polls (~45s) with failures and no running tasks
-                if events:
-                    _check_for_fatal_errors(events, service_name)
-                    # If no pattern matched, raise generic error
-                    raise DeploymentError(
-                        f"{service_name}: No tasks running after multiple attempts. "
-                        f"Check ECS console for details. Latest: {events[0].get('message', 'No events')}",
-                        service_name=service_name,
-                        error_type="no_progress",
-                    )
+                _check_for_fatal_errors(events, service_name)
+                # If no pattern matched, raise generic error
+                raise DeploymentError(
+                    f"{service_name}: No tasks running after multiple attempts. "
+                    f"Check ECS console for details. "
+                    f"Latest: {events[0].get('message', 'No events')}",
+                    service_name=service_name,
+                    error_type="no_progress",
+                )
         else:
             consecutive_failures = 0
 
@@ -963,7 +976,7 @@ def _wait_for_target_group_healthy(
     """
     last_status = ""
 
-    for attempt in range(1, max_attempts + 1):
+    for _ in range(1, max_attempts + 1):
         try:
             response = elbv2_client.describe_target_health(TargetGroupArn=target_group_arn)
         except ClientError as e:

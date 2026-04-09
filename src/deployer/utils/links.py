@@ -41,7 +41,7 @@ def get_linked_deploy_toml(environment: str) -> Path | None:
     try:
         with open(links_file, "rb") as f:
             links = tomllib.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001 — missing/corrupt links file is not fatal
         return None
 
     env_config = links.get(environment)
@@ -73,7 +73,7 @@ def set_linked_deploy_toml(environment: str, deploy_toml_path: Path) -> None:
         try:
             with open(links_file, "rb") as f:
                 links = tomllib.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001 — corrupt links file, start fresh
             links = {}
 
     # Convert path to string with ~ for home directory
@@ -106,7 +106,7 @@ def unlink_deploy_toml(environment: str) -> bool:
     try:
         with open(links_file, "rb") as f:
             links = tomllib.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001 — corrupt links file
         return False
 
     if environment not in links:
@@ -134,7 +134,7 @@ def get_all_links() -> dict[str, str]:
     try:
         with open(links_file, "rb") as f:
             links = tomllib.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001 — corrupt links file
         return {}
 
     return {

@@ -1,11 +1,5 @@
 """Tests for deployer.utils package."""
 
-import io
-import sys
-from pathlib import Path
-
-import pytest
-
 from deployer.utils import (
     Colors,
     log,

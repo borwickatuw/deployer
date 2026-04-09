@@ -71,11 +71,11 @@ class TestCheckTools:
 class TestCheckDeployerConfig:
     @patch("deployer.init.bootstrap.bootstrap_dir_exists", return_value="bootstrap-staging")
     @patch("deployer.utils.environment.get_environments_dir")
-    @patch.dict("os.environ", {"DEPLOYER_ENVIRONMENTS_DIR": "/tmp/envs"})
+    @patch.dict("os.environ", {"DEPLOYER_ENVIRONMENTS_DIR": "/tmp/envs"})  # noqa: S108
     def test_all_configured(self, mock_envdir, mock_bootstrap):
         from pathlib import Path
 
-        mock_envdir.return_value = Path("/tmp/envs")
+        mock_envdir.return_value = Path("/tmp/envs")  # noqa: S108
         assert _check_deployer_config() is True
 
     @patch.dict("os.environ", {}, clear=True)
@@ -88,11 +88,11 @@ class TestCheckDeployerConfig:
 
     @patch("deployer.init.bootstrap.bootstrap_dir_exists", return_value=None)
     @patch("deployer.utils.environment.get_environments_dir")
-    @patch.dict("os.environ", {"DEPLOYER_ENVIRONMENTS_DIR": "/tmp/envs"})
+    @patch.dict("os.environ", {"DEPLOYER_ENVIRONMENTS_DIR": "/tmp/envs"})  # noqa: S108
     def test_no_bootstrap_dir(self, mock_envdir, mock_bootstrap):
         from pathlib import Path
 
-        mock_envdir.return_value = Path("/tmp/envs")
+        mock_envdir.return_value = Path("/tmp/envs")  # noqa: S108
         assert _check_deployer_config() is False
 
 

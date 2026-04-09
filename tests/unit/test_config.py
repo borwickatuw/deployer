@@ -3,10 +3,7 @@
 import pytest
 
 from deployer.config import (
-    AuditConfig,
-    DeployConfig,
     ImageConfig,
-    ServiceConfig,
     get_compose_services,
     parse_deploy_config,
     parse_deploy_toml,

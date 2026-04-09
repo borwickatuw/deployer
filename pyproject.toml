@@ -58,6 +58,10 @@ source = ["src/deployer"]
 branch = true
 
 [tool.coverage.report]
+# Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
+# require real AWS credentials. 25% covers the testable business logic layer.
+fail_under = 25
+show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
@@ -71,6 +75,73 @@ target-version = ["py312"]
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["modules/db-users/lambda", "modules/db-on-shared-rds/lambda"]
+
+[tool.ruff.lint]
+# Focused rule selection for deployer.
+# Excluded categories with rationale (per claude-meta lessons learned):
+# - FBT: boolean-trap. Click CLI options use bool flags throughout bin/ scripts;
+#   the pattern is established and not a real source of bugs here.
+# - TRY: tryceratops. Stylistic suggestions about exception structure that
+#   don't add value for this codebase's exception handling style.
+# - PLR: pylint refactor / complexity counters. We use mccabe (C90) for
+#   complexity instead and avoid the noisy magic-value / too-many-* rules.
+select = [
+    "A",      # flake8-builtins (shadowing builtins)
+    "ARG",    # flake8-unused-arguments
+    "B",      # flake8-bugbear (real bugs)
+    "BLE",    # flake8-blind-except
+    "C90",    # mccabe complexity
+    "E",      # pycodestyle errors
+    "ERA",    # eradicate (commented-out code)
+    "F",      # pyflakes (real bugs: F401, F841, F821, etc.)
+    "N",      # pep8-naming
+    "S",      # flake8-bandit (security)
+    "SIM",    # flake8-simplify
+    "T20",    # flake8-print
+    "W",      # pycodestyle warnings
+    # Selected pylint rules (avoid the complexity-counting ones in PLR)
+    "PLC",    # convention
+    "PLE",    # error
+    "PLW",    # warning
+]
+
+[tool.ruff.lint.mccabe]
+# Deployer has inherently complex AWS orchestration workflows.
+# 15 avoids noise on functions like deploy_service(), run_preflight_checks().
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",    # assert in tests
+    "ARG001",  # unused args in mock callbacks
+    "ARG002",  # unused fixture args
+    "PLC0415", # imports inside test functions (lazy/conditional)
+    "PLC2701", # private name imports
+    "S105",    # hardcoded password (test fixtures)
+    "S106",    # hardcoded password kwarg
+    "S110",    # try/except/pass OK in test setup/teardown
+    "SIM105",  # contextlib.suppress not always clearer in test scaffolding
+    "SIM117",  # nested `with` OK in tests for clarity
+    "T20",     # print in tests OK
+]
+"bin/*" = [
+    "BLE001",  # CLI scripts catch broad exceptions for graceful error messages
+    "E501",    # long Click help strings and f-strings; black is line-length authority
+    "PLC0415", # lazy imports inside Click commands for fast CLI startup
+    "S603",    # subprocess calls to external tools (tofu, docker, aws) expected
+    "S607",    # partial executable paths for CLI tools (tofu, docker) expected
+    "T20",     # print is the primary output mechanism for CLI scripts
+]
+"src/*" = [
+    "S603",    # subprocess calls to external tools (tofu, docker, aws) expected
+    "S607",    # partial executable paths for CLI tools (tofu, docker) expected
+    "T20",     # deployer library outputs status via print (log(), log_ok(), etc.)
+]
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests"]

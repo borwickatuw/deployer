@@ -95,6 +95,7 @@ class DeploymentTimingReport:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self.to_json())
 
+
 class DeploymentTimer:
     """Context manager for timing deployment steps."""
 
@@ -178,5 +179,5 @@ def set_timer(timer: DeploymentTimer | None) -> None:
     Args:
         timer: Timer instance to use globally, or None to clear.
     """
-    global _global_timer
+    global _global_timer  # noqa: PLW0603 — module-level timer singleton
     _global_timer = timer

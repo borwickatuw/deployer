@@ -32,13 +32,15 @@ def generate_profile_config(
     ]
 
     for profile_name, role_name in ROLE_PROFILES.items():
-        lines.extend([
-            f"[profile {profile_name}]",
-            f"role_arn = arn:aws:iam::{account_id}:role/{role_name}",
-            f"source_profile = {source_profile}",
-            f"region = {region}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"[profile {profile_name}]",
+                f"role_arn = arn:aws:iam::{account_id}:role/{role_name}",
+                f"source_profile = {source_profile}",
+                f"region = {region}",
+                "",
+            ]
+        )
 
     return "\n".join(lines)
 
@@ -60,9 +62,7 @@ def cmd_setup_profiles(dry_run: bool) -> int:
     """Generate and optionally write AWS CLI profile configuration."""
     # Collect inputs
     detected_id = detect_aws_account_id()
-    account_id = click.prompt(
-        "AWS Account ID", default=detected_id or "", type=str
-    ).strip()
+    account_id = click.prompt("AWS Account ID", default=detected_id or "", type=str).strip()
     if not account_id or not account_id.isdigit() or len(account_id) != 12:
         print("Error: AWS Account ID must be exactly 12 digits.", file=sys.stderr)
         return 1

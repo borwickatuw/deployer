@@ -53,7 +53,6 @@ from deployer.utils import (
     validate_environment_deployed,
 )
 
-
 # =============================================================================
 # Inlined from emergency/alb.py, emergency/logs.py, emergency/maintenance.py,
 # emergency/ecr.py — these modules are only used by this script.
@@ -350,9 +349,7 @@ def get_repository_scan_summary(repository_name: str, max_images: int = 5) -> li
     return result
 
 
-def list_repositories_for_environment(
-    environment: str, service_names: list[str]
-) -> list[str]:
+def list_repositories_for_environment(environment: str, service_names: list[str]) -> list[str]:
     """List ECR repositories for an environment."""
     client = boto3.client("ecr")
     result = []
@@ -374,6 +371,7 @@ def list_repositories_for_environment(
                     pass
 
     return result
+
 
 def _format_timestamp(value: str, fmt: str = "%Y-%m-%d %H:%M UTC") -> str:
     """Parse an ISO timestamp and reformat it, returning the original on failure."""
@@ -1023,7 +1021,7 @@ def ecr(environment, verbose):
 @cli.command()
 @click.argument("environment")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
-def audit(environment, verbose):
+def audit(environment, verbose):  # noqa: ARG001 — verbose reserved for future use
     """Run all read-only checks."""
     _validate_and_configure(environment)
     sys.exit(cmd_audit(environment))

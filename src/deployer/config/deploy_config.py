@@ -147,6 +147,7 @@ class ApplicationConfig:
 
 # Known keys for application configuration (for validation)
 
+
 @dataclass
 class DeployConfig:
     """Complete deploy.toml configuration."""
@@ -184,7 +185,7 @@ class DeployConfig:
         env_vars.update(self._environment.keys())
 
         # Environment overrides (staging, production, etc.)
-        for key, value in self._environment.items():
+        for _key, value in self._environment.items():
             if isinstance(value, dict):
                 env_vars.update(value.keys())
 
@@ -250,7 +251,9 @@ class DeployConfig:
         """
         return list(self._warnings)
 
-    def get_raw_dict(self) -> dict[str, Any]:
+    def get_raw_dict(  # noqa: C901 — dict serialization with multiple sections
+        self,
+    ) -> dict[str, Any]:
         """Get a dict representation compatible with existing code.
 
         This provides backward compatibility with code that expects
@@ -330,7 +333,9 @@ class DeployConfig:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], path: Path | None = None) -> "DeployConfig":
+    def from_dict(  # noqa: C901 — TOML parsing with validation
+        cls, data: dict[str, Any], path: Path | None = None
+    ) -> "DeployConfig":
         """Create DeployConfig from a dictionary.
 
         Args:

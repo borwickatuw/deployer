@@ -10,14 +10,17 @@ bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
 # Import Deployer class for integration tests
-from importlib.util import module_from_spec, spec_from_file_location
+from importlib.util import module_from_spec, spec_from_file_location  # noqa: E402
 
 # Import from the new module structure
-from deployer.config import ImageConfig
-from deployer.core.deploy import topological_sort
-from deployer.deploy.context import DeploymentContext
-from deployer.deploy.task_definition import get_environment_variables, get_service_sizing
-from deployer.deploy.task_definition import _resolve_legacy_placeholders
+from deployer.config import ImageConfig  # noqa: E402
+from deployer.core.deploy import topological_sort  # noqa: E402
+from deployer.deploy.context import DeploymentContext  # noqa: E402
+from deployer.deploy.task_definition import _resolve_legacy_placeholders  # noqa: E402
+from deployer.deploy.task_definition import (  # noqa: E402
+    get_environment_variables,
+    get_service_sizing,
+)
 
 
 def _make_ctx(**overrides) -> DeploymentContext:
@@ -37,6 +40,7 @@ def _make_ctx(**overrides) -> DeploymentContext:
     }
     defaults.update(overrides)
     return DeploymentContext(**defaults)
+
 
 _spec = spec_from_file_location("deploy", bin_dir / "deploy.py")
 deploy = module_from_spec(_spec)

@@ -90,7 +90,7 @@ def compute_migrations_hash(source_dir: Path) -> str | None:
 
         return hasher.hexdigest()[:16]
 
-    except Exception:
+    except Exception:  # noqa: BLE001 — graceful fallback when migrations dir is unreadable
         return None
 
 

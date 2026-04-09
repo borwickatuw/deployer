@@ -60,7 +60,7 @@ def check_environment_config(env_config: dict) -> None:
 
 
 def check_audit(
-    deploy_config: DeployConfig,
+    _deploy_config: DeployConfig,
     project_dir: Path,
 ) -> None:
     """Run deploy.toml vs docker-compose.yml audit.

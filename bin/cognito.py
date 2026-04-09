@@ -122,7 +122,7 @@ def resolve_environment(env_name: str) -> tuple[Path, str, dict]:
         env_path, config = require_validated_environment(env_name)
     except EnvironmentConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     user_pool_id = get_cognito_user_pool_id_from_config(config)
     if not user_pool_id:
@@ -143,10 +143,7 @@ def cmd_list(environment: str | None) -> int:
     Deduplicates by user pool ID so shared pools are only listed once,
     with all environments that use them shown together.
     """
-    if environment:
-        environments = [environment]
-    else:
-        environments = get_cognito_environments()
+    environments = [environment] if environment else get_cognito_environments()
 
     if not environments:
         print("No Cognito-enabled environments found.", file=sys.stderr)
@@ -230,11 +227,7 @@ def cmd_create(environment: str, email: str, password: str | None, clipboard: bo
     print(f"  Email: {email}")
 
     is_temporary = not password
-
-    if password:
-        pwd = password
-    else:
-        pwd = generate_temp_password()
+    pwd = password or generate_temp_password()
 
     # Create the user (email is used as the Cognito username)
     success, error = cognito.create_user(
@@ -353,10 +346,7 @@ def cmd_reset_password(environment: str, email: str, password: str | None, perma
     """Reset a user's password."""
     _env_path, user_pool_id, _config = resolve_environment(environment)
 
-    if password:
-        pwd = password
-    else:
-        pwd = generate_temp_password()
+    pwd = password or generate_temp_password()
 
     success, error = cognito.set_user_password(
         user_pool_id=user_pool_id,
@@ -402,7 +392,9 @@ def list_cmd(environment):
 @click.argument("environment")
 @click.option("--email", "-e", required=True, help="Email address (used as username)")
 @click.option("-p", "--password", help="Set permanent password (otherwise temporary is generated)")
-@click.option("-c", "--clipboard", is_flag=True, help="Copy welcome message with credentials to clipboard")
+@click.option(
+    "-c", "--clipboard", is_flag=True, help="Copy welcome message with credentials to clipboard"
+)
 def create(environment, email, password, clipboard):
     """Create a new user."""
     _configure_aws(environment)

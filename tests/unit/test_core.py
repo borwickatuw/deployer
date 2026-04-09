@@ -1,7 +1,6 @@
 """Tests for deployer.core package."""
 
 import string
-from pathlib import Path
 
 import pytest
 

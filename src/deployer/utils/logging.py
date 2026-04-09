@@ -14,7 +14,7 @@ def set_verbose(enabled: bool) -> None:
     Args:
         enabled: If True, log_debug() calls will print output.
     """
-    global _verbose
+    global _verbose  # noqa: PLW0603 — module-level verbose flag
     _verbose = enabled
 
 

@@ -2,7 +2,6 @@
 
 import json
 import sys
-from datetime import datetime
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -106,7 +105,10 @@ def search_logs_for_oom(
         List of OOM event dicts with timestamp, message, and log_stream.
     """
     # Patterns that indicate OOM kills
-    filter_pattern = '?"SIGKILL" ?"signal 9" ?"exit code 137" ?"WorkerLostError" ?"OutOfMemory" ?"killed" ?"OOMKilled"'
+    filter_pattern = (
+        '?"SIGKILL" ?"signal 9" ?"exit code 137"'
+        ' ?"WorkerLostError" ?"OutOfMemory" ?"killed" ?"OOMKilled"'
+    )
 
     return _search_logs_boto3(
         log_group,
@@ -116,7 +118,6 @@ def search_logs_for_oom(
         cloudwatch_client,
         log_stream_prefix,
     )
-
 
 
 def _search_logs_boto3(
@@ -143,7 +144,7 @@ def _search_logs_boto3(
         if log_stream_prefix:
             kwargs["logStreamNamePrefix"] = log_stream_prefix
 
-        for page_num in range(max_pages):
+        for _ in range(max_pages):
             response = client.filter_log_events(**kwargs)
             events = response.get("events", [])
 
@@ -168,6 +169,6 @@ def _search_logs_boto3(
     except ClientError as e:
         print(f"  Warning: Could not search CloudWatch logs: {e}", file=sys.stderr)
         return []
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — graceful fallback for log search
         print(f"  Warning: Unexpected error searching logs: {e}", file=sys.stderr)
         return []

@@ -4,14 +4,12 @@ import string
 import sys
 from pathlib import Path
 
-import pytest
-
 # Add bin directory to path
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
 # Import using importlib for bin scripts
-from importlib.util import module_from_spec, spec_from_file_location
+from importlib.util import module_from_spec, spec_from_file_location  # noqa: E402
 
 _access_spec = spec_from_file_location("cognito", bin_dir / "cognito.py")
 access = module_from_spec(_access_spec)

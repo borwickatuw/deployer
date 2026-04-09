@@ -1,6 +1,5 @@
 """Framework detection utilities."""
 
-
 # Framework detection patterns based on environment variables
 FRAMEWORK_ENV_PATTERNS = {
     "django": ["DJANGO_SETTINGS_MODULE", "DJANGO_SECRET_KEY"],
@@ -111,5 +110,3 @@ def get_default_port(framework: str | None) -> int:
     if framework:
         return DEFAULT_PORTS[framework]
     return 8000
-
-

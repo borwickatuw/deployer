@@ -78,8 +78,7 @@ def get_environment_aws_profile(env_path: Path, operation: str) -> str | None:
         if config_key:
             return aws_config.get(config_key)
         return None
-    except Exception:
-        # If we can't read/parse the config, just return None
+    except Exception:  # noqa: BLE001 — best-effort config.toml read
         return None
 
 
@@ -122,7 +121,10 @@ def configure_aws_profile_for_environment(
             profile_name = env_profile
             config_key = PROFILE_CONFIG_KEYS[operation]
             if verbose:
-                log(f"Using AWS profile: {profile_name} (from {environment}/config.toml [aws].{config_key})")
+                log(
+                    f"Using AWS profile: {profile_name} "
+                    f"(from {environment}/config.toml [aws].{config_key})"
+                )
 
         # Fall back to default if no profile set yet
         if not profile_name:

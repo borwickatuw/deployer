@@ -86,7 +86,9 @@ def _generate_random_secret(length: int = 32) -> str:
 # =============================================================================
 
 
-def cmd_check(environment: str, deploy_toml: str | None) -> int:
+def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
+    environment: str, deploy_toml: str | None
+) -> int:
     """Check which secrets from deploy.toml are missing in SSM, and which SSM secrets are unused."""
     # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
     deploy_toml_path = None
@@ -181,13 +183,13 @@ def cmd_check(environment: str, deploy_toml: str | None) -> int:
 
     if missing:
         print("\nTo set missing secrets, run:")
-        for env_var, ssm_path in missing:
+        for _env_var, ssm_path in missing:
             secret_name = ssm_path.split("/")[-1]
             print(f"  uv run python bin/ssm-secrets.py put {environment} {secret_name}")
 
     if extra:
         print("\nExtra secrets not referenced in deploy.toml:")
-        for secret_name, ssm_path in extra:
+        for secret_name, _ssm_path in extra:
             print(f"  uv run python bin/ssm-secrets.py delete {environment} {secret_name}")
 
     if missing or extra:
@@ -196,7 +198,9 @@ def cmd_check(environment: str, deploy_toml: str | None) -> int:
     return 0
 
 
-def cmd_put(environment: str, secret_name: str, value: str | None, from_file: str | None, random: int | None) -> int:
+def cmd_put(
+    environment: str, secret_name: str, value: str | None, from_file: str | None, random: int | None
+) -> int:
     """Create or update a secret."""
     param_path = get_parameter_path(environment, secret_name)
 
@@ -359,7 +363,6 @@ class SSMGroup(click.Group):
     def invoke(self, ctx):
         # Configure AWS profile before any boto3 clients are created
         # Uses environment-specific profile from config.toml if available
-        env_name = None
         # Try to get environment from the subcommand's params
         if ctx.invoked_subcommand and ctx.invoked_subcommand in self.commands:
             # We need to parse ahead; use a simpler approach
@@ -390,7 +393,9 @@ def cli():
 
 @cli.command()
 @click.argument("environment")
-@click.option("--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)")
+@click.option(
+    "--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)"
+)
 def check(environment, deploy_toml):
     """Check for missing or extra secrets."""
     _configure_aws(environment)
@@ -402,7 +407,15 @@ def check(environment, deploy_toml):
 @click.argument("secret_name")
 @click.option("-v", "--value", help="Secret value (prompts if not provided)")
 @click.option("--from-file", help="Read secret value from file")
-@click.option("-r", "--random", type=int, default=None, is_flag=False, flag_value=32, help="Generate random value (default 32 chars)")
+@click.option(
+    "-r",
+    "--random",
+    type=int,
+    default=None,
+    is_flag=False,
+    flag_value=32,
+    help="Generate random value (default 32 chars)",
+)
 def put_cmd(environment, secret_name, value, from_file, random):
     """Create or update a secret."""
     _configure_aws(environment)

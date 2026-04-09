@@ -8,7 +8,7 @@ import sys
 from ..utils.colors import Colors
 from ..utils.subprocess import run_command
 
-# (display_name, command, version_args, version_regex, min_version_tuple_or_None)
+# Each entry: display_name, command, version_args, version_regex, min_version_tuple_or_None
 TOOLS = [
     ("python3", "python3", ["--version"], r"(\d+\.\d+)", (3, 12)),
     ("uv", "uv", ["--version"], r"(\d+\.\d+\.\d+)", None),
@@ -68,8 +68,8 @@ def _check_tools() -> bool:
 
 def _check_deployer_config() -> bool:
     """Check .env configuration and bootstrap directory. Returns True if all pass."""
-    from ..utils.environment import get_environments_dir
-    from .bootstrap import bootstrap_dir_exists
+    from ..utils.environment import get_environments_dir  # noqa: PLC0415
+    from .bootstrap import bootstrap_dir_exists  # noqa: PLC0415
 
     print("\nChecking deployer configuration...")
     all_ok = True
@@ -107,7 +107,7 @@ def _check_deployer_config() -> bool:
 
 def _check_aws_profiles() -> bool:
     """Check AWS profile configuration. Returns True if all pass."""
-    from ..utils.aws_profile import validate_aws_profile
+    from ..utils.aws_profile import validate_aws_profile  # noqa: PLC0415
 
     print("\nChecking AWS profiles...")
     all_ok = True
@@ -131,8 +131,8 @@ def _check_bootstrap_plan() -> bool | None:
     Returns True if no changes, False if there are changes or errors,
     None if the check was skipped (no bootstrap dir or not initialized).
     """
-    from ..utils.environment import get_environments_dir
-    from .bootstrap import bootstrap_dir_exists
+    from ..utils.environment import get_environments_dir  # noqa: PLC0415
+    from .bootstrap import bootstrap_dir_exists  # noqa: PLC0415
 
     bootstrap_name = bootstrap_dir_exists()
     if not bootstrap_name:
@@ -152,6 +152,7 @@ def _check_bootstrap_plan() -> bool | None:
         cwd=str(bootstrap_path),
         capture_output=True,
         text=True,
+        check=False,
     )
 
     # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes present
@@ -167,7 +168,8 @@ def _check_bootstrap_plan() -> bool | None:
         return False
     else:
         # Error running plan (e.g., missing admin credentials) — skip, don't fail
-        stderr_first_line = result.stderr.strip().splitlines()[0] if result.stderr.strip() else "unknown error"
+        stderr_lines = result.stderr.strip().splitlines()
+        stderr_first_line = stderr_lines[0] if stderr_lines else "unknown error"
         print(
             f"  tofu plan: {Colors.YELLOW}skipped{Colors.NC} (could not run plan)\n"
             f"             {stderr_first_line}\n"

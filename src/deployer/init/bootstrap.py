@@ -17,9 +17,7 @@ def detect_aws_account_id() -> str | None:
     Returns:
         12-digit account ID string, or None if detection fails.
     """
-    success, output = run_command(
-        ["aws", "sts", "get-caller-identity", "--output", "json"]
-    )
+    success, output = run_command(["aws", "sts", "get-caller-identity", "--output", "json"])
     if not success:
         return None
     try:
@@ -98,7 +96,7 @@ def uncomment_backend_block(content: str) -> str:
 
     result = []
     for i, line in enumerate(lines):
-        if i == start_idx or i == end_idx:
+        if i in (start_idx, end_idx):
             continue  # Remove marker lines
         if start_idx < i < end_idx:
             # Remove leading "# " comment prefix (preserve indentation)
@@ -116,7 +114,7 @@ def generate_bootstrap(
     project_prefixes: list[str],
     trusted_user_arns: list[str],
     include_cognito: bool = False,
-    cognito_app_domains: dict[str, str] | None = None,
+    cognito_app_domains: dict[str, str] | None = None,  # pysmelly: ignore unused-defaults — semantically optional (only used when include_cognito=True)
 ) -> dict[str, str]:
     """Generate bootstrap directory files from templates.
 
@@ -151,9 +149,7 @@ def generate_bootstrap(
     cognito_tfvars = templates.pop("cognito.auto.tfvars", None)
 
     if include_cognito and cognito_fragment:
-        context["cognito_app_domains_hcl"] = format_hcl_map(
-            cognito_app_domains or {}
-        )
+        context["cognito_app_domains_hcl"] = format_hcl_map(cognito_app_domains or {})
         templates["main.tf"] += substitute(cognito_fragment, **context)
 
     # Substitute placeholders in all remaining templates

@@ -227,7 +227,7 @@ def resolve_service_urls(
                     service_name, services_config, service_discovery_namespace
                 )
                 if url:
-                    value = INTERNAL_SERVICE_URL_PATTERN.sub(url, value)
+                    value = INTERNAL_SERVICE_URL_PATTERN.sub(url, value)  # noqa: PLW2901
                 # Leave unresolved if service discovery not configured
 
             # Check for external service URL references
@@ -237,7 +237,7 @@ def resolve_service_urls(
                 url = resolve_service_url(service_name, services_config, domain_name)
                 if url:
                     # Replace the reference with the URL
-                    value = SERVICE_URL_PATTERN.sub(url, value)
+                    value = SERVICE_URL_PATTERN.sub(url, value)  # noqa: PLW2901
                 else:
                     # Leave unresolved if service doesn't have path_pattern
                     pass

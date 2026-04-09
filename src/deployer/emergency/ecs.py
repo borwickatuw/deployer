@@ -271,7 +271,6 @@ def update_service_task_definition(
         return False
 
 
-
 def wait_for_deployment(
     cluster_name: str,
     service_name: str,
@@ -378,5 +377,3 @@ def force_new_deployment(
         return True
     except ClientError:
         return False
-
-

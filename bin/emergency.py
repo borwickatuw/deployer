@@ -31,7 +31,6 @@ Usage:
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 
 import click
 
@@ -79,7 +78,6 @@ from deployer.utils import (
     log_warning,
     validate_environment_deployed,
 )
-
 
 # =============================================================================
 # Inlined from emergency/logging.py — only used by this script.
@@ -249,7 +247,9 @@ def _validate_and_configure(environment: str) -> None:
 # =============================================================================
 
 
-def cmd_rollback(environment: str, service: str | None, revision: int | None, yes: bool) -> int:
+def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
+    environment: str, service: str | None, revision: int | None, yes: bool
+) -> int:
     """Roll back ECS service(s) to previous task definition."""
     result = _load_cluster_services(environment)
     if result is None:
@@ -261,9 +261,7 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
     # Determine which service to roll back
     if service:
         if service not in services:
-            log_error(
-                f"Service '{service}' not found. Available: {', '.join(services.keys())}"
-            )
+            log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
             return 1
         service_name = service
     else:
@@ -325,10 +323,7 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
             choice = input(
                 "Select revision to roll back to (number, default=1 for previous): "
             ).strip()
-            if not choice:
-                idx = 1
-            else:
-                idx = int(choice)
+            idx = 1 if not choice else int(choice)
             if idx < 1 or idx >= len(revisions):
                 log_error("Invalid selection (cannot select current revision)")
                 return 1
@@ -346,7 +341,7 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
     if diff:
         print()
         print(f"{Colors.YELLOW}Environment variable changes:{Colors.NC}")
-        for container, changes in diff.items():
+        for _container, changes in diff.items():
             if changes.get("added"):
                 for var, val in changes["added"].items():
                     print(f"  + {var}={val}")
@@ -421,7 +416,15 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
 # =============================================================================
 
 
-def cmd_scale(environment: str, service: str | None, count: int | None, all_services: bool, multiplier: float | None, reset: bool, yes: bool) -> int:
+def cmd_scale(
+    environment: str,
+    service: str | None,
+    count: int | None,
+    all_services: bool,
+    multiplier: float | None,
+    reset: bool,
+    yes: bool,
+) -> int:
     """Scale ECS services."""
     result = _load_cluster_services(environment)
     if result is None:
@@ -433,7 +436,7 @@ def cmd_scale(environment: str, service: str | None, count: int | None, all_serv
     # Determine what to scale
     if reset:
         configured_replicas = get_service_replicas_from_config(ctx.config)
-        to_scale = {name: configured_replicas.get(name, 1) for name in services.keys()}
+        to_scale = {name: configured_replicas.get(name, 1) for name in services}
     elif service:
         if service not in services:
             log_error(f"Service '{service}' not found")
@@ -449,7 +452,7 @@ def cmd_scale(environment: str, service: str | None, count: int | None, all_serv
                 for name, state in services.items()
             }
         elif count is not None:
-            to_scale = {name: count for name in services.keys()}
+            to_scale = {name: count for name in services}
         else:
             log_error("--multiplier or --count is required with --all")
             return 1
@@ -538,7 +541,9 @@ def cmd_snapshot(environment: str, no_wait: bool) -> int:
 # =============================================================================
 
 
-def cmd_restore_db(environment: str, snapshot: str | None, time: str | None) -> int:
+def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
+    environment: str, snapshot: str | None, time: str | None
+) -> int:
     """Restore database from snapshot or point-in-time."""
     rds_id, logger = _init_rds_command(environment, "restore-db")
 
@@ -641,7 +646,9 @@ def cmd_restore_db(environment: str, snapshot: str | None, time: str | None) -> 
 # =============================================================================
 
 
-def cmd_revert(environment: str, list_checkpoints_flag: bool, checkpoint: str | None, yes: bool) -> int:
+def cmd_revert(
+    environment: str, list_checkpoints_flag: bool, checkpoint: str | None, yes: bool
+) -> int:
     """Revert to a previous checkpoint."""
     if list_checkpoints_flag:
         checkpoints = list_checkpoints(environment)
@@ -672,10 +679,7 @@ def cmd_revert(environment: str, list_checkpoints_flag: bool, checkpoint: str | 
         return 1
 
     if cp.environment != environment:
-        log_error(
-            f"Checkpoint is for environment '{cp.environment}', "
-            f"not '{environment}'"
-        )
+        log_error(f"Checkpoint is for environment '{cp.environment}', " f"not '{environment}'")
         return 1
 
     ctx = _load_emergency_context(environment, require_cluster=True)
@@ -740,9 +744,7 @@ def cmd_force_deploy(environment: str, service: str | None, all_services: bool, 
 
     if service:
         if service not in services:
-            log_error(
-                f"Service '{service}' not found. Available: {', '.join(services.keys())}"
-            )
+            log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
             return 1
         target_services = [service]
     elif all_services:
@@ -840,7 +842,9 @@ def restore_db(environment, snapshot, time):
 
 @cli.command()
 @click.argument("environment")
-@click.option("--list", "-l", "list_checkpoints_flag", is_flag=True, help="List available checkpoints")
+@click.option(
+    "--list", "-l", "list_checkpoints_flag", is_flag=True, help="List available checkpoints"
+)
 @click.option("--checkpoint", help="Checkpoint filename to revert to")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 def revert(environment, list_checkpoints_flag, checkpoint, yes):

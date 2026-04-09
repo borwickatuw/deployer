@@ -54,7 +54,7 @@ def get_next_listener_priority(env_type: str) -> int:
                     match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
                     if match:
                         existing_priorities.append(int(match.group(1)))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 — best-effort priority scan
                     pass
 
     # Return next available (100, 200, 300, ...)
@@ -187,7 +187,7 @@ def generate_environment(
 def _apply_deploy_toml_services(
     files: dict[str, str],
     deploy_config: dict,
-    env_type: str,
+    _env_type: str,
 ) -> None:
     """Apply deploy.toml service definitions to generated files (Pass 2).
 
@@ -205,11 +205,12 @@ def _apply_deploy_toml_services(
 
     for filepath, content in files.items():
         basename = os.path.basename(filepath)
-        if basename in ("services.auto.tfvars", "terraform.tfvars"):
-            if re.search(r"^services\s*=\s*\{", content, re.MULTILINE):
-                target_path = filepath
-                target_content = content
-                break
+        if basename in ("services.auto.tfvars", "terraform.tfvars") and re.search(
+            r"^services\s*=\s*\{", content, re.MULTILINE
+        ):
+            target_path = filepath
+            target_content = content
+            break
 
     if target_path is None or target_content is None:
         return

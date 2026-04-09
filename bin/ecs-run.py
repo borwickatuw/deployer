@@ -229,7 +229,18 @@ def cmd_list(environment: str) -> int:
     return 0
 
 
-def cmd_run(environment: str, command_name: str | None, deploy_toml: str | None, list_commands: bool, extra_args: tuple, service: str, container: str | None, no_wait: bool, no_logs: bool, timeout: int) -> int:
+def cmd_run(  # noqa: C901 — ECS run command orchestration
+    environment: str,
+    command_name: str | None,
+    deploy_toml: str | None,
+    list_commands: bool,
+    extra_args: tuple,
+    service: str,
+    container: str | None,
+    no_wait: bool,
+    no_logs: bool,
+    timeout: int,
+) -> int:
     """Run a named command from deploy.toml [commands] section."""
     # Handle --list-commands that may have been captured by extra_args
     if "--list-commands" in extra_args:
@@ -331,7 +342,15 @@ def cmd_run(environment: str, command_name: str | None, deploy_toml: str | None,
     )
 
 
-def cmd_exec(environment: str, command_args: tuple, service: str, container: str | None, no_wait: bool, no_logs: bool, timeout: int) -> int:
+def cmd_exec(
+    environment: str,
+    command_args: tuple,
+    service: str,
+    container: str | None,
+    no_wait: bool,
+    no_logs: bool,
+    timeout: int,
+) -> int:
     """Run an arbitrary command."""
     result = resolve_environment(environment)
     if not result:
@@ -358,13 +377,20 @@ def cmd_exec(environment: str, command_args: tuple, service: str, container: str
 # CLI
 # =============================================================================
 
+
 def _common_run_options(func):
     """Add common run/exec options."""
     func = click.option("-s", "--service", default="web", help="Service name (default: web)")(func)
-    func = click.option("-c", "--container", help="Container name override (default: first container)")(func)
+    func = click.option(
+        "-c", "--container", help="Container name override (default: first container)"
+    )(func)
     func = click.option("--no-wait", is_flag=True, help="Don't wait for task completion")(func)
-    func = click.option("--no-logs", is_flag=True, help="Don't fetch and display logs after completion")(func)
-    func = click.option("--timeout", type=int, default=300, help="Timeout in seconds (default: 300)")(func)
+    func = click.option(
+        "--no-logs", is_flag=True, help="Don't fetch and display logs after completion"
+    )(func)
+    func = click.option(
+        "--timeout", type=int, default=300, help="Timeout in seconds (default: 300)"
+    )(func)
     return func
 
 
@@ -390,12 +416,42 @@ def list_cmd(environment):
 @click.argument("environment", required=False)
 @click.argument("command_name", required=False)
 @click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
-@click.option("--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)")
-@click.option("--list-commands", is_flag=True, help="List available commands from deploy.toml instead of running one")
+@click.option(
+    "--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)"
+)
+@click.option(
+    "--list-commands",
+    is_flag=True,
+    help="List available commands from deploy.toml instead of running one",
+)
 @_common_run_options
-def run_cmd(environment, command_name, extra_args, deploy_toml, list_commands, service, container, no_wait, no_logs, timeout):
+def run_cmd(
+    environment,
+    command_name,
+    extra_args,
+    deploy_toml,
+    list_commands,
+    service,
+    container,
+    no_wait,
+    no_logs,
+    timeout,
+):
     """Run a named command from deploy.toml [commands] section."""
-    sys.exit(cmd_run(environment, command_name, deploy_toml, list_commands, extra_args, service, container, no_wait, no_logs, timeout))
+    sys.exit(
+        cmd_run(
+            environment,
+            command_name,
+            deploy_toml,
+            list_commands,
+            extra_args,
+            service,
+            container,
+            no_wait,
+            no_logs,
+            timeout,
+        )
+    )
 
 
 @cli.command("exec")

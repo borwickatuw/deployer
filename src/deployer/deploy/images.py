@@ -19,8 +19,8 @@ def _run_timed_subprocess(cmd: list[str], step_name: str) -> subprocess.Complete
     timer = get_timer()
     if timer and timer._current_step:
         with timer.sub_step(step_name):
-            return subprocess.run(cmd, capture_output=True, text=True)
-    return subprocess.run(cmd, capture_output=True, text=True)
+            return subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
 def _check_subprocess_result(
@@ -53,11 +53,11 @@ def parse_dockerignore(context_path: Path) -> list[str]:
 
     if dockerignore_path.exists():
         with open(dockerignore_path) as f:
-            for line in f:
-                line = line.strip()
+            for raw_line in f:
+                stripped = raw_line.strip()
                 # Skip empty lines and comments
-                if line and not line.startswith("#"):
-                    patterns.append(line)
+                if stripped and not stripped.startswith("#"):
+                    patterns.append(stripped)
 
     return patterns
 
@@ -82,15 +82,14 @@ def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> b
             continue  # Simplified: don't handle negation for now
 
         # Handle directory patterns ending with /
-        if pattern.endswith("/"):
-            pattern = pattern[:-1]
+        effective_pattern = pattern[:-1] if pattern.endswith("/") else pattern
 
         # Check if any part of the path matches
         # e.g., ".git" should match ".git/config"
         parts = rel_path.parts
         for i, part in enumerate(parts):
             partial_path = str(Path(*parts[: i + 1]))
-            if fnmatch.fnmatch(partial_path, pattern):
+            if fnmatch.fnmatch(partial_path, effective_pattern):
                 return True
             if fnmatch.fnmatch(part, pattern):
                 return True
@@ -130,9 +129,8 @@ def compute_context_hash(context_path: Path, dockerfile: str) -> str:
     # Collect and sort all files for deterministic hashing
     files_to_hash = []
     for file_path in context_path.rglob("*"):
-        if file_path.is_file():
-            if not should_ignore(file_path, context_path, patterns):
-                files_to_hash.append(file_path)
+        if file_path.is_file() and not should_ignore(file_path, context_path, patterns):
+            files_to_hash.append(file_path)
 
     # Sort by relative path for determinism
     files_to_hash.sort(key=lambda p: str(p.relative_to(context_path)))
@@ -213,7 +211,7 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     log_success("ECR login")
 
 
-def build_and_push_images(
+def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-run, and ECR logic
     config: DeployConfig | dict,
     source_dir: Path,
     ecr_prefix: str,
@@ -316,7 +314,7 @@ def build_and_push_images(
             ecr_uri = f"{ecr_repo}:{tag}"
 
             # Check if image already exists in ECR (skip if no client or dry_run)
-            if ecr_client and not dry_run and not force_build:
+            if ecr_client and not dry_run and not force_build:  # noqa: SIM102
                 if image_exists_in_ecr(ecr_client, repo_name, tag):
                     log_status(f"{image_name}", f"cached ({tag[:8]})")
                     image_uris[image_name] = ecr_uri
@@ -402,10 +400,7 @@ def validate_ecr_repositories(
     missing = []
 
     # Support both DeployConfig dataclass and raw dict
-    if isinstance(config, DeployConfig):
-        images = config.images
-    else:
-        images = config.get("images", {})
+    images = config.images if isinstance(config, DeployConfig) else config.get("images", {})
 
     for image_name, image_config in images.items():
         # Skip images that won't be pushed

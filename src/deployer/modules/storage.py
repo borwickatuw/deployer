@@ -53,7 +53,8 @@ class StorageModule(ResourceModule):
             config_key = f"{bucket_name}_bucket"
             if not env_config.get(config_key):
                 errors.append(
-                    f"[storage] missing '{config_key}' in config.toml for declared bucket '{bucket_name}'"
+                    f"[storage] missing '{config_key}' in config.toml "
+                    f"for declared bucket '{bucket_name}'"
                 )
 
         return errors
@@ -62,7 +63,7 @@ class StorageModule(ResourceModule):
         self,
         app_config: dict[str, Any],
         env_config: dict[str, Any],
-        context: ModuleContext,
+        context: ModuleContext,  # noqa: ARG002 — required by Module interface
     ) -> ModuleOutput:
         """Collect storage environment variables."""
         if not app_config or not app_config.get("type"):

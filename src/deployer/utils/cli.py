@@ -1,6 +1,5 @@
 """Shared CLI utilities for bin/ scripts."""
 
-import sys
 from pathlib import Path
 
 from .environment import get_environment_path, validate_environment_deployed
@@ -50,7 +49,7 @@ def require_environment(env_name: str) -> tuple[Path, dict]:
     Raises:
         EnvironmentConfigError: If environment is invalid or config can't be loaded.
     """
-    from ..core.config import load_environment_config
+    from ..core.config import load_environment_config  # noqa: PLC0415
 
     env_path = get_environment_path(env_name)
     try:
@@ -77,7 +76,7 @@ def require_validated_environment(env_name: str) -> tuple[Path, dict]:
         EnvironmentConfigError: If environment is invalid, not deployed,
             or config can't be loaded.
     """
-    from ..core.config import load_environment_config
+    from ..core.config import load_environment_config  # noqa: PLC0415
 
     env_path, error = validate_environment_deployed(env_name)
     if error:

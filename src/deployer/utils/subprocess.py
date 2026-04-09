@@ -21,9 +21,10 @@ def run_command(cmd: list[str], cwd: str | None = None) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             cwd=cwd,
+            check=False,
         )
         if result.returncode != 0:
             return False, result.stderr
         return True, result.stdout
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — catch subprocess launch failures
         return False, str(e)

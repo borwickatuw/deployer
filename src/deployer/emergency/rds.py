@@ -193,9 +193,7 @@ def get_rds_instance_details(instance_id: str) -> dict | None:
         return None
 
 
-def _prepare_restore(
-    source_instance_id: str, target_suffix: str
-) -> tuple[str, dict] | None:
+def _prepare_restore(source_instance_id: str, target_suffix: str) -> tuple[str, dict] | None:
     """Common setup for restore operations: get source details and build target ID.
 
     Returns:
@@ -220,7 +218,8 @@ def _handle_restore_error(e: ClientError, target_id: str) -> dict | None:
             "status": "error",
             "message": (
                 f"Instance '{target_id}' already exists. Delete it first with:\n"
-                f"  aws rds delete-db-instance --db-instance-identifier {target_id} --skip-final-snapshot"
+                f"  aws rds delete-db-instance "
+                f"--db-instance-identifier {target_id} --skip-final-snapshot"
             ),
         }
     return None
@@ -336,5 +335,3 @@ def restore_from_point_in_time(
         }
     except ClientError as e:
         return _handle_restore_error(e, target_id)
-
-

@@ -69,7 +69,7 @@ from deployer.utils import ensure_environments_symlinks, get_environments_dir
 # =============================================================================
 
 
-def cmd_bootstrap(dry_run: bool) -> int:
+def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap with multiple inputs
     """Interactively set up bootstrap infrastructure for a new AWS account."""
     print("Setting up deployer bootstrap for a new AWS account.\n")
 
@@ -83,7 +83,9 @@ def cmd_bootstrap(dry_run: bool) -> int:
         return 1
 
     region = click.prompt("AWS Region", default="us-west-2", type=str).strip()
-    env_label = click.prompt("Environment label (e.g., staging, production)", default="staging", type=str).strip()
+    env_label = click.prompt(
+        "Environment label (e.g., staging, production)", default="staging", type=str
+    ).strip()
     env_name = f"bootstrap-{env_label}"
 
     prefixes_str = click.prompt("Project prefixes (comma-separated)", type=str).strip()
@@ -93,10 +95,12 @@ def cmd_bootstrap(dry_run: bool) -> int:
         return 1
 
     default_arn = f"arn:aws:iam::{account_id}:user/deployer"
-    arns_str = click.prompt("Trusted IAM user ARNs (comma-separated)", default=default_arn, type=str).strip()
+    arns_str = click.prompt(
+        "Trusted IAM user ARNs (comma-separated)", default=default_arn, type=str
+    ).strip()
     trusted_user_arns = [a.strip() for a in arns_str.split(",") if a.strip()]
 
-    # Cognito (optional)
+    # Optionally configure Cognito
     include_cognito = click.confirm("Include shared Cognito user pool?", default=False)
     cognito_app_domains = None
     if include_cognito:
@@ -106,9 +110,12 @@ def cmd_bootstrap(dry_run: bool) -> int:
         ).strip()
         cognito_app_domains = {}
         for pair in domains_str.split(","):
-            pair = pair.strip()
+            pair = pair.strip()  # noqa: PLW2901
             if "=" not in pair:
-                print(f"Error: Invalid app domain format '{pair}'. Expected appname=domain.", file=sys.stderr)
+                print(
+                    f"Error: Invalid app domain format '{pair}'. Expected appname=domain.",
+                    file=sys.stderr,
+                )
                 return 1
             app, domain = pair.split("=", 1)
             cognito_app_domains[app.strip()] = domain.strip()
@@ -172,7 +179,9 @@ def cmd_bootstrap(dry_run: bool) -> int:
     # Make import-existing.sh executable
     import_script = env_path / "import-existing.sh"
     if import_script.exists():
-        import_script.chmod(import_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        import_script.chmod(
+            import_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        )
 
     print()
 
@@ -191,7 +200,7 @@ def cmd_bootstrap(dry_run: bool) -> int:
 
     # tofu init
     print(f"\nRunning: tofu init (in {env_path})")
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: PLW1510
         ["tofu", "init"],
         cwd=str(env_path),
         env={**os.environ, "AWS_PROFILE": admin_profile},
@@ -202,7 +211,7 @@ def cmd_bootstrap(dry_run: bool) -> int:
 
     # tofu apply
     print(f"\nRunning: tofu apply (in {env_path})")
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: PLW1510
         ["tofu", "apply"],
         cwd=str(env_path),
         env={**os.environ, "AWS_PROFILE": admin_profile},
@@ -327,7 +336,9 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
     return 0
 
 
-def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain, dry_run) -> int:
+def cmd_environment(  # noqa: C901 — environment creation with template handling
+    app_name, template, list_templates_flag, deploy_toml, domain, dry_run
+) -> int:
     """Create environment directory structure."""
     # Handle --list-templates
     if list_templates_flag:
@@ -373,10 +384,7 @@ def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain
         return 1
 
     # Compute env_name for existence check
-    if is_shared_infra:
-        env_name = template_name
-    else:
-        env_name = f"{app_name}-{env_type}"
+    env_name = template_name if is_shared_infra else f"{app_name}-{env_type}"
 
     env_path = get_environments_dir() / env_name
     if env_path.exists() and not dry_run:
@@ -441,9 +449,8 @@ def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain
         print(f"Created: {filepath}")
 
     # Create deployer.tf symlink (standalone templates only)
-    if template_name.startswith("standalone-"):
-        if create_deployer_tf_symlink(env_path):
-            print(f"Created: {env_path}/deployer.tf -> shared environment config")
+    if template_name.startswith("standalone-") and create_deployer_tf_symlink(env_path):
+        print(f"Created: {env_path}/deployer.tf -> shared environment config")
 
     print()
     _print_next_steps(env_name, env_path, env_type, app_name, template_name)
@@ -531,8 +538,14 @@ def cli():
 
 
 @cli.command("bootstrap")
-@click.option("--migrate-state", metavar="ENV_NAME", help="Phase 2: Enable S3 backend in an existing bootstrap directory")
-@click.option("--dry-run", "-n", is_flag=True, help="Show what would be generated without writing files")
+@click.option(
+    "--migrate-state",
+    metavar="ENV_NAME",
+    help="Phase 2: Enable S3 backend in an existing bootstrap directory",
+)
+@click.option(
+    "--dry-run", "-n", is_flag=True, help="Show what would be generated without writing files"
+)
 def bootstrap_cmd(migrate_state, dry_run):
     """Set up bootstrap infrastructure for a new AWS account.
 
@@ -551,22 +564,46 @@ def bootstrap_cmd(migrate_state, dry_run):
 
 
 @cli.command("deploy-toml")
-@click.option("--from-compose", metavar="PATH", help="Path to docker-compose.yml (default: ./docker-compose.yml)")
+@click.option(
+    "--from-compose",
+    metavar="PATH",
+    help="Path to docker-compose.yml (default: ./docker-compose.yml)",
+)
 @click.option("--app-name", metavar="NAME", help="Application name (default: directory name)")
-@click.option("--output", "-o", metavar="PATH", help="Output path for deploy.toml (default: same directory as docker-compose.yml)")
-@click.option("--dry-run", "-n", is_flag=True, help="Show what would be generated without writing files")
+@click.option(
+    "--output",
+    "-o",
+    metavar="PATH",
+    help="Output path for deploy.toml (default: same directory as docker-compose.yml)",
+)
+@click.option(
+    "--dry-run", "-n", is_flag=True, help="Show what would be generated without writing files"
+)
 def deploy_toml_cmd(from_compose, app_name, output, dry_run):
     """Generate deploy.toml from docker-compose.yml."""
     sys.exit(cmd_deploy_toml(from_compose, app_name, output, dry_run))
 
 
 @cli.command("environment")
-@click.option("--app-name", metavar="NAME", help="Application name (required except for shared-infra templates)")
-@click.option("--template", "-t", metavar="NAME", help="Template to use (e.g., standalone-staging). Use --list-templates to see options.")
+@click.option(
+    "--app-name",
+    metavar="NAME",
+    help="Application name (required except for shared-infra templates)",
+)
+@click.option(
+    "--template",
+    "-t",
+    metavar="NAME",
+    help="Template to use (e.g., standalone-staging). Use --list-templates to see options.",
+)
 @click.option("--list-templates", is_flag=True, help="List available templates and exit")
-@click.option("--deploy-toml", metavar="PATH", help="Path to deploy.toml to read service configuration from")
+@click.option(
+    "--deploy-toml", metavar="PATH", help="Path to deploy.toml to read service configuration from"
+)
 @click.option("--domain", metavar="DOMAIN", help="Domain name for the environment")
-@click.option("--dry-run", "-n", is_flag=True, help="Show what would be created without writing files")
+@click.option(
+    "--dry-run", "-n", is_flag=True, help="Show what would be created without writing files"
+)
 def environment_cmd(app_name, template, list_templates, deploy_toml, domain, dry_run):
     """Create environment directory from a template.
 

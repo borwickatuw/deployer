@@ -251,7 +251,7 @@ def format_missing_secrets_error(
     lines.append("")
     lines.append("To create missing secrets, run:")
 
-    for env_var, ssm_path in missing:
+    for _env_var, ssm_path in missing:
         secret_name = ssm_path.split("/")[-1]
         lines.append(f"  uv run python bin/ssm-secrets.py put {env_name} {secret_name}")
 

@@ -44,7 +44,7 @@ class DatabaseModule(ResourceModule):
     def name(self) -> str:
         return "database"
 
-    def validate(
+    def validate(  # noqa: C901 — validates many credential/config combinations
         self,
         app_config: dict[str, Any],
         env_config: dict[str, Any],
@@ -63,8 +63,9 @@ class DatabaseModule(ResourceModule):
         extensions = app_config.get("extensions", [])
         if extensions and not env_config.get("extensions_lambda"):
             errors.append(
-                "[database] deploy.toml declares extensions but config.toml is missing "
-                "'extensions_lambda' (add: extensions_lambda = \"${tofu:db_users_lambda_function_name}\")"
+                "[database] deploy.toml declares extensions but config.toml "
+                "is missing 'extensions_lambda' "
+                '(add: extensions_lambda = "${tofu:db_users_lambda_function_name}")'
             )
 
         # Check credentials configuration
@@ -73,19 +74,23 @@ class DatabaseModule(ResourceModule):
             # Two-account model: require app and migrate credentials
             if not env_config.get("app_username_secret"):
                 errors.append(
-                    "[database] using secretsmanager but missing 'app_username_secret' in config.toml"
+                    "[database] using secretsmanager but missing "
+                    "'app_username_secret' in config.toml"
                 )
             if not env_config.get("app_password_secret"):
                 errors.append(
-                    "[database] using secretsmanager but missing 'app_password_secret' in config.toml"
+                    "[database] using secretsmanager but missing "
+                    "'app_password_secret' in config.toml"
                 )
             if not env_config.get("migrate_username_secret"):
                 errors.append(
-                    "[database] using secretsmanager but missing 'migrate_username_secret' in config.toml"
+                    "[database] using secretsmanager but missing "
+                    "'migrate_username_secret' in config.toml"
                 )
             if not env_config.get("migrate_password_secret"):
                 errors.append(
-                    "[database] using secretsmanager but missing 'migrate_password_secret' in config.toml"
+                    "[database] using secretsmanager but missing "
+                    "'migrate_password_secret' in config.toml"
                 )
         elif credentials == "ssm":
             # SSM mode: require app and migrate params
@@ -107,11 +112,13 @@ class DatabaseModule(ResourceModule):
                 )
         elif credentials:
             errors.append(
-                f"[database] credentials '{credentials}' not supported (use 'secretsmanager' or 'ssm')"
+                f"[database] credentials '{credentials}' not supported "
+                "(use 'secretsmanager' or 'ssm')"
             )
         else:
             errors.append(
-                "[database] section missing 'credentials' in config.toml (use 'secretsmanager' or 'ssm')"
+                "[database] section missing 'credentials' in config.toml "
+                "(use 'secretsmanager' or 'ssm')"
             )
 
         return errors

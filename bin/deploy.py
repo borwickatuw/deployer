@@ -51,13 +51,36 @@ def cli():
 
 @cli.command()
 @click.argument("environment")
-@click.option("--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)")
-@click.option("--ignore-audit", is_flag=True, help="Skip the deploy.toml vs docker-compose.yml audit check")
+@click.option(
+    "--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)"
+)
+@click.option(
+    "--ignore-audit", is_flag=True, help="Skip the deploy.toml vs docker-compose.yml audit check"
+)
 @common_deploy_options
-@click.option("--timing-output", metavar="FILE", help="Save timing report to JSON file (also prints to stdout)")
-@click.option("--run-id", metavar="ID", help="Run ID for timing report (auto-generated if not specified)")
+@click.option(
+    "--timing-output",
+    metavar="FILE",
+    help="Save timing report to JSON file (also prints to stdout)",
+)
+@click.option(
+    "--run-id", metavar="ID", help="Run ID for timing report (auto-generated if not specified)"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed debug information")
-def deploy(environment, deploy_toml, ignore_audit, dry_run, force, force_build, skip_ecr_check, skip_secrets_check, skip_cluster_check, timing_output, run_id, verbose):
+def deploy(  # noqa: C901 — main deploy orchestration
+    environment,
+    deploy_toml,
+    ignore_audit,
+    dry_run,
+    force,
+    force_build,
+    skip_ecr_check,
+    skip_secrets_check,
+    skip_cluster_check,
+    timing_output,
+    run_id,
+    verbose,
+):
     """Deploy an application to an environment.
 
     \b
@@ -86,7 +109,9 @@ def deploy(environment, deploy_toml, ignore_audit, dry_run, force, force_build, 
             log_error(
                 f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml"
             )
-            log_error(f"Or specify: deploy.py deploy {environment} --deploy-toml /path/to/deploy.toml")
+            log_error(
+                f"Or specify: deploy.py deploy {environment} --deploy-toml /path/to/deploy.toml"
+            )
             sys.exit(1)
 
     if used_explicit_flag:
@@ -108,7 +133,7 @@ def deploy(environment, deploy_toml, ignore_audit, dry_run, force, force_build, 
     if not config_path.exists():
         log_error(f"Config file not found: {config_path}")
         sys.exit(1)
-    if not config_path.suffix == ".toml":
+    if config_path.suffix != ".toml":
         log_error(f"Config file must be a .toml file, got: {config_path}")
         sys.exit(1)
 
@@ -201,8 +226,14 @@ def deploy(environment, deploy_toml, ignore_audit, dry_run, force, force_build, 
 
 @cli.command()
 @click.argument("project_dir")
-@click.option("--docker-compose", default="docker-compose.yml", help="Name of docker-compose file (default: docker-compose.yml)")
-@click.option("--deploy-toml", default="deploy.toml", help="Name of deploy.toml file (default: deploy.toml)")
+@click.option(
+    "--docker-compose",
+    default="docker-compose.yml",
+    help="Name of docker-compose file (default: docker-compose.yml)",
+)
+@click.option(
+    "--deploy-toml", default="deploy.toml", help="Name of deploy.toml file (default: deploy.toml)"
+)
 def audit(project_dir, docker_compose, deploy_toml):
     """Audit deploy.toml against docker-compose.yml to find discrepancies.
 

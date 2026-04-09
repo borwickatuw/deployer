@@ -144,7 +144,7 @@ def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
             if dockerfile_path.exists():
                 try:
                     return dockerfile_path.read_text()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 — best-effort Dockerfile read
                     pass
     return None
 
@@ -154,9 +154,7 @@ def _filter_app_services(services: dict) -> dict:
     return {
         name: svc
         for name, svc in services.items()
-        if svc.get("has_build")
-        and not _is_infrastructure_service(name)
-        and not svc.get("profiles")
+        if svc.get("has_build") and not _is_infrastructure_service(name) and not svc.get("profiles")
     }
 
 
@@ -291,7 +289,7 @@ def generate_deploy_toml(
     migrations = _build_migrations_config(framework, deploy_services, app_name)
 
     # Infrastructure services to ignore in audit
-    infra_services = [name for name in services.keys() if _is_infrastructure_service(name)]
+    infra_services = [name for name in services if _is_infrastructure_service(name)]
 
     # Build final config
     config: dict[str, Any] = {

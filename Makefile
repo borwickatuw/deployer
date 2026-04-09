@@ -36,6 +36,11 @@ format: ## Auto-format code with black and isort
 	@echo "=== Running isort ==="
 	@uv run isort bin src tests
 
+.PHONY: ruff
+ruff: ## Run ruff linter
+	@echo "=== Ruff Linter ==="
+	@uv run ruff check bin src tests
+
 .PHONY: lint
 lint: ## Check code formatting (black, isort)
 	@echo "=== Checking Black Formatting ==="
@@ -140,6 +145,14 @@ security-checkov: ## Run Checkov IaC scanner on OpenTofu modules
 security-deps: ## Check dependency vulnerabilities
 	@echo "=== Dependency Vulnerability Scan (pip-audit) ==="
 	@uv run pip-audit
+
+# =============================================================================
+# Code Analysis
+# =============================================================================
+
+.PHONY: pysmelly
+pysmelly: ## Run pysmelly code smell analysis
+	@uvx pysmelly .
 
 # =============================================================================
 # Cleanup

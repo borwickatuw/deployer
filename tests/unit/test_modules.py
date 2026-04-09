@@ -170,10 +170,10 @@ class TestDatabaseModule:
             "port": 5432,
             "name": "testdb",
             "credentials": "secretsmanager",
-            "app_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
-            "app_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
-            "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",
-            "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",
+            "app_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",  # noqa: E501
+            "app_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",  # noqa: E501
+            "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",  # noqa: E501
+            "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",  # noqa: E501
         }
         ctx = ModuleContext(
             region="us-west-2",
@@ -405,8 +405,8 @@ class TestModuleRegistry:
                 "credentials": "secretsmanager",
                 "app_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:username",
                 "app_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:password",
-                "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",
-                "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",
+                "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",  # noqa: E501
+                "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",  # noqa: E501
             },
             "cache": {"url": "redis://localhost:6379"},
         }

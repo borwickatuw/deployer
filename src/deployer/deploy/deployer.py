@@ -77,7 +77,8 @@ class Deployer:
         if not self.ecr_prefix:
             raise ValueError(
                 "ecr_prefix not found in environment config. "
-                "Add 'ecr_prefix = \"${tofu:ecr_prefix}\"' to the [infrastructure] section of config.toml"
+                "Add 'ecr_prefix = \"${tofu:ecr_prefix}\"' to the "
+                "[infrastructure] section of config.toml"
             )
 
         # Service config from environment config.toml
@@ -215,13 +216,12 @@ class Deployer:
             except self.rds.exceptions.DBInstanceNotFoundFault:
                 warnings.append(f"RDS instance '{rds_instance_id}' not found")
                 is_critical = True
-            except Exception:
-                # Don't fail deployment if we can't check - just skip the warning
+            except Exception:  # noqa: BLE001, S110 — don't fail deploy for infra-check errors
                 pass
 
         return warnings, is_critical
 
-    def deploy(self) -> tuple[dict[str, str], list[str]]:
+    def deploy(self) -> tuple[dict[str, str], list[str]]:  # noqa: C901 — full deployment pipeline
         """Run the full deployment pipeline.
 
         Returns:
@@ -377,15 +377,25 @@ class Deployer:
 
 def common_deploy_options(func):
     """Click decorator that adds common deployment options shared by deploy.py and ci-deploy."""
+
     @click.option("--dry-run", is_flag=True, help="Show what would be done without making changes")
-    @click.option("--force", is_flag=True, help="Deploy even if infrastructure is unavailable (database down, etc.)")
-    @click.option("--force-build", is_flag=True, help="Force rebuilding images even if unchanged (skip cache check)")
+    @click.option(
+        "--force",
+        is_flag=True,
+        help="Deploy even if infrastructure is unavailable (database down, etc.)",
+    )
+    @click.option(
+        "--force-build",
+        is_flag=True,
+        help="Force rebuilding images even if unchanged (skip cache check)",
+    )
     @click.option("--skip-ecr-check", is_flag=True, help="Skip the ECR repository existence check")
     @click.option("--skip-secrets-check", is_flag=True, help="Skip the SSM secrets existence check")
     @click.option("--skip-cluster-check", is_flag=True, help="Skip the ECS cluster existence check")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
+
     return wrapper
 
 

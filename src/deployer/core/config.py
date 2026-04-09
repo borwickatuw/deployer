@@ -11,8 +11,6 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-
-
 from ..utils import run_command
 from ..utils.aws_profile import PROFILE_DEFAULTS, get_environment_aws_profile
 
@@ -85,9 +83,7 @@ def get_tofu_dir(config: dict, env_path: Path) -> Path:
         resolved = (env_path / resolved).resolve()
 
     if not resolved.is_dir():
-        raise FileNotFoundError(
-            f"tofu.dir '{tofu_dir}' does not exist: {resolved}"
-        )
+        raise FileNotFoundError(f"tofu.dir '{tofu_dir}' does not exist: {resolved}")
 
     return resolved
 
@@ -141,7 +137,7 @@ def get_all_tofu_outputs(env_path: Path, tofu_dir: Path | None = None) -> dict[s
             # Extract just the values
             return {k: v["value"] for k, v in data.items()}
         except (json.JSONDecodeError, KeyError) as e:
-            raise RuntimeError(f"Failed to parse tofu outputs: {e}")
+            raise RuntimeError(f"Failed to parse tofu outputs: {e}") from e
     finally:
         # Restore original profile
         if original_profile:
@@ -243,7 +239,6 @@ def load_environment_config(env_path: Path) -> dict:
     return _resolve_tofu_placeholders(config, env_path, tofu_outputs)
 
 
-
 def is_cognito_enabled(resolved_config: dict) -> bool:
     """Check if Cognito authentication is enabled for this environment.
 
@@ -255,7 +250,6 @@ def is_cognito_enabled(resolved_config: dict) -> bool:
     """
     cognito = resolved_config.get("cognito", {})
     return cognito.get("enabled", False)
-
 
 
 def get_staging_url_from_config(resolved_config: dict) -> str | None:
@@ -306,7 +300,6 @@ def get_cognito_user_pool_id_from_config(resolved_config: dict) -> str | None:
     if not cognito.get("enabled", False):
         return None
     return cognito.get("user_pool_id")
-
 
 
 def get_environment_type(env_config: dict) -> str:

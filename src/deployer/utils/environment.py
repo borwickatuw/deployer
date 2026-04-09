@@ -65,10 +65,12 @@ def get_all_environments(environments_dir: Path) -> list[str]:
         return envs
 
     for env_dir in environments_dir.iterdir():
-        if env_dir.is_dir() and not env_dir.name.startswith("."):
-            # Only include directories with config.toml (ECS environments)
-            if (env_dir / "config.toml").exists():
-                envs.append(env_dir.name)
+        if (
+            env_dir.is_dir()
+            and not env_dir.name.startswith(".")
+            and (env_dir / "config.toml").exists()
+        ):
+            envs.append(env_dir.name)
 
     return sorted(envs)
 

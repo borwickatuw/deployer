@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
 from botocore.exceptions import ClientError
 
 from deployer.core.config import validate_environment_config
