@@ -29,14 +29,14 @@ module "dns" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| zone_id | string | Route 53 hosted zone ID |
-| records | map(object) | Map of DNS records (A with alias_target, or CNAME with cname_value) |
+| Variable | Type        | Description                                                         |
+| -------- | ----------- | ------------------------------------------------------------------- |
+| zone_id  | string      | Route 53 hosted zone ID                                             |
+| records  | map(object) | Map of DNS records (A with alias_target, or CNAME with cname_value) |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
+| Output       | Description                 |
+| ------------ | --------------------------- |
 | record_fqdns | Map of record keys to FQDNs |
 | record_names | Map of record keys to names |

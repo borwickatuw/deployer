@@ -42,13 +42,13 @@ path_prefix = "/myapp/staging"
 
 ## Built-in Modules
 
-| Module | App Declares | Environment Provides | Injects |
-| --- | --- | --- | --- |
-| [Cache](cache.md) | `type = "redis"` | url | REDIS_URL |
-| [CDN](cdn.md) | `type = "cloudfront"` | domain, key_id, private_key_param | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
-| [Database](database.md) | `type = "postgresql"`, `extensions = [...]` | host, port, name, credentials (app + migrate), lambda | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD |
-| [Secrets](secrets.md) | `names = [...]` | provider, path_prefix | Each named secret |
-| [Storage](storage.md) | `type = "s3"`, `buckets = [...]` | bucket names per declared bucket | S3\_{NAME}\_BUCKET |
+| Module                  | App Declares                                | Environment Provides                                  | Injects                                                      |
+| ----------------------- | ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------ |
+| [Cache](cache.md)       | `type = "redis"`                            | url                                                   | REDIS_URL                                                    |
+| [CDN](cdn.md)           | `type = "cloudfront"`                       | domain, key_id, private_key_param                     | CLOUDFRONT_DOMAIN, CLOUDFRONT_KEY_ID, CLOUDFRONT_PRIVATE_KEY |
+| [Database](database.md) | `type = "postgresql"`, `extensions = [...]` | host, port, name, credentials (app + migrate), lambda | DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD          |
+| [Secrets](secrets.md)   | `names = [...]`                             | provider, path_prefix                                 | Each named secret                                            |
+| [Storage](storage.md)   | `type = "s3"`, `buckets = [...]`            | bucket names per declared bucket                      | S3\_{NAME}\_BUCKET                                           |
 
 ## Service URL References
 

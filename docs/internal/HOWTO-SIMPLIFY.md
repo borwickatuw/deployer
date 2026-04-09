@@ -4,26 +4,53 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 
 ## Current Opportunities
 
-### Code
+### Code (threshold: 300 lines for scripts/modules, 400 for tests)
 
-| File                       | Lines | Notes                                         |
-| -------------------------- | ----- | --------------------------------------------- |
-| `bin/deploy.py`            | 827   | Could extract Docker/ECR/ECS logic to library |
-| `tests/unit/test_audit.py` | 452   | Large but may be appropriate for coverage     |
-| `bin/cognito.py`           | 446   | Could share patterns with environment.py      |
+| File                                     | Lines | Notes                                                      |
+| ---------------------------------------- | ----- | ---------------------------------------------------------- |
+| `bin/ops.py`                             | 1066  | Largest bin/ script; read-only monitoring commands         |
+| `src/deployer/deploy/service.py`         | 990   | Core service deployment logic                              |
+| `bin/emergency.py`                       | 864   | Emergency operations (rollback, scale, snapshot)           |
+| `bin/init.py`                            | 605   | Init subcommands (bootstrap, environment, update-services) |
+| `tests/unit/test_modules.py`             | 579   | Test file, above 400 threshold                             |
+| `tests/unit/test_init.py`                | 575   | Test file, above 400 threshold                             |
+| `tests/unit/test_audit.py`               | 554   | Test file, above 400 threshold                             |
+| `tests/unit/test_ecs.py`                 | 510   | Test file, above 400 threshold                             |
+| `src/deployer/aws/ecs.py`                | 498   | AWS ECS operations                                         |
+| `src/deployer/core/config.py`            | 484   | Configuration loading                                      |
+| `tests/unit/test_core.py`                | 483   | Test file, above 400 threshold                             |
+| `src/deployer/init/deploy_toml.py`       | 475   | deploy.toml generation                                     |
+| `src/deployer/deploy/task_definition.py` | 470   | ECS task definition builder                                |
+| `src/deployer/deploy/images.py`          | 460   | Docker image build/push                                    |
+| `bin/cognito.py`                         | 452   | Cognito user management                                    |
+| `bin/ssm-secrets.py`                     | 441   | SSM Parameter Store management                             |
+| `src/deployer/config/deploy_config.py`   | 440   | Deploy config parsing                                      |
+| `src/deployer/deploy/deployer.py`        | 416   | Deployment orchestrator                                    |
+| `bin/ecs-run.py`                         | 411   | ECS command execution                                      |
+| `tests/unit/test_config.py`              | 403   | Test file, at 400 threshold                                |
 
-### Terraform Modules
+### Terraform (threshold: 200 lines)
 
-| Module                              | Lines | Notes                                          |
-| ----------------------------------- | ----- | ---------------------------------------------- |
-| `modules/alb/main.tf`               | 259   | Could split listeners, security, target groups |
-| `modules/staging-scheduler/main.tf` | 229   | Lambda + EventBridge could be separated        |
-| `modules/ecs-service/main.tf`       | 225   | Could extract IAM, security groups             |
+| File                                    | Lines | Notes                                 |
+| --------------------------------------- | ----- | ------------------------------------- |
+| `environments/deployer.tf`              | 678   | Shared environment config (symlinked) |
+| `main.tf`                               | 545   | Root module orchestration             |
+| `modules/bootstrap/iam-infra-admin.tf`  | 462   | IAM policies for infra admin role     |
+| `modules/waf/main.tf`                   | 444   | WAF rules and associations            |
+| `variables.tf`                          | 352   | Root module variables                 |
+| `modules/shared-infrastructure/main.tf` | 328   | Shared infra module                   |
+| `outputs.tf`                            | 299   | Root module outputs                   |
+| `modules/db-on-shared-rds/main.tf`      | 295   | Shared RDS database module            |
+| `modules/db-users/main.tf`              | 291   | Database user Lambda module           |
+| `modules/cloudwatch-alarms/main.tf`     | 278   | CloudWatch alarm definitions          |
 
-### Documentation
+### Documentation (threshold: 600 for reference docs, 400 for guides)
 
-| Document                   | Lines | Status                            |
-| -------------------------- | ----- | --------------------------------- |
-| `docs/CONFIG-REFERENCE.md` | 576   | Reference doc, may be appropriate |
-| `docs/ARCHITECTURE.md`     | 339   | Moderate, acceptable              |
-| `CLAUDE.md`                | 59    | Well under threshold              |
+| Document                         | Lines | Notes                                       |
+| -------------------------------- | ----- | ------------------------------------------- |
+| `docs/CONFIG-REFERENCE.md`       | 1073  | Reference doc; large but may be appropriate |
+| `docs/internal/SOMEDAY-MAYBE.md` | 600   | At threshold; review for completed items    |
+| `docs/internal/DECISIONS.md`     | 557   | Approaching ADR/ migration threshold        |
+| `docs/internal/DESIGN.md`        | 410   | Design rationale; at guide threshold        |
+
+*Last updated: 2026-04-09*

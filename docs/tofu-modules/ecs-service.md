@@ -24,31 +24,31 @@ module "web" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
-| service_name | string | Name of the service (e.g., "web", "celery") |
-| cluster_arn | string | ECS cluster ARN |
-| vpc_id | string | VPC ID |
-| subnet_ids | list(string) | Private subnet IDs |
-| security_group_ids | list(string) | Security group IDs |
-| image | string | Docker image URI |
-| container_port | number | Container port (null for non-HTTP services) |
-| log_group_name | string | CloudWatch log group name |
-| cpu | number | CPU units (default: 256) |
-| memory | number | Memory in MB (default: 512) |
-| desired_count | number | Number of tasks (default: 1) |
-| alb_target_group_arn | string | ALB target group ARN (optional) |
-| environment_variables | map(string) | Environment variables |
-| secrets | map(string) | SSM/Secrets Manager ARN map |
-| use_spot | bool | Use Fargate Spot (default: false) |
-| service_discovery_registry_arn | string | Cloud Map registry ARN (optional) |
+| Variable                       | Type         | Description                                 |
+| ------------------------------ | ------------ | ------------------------------------------- |
+| name_prefix                    | string       | Prefix for resource names                   |
+| service_name                   | string       | Name of the service (e.g., "web", "celery") |
+| cluster_arn                    | string       | ECS cluster ARN                             |
+| vpc_id                         | string       | VPC ID                                      |
+| subnet_ids                     | list(string) | Private subnet IDs                          |
+| security_group_ids             | list(string) | Security group IDs                          |
+| image                          | string       | Docker image URI                            |
+| container_port                 | number       | Container port (null for non-HTTP services) |
+| log_group_name                 | string       | CloudWatch log group name                   |
+| cpu                            | number       | CPU units (default: 256)                    |
+| memory                         | number       | Memory in MB (default: 512)                 |
+| desired_count                  | number       | Number of tasks (default: 1)                |
+| alb_target_group_arn           | string       | ALB target group ARN (optional)             |
+| environment_variables          | map(string)  | Environment variables                       |
+| secrets                        | map(string)  | SSM/Secrets Manager ARN map                 |
+| use_spot                       | bool         | Use Fargate Spot (default: false)           |
+| service_discovery_registry_arn | string       | Cloud Map registry ARN (optional)           |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| service_name | ECS service name |
-| service_arn | ECS service ARN |
+| Output              | Description         |
+| ------------------- | ------------------- |
+| service_name        | ECS service name    |
+| service_arn         | ECS service ARN     |
 | task_definition_arn | Task definition ARN |
-| task_role_arn | Task IAM role ARN |
+| task_role_arn       | Task IAM role ARN   |

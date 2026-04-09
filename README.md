@@ -121,20 +121,20 @@ A single `tofu apply` creates all of this:
 
 ## Tools
 
-| Script | Purpose |
-|--------|---------|
-| `bin/capacity-report.py` | ECS right-sizing recommendations |
-| `bin/cognito.py` | Cognito user management |
-| `bin/deploy.py` | Build images, run migrations, deploy to ECS |
-| `bin/ecs-run.py` | Run commands in ECS containers (migrations, shell, etc.) |
-| `bin/emergency.py` | Production modifications: rollback, scale, snapshot, restore |
-| `bin/environment.py` | Start/stop staging environments |
-| `bin/init.py` | Bootstrap AWS accounts, generate environments and deploy.toml |
-| `bin/link-environments.py` | Link environments to deploy.toml paths (one-time setup) |
-| `bin/ops.py` | Production monitoring: status, health, logs, audit |
-| `bin/resolve-config.py` | Resolve config.toml into JSON for CI/CD |
-| `bin/ssm-secrets.py` | SSM Parameter Store secrets management |
-| `bin/tofu.sh` | OpenTofu wrapper (auto-selects AWS profile from config.toml) |
+| Script                     | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `bin/capacity-report.py`   | ECS right-sizing recommendations                              |
+| `bin/cognito.py`           | Cognito user management                                       |
+| `bin/deploy.py`            | Build images, run migrations, deploy to ECS                   |
+| `bin/ecs-run.py`           | Run commands in ECS containers (migrations, shell, etc.)      |
+| `bin/emergency.py`         | Production modifications: rollback, scale, snapshot, restore  |
+| `bin/environment.py`       | Start/stop staging environments                               |
+| `bin/init.py`              | Bootstrap AWS accounts, generate environments and deploy.toml |
+| `bin/link-environments.py` | Link environments to deploy.toml paths (one-time setup)       |
+| `bin/ops.py`               | Production monitoring: status, health, logs, audit            |
+| `bin/resolve-config.py`    | Resolve config.toml into JSON for CI/CD                       |
+| `bin/ssm-secrets.py`       | SSM Parameter Store secrets management                        |
+| `bin/tofu.sh`              | OpenTofu wrapper (auto-selects AWS profile from config.toml)  |
 
 ## Repository Structure
 

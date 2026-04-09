@@ -267,6 +267,14 @@ ______________________________________________________________________
 
 **Complexity**: Medium - useful but requires maintenance.
 
+### Tofu Placeholder Map Indexing
+
+**Current state**: The `${tofu:...}` resolver in deploy.py doesn't support indexing into map outputs (e.g., `${tofu:s3_bucket_names.bucket_a}`).
+
+**Enhancement**: Adding map indexing would eliminate the need for per-bucket individual outputs in main.tf, keeping the standardized template truly zero-edit. Without it, projects with custom S3 buckets need hand-added outputs.
+
+**Complexity**: Low-Medium — see `src/deployer/` for the resolver code.
+
 ### CLI Improvements
 
 **Enhancement ideas**:
@@ -315,17 +323,17 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 
 ### RDS Enhancements (deferred)
 
-| Check       | Description           | Complexity | Notes                                      |
-| ----------- | --------------------- | ---------- | ------------------------------------------ |
-| CKV_AWS_161 | IAM authentication    | Medium     | Requires app changes to use IAM auth       |
-| ~~CKV2_AWS_69~~ | ~~Encryption in transit~~ | ~~Low~~ | Moved to [PLAN.md](PLAN.md) #5 |
+| Check           | Description               | Complexity | Notes                                |
+| --------------- | ------------------------- | ---------- | ------------------------------------ |
+| CKV_AWS_161     | IAM authentication        | Medium     | Requires app changes to use IAM auth |
+| ~~CKV2_AWS_69~~ | ~~Encryption in transit~~ | ~~Low~~    | Moved to [PLAN.md](PLAN.md) #5       |
 
 ### Other
 
-| Check       | Description                   | Complexity | Notes                                       |
-| ----------- | ----------------------------- | ---------- | ------------------------------------------- |
-| ~~CKV_AWS_134~~ | ~~ElastiCache automatic backups~~ | ~~Low~~ | Moved to [PLAN.md](PLAN.md) #6 |
-| CKV_AWS_51  | ECR immutable tags            | Medium     | Deploy workflow uses `latest` tag pattern   |
+| Check           | Description                       | Complexity | Notes                                     |
+| --------------- | --------------------------------- | ---------- | ----------------------------------------- |
+| ~~CKV_AWS_134~~ | ~~ElastiCache automatic backups~~ | ~~Low~~    | Moved to [PLAN.md](PLAN.md) #6            |
+| CKV_AWS_51      | ECR immutable tags                | Medium     | Deploy workflow uses `latest` tag pattern |
 
 ______________________________________________________________________
 
@@ -487,8 +495,7 @@ To add ideas to this list:
 
 ______________________________________________________________________
 
-~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert
-when there are unused secrets~~ Moved to [PLAN.md](PLAN.md) #7.
+~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert when there are unused secrets~~ Moved to [PLAN.md](PLAN.md) #7.
 
 ______________________________________________________________________
 
@@ -592,9 +599,9 @@ uv run python bin/ops.py myapp-production slo
 
 ### Prioritization
 
-| Enhancement                     | Value  | Effort | Priority |
-| ------------------------------- | ------ | ------ | -------- |
-| SLOs in config.toml             | High   | Medium | 1        |
-| ~~Incident start/resolve commands~~ | | | Moved to [PLAN.md](PLAN.md) #8 |
-| Error budget dashboard          | Medium | Medium | 2        |
-| Postmortem automation           | Low    | High   | 3        |
+| Enhancement                         | Value  | Effort | Priority                       |
+| ----------------------------------- | ------ | ------ | ------------------------------ |
+| SLOs in config.toml                 | High   | Medium | 1                              |
+| ~~Incident start/resolve commands~~ |        |        | Moved to [PLAN.md](PLAN.md) #8 |
+| Error budget dashboard              | Medium | Medium | 2                              |
+| Postmortem automation               | Low    | High   | 3                              |

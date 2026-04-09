@@ -3,6 +3,11 @@
 # Usage: make [target]
 # Run `make` or `make help` to see available targets.
 
+SHELL := bash
+.SHELLFLAGS := -eu -o pipefail -c
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rules
+
 # =============================================================================
 # Help
 # =============================================================================
@@ -116,7 +121,14 @@ security-bandit: ## Run bandit Python security linter
 #   CI role IAM statements require Resource=* (AWS API design, not restrictable):
 #     CKV_AWS_356 (ecs:Describe*, ecs:RegisterTaskDefinition, ecr:GetAuthorizationToken,
 #       elasticloadbalancing:Describe*, ssm:DescribeParameters, sts:GetCallerIdentity)
-CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_354,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_150,CKV_AWS_91,CKV_AWS_290,CKV_AWS_355,CKV_AWS_161,CKV_AWS_157,CKV_AWS_293,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23,CKV_AWS_356
+#   Infra admin roles (bootstrap module) — broad permissions are intentional by design:
+#     CKV_AWS_109 (permissions management), CKV_AWS_111 (write without constraints),
+#     CKV_AWS_107 (credentials exposure)
+#   IAM user policy for role assumption (intentional pattern, single user):
+#     CKV_AWS_40 (IAM policy attached to user)
+#   WAF Log4j rule (no Java apps in this infrastructure):
+#     CKV_AWS_192 (WAF Log4j2 rule)
+CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_354,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_150,CKV_AWS_91,CKV_AWS_290,CKV_AWS_355,CKV_AWS_161,CKV_AWS_157,CKV_AWS_293,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23,CKV_AWS_356,CKV_AWS_109,CKV_AWS_111,CKV_AWS_107,CKV_AWS_40,CKV_AWS_192
 
 .PHONY: security-checkov
 security-checkov: ## Run Checkov IaC scanner on OpenTofu modules

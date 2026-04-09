@@ -15,13 +15,13 @@ module "ecr_notifications" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
+| Variable      | Type   | Description                                   |
+| ------------- | ------ | --------------------------------------------- |
+| name_prefix   | string | Prefix for resource names                     |
 | sns_topic_arn | string | SNS topic ARN for vulnerability notifications |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
+| Output         | Description                                |
+| -------------- | ------------------------------------------ |
 | event_rule_arn | EventBridge rule ARN for ECR scan findings |

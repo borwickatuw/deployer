@@ -438,8 +438,7 @@ This is always enabled - no opt-in flag.
 - `ecs-run.py` automatically uses migrate credentials for `migrate` command
 - Service task definitions use app credentials (DML only)
 
-**AWS ECS Constraint:**
-AWS ECS does not support overriding secrets in `containerOverrides` when calling `run-task`. This means we need a **separate task definition** with migrate credentials for migrations, rather than just overriding credentials at runtime.
+**AWS ECS Constraint:** AWS ECS does not support overriding secrets in `containerOverrides` when calling `run-task`. This means we need a **separate task definition** with migrate credentials for migrations, rather than just overriding credentials at runtime.
 
 ______________________________________________________________________
 

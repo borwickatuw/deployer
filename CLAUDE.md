@@ -155,10 +155,12 @@ This is infrastructure code. Security focus areas:
 - **IaC scanning**: `make security-checkov` scans OpenTofu modules with Checkov. Intentional suppressions are documented in the Makefile.
 - **Code review**: Review changes manually, especially IAM policy modifications.
 
-## Cross-Repository Ideas
-
-    claude-idea deployer "Description of the pattern or improvement"
-
 ## pysmelly
 
 Read [docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md) before running pysmelly code smell analysis on this project.
+
+## Cross-Repository Ideas
+
+```
+claude-idea deployer "Description of the pattern or improvement"
+```

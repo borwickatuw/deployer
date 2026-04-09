@@ -21,25 +21,25 @@ module "db_users" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
-| db_host | string | Database hostname |
-| db_name | string | Database name |
-| master_secret_arn | string | Secrets Manager ARN for master credentials |
-| vpc_id | string | VPC ID for Lambda |
-| subnet_ids | list(string) | Subnet IDs for Lambda |
-| db_security_group_id | string | Database security group ID |
-| permissions_boundary | string | IAM permissions boundary ARN |
+| Variable             | Type         | Description                                |
+| -------------------- | ------------ | ------------------------------------------ |
+| name_prefix          | string       | Prefix for resource names                  |
+| db_host              | string       | Database hostname                          |
+| db_name              | string       | Database name                              |
+| master_secret_arn    | string       | Secrets Manager ARN for master credentials |
+| vpc_id               | string       | VPC ID for Lambda                          |
+| subnet_ids           | list(string) | Subnet IDs for Lambda                      |
+| db_security_group_id | string       | Database security group ID                 |
+| permissions_boundary | string       | IAM permissions boundary ARN               |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| app_secret_arn | Secrets Manager ARN for app credentials |
-| app_username_arn | ARN for app username (for ECS secrets) |
-| app_password_arn | ARN for app password (for ECS secrets) |
-| migrate_secret_arn | Secrets Manager ARN for migrate credentials |
-| migrate_username_arn | ARN for migrate username (for ECS secrets) |
-| migrate_password_arn | ARN for migrate password (for ECS secrets) |
+| Output               | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| app_secret_arn       | Secrets Manager ARN for app credentials        |
+| app_username_arn     | ARN for app username (for ECS secrets)         |
+| app_password_arn     | ARN for app password (for ECS secrets)         |
+| migrate_secret_arn   | Secrets Manager ARN for migrate credentials    |
+| migrate_username_arn | ARN for migrate username (for ECS secrets)     |
+| migrate_password_arn | ARN for migrate password (for ECS secrets)     |
 | lambda_function_name | Lambda function name (for creating extensions) |

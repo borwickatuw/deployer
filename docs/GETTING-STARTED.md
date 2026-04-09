@@ -8,13 +8,13 @@ For deploying applications, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 Clone this repository and install the required tools:
 
-| Tool     | Version | Installation               | Purpose                                  |
-| -------- | ------- | -------------------------- | ---------------------------------------- |
-| AWS CLI  | v2      | `brew install awscli`      | Command-line access to AWS               |
-| Docker   | Latest  | `brew install docker`      | Container builds                         |
-| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code (like Terraform)  |
-| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts                           |
-| uv       | Latest  | `brew install uv`          | Python package manager                   |
+| Tool     | Version | Installation               | Purpose                                 |
+| -------- | ------- | -------------------------- | --------------------------------------- |
+| AWS CLI  | v2      | `brew install awscli`      | Command-line access to AWS              |
+| Docker   | Latest  | `brew install docker`      | Container builds                        |
+| OpenTofu | 1.6+    | `brew install opentofu`    | Infrastructure as code (like Terraform) |
+| Python   | 3.12+   | `brew install python@3.12` | Deploy scripts                          |
+| uv       | Latest  | `brew install uv`          | Python package manager                  |
 
 **Verify your setup:**
 
@@ -41,9 +41,9 @@ export AWS_PROFILE=your-admin-profile
 If you don't have one yet:
 
 1. Log into the [AWS Console](https://console.aws.amazon.com/)
-2. Go to **IAM > Users > your user > Security credentials**
-3. Click **Create access key** and save the access key ID and secret
-4. Add them to `~/.aws/credentials`:
+1. Go to **IAM > Users > your user > Security credentials**
+1. Click **Create access key** and save the access key ID and secret
+1. Add them to `~/.aws/credentials`:
 
 ```ini
 [admin]
@@ -207,7 +207,7 @@ You do **not** need to do this when creating a new staging or production copy of
    project_prefixes = ["myapp", "otherapp", "newapp"]  # add your new app name
    ```
 
-2. **Apply the changes** (requires admin access):
+1. **Apply the changes** (requires admin access):
 
    ```bash
    cd $DEPLOYER_ENVIRONMENTS_DIR/bootstrap-staging
@@ -217,7 +217,7 @@ You do **not** need to do this when creating a new staging or production copy of
 
    This updates the IAM policies and permissions boundary to include the new application's resource patterns.
 
-3. **Proceed to deploy** — follow [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) to create the environment and deploy.
+1. **Proceed to deploy** — follow [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) to create the environment and deploy.
 
 ## Multi-Account Setup
 

@@ -16,8 +16,8 @@ module "cost_budget" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
-| budget_amount | number | Monthly budget threshold in USD |
-| notification_email | string | Email for budget alerts |
+| Variable           | Type   | Description                     |
+| ------------------ | ------ | ------------------------------- |
+| name_prefix        | string | Prefix for resource names       |
+| budget_amount      | number | Monthly budget threshold in USD |
+| notification_email | string | Email for budget alerts         |

@@ -1,13 +1,10 @@
 # CI/CD Deployment Guide
 
-This guide covers deploying applications from CI/CD pipelines (GitHub Actions)
-using the `ci-deploy` tool. Unlike local `deploy.py`, CI/CD deployments need
-no OpenTofu, no deployer-environments directory, and no infra-level AWS access.
+This guide covers deploying applications from CI/CD pipelines (GitHub Actions) using the `ci-deploy` tool. Unlike local `deploy.py`, CI/CD deployments need no OpenTofu, no deployer-environments directory, and no infra-level AWS access.
 
 ## How It Works
 
-Local and CI/CD deployments share the same deploy logic but differ in how they
-get configuration:
+Local and CI/CD deployments share the same deploy logic but differ in how they get configuration:
 
 ```
 Local (deploy.py):
@@ -19,9 +16,7 @@ CI/CD (ci-deploy):
   (pre-resolved JSON, no tofu, no deployer-environments, OIDC credentials)
 ```
 
-The resolved config JSON is produced by `bin/resolve-config.py` and pushed to
-S3. CI/CD fetches it at deploy time. Authentication uses GitHub OIDC — no
-stored AWS credentials.
+The resolved config JSON is produced by `bin/resolve-config.py` and pushed to S3. CI/CD fetches it at deploy time. Authentication uses GitHub OIDC — no stored AWS credentials.
 
 ```
 Developer laptop                    GitHub Actions
@@ -50,8 +45,7 @@ tofu.sh apply myapp-staging         git push (app code)
 
 ## Step 1: Enable CI Shared Infrastructure in Bootstrap
 
-The shared CI infrastructure (OIDC provider + S3 bucket) is provided by
-`modules/ci`. Add it to your bootstrap configuration.
+The shared CI infrastructure (OIDC provider + S3 bucket) is provided by `modules/ci`. Add it to your bootstrap configuration.
 
 In your bootstrap instance's `main.tf`:
 
@@ -84,9 +78,7 @@ Run `tofu apply` in your bootstrap directory. This creates:
 
 ## Step 2: Add a CI Role to Your Environment
 
-Per-project CI roles are created using `modules/ci-role`, instantiated in
-each environment's tofu config. This keeps the GitHub repo name defined
-alongside the environment it deploys to.
+Per-project CI roles are created using `modules/ci-role`, instantiated in each environment's tofu config. This keeps the GitHub repo name defined alongside the environment it deploys to.
 
 In your environment's `terraform.tfvars`, add:
 
@@ -116,9 +108,7 @@ module "ci_role" {
 }
 ```
 
-Run `tofu apply`. The module creates a `myapp-ci-deploy` IAM role that
-only GitHub Actions from `myorg/myapp` can assume, with permissions scoped
-to `myapp-*` resources.
+Run `tofu apply`. The module creates a `myapp-ci-deploy` IAM role that only GitHub Actions from `myorg/myapp` can assume, with permissions scoped to `myapp-*` resources.
 
 Note the output:
 
@@ -128,9 +118,7 @@ ci_role_arn = "arn:aws:iam::123456789012:role/myapp-ci-deploy"
 
 ## Step 3: Resolve and Push Config
 
-After any `tofu apply` that changes infrastructure, the resolved config is
-automatically pushed to S3 via the `tofu.sh` post-apply hook. No manual
-action is needed.
+After any `tofu apply` that changes infrastructure, the resolved config is automatically pushed to S3 via the `tofu.sh` post-apply hook. No manual action is needed.
 
 You can also resolve and push manually:
 
@@ -152,13 +140,12 @@ uv run python bin/resolve-config.py myapp-staging --verify --verify-file resolve
 
 ## Step 4: Configure GitHub Repository
 
-In your app repo's GitHub settings, create environments and add variables
-(Settings > Environments > create "staging" and/or "production"):
+In your app repo's GitHub settings, create environments and add variables (Settings > Environments > create "staging" and/or "production"):
 
-| Variable                 | Value                                                                  | Secret? |
-| ------------------------ | ---------------------------------------------------------------------- | ------- |
-| `AWS_REGION`             | `us-west-2`                                                           | No      |
-| `CI_DEPLOY_ROLE_ARN`     | `arn:aws:iam::123456789012:role/myapp-ci-deploy`                    | No      |
+| Variable                 | Value                                                                   | Secret? |
+| ------------------------ | ----------------------------------------------------------------------- | ------- |
+| `AWS_REGION`             | `us-west-2`                                                             | No      |
+| `CI_DEPLOY_ROLE_ARN`     | `arn:aws:iam::123456789012:role/myapp-ci-deploy`                        | No      |
 | `RESOLVED_CONFIG_S3_URI` | `s3://deployer-resolved-configs-123456789012/myapp-staging/config.json` | No      |
 
 No AWS access keys needed — OIDC handles authentication.
@@ -208,8 +195,7 @@ jobs:
 
 ## Step 6: Multi-Environment Setup
 
-For deploying to both staging and production, use GitHub environments with
-protection rules:
+For deploying to both staging and production, use GitHub environments with protection rules:
 
 ```yaml
 jobs:
@@ -268,20 +254,12 @@ Options:
 
 ## Troubleshooting
 
-**"Resolved config is X days old"** — Run `tofu.sh apply` (or
-`resolve-config.py --push-s3`) to refresh. The config becomes stale when
-infrastructure changes but nobody re-resolves.
+**"Resolved config is X days old"** — Run `tofu.sh apply` (or `resolve-config.py --push-s3`) to refresh. The config becomes stale when infrastructure changes but nobody re-resolves.
 
-**"Could not assume role"** — Check that `modules/ci-role` is instantiated
-in the environment's tofu config with the correct `github_repo`, and that
-`tofu apply` has been run.
+**"Could not assume role"** — Check that `modules/ci-role` is instantiated in the environment's tofu config with the correct `github_repo`, and that `tofu apply` has been run.
 
-**"Access denied fetching S3"** — The ci-deploy role needs `s3:GetObject`
-on the resolved-configs bucket. Check that `modules/ci` is instantiated in
-bootstrap and `modules/ci-role` in the environment.
+**"Access denied fetching S3"** — The ci-deploy role needs `s3:GetObject` on the resolved-configs bucket. Check that `modules/ci` is instantiated in bootstrap and `modules/ci-role` in the environment.
 
-**"Missing required field: infrastructure.*"** — The resolved config is
-incomplete. Re-resolve: `uv run python bin/resolve-config.py <env> --push-s3`
+**"Missing required field: infrastructure.\*"** — The resolved config is incomplete. Re-resolve: `uv run python bin/resolve-config.py <env> --push-s3`
 
-**"Invalid JSON in resolved config"** — The config file is corrupted or
-truncated. Re-resolve and push again.
+**"Invalid JSON in resolved config"** — The config file is corrupted or truncated. Re-resolve and push again.

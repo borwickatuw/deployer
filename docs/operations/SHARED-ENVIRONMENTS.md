@@ -312,16 +312,16 @@ This is useful when most apps can share but one needs dedicated resources.
 
 ## Standalone vs Shared Comparison
 
-| Aspect           | Standalone           | Shared                        |
-| ---------------- | -------------------- | ----------------------------- |
-| ALB              | Own (~$20/mo)        | Shared (listener rule)        |
+| Aspect           | Standalone                      | Shared                          |
+| ---------------- | ------------------------------- | ------------------------------- |
+| ALB              | Own (~$20/mo)                   | Shared (listener rule)          |
 | `bin/init.py`    | `--template standalone-staging` | `--template shared-app-staging` |
-| Cognito          | Own                  | Shared                        |
-| ECS Cluster      | Own                  | Shared                        |
-| Monthly overhead | ~$80-145             | ~$25-35                       |
-| NAT Gateway      | Own (~$32/mo)        | Shared                        |
-| RDS              | Own                  | Own                           |
-| VPC              | Own                  | Shared                        |
+| Cognito          | Own                             | Shared                          |
+| ECS Cluster      | Own                             | Shared                          |
+| Monthly overhead | ~$80-145                        | ~$25-35                         |
+| NAT Gateway      | Own (~$32/mo)                   | Shared                          |
+| RDS              | Own                             | Own                             |
+| VPC              | Own                             | Shared                          |
 
 ## Migrating Existing Apps
 
@@ -413,11 +413,11 @@ The per-app listener rules include a higher-priority rule that bypasses Cognito 
 
 The main savings come from sharing resources that have significant fixed costs regardless of traffic:
 
-| Component   | Separate (per app) | Shared (once)           |
-| ----------- | ------------------ | ----------------------- |
-| ALB         | 1 per environment  | 1 shared                |
-| ElastiCache | 1 per app          | 1 shared                |
-| NAT Gateway | 1 per environment  | 1 shared                |
-| RDS         | 1 per app          | 1 per app OR 1 shared   |
+| Component   | Separate (per app) | Shared (once)         |
+| ----------- | ------------------ | --------------------- |
+| ALB         | 1 per environment  | 1 shared              |
+| ElastiCache | 1 per app          | 1 shared              |
+| NAT Gateway | 1 per environment  | 1 shared              |
+| RDS         | 1 per app          | 1 per app OR 1 shared |
 
 With 10 apps, sharing eliminates 9 NAT Gateways, 9 ALBs, and optionally 9 RDS/ElastiCache instances. Use the [AWS Pricing Calculator](https://calculator.aws/) to estimate savings for your region and instance sizes.

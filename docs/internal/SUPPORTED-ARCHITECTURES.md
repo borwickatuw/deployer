@@ -60,8 +60,8 @@ Can be deployed with this tool.
 
 ### Tested Frameworks
 
-| Framework       | Port | Documentation                                     |
-| --------------- | ---- | ------------------------------------------------- |
+| Framework       | Port | Documentation                          |
+| --------------- | ---- | -------------------------------------- |
 | Django (Python) | 8000 | [Django guide](../scenarios/django.md) |
 | Rails (Ruby)    | 3000 | [Rails guide](../scenarios/rails.md)   |
 

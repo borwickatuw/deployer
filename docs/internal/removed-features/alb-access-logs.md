@@ -20,7 +20,7 @@ The feature was never enabled in any environment (default false). The ALB module
    ```bash
    git checkout bdb5891^ -- modules/alb-access-logs/
    ```
-2. Re-add the module block and variables to `main.tf` and `variables.tf`:
+1. Re-add the module block and variables to `main.tf` and `variables.tf`:
    - `alb_access_logs_enabled` (bool, default false)
    - `alb_access_logs_prefix` (string, default "alb-logs")
-3. Re-add the `access_logs_*` arguments to the ALB module block
+1. Re-add the `access_logs_*` arguments to the ALB module block

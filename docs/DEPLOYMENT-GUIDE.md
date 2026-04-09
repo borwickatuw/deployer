@@ -9,9 +9,9 @@ Complete guide for deploying applications to AWS ECS. Covers initial setup, ongo
 ## Quick Start Checklist
 
 1. [Prerequisites](#prerequisites) — complete GETTING-STARTED.md, verify tools
-2. [Initial Setup](#initial-setup) — create deploy.toml, environment directory, apply infrastructure
-3. [Deploying](#deploying) — build images and deploy to ECS
-4. [Verification](#verification) — confirm services are healthy
+1. [Initial Setup](#initial-setup) — create deploy.toml, environment directory, apply infrastructure
+1. [Deploying](#deploying) — build images and deploy to ECS
+1. [Verification](#verification) — confirm services are healthy
 
 ______________________________________________________________________
 
@@ -111,14 +111,14 @@ docker build -t myapp-test .
 
 Choose a template based on how your application's infrastructure is organized:
 
-| Template | Use when |
-| --- | --- |
-| `standalone-staging` | App gets its own VPC, database, load balancer, etc. Most common for a first deployment. |
-| `standalone-production` | Production version of the above. |
-| `shared-infra-staging` | Creates shared infrastructure (VPC, ALB, database) that multiple apps will use. |
-| `shared-infra-production` | Production version of the above. |
-| `shared-app-staging` | App runs on existing shared infrastructure (requires `shared-infra` first). |
-| `shared-app-production` | Production version of the above. |
+| Template                  | Use when                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `standalone-staging`      | App gets its own VPC, database, load balancer, etc. Most common for a first deployment. |
+| `standalone-production`   | Production version of the above.                                                        |
+| `shared-infra-staging`    | Creates shared infrastructure (VPC, ALB, database) that multiple apps will use.         |
+| `shared-infra-production` | Production version of the above.                                                        |
+| `shared-app-staging`      | App runs on existing shared infrastructure (requires `shared-infra` first).             |
+| `shared-app-production`   | Production version of the above.                                                        |
 
 To see all available templates: `uv run python bin/init.py environment --list-templates`
 

@@ -419,7 +419,7 @@ resource "aws_security_group_rule" "alb_to_ecs" {
 #   strict   - Standard + SQLi rules + bot control (common) + lower rate limit (1000/5min)
 
 locals {
-  waf_enabled  = var.waf_preset != "off"
+  waf_enabled   = var.waf_preset != "off"
   waf_is_strict = var.waf_preset == "strict"
 
   # Preset defaults (overridable via waf_overrides)

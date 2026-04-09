@@ -27,27 +27,27 @@ module "rds" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
-| vpc_id | string | VPC ID |
-| subnet_ids | list(string) | Private subnet IDs |
-| ecs_security_group | string | ECS security group ID (allowed to connect) |
-| database_name | string | Database name |
-| master_username | string | Master username (sensitive) |
-| master_password | string | Master password (sensitive) |
-| instance_class | string | Instance class (default: db.t3.micro) |
-| deletion_protection | bool | Prevent deletion (default: false) |
-| multi_az | bool | Multi-AZ failover (default: false) |
-| storage_encrypted | bool | Encrypt at rest (default: true) |
+| Variable            | Type         | Description                                |
+| ------------------- | ------------ | ------------------------------------------ |
+| name_prefix         | string       | Prefix for resource names                  |
+| vpc_id              | string       | VPC ID                                     |
+| subnet_ids          | list(string) | Private subnet IDs                         |
+| ecs_security_group  | string       | ECS security group ID (allowed to connect) |
+| database_name       | string       | Database name                              |
+| master_username     | string       | Master username (sensitive)                |
+| master_password     | string       | Master password (sensitive)                |
+| instance_class      | string       | Instance class (default: db.t3.micro)      |
+| deletion_protection | bool         | Prevent deletion (default: false)          |
+| multi_az            | bool         | Multi-AZ failover (default: false)         |
+| storage_encrypted   | bool         | Encrypt at rest (default: true)            |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| endpoint | RDS endpoint (host:port) |
-| address | RDS hostname |
-| port | RDS port |
-| connection_url | Full PostgreSQL connection URL (sensitive) |
-| security_group_id | RDS security group ID |
-| db_instance_id | RDS instance identifier |
+| Output            | Description                                |
+| ----------------- | ------------------------------------------ |
+| endpoint          | RDS endpoint (host:port)                   |
+| address           | RDS hostname                               |
+| port              | RDS port                                   |
+| connection_url    | Full PostgreSQL connection URL (sensitive) |
+| security_group_id | RDS security group ID                      |
+| db_instance_id    | RDS instance identifier                    |

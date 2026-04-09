@@ -3,6 +3,7 @@
 Complete reference for deployment configuration.
 
 **Related docs:**
+
 - [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Step-by-step deployment walkthrough
 - [OpenTofu Modules](tofu-modules/README.md) — Infrastructure module reference
 - [Operations](operations/) — Day-to-day commands and "where to make changes"
@@ -97,11 +98,11 @@ The `deploy.toml` file lives in your application repository and defines the appl
 
 **Required.** Basic application metadata.
 
-| Field         | Type   | Required | Description                                                                              |
-| ------------- | ------ | -------- | ---------------------------------------------------------------------------------------- |
-| `description` | string | No       | Human-readable description.                                                              |
-| `name`        | string | Yes      | Application name. Used for ECS cluster naming (`{name}-{environment}-cluster`).          |
-| `source`      | string | Yes      | Path to source code. Relative to config file or absolute. Use `.` for same directory.    |
+| Field         | Type   | Required | Description                                                                           |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------------------- |
+| `description` | string | No       | Human-readable description.                                                           |
+| `name`        | string | Yes      | Application name. Used for ECS cluster naming (`{name}-{environment}-cluster`).       |
+| `source`      | string | Yes      | Path to source code. Relative to config file or absolute. Use `.` for same directory. |
 
 **Example:**
 
@@ -138,8 +139,7 @@ context = "worker"
 dockerfile = "Dockerfile.worker"
 ```
 
-The deploy script builds each image and pushes to ECR as:
-`{account}.dkr.ecr.{region}.amazonaws.com/{ecr_prefix}-{image_name}:latest`
+The deploy script builds each image and pushes to ECR as: `{account}.dkr.ecr.{region}.amazonaws.com/{ecr_prefix}-{image_name}:latest`
 
 #### Image Dependencies
 
@@ -225,16 +225,16 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 
 **Note:** Sizing fields (`cpu`, `memory`, `replicas`, `load_balanced`) are configured in OpenTofu tfvars, not here.
 
-| Field               | Type    | Required | Description                                                          |
-| ------------------- | ------- | -------- | -------------------------------------------------------------------- |
-| `command`           | array   | No       | Container command override.                                          |
-| `health_check_path` | string  | No       | ALB health check endpoint.                                           |
-| `image`             | string  | Yes      | Image name (references `[images.*]`).                                |
+| Field               | Type    | Required | Description                                                                                         |
+| ------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `command`           | array   | No       | Container command override.                                                                         |
+| `health_check_path` | string  | No       | ALB health check endpoint.                                                                          |
+| `image`             | string  | Yes      | Image name (references `[images.*]`).                                                               |
 | `interruptible`     | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. |
-| `min_cpu`           | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.   |
-| `min_memory`        | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less. |
-| `path_pattern`      | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                     |
-| `port`              | integer | No       | Container port (for load-balanced services).                         |
+| `min_cpu`           | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                  |
+| `min_memory`        | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                |
+| `path_pattern`      | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                    |
+| `port`              | integer | No       | Container port (for load-balanced services).                                                        |
 
 **Examples:**
 
@@ -404,10 +404,10 @@ This section defines named commands that can be run in ECS containers, making th
 
 Commands come in two forms:
 
-| Form                  | Type  | Description                                                  |
-| --------------------- | ----- | ------------------------------------------------------------ |
-| `<name>` (simple)    | array | Command and arguments as a list of strings                   |
-| `[commands.<name>]`  | table | Command with metadata: `command` (array) and `ddl` (boolean) |
+| Form                | Type  | Description                                                  |
+| ------------------- | ----- | ------------------------------------------------------------ |
+| `<name>` (simple)   | array | Command and arguments as a list of strings                   |
+| `[commands.<name>]` | table | Command with metadata: `command` (array) and `ddl` (boolean) |
 
 Commands with `ddl = true` require extra confirmation in ecs-run.py because they modify database schema.
 
@@ -510,12 +510,12 @@ command = ["uv", "run", "python", "manage.py", "migrate"]
 
 **Optional.** Configuration for `bin/ops.py audit`, which compares your `docker-compose.yml` (local dev) against `deploy.toml` (production) to catch drift.
 
-| Field             | Type   | Description                                                        |
-| ----------------- | ------ | ------------------------------------------------------------------ |
-| `ignore_env_vars` | array  | Env vars expected to differ between dev and prod                   |
-| `ignore_images`   | set    | Images to skip in build context comparison                         |
-| `ignore_services` | array  | Services to skip entirely (dev-only infrastructure like MinIO)     |
-| `service_mapping` | table  | Maps docker-compose service names to deploy.toml names             |
+| Field             | Type  | Description                                                    |
+| ----------------- | ----- | -------------------------------------------------------------- |
+| `ignore_env_vars` | array | Env vars expected to differ between dev and prod               |
+| `ignore_images`   | set   | Images to skip in build context comparison                     |
+| `ignore_services` | array | Services to skip entirely (dev-only infrastructure like MinIO) |
+| `service_mapping` | table | Maps docker-compose service names to deploy.toml names         |
 
 **Auto-ignored env vars:** The audit automatically ignores variables that are either injected by resource modules (`DB_HOST`, `REDIS_URL`, `S3_*_BUCKET`, secret names) or are common dev-only vars:
 
@@ -658,20 +658,20 @@ For multi-account setups (e.g., staging and production in different AWS accounts
 
 Core ECS infrastructure references.
 
-| Field                            | Tofu Output                        | Description                                                 |
-| -------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
-| `alb_dns_name`                   | `alb_dns_name`                     | ALB DNS name (fallback URL)                                 |
-| `cluster_name`                   | `ecs_cluster_name`                 | ECS cluster name                                            |
-| `ecr_prefix`                     | `ecr_prefix`                       | ECR repository prefix for image naming                      |
-| `execution_role_arn`             | `ecs_execution_role_arn`           | ECS task execution role ARN                                 |
-| `private_subnet_ids`             | `private_subnet_ids`               | List of private subnet IDs                                  |
-| `rds_instance_id`                | `rds_instance_id`                  | RDS instance ID for start/stop (staging only)               |
-| `security_group_id`              | `ecs_security_group_id`            | Security group for ECS tasks                                |
-| `service_discovery_namespace`    | `service_discovery_namespace_name` | Service discovery namespace name (optional)                 |
-| `service_discovery_registries`   | `service_discovery_registries`     | Map of service name to discovery registry ARN (optional)    |
-| `service_target_groups`          | `service_target_groups`            | Map of service name to target group ARN (for path routing)  |
-| `target_group_arn`               | `alb_target_group_arn`             | ALB target group ARN (default)                              |
-| `task_role_arn`                  | `ecs_task_role_arn`                | ECS task role ARN                                           |
+| Field                          | Tofu Output                        | Description                                                |
+| ------------------------------ | ---------------------------------- | ---------------------------------------------------------- |
+| `alb_dns_name`                 | `alb_dns_name`                     | ALB DNS name (fallback URL)                                |
+| `cluster_name`                 | `ecs_cluster_name`                 | ECS cluster name                                           |
+| `ecr_prefix`                   | `ecr_prefix`                       | ECR repository prefix for image naming                     |
+| `execution_role_arn`           | `ecs_execution_role_arn`           | ECS task execution role ARN                                |
+| `private_subnet_ids`           | `private_subnet_ids`               | List of private subnet IDs                                 |
+| `rds_instance_id`              | `rds_instance_id`                  | RDS instance ID for start/stop (staging only)              |
+| `security_group_id`            | `ecs_security_group_id`            | Security group for ECS tasks                               |
+| `service_discovery_namespace`  | `service_discovery_namespace_name` | Service discovery namespace name (optional)                |
+| `service_discovery_registries` | `service_discovery_registries`     | Map of service name to discovery registry ARN (optional)   |
+| `service_target_groups`        | `service_target_groups`            | Map of service name to target group ARN (for path routing) |
+| `target_group_arn`             | `alb_target_group_arn`             | ALB target group ARN (default)                             |
+| `task_role_arn`                | `ecs_task_role_arn`                | ECS task role ARN                                          |
 
 #### `[services]`
 
@@ -805,13 +805,13 @@ The resolved config JSON is a pre-resolved version of `config.toml` used by `ci-
 
 ### `_meta` Block
 
-| Field               | Description                                       |
-| ------------------- | ------------------------------------------------- |
-| `config_toml_hash`  | SHA-256 hash of the raw config.toml content       |
-| `environment`       | Environment name (e.g., "myapp-staging")          |
-| `environment_type`  | "staging" or "production"                         |
-| `resolved_at`       | ISO 8601 timestamp when the config was resolved   |
-| `tofu_outputs_hash` | SHA-256 hash of the tofu output JSON              |
+| Field               | Description                                     |
+| ------------------- | ----------------------------------------------- |
+| `config_toml_hash`  | SHA-256 hash of the raw config.toml content     |
+| `environment`       | Environment name (e.g., "myapp-staging")        |
+| `environment_type`  | "staging" or "production"                       |
+| `resolved_at`       | ISO 8601 timestamp when the config was resolved |
+| `tofu_outputs_hash` | SHA-256 hash of the tofu output JSON            |
 
 The `_meta` block is stripped before passing the config to the Deployer. It is used only for staleness detection and display.
 

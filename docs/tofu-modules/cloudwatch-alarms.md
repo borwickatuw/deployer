@@ -22,24 +22,24 @@ module "alarms" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for alarm names |
-| notification_email | string | Email for alarm notifications |
-| enable_alb_alarms | bool | Enable ALB alarms (default: true) |
-| enable_rds_alarms | bool | Enable RDS alarms (default: true) |
-| enable_elasticache_alarms | bool | Enable ElastiCache alarms (default: true) |
-| enable_ecs_alarms | bool | Enable ECS alarms (default: true) |
-| alb_arn_suffix | string | ALB ARN suffix |
-| rds_instance_id | string | RDS instance identifier |
-| ecs_cluster_name | string | ECS cluster name |
-| ecs_service_names | list(string) | ECS services to monitor |
+| Variable                  | Type         | Description                               |
+| ------------------------- | ------------ | ----------------------------------------- |
+| name_prefix               | string       | Prefix for alarm names                    |
+| notification_email        | string       | Email for alarm notifications             |
+| enable_alb_alarms         | bool         | Enable ALB alarms (default: true)         |
+| enable_rds_alarms         | bool         | Enable RDS alarms (default: true)         |
+| enable_elasticache_alarms | bool         | Enable ElastiCache alarms (default: true) |
+| enable_ecs_alarms         | bool         | Enable ECS alarms (default: true)         |
+| alb_arn_suffix            | string       | ALB ARN suffix                            |
+| rds_instance_id           | string       | RDS instance identifier                   |
+| ecs_cluster_name          | string       | ECS cluster name                          |
+| ecs_service_names         | list(string) | ECS services to monitor                   |
 
 Alarms created: ALB 5XX errors, ALB latency (p95), unhealthy hosts, RDS CPU/storage/connections, ElastiCache memory/CPU, ECS running task count.
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| sns_topic_arn | SNS topic ARN for notifications |
-| all_alarm_arns | ARNs of all created alarms |
+| Output         | Description                     |
+| -------------- | ------------------------------- |
+| sns_topic_arn  | SNS topic ARN for notifications |
+| all_alarm_arns | ARNs of all created alarms      |

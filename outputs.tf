@@ -288,7 +288,7 @@ output "service_target_groups" {
   description = "Map of service names to target group ARNs"
   value = merge(
     { for name, svc in var.services : name => module.alb.default_target_group_arn
-      if svc.load_balanced && svc.path_pattern == null && svc.port != null },
+    if svc.load_balanced && svc.path_pattern == null && svc.port != null },
     module.alb.service_target_group_arns
   )
 }

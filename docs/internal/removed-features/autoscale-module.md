@@ -18,7 +18,7 @@ Speculative feature with zero real-world usage. No corresponding Terraform autos
    ```bash
    git checkout bdb5891^ -- src/deployer/modules/autoscale.py
    ```
-2. Re-add `"autoscale"` to `KNOWN_SECTIONS` in `src/deployer/config/deploy_config.py`
-3. Re-add `autoscale` field to `DeployConfig` dataclass and its `from_dict`/`get_raw_dict`/`_get_module_injected_vars`
-4. Re-add `AutoscaleModule` to `src/deployer/modules/__init__.py` registry
-5. Run tests to verify
+1. Re-add `"autoscale"` to `KNOWN_SECTIONS` in `src/deployer/config/deploy_config.py`
+1. Re-add `autoscale` field to `DeployConfig` dataclass and its `from_dict`/`get_raw_dict`/`_get_module_injected_vars`
+1. Re-add `AutoscaleModule` to `src/deployer/modules/__init__.py` registry
+1. Run tests to verify

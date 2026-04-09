@@ -57,16 +57,16 @@ ______________________________________________________________________
 
 1. **Remove Django default commands fallback** — Removed `DJANGO_DEFAULT_COMMANDS` dict and `get_manage_command()` from `src/deployer/core/config.py`. `get_run_command()` and `command_requires_ddl()` now require deploy.toml and raise ValueError if missing. All commands must be explicitly defined in deploy.toml `[commands]`.
 
-2. **RDS encryption in transit (CKV2_AWS_69)** — Added `rds.force_ssl = 1` parameter to RDS parameter group in `modules/rds/main.tf`. Removed CKV2_AWS_69 from Checkov skip list.
+1. **RDS encryption in transit (CKV2_AWS_69)** — Added `rds.force_ssl = 1` parameter to RDS parameter group in `modules/rds/main.tf`. Removed CKV2_AWS_69 from Checkov skip list.
 
-3. **ElastiCache automatic backups (CKV_AWS_134)** — Added `snapshot_retention_limit` variable (default 1) to `modules/elasticache/main.tf`. Removed CKV_AWS_134 from Checkov skip list. Note: snapshots require cache.t3.small or larger.
+1. **ElastiCache automatic backups (CKV_AWS_134)** — Added `snapshot_retention_limit` variable (default 1) to `modules/elasticache/main.tf`. Removed CKV_AWS_134 from Checkov skip list. Note: snapshots require cache.t3.small or larger.
 
-4. **Secrets audit alert** — Added `check_secrets_drift()` to `src/deployer/core/ssm_secrets.py` and integrated into preflight checks. Warns (non-fatal) when SSM has secrets not referenced in deploy.toml. Only works with module-style secrets.
+1. **Secrets audit alert** — Added `check_secrets_drift()` to `src/deployer/core/ssm_secrets.py` and integrated into preflight checks. Warns (non-fatal) when SSM has secrets not referenced in deploy.toml. Only works with module-style secrets.
 
-5. **Service `interruptible` flag** — Added `interruptible` field to `ServiceConfig` in deploy_config.py. Deploy script uses `capacityProviderStrategy` (FARGATE_SPOT) for interruptible services. ECS module (`modules/ecs-service/`) supports `use_spot` variable with dynamic capacity provider strategy blocks.
+1. **Service `interruptible` flag** — Added `interruptible` field to `ServiceConfig` in deploy_config.py. Deploy script uses `capacityProviderStrategy` (FARGATE_SPOT) for interruptible services. ECS module (`modules/ecs-service/`) supports `use_spot` variable with dynamic capacity provider strategy blocks.
 
-6. **ECR vulnerability notifications** — New `modules/ecr-notifications/` module with EventBridge rule matching ECR scan critical findings, routed to SNS. Conditional in `deployer.tf` on `ecr_scan_sns_topic_arn`.
+1. **ECR vulnerability notifications** — New `modules/ecr-notifications/` module with EventBridge rule matching ECR scan critical findings, routed to SNS. Conditional in `deployer.tf` on `ecr_scan_sns_topic_arn`.
 
-7. **Cost anomaly detection** — New `modules/cost-budget/` module with AWS Budgets (80% forecasted + 100% actual alerts). Conditional in `deployer.tf` on `budget_monthly_limit > 0`.
+1. **Cost anomaly detection** — New `modules/cost-budget/` module with AWS Budgets (80% forecasted + 100% actual alerts). Conditional in `deployer.tf` on `budget_monthly_limit > 0`.
 
-8. **Incident start/resolve commands** — Added `incident` subcommand to `bin/ops.py` with start/note/resolve/list actions. Stores timestamped markdown files in `local/incidents/`.
+1. **Incident start/resolve commands** — Added `incident` subcommand to `bin/ops.py` with start/note/resolve/list actions. Stores timestamped markdown files in `local/incidents/`.

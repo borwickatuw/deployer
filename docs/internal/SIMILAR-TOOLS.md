@@ -114,8 +114,7 @@ ______________________________________________________________________
 
 ### AWS Copilot CLI
 
-**URL:** https://aws.github.io/copilot-cli/
-**GitHub:** https://github.com/aws/copilot-cli
+**URL:** https://aws.github.io/copilot-cli/ **GitHub:** https://github.com/aws/copilot-cli
 
 The closest alternative. Copilot is AWS's official CLI for containerized applications on ECS/Fargate and App Runner.
 
@@ -192,8 +191,7 @@ ______________________________________________________________________
 
 ### ECS Compose-X
 
-**URL:** https://docs.compose-x.io/
-**GitHub:** https://github.com/compose-x/ecs_composex
+**URL:** https://docs.compose-x.io/ **GitHub:** https://github.com/compose-x/ecs_composex
 
 Deploys applications to ECS using docker-compose files with extensions.
 

@@ -16,14 +16,14 @@ module "ci" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
+| Variable             | Type | Description                                      |
+| -------------------- | ---- | ------------------------------------------------ |
 | create_oidc_provider | bool | Create the GitHub OIDC provider (default: false) |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| resolved_configs_bucket | S3 bucket name for resolved configs |
-| resolved_configs_bucket_arn | S3 bucket ARN |
-| oidc_provider_arn | GitHub OIDC identity provider ARN |
+| Output                      | Description                         |
+| --------------------------- | ----------------------------------- |
+| resolved_configs_bucket     | S3 bucket name for resolved configs |
+| resolved_configs_bucket_arn | S3 bucket ARN                       |
+| oidc_provider_arn           | GitHub OIDC identity provider ARN   |

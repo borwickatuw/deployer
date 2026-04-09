@@ -15,11 +15,7 @@ type = "postgresql"
 extensions = ["unaccent", "pg_bigm"]  # optional: PostgreSQL extensions to create
 ```
 
-Extensions are created before migrations via the db-users Lambda (which connects
-as the RDS master user with `rds_superuser` privileges). This is necessary because
-some extensions (e.g., `pg_bigm`) can only be created by a superuser. Apps can
-keep `CREATE EXTENSION IF NOT EXISTS` in Django migrations as a safety net — they
-will harmlessly no-op when the extension already exists.
+Extensions are created before migrations via the db-users Lambda (which connects as the RDS master user with `rds_superuser` privileges). This is necessary because some extensions (e.g., `pg_bigm`) can only be created by a superuser. Apps can keep `CREATE EXTENSION IF NOT EXISTS` in Django migrations as a safety net — they will harmlessly no-op when the extension already exists.
 
 ### Setting up extensions for an environment
 

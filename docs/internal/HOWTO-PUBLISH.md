@@ -1,7 +1,6 @@
 # Publishing to the Public Repository
 
-This project uses a dual-remote workflow: a private working repo for
-day-to-day development, and a public repo for open-source releases.
+This project uses a dual-remote workflow: a private working repo for day-to-day development, and a public repo for open-source releases.
 
 ## Setup
 
@@ -80,5 +79,4 @@ git push --force private main
 git push --force public main
 ```
 
-Note: `filter-repo` removes all remotes as a safety measure. You must
-re-add them after a rewrite. All commit hashes will change.
+Note: `filter-repo` removes all remotes as a safety measure. You must re-add them after a rewrite. All commit hashes will change.

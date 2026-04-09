@@ -26,31 +26,31 @@ module "myapp" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| app_name | string | Application name |
-| environment | string | Environment name (e.g., "staging") |
-| domain_name | string | Domain for this app |
-| shared_state_backend | string | Backend type for shared state ("local" or "s3") |
-| shared_state_path | string | Path to shared state file (local backend) |
-| listener_rule_priority | number | ALB listener rule priority (unique per app) |
-| use_shared_rds | bool | Use shared RDS instead of separate instance (default: false) |
-| ecr_repository_names | list(string) | ECR repos to create (default: ["web"]) |
-| container_port | number | Container port (default: 8000) |
-| route53_zone_id | string | Route 53 zone ID for DNS (optional) |
-| services | map(object) | Service sizing config for deploy.py |
+| Variable               | Type         | Description                                                  |
+| ---------------------- | ------------ | ------------------------------------------------------------ |
+| app_name               | string       | Application name                                             |
+| environment            | string       | Environment name (e.g., "staging")                           |
+| domain_name            | string       | Domain for this app                                          |
+| shared_state_backend   | string       | Backend type for shared state ("local" or "s3")              |
+| shared_state_path      | string       | Path to shared state file (local backend)                    |
+| listener_rule_priority | number       | ALB listener rule priority (unique per app)                  |
+| use_shared_rds         | bool         | Use shared RDS instead of separate instance (default: false) |
+| ecr_repository_names   | list(string) | ECR repos to create (default: ["web"])                       |
+| container_port         | number       | Container port (default: 8000)                               |
+| route53_zone_id        | string       | Route 53 zone ID for DNS (optional)                          |
+| services               | map(object)  | Service sizing config for deploy.py                          |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| alb_target_group_arn | App's ALB target group ARN |
-| ecs_execution_role_arn | ECS task execution role ARN |
-| ecs_task_role_arn | ECS task role ARN |
-| ecr_prefix | ECR repository URL prefix |
-| ecr_repository_urls | Map of repo names to URLs |
-| db_host | Database hostname |
-| db_port | Database port |
-| db_app_username_secret_arn | App DB username secret ARN (shared RDS mode) |
-| db_app_password_secret_arn | App DB password secret ARN (shared RDS mode) |
-| redis_url | Redis URL from shared infra (empty if disabled) |
+| Output                     | Description                                     |
+| -------------------------- | ----------------------------------------------- |
+| alb_target_group_arn       | App's ALB target group ARN                      |
+| ecs_execution_role_arn     | ECS task execution role ARN                     |
+| ecs_task_role_arn          | ECS task role ARN                               |
+| ecr_prefix                 | ECR repository URL prefix                       |
+| ecr_repository_urls        | Map of repo names to URLs                       |
+| db_host                    | Database hostname                               |
+| db_port                    | Database port                                   |
+| db_app_username_secret_arn | App DB username secret ARN (shared RDS mode)    |
+| db_app_password_secret_arn | App DB password secret ARN (shared RDS mode)    |
+| redis_url                  | Redis URL from shared infra (empty if disabled) |

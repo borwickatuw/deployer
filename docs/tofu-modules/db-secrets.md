@@ -19,20 +19,20 @@ module "db_secrets" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
+| Variable    | Type   | Description                 |
+| ----------- | ------ | --------------------------- |
+| name_prefix | string | Prefix for resource names   |
 | db_username | string | Master username (sensitive) |
 | db_password | string | Master password (sensitive) |
-| db_host | string | Database hostname |
-| db_name | string | Database name |
+| db_host     | string | Database hostname           |
+| db_name     | string | Database name               |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| secret_arn | Secrets Manager secret ARN |
-| master_secret_arn | Same as secret_arn (for db-users module input) |
-| master_password_arn | ARN for password field (for ECS secrets) |
-| master_username_arn | ARN for username field (for ECS secrets) |
-| host_arn | ARN for host field (for ECS secrets) |
+| Output              | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| secret_arn          | Secrets Manager secret ARN                     |
+| master_secret_arn   | Same as secret_arn (for db-users module input) |
+| master_password_arn | ARN for password field (for ECS secrets)       |
+| master_username_arn | ARN for username field (for ECS secrets)       |
+| host_arn            | ARN for host field (for ECS secrets)           |

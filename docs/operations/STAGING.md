@@ -233,8 +233,7 @@ Common cause: RDS in transitional state.
 1. Check if RDS is stopped: `./bin/environment.py status myapp-staging`
 1. Try manual start: `./bin/environment.py start myapp-staging`
 
-**Health checks failing after start**
-Normal - ECS services fail health checks while RDS is starting (5-10 minutes). The start command waits for RDS before scaling ECS, but health checks may still fail briefly during initialization.
+**Health checks failing after start** Normal - ECS services fail health checks while RDS is starting (5-10 minutes). The start command waits for RDS before scaling ECS, but health checks may still fail briefly during initialization.
 
 ### Known Limitations
 

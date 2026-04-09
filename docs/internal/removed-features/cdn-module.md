@@ -20,12 +20,12 @@ Neither the Python module nor the Terraform module had any real-world usage. The
    ```bash
    git checkout bdb5891^ -- src/deployer/modules/cdn.py src/deployer/modules/autoscale.py
    ```
-2. Re-add `"cdn"` to `KNOWN_SECTIONS` in `src/deployer/config/deploy_config.py`
-3. Re-add `cdn` field to `DeployConfig` dataclass and its `from_dict`/`get_raw_dict`/`_get_module_injected_vars`
-4. Re-add `CdnModule` to `src/deployer/modules/__init__.py` registry
-5. Recover Terraform files:
+1. Re-add `"cdn"` to `KNOWN_SECTIONS` in `src/deployer/config/deploy_config.py`
+1. Re-add `cdn` field to `DeployConfig` dataclass and its `from_dict`/`get_raw_dict`/`_get_module_injected_vars`
+1. Re-add `CdnModule` to `src/deployer/modules/__init__.py` registry
+1. Recover Terraform files:
    ```bash
    git checkout bdb5891^ -- modules/cloudfront/ modules/shared-infrastructure/cloudfront.tf
    ```
-6. Re-add CloudFront variables to `modules/shared-infrastructure/variables.tf` and outputs to `outputs.tf`
-7. Run tests to verify
+1. Re-add CloudFront variables to `modules/shared-infrastructure/variables.tf` and outputs to `outputs.tf`
+1. Run tests to verify

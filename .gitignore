@@ -21,7 +21,13 @@ __pycache__/
 venv/
 .env
 *.egg-info/
+dist/
+build/
 .coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Lambda build artifacts
 **/handler.zip

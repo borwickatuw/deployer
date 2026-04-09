@@ -347,10 +347,10 @@ module "infrastructure" {
   ecr_repository_names = var.ecr_repository_names
 
   # WAF configuration
-  waf_preset            = var.waf_preset
-  waf_ip_allowlist      = var.waf_ip_allowlist
+  waf_preset              = var.waf_preset
+  waf_ip_allowlist        = var.waf_ip_allowlist
   waf_geo_block_countries = var.waf_geo_block_countries
-  waf_overrides         = var.waf_overrides
+  waf_overrides           = var.waf_overrides
 
   # Service definitions (target groups, SG rules, service discovery)
   services = var.services

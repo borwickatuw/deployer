@@ -23,6 +23,6 @@ Not in active use. The Cognito authentication flow, marker injection, and HTTP p
    ```bash
    git show bdb5891^:bin/deploy.py > /tmp/old_deploy.py
    ```
-2. Copy the `CognitoAuthenticator`, `MarkerPoller`, `_inject_marker`, `_get_health_check_path`, and `cmd_speed_test` functions
-3. Re-add the `speed-test` dispatch in `main()`
-4. Re-add imports: `json`, `os`, `threading`, `time`, `boto3`, `requests`, `get_staging_url_from_config`, `get_environment_path`, `log_warning`
+1. Copy the `CognitoAuthenticator`, `MarkerPoller`, `_inject_marker`, `_get_health_check_path`, and `cmd_speed_test` functions
+1. Re-add the `speed-test` dispatch in `main()`
+1. Re-add imports: `json`, `os`, `threading`, `time`, `boto3`, `requests`, `get_staging_url_from_config`, `get_environment_path`, `log_warning`

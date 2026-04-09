@@ -122,19 +122,19 @@ ______________________________________________________________________
 
 ### Daily (~5-10 minutes)
 
-| Task                     | Command                                                          |
-| ------------------------ | ---------------------------------------------------------------- |
-| Run full audit           | `uv run python bin/ops.py myapp-production audit`                |
-| Check for OOM kills      | `uv run python bin/capacity-report.py myapp-production --days 1` |
+| Task                | Command                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| Run full audit      | `uv run python bin/ops.py myapp-production audit`                |
+| Check for OOM kills | `uv run python bin/capacity-report.py myapp-production --days 1` |
 
 The `audit` command runs status, health, logs, maintenance, and ECR vulnerability checks in one command.
 
 ### Weekly
 
-| Task                       | Command                                                                  |
-| -------------------------- | ------------------------------------------------------------------------ |
-| Run capacity report        | `uv run python bin/capacity-report.py myapp-production --days 7`         |
-| Check RDS/snapshots status | `uv run python bin/ops.py myapp-production status`                       |
+| Task                       | Command                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| Run capacity report        | `uv run python bin/capacity-report.py myapp-production --days 7` |
+| Check RDS/snapshots status | `uv run python bin/ops.py myapp-production status`               |
 
 ### Monthly
 
@@ -146,12 +146,12 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 
 ### Quarterly
 
-| Task                        | Command / Description                                                   |
-| --------------------------- | ----------------------------------------------------------------------- |
-| Rotate database credentials | Update in RDS, then SSM Parameter Store                                 |
-| Review IAM policies         | Audit bootstrap/ policies for least privilege                           |
-| Test disaster recovery      | `emergency.py restore-db`                                               |
-| Update OpenTofu providers   | `bin/tofu.sh init -upgrade myapp-production`                            |
+| Task                        | Command / Description                         |
+| --------------------------- | --------------------------------------------- |
+| Rotate database credentials | Update in RDS, then SSM Parameter Store       |
+| Review IAM policies         | Audit bootstrap/ policies for least privilege |
+| Test disaster recovery      | `emergency.py restore-db`                     |
+| Update OpenTofu providers   | `bin/tofu.sh init -upgrade myapp-production`  |
 
 ______________________________________________________________________
 

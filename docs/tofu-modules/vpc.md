@@ -16,18 +16,18 @@ module "vpc" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| name_prefix | string | Prefix for resource names |
-| vpc_cidr | string | CIDR block for the VPC |
-| availability_zones | list(string) | Availability zones to use |
-| flow_logs_enabled | bool | Enable VPC flow logs (default: true) |
-| permissions_boundary | string | IAM permissions boundary ARN |
+| Variable             | Type         | Description                          |
+| -------------------- | ------------ | ------------------------------------ |
+| name_prefix          | string       | Prefix for resource names            |
+| vpc_cidr             | string       | CIDR block for the VPC               |
+| availability_zones   | list(string) | Availability zones to use            |
+| flow_logs_enabled    | bool         | Enable VPC flow logs (default: true) |
+| permissions_boundary | string       | IAM permissions boundary ARN         |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| vpc_id | VPC ID |
-| public_subnet_ids | Public subnet IDs (for ALB) |
+| Output             | Description                                    |
+| ------------------ | ---------------------------------------------- |
+| vpc_id             | VPC ID                                         |
+| public_subnet_ids  | Public subnet IDs (for ALB)                    |
 | private_subnet_ids | Private subnet IDs (for ECS, RDS, ElastiCache) |

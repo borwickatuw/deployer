@@ -24,4 +24,4 @@ Or via the AWS Console under Compute Optimizer.
    ```bash
    git checkout bdb5891^ -- modules/compute-optimizer/
    ```
-2. Reference the module from your environment configuration
+1. Reference the module from your environment configuration

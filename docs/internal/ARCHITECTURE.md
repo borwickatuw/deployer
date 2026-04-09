@@ -218,13 +218,13 @@ With Multi-AZ enabled (production recommendation):
 
 ## Staging vs Production Differences
 
-| Aspect       | Staging                   | Production                       |
-| ------------ | ------------------------- | -------------------------------- |
-| Availability | Single-AZ                 | Multi-AZ                         |
-| RDS          | db.t4g.micro, no Multi-AZ | db.r6g.large, Multi-AZ           |
-| Redis        | cache.t4g.micro           | cache.r6g.large, Multi-AZ        |
-| ECS Tasks    | 1 per service             | 2+ per service with auto-scaling |
-| NAT Gateway  | 1                         | 1 per AZ                         |
-| CloudFront   | Optional                  | Recommended                      |
-| Auto-scaling | Disabled                  | Enabled                          |
+| Aspect       | Staging                   | Production                          |
+| ------------ | ------------------------- | ----------------------------------- |
+| Availability | Single-AZ                 | Multi-AZ                            |
+| RDS          | db.t4g.micro, no Multi-AZ | db.r6g.large, Multi-AZ              |
+| Redis        | cache.t4g.micro           | cache.r6g.large, Multi-AZ           |
+| ECS Tasks    | 1 per service             | 2+ per service with auto-scaling    |
+| NAT Gateway  | 1                         | 1 per AZ                            |
+| CloudFront   | Optional                  | Recommended                         |
+| Auto-scaling | Disabled                  | Enabled                             |
 | Cost         | Lower (smaller instances) | Higher (larger instances, Multi-AZ) |

@@ -15,14 +15,14 @@ module "acm" {
 
 ## Key Variables
 
-| Variable | Type | Description |
-| --- | --- | --- |
-| domain_name | string | Domain name for the certificate |
+| Variable        | Type   | Description                                |
+| --------------- | ------ | ------------------------------------------ |
+| domain_name     | string | Domain name for the certificate            |
 | route53_zone_id | string | Route 53 hosted zone ID for DNS validation |
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
+| Output          | Description                      |
+| --------------- | -------------------------------- |
 | certificate_arn | ARN of the validated certificate |
-| domain_name | Domain name of the certificate |
+| domain_name     | Domain name of the certificate   |
