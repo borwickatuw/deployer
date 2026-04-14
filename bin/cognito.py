@@ -214,6 +214,7 @@ def cmd_list(environment: str | None) -> int:
     return 0
 
 
+# pysmelly: ignore param-clumps — distinct CLI params from Click decorators
 def cmd_create(environment: str, email: str, password: str | None, clipboard: bool) -> int:
     """Create a new user."""
     env_path, user_pool_id, config = resolve_environment(environment)

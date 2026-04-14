@@ -57,6 +57,7 @@ def user_exists(conn, username: str) -> bool:
     return len(result) > 0
 
 
+# pysmelly: ignore param-clumps — PostgreSQL connection params are distinct objects
 def create_app_user(conn, username: str, password: str, db_name: str) -> None:
     """Create the app user with DML-only privileges.
 
@@ -264,6 +265,7 @@ def handle_create_extensions(event) -> dict:
         conn.close()
 
 
+# pysmelly: ignore dict-as-dataclass — Lambda handler return must be dict for JSON serialization
 def handle_setup_database() -> dict:
     """Handle the setup_database action (default behavior)."""
     master = get_secret(os.environ["MASTER_SECRET_ARN"])

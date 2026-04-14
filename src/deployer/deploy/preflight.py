@@ -41,6 +41,7 @@ class PreflightOptions:
     skip_audit: bool = False
 
 
+# pysmelly: ignore pass-through-params — preflight wrapper adds PreflightError translation
 def check_environment_config(env_config: dict) -> None:
     """Validate required fields are present in environment config.
 
@@ -89,6 +90,7 @@ def check_audit(
         print()
 
 
+# pysmelly: ignore param-clumps — deploy_config, env_config, environment are distinct objects
 def check_ecr_repositories(
     deploy_config: DeployConfig,
     env_config: dict,

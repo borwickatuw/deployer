@@ -248,6 +248,7 @@ def _validate_and_configure(environment: str) -> None:
 # =============================================================================
 
 
+# pysmelly: ignore param-clumps — distinct CLI params from Click decorators
 def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
     environment: str, service: str | None, revision: int | None, yes: bool
 ) -> int:

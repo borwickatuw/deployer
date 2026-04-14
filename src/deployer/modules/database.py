@@ -44,6 +44,7 @@ class DatabaseModule(ResourceModule):
     def name(self) -> str:
         return "database"
 
+    # pysmelly: ignore feature-envy — validation inherently accesses the config it validates
     def validate(  # noqa: C901 — validates many credential/config combinations
         self,
         app_config: dict[str, Any],
@@ -123,6 +124,7 @@ class DatabaseModule(ResourceModule):
 
         return errors
 
+    # pysmelly: ignore feature-envy — collection inherently accesses the context it collects from
     def collect(
         self,
         app_config: dict[str, Any],

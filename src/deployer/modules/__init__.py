@@ -82,6 +82,7 @@ class ModuleRegistry:
         return errors
 
     @classmethod
+    # pysmelly: ignore param-clumps — required by Module interface contract
     def collect_all(
         cls,
         app_config: dict[str, Any],

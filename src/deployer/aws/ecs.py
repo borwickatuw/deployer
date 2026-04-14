@@ -15,6 +15,7 @@ def _get_ecs_client() -> Any:
     return boto3.client("ecs", region_name=AWS_REGION)
 
 
+# pysmelly: ignore dict-as-dataclass — strong candidate but 15+ call sites; defer to focused session
 def _format_service(svc: dict) -> dict:
     """Format raw ECS service data into a consistent dict structure.
 
@@ -77,6 +78,7 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[dict]
     return services
 
 
+# pysmelly: ignore param-clumps — boto3 client + cluster + service are distinct AWS identifiers
 def scale_service(
     cluster_name: str,
     service_name: str,

@@ -130,6 +130,7 @@ def list_parameters(path_prefix: str) -> tuple[list[dict], str | None]:
         return [], str(e)
 
 
+# pysmelly: ignore pass-through-params — convenience wrapper returning bool
 def parameter_exists(name: str) -> bool:
     """Check if an SSM parameter exists.
 

@@ -27,6 +27,7 @@ def parse_environment(env_name: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+# pysmelly: ignore pass-through-params — abstracts parse_environment() from callers
 def get_path_prefix(env_name: str) -> str:
     """Get the SSM path prefix for an environment.
 
@@ -40,6 +41,7 @@ def get_path_prefix(env_name: str) -> str:
     return f"/{project}/{environment}"
 
 
+# pysmelly: ignore pass-through-params — abstracts parse_environment() from callers
 def get_parameter_path(env_name: str, secret_name: str) -> str:
     """Get the full SSM parameter path.
 
@@ -54,6 +56,7 @@ def get_parameter_path(env_name: str, secret_name: str) -> str:
     return f"/{project}/{environment}/{secret_name}"
 
 
+# pysmelly: ignore pass-through-params — convenience wrapper: parse + extract in one call
 def get_secrets_from_deploy_toml(
     deploy_toml_path: Path,
     environment: str,
@@ -73,6 +76,7 @@ def get_secrets_from_deploy_toml(
     return get_secrets_from_config(config.get_raw_dict(), environment, env_config)
 
 
+# pysmelly: ignore param-clumps — config, env_config, and environment are distinct objects
 def get_secrets_from_config(
     config: dict,
     environment: str,
