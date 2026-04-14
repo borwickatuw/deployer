@@ -201,10 +201,11 @@ def _prepare_restore(source_instance_id: str, target_suffix: str) -> tuple[str, 
     return target_id, source_details
 
 
-def _handle_restore_error(e: ClientError, target_id: str) -> dict | None:
+def _handle_restore_error(e: ClientError, target_id: str) -> dict:
     """Handle ClientError from a restore operation.
 
-    Returns an error dict for DBInstanceAlreadyExists, None otherwise.
+    Returns an error dict for DBInstanceAlreadyExists. Re-raises all other
+    ClientErrors so they propagate to the caller instead of being swallowed.
     """
     error_code = e.response.get("Error", {}).get("Code", "")
     if error_code == "DBInstanceAlreadyExists":
@@ -217,10 +218,9 @@ def _handle_restore_error(e: ClientError, target_id: str) -> dict | None:
                 f"--db-instance-identifier {target_id} --skip-final-snapshot"
             ),
         }
-    return None
+    raise
 
 
-# pysmelly: ignore inconsistent-returns — dict|None contract matches _handle_restore_error return type
 def restore_from_snapshot(
     source_instance_id: str,
     snapshot_id: str,
@@ -273,7 +273,6 @@ def restore_from_snapshot(
         return _handle_restore_error(e, target_id)
 
 
-# pysmelly: ignore inconsistent-returns — dict|None contract matches _handle_restore_error return type
 def restore_from_point_in_time(
     source_instance_id: str,
     restore_time: datetime,
