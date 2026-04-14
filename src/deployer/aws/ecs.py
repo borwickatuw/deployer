@@ -7,7 +7,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError, WaiterError
 
-from ..utils import AWS_REGION
+from ..utils import AWS_REGION, format_iso
 
 
 def _get_ecs_client() -> Any:
@@ -394,11 +394,7 @@ def _filter_oom_tasks(tasks: list[dict], cutoff) -> list[dict]:
             oom_events.append(
                 {
                     "task_arn": task.get("taskArn", ""),
-                    "stopped_at": (
-                        stopped_at.isoformat()
-                        if hasattr(stopped_at, "isoformat")
-                        else str(stopped_at)
-                    ),
+                    "stopped_at": format_iso(stopped_at),
                     "reason": oom_reason or stopped_reason,
                     "stop_code": stop_code,
                 }

@@ -13,6 +13,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from ..utils import format_iso
 from .checkpoint import ServiceState
 
 
@@ -138,10 +139,7 @@ def list_task_definition_revisions(
                 task_def = desc_response.get("taskDefinition", {})
                 registered_at = task_def.get("registeredAt")
                 if registered_at:
-                    if hasattr(registered_at, "isoformat"):
-                        item["registered_at"] = registered_at.isoformat()
-                    else:
-                        item["registered_at"] = str(registered_at)
+                    item["registered_at"] = format_iso(registered_at)
             except ClientError:
                 item["registered_at"] = None
 
@@ -174,9 +172,7 @@ def get_task_definition_details(task_def_arn: str) -> dict | None:
                 container_env[env.get("name", "")] = env.get("value", "")
             env_vars[container_name] = container_env
 
-        registered_at = task_def.get("registeredAt")
-        if hasattr(registered_at, "isoformat"):
-            registered_at = registered_at.isoformat()
+        registered_at = format_iso(task_def.get("registeredAt"))
 
         return {
             "arn": task_def.get("taskDefinitionArn", ""),

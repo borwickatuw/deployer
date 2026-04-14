@@ -12,6 +12,8 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from ..utils import format_iso
+
 
 def _get_rds_client() -> Any:
     """Get boto3 RDS client."""
@@ -106,14 +108,10 @@ def get_rds_snapshots(
         )
 
         for snapshot in response.get("DBSnapshots", []):
-            created_at = snapshot.get("SnapshotCreateTime")
-            if hasattr(created_at, "isoformat"):
-                created_at = created_at.isoformat()
-
             result.append(
                 {
                     "id": snapshot.get("DBSnapshotIdentifier", ""),
-                    "created_at": created_at,
+                    "created_at": format_iso(snapshot.get("SnapshotCreateTime")),
                     "status": snapshot.get("Status", ""),
                     "type": "manual",
                     "engine": snapshot.get("Engine", ""),
@@ -129,14 +127,10 @@ def get_rds_snapshots(
             )
 
             for snapshot in response.get("DBSnapshots", []):
-                created_at = snapshot.get("SnapshotCreateTime")
-                if hasattr(created_at, "isoformat"):
-                    created_at = created_at.isoformat()
-
                 result.append(
                     {
                         "id": snapshot.get("DBSnapshotIdentifier", ""),
-                        "created_at": created_at,
+                        "created_at": format_iso(snapshot.get("SnapshotCreateTime")),
                         "status": snapshot.get("Status", ""),
                         "type": "automated",
                         "engine": snapshot.get("Engine", ""),

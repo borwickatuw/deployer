@@ -68,6 +68,7 @@ from deployer.utils import (
     Colors,
     configure_aws_profile_for_environment,
     confirm_action,
+    format_iso,
     get_deployer_root,
     get_environment_path,
     log,
@@ -609,9 +610,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
 
         rds_details = get_rds_instance_details(rds_id)
         if rds_details and rds_details.get("latest_restorable_time"):
-            latest = rds_details["latest_restorable_time"]
-            if hasattr(latest, "isoformat"):
-                latest = latest.isoformat()
+            latest = format_iso(rds_details["latest_restorable_time"])
             print(f"Point-in-time recovery is available up to: {latest}")
             print()
 

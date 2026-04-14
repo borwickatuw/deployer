@@ -12,6 +12,7 @@ from .cli import (
 )
 from .colors import Colors
 from .constants import AWS_REGION
+from .datetime import format_iso
 from .environment import (
     ensure_environments_symlinks,
     get_all_environments,
@@ -49,6 +50,7 @@ __all__ = [
     "Colors",
     "EnvironmentConfigError",
     "configure_aws_profile",
+    "format_iso",
     "configure_aws_profile_for_environment",
     "confirm_action",
     "ensure_environments_symlinks",

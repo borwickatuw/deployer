@@ -45,6 +45,7 @@ from deployer.emergency.rds import get_rds_snapshots
 from deployer.utils import (
     Colors,
     configure_aws_profile_for_environment,
+    format_iso,
     get_environment_path,
     log_error,
     log_info,
@@ -162,13 +163,8 @@ def get_rds_pending_maintenance(instance_id: str) -> list[dict]:
 
         for resource in response.get("PendingMaintenanceActions", []):
             for action in resource.get("PendingMaintenanceActionDetails", []):
-                auto_apply = action.get("AutoAppliedAfterDate")
-                if hasattr(auto_apply, "isoformat"):
-                    auto_apply = auto_apply.isoformat()
-
-                current_apply = action.get("CurrentApplyDate")
-                if hasattr(current_apply, "isoformat"):
-                    current_apply = current_apply.isoformat()
+                auto_apply = format_iso(action.get("AutoAppliedAfterDate"))
+                current_apply = format_iso(action.get("CurrentApplyDate"))
 
                 result.append(
                     {
@@ -324,9 +320,7 @@ def get_repository_scan_summary(repository_name: str, max_images: int = 5) -> li
         for image in images:
             tags = image.get("imageTags", [])
             tag = tags[0] if tags else "(untagged)"
-            pushed_at = image.get("imagePushedAt")
-            if hasattr(pushed_at, "isoformat"):
-                pushed_at = pushed_at.isoformat()
+            pushed_at = format_iso(image.get("imagePushedAt"))
 
             scan_status = image.get("imageScanStatus", {}).get("status", "NOT_SCANNED")
             scan_findings = image.get("imageScanFindingsSummary", {})

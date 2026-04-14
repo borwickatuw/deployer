@@ -109,7 +109,7 @@ def audit_images(
     # Get all contexts from deploy.toml images (normalize the same way as compose)
     deploy_contexts = {}
     for name, img in deploy_images.items():
-        # Handle both ImageConfig dataclass and dict
+        # pysmelly: ignore getattr-strings — duck-typing between ImageConfig dataclass and dict
         context = img.context if hasattr(img, "context") else img.get("context", "")
         deploy_contexts[context.lstrip("./")] = name
 
