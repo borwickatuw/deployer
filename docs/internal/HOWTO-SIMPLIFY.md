@@ -53,41 +53,19 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `docs/internal/DECISIONS.md`     | 557   | Approaching ADR/ migration threshold        |
 | `docs/internal/DESIGN.md`        | 410   | Design rationale; at guide threshold        |
 
-## Pysmelly Findings to Work Through
+## Pysmelly Findings — Worked Through
 
-Findings from `uvx pysmelly .` run 2026-04-09. HIGH severity addressed; MEDIUM organized by category for follow-up.
+MEDIUM severity findings from 2026-04-09 run (147 total) have been worked through. Results:
 
-### Convergence hotspots
+- **Actual fix:** Removed unused `db_name` parameter, extracted `format_iso()` datetime helper, converted loop-and-append to comprehension
+- **Suppressed with rationale:** Remaining findings evaluated as intentional patterns (CLI error boundaries, query functions returning None, security-critical privilege grants, Click framework patterns, etc.)
 
-Files flagged by 3+ checks — prioritize these for refactoring:
-- `bin/emergency.py` (5 checks)
-- `modules/db-on-shared-rds/lambda/index.py` (5 checks)
-- `src/deployer/init/bootstrap.py` (4 checks)
-- `src/deployer/aws/ecs.py` (4 checks)
-- `src/deployer/core/config.py` (3 checks)
+### Remaining (informational, not tracked)
 
-### By category
+19 duplicate-blocks (suppression comments in place but some have overlapping line ranges that pysmelly still reports), 16 long-function, 11 arrow-code, 9 inconsistent-error-handling (cascading from format_iso callers), 4 law-of-demeter, 3 single-call-site.
 
-| Category | Count | Effort | Notes |
-| --- | --- | --- | --- |
-| duplicate-blocks | 24 | Large | Mostly in bin/init.py, emergency.py, lambda/index.py. Extract shared patterns. |
-| inconsistent-error-handling | 15 | Medium | Needs error contract decisions for core functions (load_environment_config, get_environments_dir). |
-| getattr-strings | 11 | Small | 9 are `hasattr(obj, 'isoformat')` — extract a datetime formatting helper. |
-| pass-through-params | 9 | Medium | Structural — thin wrappers that only forward params. Evaluate if wrappers add value. |
-| dict-as-dataclass | 9 | Medium | Good candidates: `_format_service()`, `get_status()`, `format_user()`, restore functions. |
-| param-clumps | 9 | Medium | Repeated parameter groups (conn+username+password, env_config+deploy_config+environment). |
-| vestigial-params | 7 | Small | 3 are AWS Lambda `context` (required by handler signature). 1 is `verbose` reserved for future. |
-| duplicate-except-blocks | 6 | Small | Shared error handling patterns across bin/ scripts. |
-| return-none-instead-of-raise | 4 | Small | `get_status()`, `get_cognito_user_pool_id_from_config()`, `bootstrap_dir_exists()`, `get_linked_deploy_toml()`. |
-| foo-equals-foo | 4 | Small | Minor: inline single-use locals in function calls. |
-| write-only-attributes | 2 | N/A | Suppressed — checkpoint fields read via JSON serialization. |
-| feature-envy | 2 | Medium | DatabaseModule.validate() accesses 11 attrs of env_config. |
-| isinstance-chain | 2 | Small | compose.py and config.py — consider dispatch tables. |
-| inconsistent-returns | 2 | Small | emergency/rds.py restore functions return mixed types. |
-| shotgun-surgery | 2 | N/A | click.command pattern — inherent to Click framework. |
+### Future candidate
 
-### LOW severity (informational, not tracked)
+`_format_service()` in `src/deployer/aws/ecs.py` is the strongest dict-to-dataclass candidate (7-key dict, 15+ call sites, pure Python). Deferred due to large caller update scope.
 
-17 long-function, 13 arrow-code, 4 law-of-demeter, 3 single-call-site, 2 temp-accumulators.
-
-*Last updated: 2026-04-09*
+*Last updated: 2026-04-14*
