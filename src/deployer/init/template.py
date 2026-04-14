@@ -124,6 +124,8 @@ def _apply_filter(value: str, filter_name: str | None) -> str:
     raise ValueError(f"Unknown filter: {filter_name}")
 
 
+# pysmelly: ignore inconsistent-error-handling — raises KeyError for missing placeholders;
+# callers pass validated data or catch at their boundary.
 def substitute(template: str, **kwargs: Any) -> str:
     """Replace {{placeholder}} patterns with provided values.
 

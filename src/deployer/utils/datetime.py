@@ -1,3 +1,5 @@
+# pysmelly: ignore inconsistent-error-handling — leaf utility called within boto3 response
+# processing; callers handle ClientError at their own boundaries.
 """Datetime formatting utilities for boto3 responses."""
 
 from datetime import datetime

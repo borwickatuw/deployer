@@ -1,3 +1,5 @@
+# pysmelly: ignore inconsistent-error-handling — leaf logging utilities called from
+# many error contexts; "inconsistency" is in callers' try/except boundaries, not here.
 """Logging utilities for formatted console output."""
 
 import sys

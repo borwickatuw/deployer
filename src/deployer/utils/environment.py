@@ -14,6 +14,8 @@ def get_deployer_root() -> Path:
     return Path(__file__).parent.parent.parent.parent
 
 
+# pysmelly: ignore inconsistent-error-handling — raises RuntimeError if env var unset;
+# callers catch at CLI boundary or guarantee env var is set after validation.
 def get_environments_dir() -> Path:
     """Get the environments directory.
 

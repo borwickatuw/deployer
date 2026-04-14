@@ -82,6 +82,7 @@ def get_environment_aws_profile(env_path: Path, operation: str) -> str | None:
         return None
 
 
+# pysmelly: ignore inconsistent-error-handling — raises RuntimeError; callers catch at CLI boundary
 def configure_aws_profile_for_environment(
     operation: str,
     environment: str,

@@ -542,6 +542,7 @@ def cmd_snapshot(environment: str, no_wait: bool) -> int:
 # =============================================================================
 
 
+# pysmelly: ignore inconsistent-error-handling — CLI command, Click handles uncaught exceptions
 def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
     environment: str, snapshot: str | None, time: str | None
 ) -> int:

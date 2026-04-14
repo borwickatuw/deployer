@@ -149,6 +149,7 @@ def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> 
         return []
 
 
+# pysmelly: ignore inconsistent-error-handling — callers handle ClientError at their boundaries
 def run_task(
     cluster_name: str,
     task_definition: str,

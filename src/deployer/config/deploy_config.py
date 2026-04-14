@@ -427,6 +427,7 @@ class DeployConfig:
         )
 
 
+# pysmelly: ignore inconsistent-error-handling — callers catch at CLI boundary
 def parse_deploy_config(path: Path) -> DeployConfig:
     """Parse deploy.toml and return a typed DeployConfig.
 
