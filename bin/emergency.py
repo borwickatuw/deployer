@@ -634,6 +634,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
             except ValueError:
                 return cmd_restore_db(environment, snapshot=None, time=choice)
 
+        # pysmelly: ignore duplicate-except-blocks — CLI user cancellation handler
         except (EOFError, KeyboardInterrupt):
             print()
             log_error("Cancelled")

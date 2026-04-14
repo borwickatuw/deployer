@@ -345,6 +345,7 @@ def load_deploy_toml(deploy_toml_path: Path) -> dict:
         return tomllib.load(f)
 
 
+# pysmelly: ignore isinstance-chain — TOML command entries can be list or dict format
 def get_commands_from_deploy_toml(deploy_toml: dict) -> dict[str, list[str]]:
     """Extract the [commands] section from a deploy.toml config.
 

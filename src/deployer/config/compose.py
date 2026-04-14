@@ -23,6 +23,7 @@ def parse_docker_compose(path: Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+# pysmelly: ignore isinstance-chain — YAML values can be str, list, or dict
 def get_compose_services(compose: dict[str, Any]) -> dict[str, dict]:
     """Extract services from docker-compose.yml with their properties.
 

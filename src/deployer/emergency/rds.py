@@ -219,6 +219,7 @@ def _handle_restore_error(e: ClientError, target_id: str) -> dict | None:
     return None
 
 
+# pysmelly: ignore inconsistent-returns — dict|None contract matches _handle_restore_error return type
 def restore_from_snapshot(
     source_instance_id: str,
     snapshot_id: str,
@@ -271,6 +272,7 @@ def restore_from_snapshot(
         return _handle_restore_error(e, target_id)
 
 
+# pysmelly: ignore inconsistent-returns — dict|None contract matches _handle_restore_error return type
 def restore_from_point_in_time(
     source_instance_id: str,
     restore_time: datetime,

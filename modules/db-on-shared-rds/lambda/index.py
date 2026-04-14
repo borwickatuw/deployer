@@ -256,6 +256,7 @@ def handle_create_extensions(event) -> dict:
     try:
         create_extensions(conn, extensions)
         return {"status": "success", "extensions": extensions}
+    # pysmelly: ignore duplicate-except-blocks — Lambda log-and-reraise pattern
     except Exception as e:
         logger.error(f"Error creating extensions: {e}")
         raise
