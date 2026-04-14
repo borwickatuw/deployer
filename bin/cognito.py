@@ -381,6 +381,7 @@ def cli():
     """Manage Cognito user access for environments."""
 
 
+# pysmelly: ignore shotgun-surgery — Click's @cli.command() pattern inherently spans files
 @cli.command("list")
 @click.argument("environment", required=False)
 def list_cmd(environment):

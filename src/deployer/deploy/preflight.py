@@ -48,6 +48,7 @@ def check_environment_config(env_config: dict) -> None:
     Raises:
         PreflightError: If required config fields are missing.
     """
+    # pysmelly: ignore duplicate-blocks — preflight checks share error formatting pattern
     config_errors = validate_environment_config(env_config)
     if config_errors:
         lines = ["Environment config is missing required fields:"]
@@ -96,6 +97,7 @@ def check_ecr_repositories(
     env_config: dict,
     environment: str,
 ) -> None:
+    # pysmelly: ignore duplicate-blocks — ECR/ECS checks share AWS validation pattern
     """Verify all required ECR repositories exist.
 
     Raises:

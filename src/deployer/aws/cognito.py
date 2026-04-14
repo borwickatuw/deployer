@@ -23,6 +23,7 @@ def _handle_user_not_found(success: bool, output: str, username: str) -> tuple[b
     return True, ""
 
 
+# pysmelly: ignore duplicate-blocks — AWS CLI wrapper pattern shared across modules
 def get_user_pool_name(user_pool_id: str) -> str | None:
     """Get the display name of a Cognito User Pool.
 

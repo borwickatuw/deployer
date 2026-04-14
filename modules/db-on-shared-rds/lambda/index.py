@@ -11,6 +11,10 @@ database they're granted CONNECT on - they cannot see other databases.
 Creates two users:
 - App user: DML only (SELECT, INSERT, UPDATE, DELETE)
 - Migrate user: DDL + DML (CREATE, ALTER, DROP, etc.)
+
+# pysmelly: ignore duplicate-blocks — DB setup/connection patterns are similar across functions
+# but differ in SQL privileges and error handling. Security-critical privilege grants must be
+# explicit in each function for auditability.
 """
 
 import json
@@ -136,6 +140,7 @@ def setup_schema_privileges(
         f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {app_username}"
     )
 
+    # pysmelly: ignore duplicate-blocks — GRANT statements differ between app/migrate users
     # Grant full privileges on existing tables to migrate user
     conn.run(f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {migrate_username}")
     conn.run(
@@ -163,6 +168,7 @@ def setup_schema_privileges(
     )
 
 
+# pysmelly: ignore duplicate-blocks — ownership transfer loop intentionally inline
 def transfer_ownership(conn, migrate_username: str) -> None:
     """Transfer ownership of existing tables and sequences to the migrate user.
 
@@ -230,6 +236,7 @@ def create_extensions(conn, extensions: list[str]) -> None:
         logger.info(f"Ensured extension '{ext}' exists")
 
 
+# pysmelly: ignore duplicate-blocks — connection setup pattern intentional for each handler
 def handle_create_extensions(event) -> dict:
     """Handle the create_extensions action.
 
@@ -266,6 +273,7 @@ def handle_create_extensions(event) -> dict:
 
 
 # pysmelly: ignore dict-as-dataclass — Lambda handler return must be dict for JSON serialization
+# pysmelly: ignore duplicate-blocks — connection setup pattern intentional for each handler
 def handle_setup_database() -> dict:
     """Handle the setup_database action (default behavior)."""
     master = get_secret(os.environ["MASTER_SECRET_ARN"])

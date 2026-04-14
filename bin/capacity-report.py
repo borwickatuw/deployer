@@ -177,6 +177,7 @@ def check_environment(  # noqa: C901 — checks OOM across all services
     return 1 if total_oom > 0 else 0
 
 
+# pysmelly: ignore shotgun-surgery — Click's @click.command() pattern inherently spans files
 @click.command()
 @click.argument("environment", required=False)
 @click.option("--days", "-d", type=int, default=7, help="Number of days to check (default: 7)")
@@ -203,6 +204,7 @@ def cli(environment, days):
         env_path = get_environment_path(env_name)
 
         print()
+        # pysmelly: ignore duplicate-blocks — environment header pattern shared with environment.py
         print(f"{'=' * 60}")
         print(f"Environment: {env_name} (last {days} days)")
         print(f"{'=' * 60}")

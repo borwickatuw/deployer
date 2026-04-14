@@ -6,6 +6,10 @@ Creates two users:
 
 This reduces blast radius if the application is compromised - attackers
 cannot drop tables or alter schema with the app user.
+
+# pysmelly: ignore duplicate-blocks — create_app_user and create_migrate_user share
+# structure but have intentionally different GRANT statements (DML vs ALL).
+# Security-critical privilege grants must be explicit for auditability.
 """
 
 import json
@@ -45,6 +49,7 @@ def user_exists(conn, username: str) -> bool:
     return len(result) > 0
 
 
+# pysmelly: ignore duplicate-blocks — different GRANT statements (DML vs ALL) for security
 def create_app_user(conn, username: str, password: str, db_name: str) -> None:
     """Create the app user with DML-only privileges.
 

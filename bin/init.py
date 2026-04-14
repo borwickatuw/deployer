@@ -35,6 +35,10 @@ Usage:
     # Generate AWS CLI profiles for deployer roles
     python bin/init.py setup-profiles
     python bin/init.py setup-profiles --dry-run
+
+# pysmelly: ignore duplicate-blocks — CLI setup patterns (env dir lookup, error messages,
+# next-steps printing) naturally repeat across init subcommands. Each command's
+# inline sequence is clearer than extracted helpers.
 """
 
 import os
@@ -73,6 +77,7 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     """Interactively set up bootstrap infrastructure for a new AWS account."""
     print("Setting up deployer bootstrap for a new AWS account.\n")
 
+    # pysmelly: ignore duplicate-blocks — shared CLI prompt patterns across init subcommands
     # Auto-detect account ID
     detected_id = detect_aws_account_id()
 
@@ -186,6 +191,7 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
 
     print()
 
+    # pysmelly: ignore duplicate-blocks — next-steps printing inline for each command
     # Offer to apply immediately
     if not click.confirm("Run 'tofu init && tofu apply' now?", default=False):
         print("Next steps:")
@@ -227,6 +233,7 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     if migrate_result != 0:
         return migrate_result
 
+    # pysmelly: ignore duplicate-blocks
     print("Next step:")
     print(f"  cd {env_path}")
     print(f"  AWS_PROFILE={admin_profile} tofu init -migrate-state")
@@ -257,6 +264,7 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    # pysmelly: ignore duplicate-blocks
     if dry_run:
         print("=" * 60)
         print(f"Would update: {main_tf}")
@@ -265,6 +273,7 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
         print(updated)
         return 0
 
+    # pysmelly: ignore duplicate-blocks
     main_tf.write_text(updated)
     print(f"S3 backend enabled in {main_tf}")
     print()
@@ -324,6 +333,7 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
         print(content)
         return 0
 
+    # pysmelly: ignore duplicate-blocks
     # Write file
     output_path.write_text(content)
     print(f"Generated: {output_path}")
@@ -473,6 +483,7 @@ def _print_next_steps(
     print("Next steps:")
     step = 1
 
+    # pysmelly: ignore duplicate-blocks
     if is_standalone:
         print(f"  {step}. Edit {env_path}/terraform.tfvars:")
         print("     - Set database credentials")

@@ -132,6 +132,8 @@ SERVICE_URL_PATTERN = re.compile(r"\$\{services\.([^.]+)\.url\}")
 INTERNAL_SERVICE_URL_PATTERN = re.compile(r"\$\{services\.([^.]+)\.internal_url\}")
 
 
+# pysmelly: ignore duplicate-blocks — resolve_service_url and resolve_internal_service_url
+# share structure but produce fundamentally different URL types (domain vs service-discovery).
 def resolve_service_url(
     service_name: str,
     services_config: dict[str, Any],

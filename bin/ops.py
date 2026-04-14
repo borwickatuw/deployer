@@ -896,6 +896,7 @@ def cmd_incident_note(text: str) -> int:
     content = incident.read_text()
 
     # Insert note before ## Resolution
+    # pysmelly: ignore duplicate-blocks — incident note/resolve share file I/O pattern
     note_line = f"- {now.strftime('%H:%M')} {text}\n"
     content = content.replace("## Resolution\n", f"{note_line}\n## Resolution\n")
 

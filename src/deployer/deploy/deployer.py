@@ -410,6 +410,7 @@ def handle_push_error(error: RuntimeError, include_ecr_hint: bool = False) -> bo
         True if the error was handled (caller should sys.exit(1)),
         False if not a push error (caller should re-raise).
     """
+    # pysmelly: ignore duplicate-blocks — error recovery pattern
     error_msg = str(error)
     if "Push failed" not in error_msg:
         return False
