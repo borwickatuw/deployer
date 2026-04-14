@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config import (
     AuditConfig,
+    ImageConfig,
     get_compose_services,
     parse_deploy_config,
     parse_docker_compose,
@@ -78,14 +79,14 @@ def audit_services(
 
 def audit_images(
     compose_services: dict[str, dict],
-    deploy_images: dict[str, Any],
+    deploy_images: dict[str, ImageConfig],
     audit_config: AuditConfig,
 ) -> list[str]:
     """Audit images/build contexts and return list of issues.
 
     Args:
         compose_services: Services extracted from docker-compose.yml.
-        deploy_images: Images from deploy.toml (dict of ImageConfig or dict).
+        deploy_images: Images from deploy.toml (dict of ImageConfig).
         audit_config: Audit configuration from deploy.toml.
 
     Returns:
@@ -109,8 +110,7 @@ def audit_images(
     # Get all contexts from deploy.toml images (normalize the same way as compose)
     deploy_contexts = {}
     for name, img in deploy_images.items():
-        # pysmelly: ignore getattr-strings — duck-typing between ImageConfig dataclass and dict
-        context = img.context if hasattr(img, "context") else img.get("context", "")
+        context = img.context
         deploy_contexts[context.lstrip("./")] = name
 
     # Check for missing contexts

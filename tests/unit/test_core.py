@@ -4,7 +4,7 @@ import string
 
 import pytest
 
-from deployer.config import AuditConfig
+from deployer.config import AuditConfig, ImageConfig
 from deployer.core.audit import (
     audit_env_vars,
     audit_images,
@@ -167,7 +167,7 @@ class TestAuditImages:
     def test_all_accounted_for(self):
         """Test no issues when all images accounted for."""
         compose = {"web": {"has_build": True, "build_context": "web", "profiles": []}}
-        images = {"web": {"context": "web"}}
+        images = {"web": ImageConfig(name="web", context="web")}
         config = AuditConfig(ignore_services=set(), ignore_images=set())
         assert audit_images(compose, images, config) == []
 

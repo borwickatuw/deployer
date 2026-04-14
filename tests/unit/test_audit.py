@@ -5,6 +5,7 @@ import pytest
 from deployer.config import (
     AuditConfig,
     DeployConfig,
+    ImageConfig,
     get_compose_services,
     parse_deploy_config,
     parse_deploy_toml,
@@ -408,7 +409,7 @@ class TestAuditImages:
             "web": {"has_build": True, "build_context": "./web", "profiles": []},
         }
         deploy_images = {
-            "web": {"context": "web"},
+            "web": ImageConfig(name="web", context="web"),
         }
         audit_config = AuditConfig(
             ignore_services=set(),
@@ -424,7 +425,7 @@ class TestAuditImages:
             "web": {"has_build": True, "build_context": "./web", "profiles": []},
         }
         deploy_images = {
-            "api": {"context": "./api"},
+            "api": ImageConfig(name="api", context="./api"),
         }
         audit_config = AuditConfig(
             ignore_services=set(),
