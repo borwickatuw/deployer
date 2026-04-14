@@ -110,7 +110,7 @@ def update_user_password(conn, username: str, password: str) -> None:
 
 
 def setup_schema_privileges(
-    conn, master_username: str, migrate_username: str, app_username: str, db_name: str
+    conn, master_username: str, migrate_username: str, app_username: str
 ) -> None:
     """Set up schema and table privileges for the users.
 
@@ -348,7 +348,6 @@ def handle_setup_database() -> dict:
             master["username"],
             migrate["username"],
             app["username"],
-            db_name,
         )
 
     finally:
@@ -363,7 +362,7 @@ def handle_setup_database() -> dict:
     }
 
 
-def handler(event, context):
+def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature
     """Lambda handler to create database/users or extensions on shared RDS.
 
     Dispatches on event["action"]:

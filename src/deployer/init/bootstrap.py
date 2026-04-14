@@ -94,15 +94,11 @@ def uncomment_backend_block(content: str) -> str:
             "Has the backend already been enabled?"
         )
 
-    result = []
-    for i, line in enumerate(lines):
-        if i in (start_idx, end_idx):
-            continue  # Remove marker lines
-        if start_idx < i < end_idx:
-            # Remove leading "# " comment prefix (preserve indentation)
-            result.append(re.sub(r"^(\s*)# ", r"\1", line))
-        else:
-            result.append(line)
+    result = [
+        re.sub(r"^(\s*)# ", r"\1", line) if start_idx < i < end_idx else line
+        for i, line in enumerate(lines)
+        if i not in (start_idx, end_idx)
+    ]
 
     return "\n".join(result) + "\n"
 
@@ -114,7 +110,9 @@ def generate_bootstrap(
     project_prefixes: list[str],
     trusted_user_arns: list[str],
     include_cognito: bool = False,
-    cognito_app_domains: dict[str, str] | None = None,  # pysmelly: ignore unused-defaults — semantically optional (only used when include_cognito=True)
+    cognito_app_domains: (
+        dict[str, str] | None
+    ) = None,  # pysmelly: ignore unused-defaults — semantically optional (only used when include_cognito=True)
 ) -> dict[str, str]:
     """Generate bootstrap directory files from templates.
 

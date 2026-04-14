@@ -324,7 +324,7 @@ def handle_create_users() -> dict:
         conn.close()
 
 
-def handler(event, context):
+def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature
     """Lambda handler to create database users or extensions.
 
     Dispatches on event["action"]:

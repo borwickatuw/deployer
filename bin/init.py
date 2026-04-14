@@ -139,6 +139,7 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
 
     # Generate files
     try:
+        # pysmelly: ignore foo-equals-foo — named intermediates from user prompts aid readability
         files = generate_bootstrap(
             account_id=account_id,
             region=region,
@@ -407,6 +408,7 @@ def cmd_environment(  # noqa: C901 — environment creation with template handli
 
     # Generate environment files
     try:
+        # pysmelly: ignore foo-equals-foo — listener_priority has conditional initialization
         files = generate_environment(
             app_name=app_name,
             template_name=template_name,

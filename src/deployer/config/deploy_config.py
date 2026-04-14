@@ -409,6 +409,7 @@ class DeployConfig:
                 warnings.append(f"Unknown key in [audit]: {key}")
         audit = dacite.from_dict(AuditConfig, audit_data, config=_DACITE_CONFIG)
 
+        # pysmelly: ignore foo-equals-foo — intermediates have validation blocks above
         return cls(
             application=application,
             images=images,

@@ -265,6 +265,7 @@ def main(  # noqa: C901 — CI deploy orchestration
         sys.exit(1)
 
     try:
+        # pysmelly: ignore foo-equals-foo — deploy_config parsed in separate try/except above
         run_preflight_checks(
             deploy_config=deploy_config,
             env_config=env_config,

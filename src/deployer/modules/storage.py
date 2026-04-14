@@ -63,7 +63,7 @@ class StorageModule(ResourceModule):
         self,
         app_config: dict[str, Any],
         env_config: dict[str, Any],
-        context: ModuleContext,  # noqa: ARG002 — required by Module interface
+        context: ModuleContext,  # noqa: ARG002 — required by Module interface  # pysmelly: ignore vestigial-params
     ) -> ModuleOutput:
         """Collect storage environment variables."""
         if not app_config or not app_config.get("type"):

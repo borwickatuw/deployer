@@ -1021,7 +1021,8 @@ def ecr(environment, verbose):
 @cli.command()
 @click.argument("environment")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
-def audit(environment, verbose):  # noqa: ARG001 — verbose reserved for future use
+# pysmelly: ignore vestigial-params — verbose reserved for future use
+def audit(environment, verbose):  # noqa: ARG001
     """Run all read-only checks."""
     _validate_and_configure(environment)
     sys.exit(cmd_audit(environment))

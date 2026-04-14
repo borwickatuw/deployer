@@ -292,6 +292,7 @@ def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-ru
         # Compute content hash for cache key
         content_hash = compute_context_hash(context, dockerfile)
 
+        # pysmelly: ignore temp-accumulators — accumulator appropriate for conditional appends
         hash_modifiers = []
         if build_args:
             args_str = ",".join(f"{k}={v}" for k, v in sorted(build_args.items()))
