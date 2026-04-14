@@ -25,6 +25,7 @@ def get_links_file() -> Path:
     return get_deployer_root() / "local" / "environments.toml"
 
 
+# pysmelly: ignore return-none-instead-of-raise — lookup function, None means "not linked"
 def get_linked_deploy_toml(environment: str) -> Path | None:
     """Look up the deploy.toml path for an environment.
 

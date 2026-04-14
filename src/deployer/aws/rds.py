@@ -7,6 +7,7 @@ from collections.abc import Callable
 from ..utils import AWS_REGION, run_command
 
 
+# pysmelly: ignore return-none-instead-of-raise — query function, None means "not found"
 def get_status(instance_id: str) -> dict | None:
     """Get RDS instance status.
 

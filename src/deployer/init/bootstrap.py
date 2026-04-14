@@ -162,6 +162,7 @@ def generate_bootstrap(
     return result
 
 
+# pysmelly: ignore return-none-instead-of-raise — existence check, None means "not found"
 def bootstrap_dir_exists() -> str | None:
     """Check if any bootstrap directory exists in the environments dir.
 

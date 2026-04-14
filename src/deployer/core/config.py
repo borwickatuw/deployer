@@ -287,6 +287,7 @@ def get_service_replicas_from_config(resolved_config: dict) -> dict[str, int]:
     return {name: cfg.get("replicas", 1) for name, cfg in service_config.items()}
 
 
+# pysmelly: ignore return-none-instead-of-raise — None means Cognito not enabled
 def get_cognito_user_pool_id_from_config(resolved_config: dict) -> str | None:
     """Get Cognito user pool ID from resolved config.
 
