@@ -53,19 +53,35 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `docs/internal/DECISIONS.md`     | 557   | Approaching ADR/ migration threshold        |
 | `docs/internal/DESIGN.md`        | 410   | Design rationale; at guide threshold        |
 
-## Pysmelly Findings — Worked Through
+## Pysmelly Status
 
-MEDIUM severity findings from 2026-04-09 run (147 total) have been worked through. Results:
+110 findings (from 147 original). 19 genuine false-positive suppressions remain (Lambda context params, JSON serialization constraints, query function semantics, Click patterns). All other suppress comments removed — findings left standing as design reminders.
 
-- **Actual fix:** Removed unused `db_name` parameter, extracted `format_iso()` datetime helper, converted loop-and-append to comprehension
-- **Suppressed with rationale:** Remaining findings evaluated as intentional patterns (CLI error boundaries, query functions returning None, security-critical privilege grants, Click framework patterns, etc.)
+### Code improvements made (Phases 42 + 42-2)
 
-### Remaining (informational, not tracked)
+- Removed unused `db_name` param from `setup_schema_privileges()`
+- Extracted `format_iso()` datetime helper (9 hasattr patterns → isinstance)
+- Converted loop-and-append accumulator to comprehension
+- Fixed silent failure in `_handle_restore_error()` (unknown ClientErrors now re-raise)
+- Removed vestigial `verbose` param from `audit()` command
+- Fixed `audit_images()` type contract (dict[str, Any] → dict[str, ImageConfig])
+- Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
+- Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-19 duplicate-blocks (suppression comments in place but some have overlapping line ranges that pysmelly still reports), 16 long-function, 11 arrow-code, 9 inconsistent-error-handling (cascading from format_iso callers), 4 law-of-demeter, 3 single-call-site.
+### Remaining findings (110)
 
-### Future candidate
+| Category | Count | Notes |
+| --- | --- | --- |
+| duplicate-blocks | 19 | Mostly CLI boilerplate and security-distinct privilege grants |
+| long-function | 16 | Orchestration functions (100-167 lines) |
+| arrow-code | 7 | Remaining moderate nesting (depth 5) |
+| inconsistent-error-handling | 9 | Logging leaf functions + CLI boundary patterns |
+| law-of-demeter | 4 | Chain depth 4 on deploy config and path traversal |
+| single-call-site | 3 | Named helpers that document intent |
+| dict-as-dataclass | 2 | Restore function return dicts |
+| inconsistent-returns | 2 | Restore functions (dict\|None) |
+| vestigial-params | 2 | Module interface `context` (required by contract) |
+| write-only-attributes | 1 | ServiceInfo fields used via iteration |
+| unused-defaults | 1 | Semantically optional param (suppressed) |
 
-`_format_service()` in `src/deployer/aws/ecs.py` is the strongest dict-to-dataclass candidate (7-key dict, 15+ call sites, pure Python). Deferred due to large caller update scope.
-
-*Last updated: 2026-04-14*
+*Last updated: 2026-04-15*
