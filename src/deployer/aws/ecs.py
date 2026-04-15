@@ -1,6 +1,7 @@
 """AWS ECS service operations."""
 
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -10,20 +11,32 @@ from botocore.exceptions import ClientError, WaiterError
 from ..utils import AWS_REGION, format_iso
 
 
+@dataclass(frozen=True)
+class ServiceInfo:
+    """Normalized view of an ECS service's current state."""
+
+    name: str
+    arn: str
+    desired_count: int
+    running_count: int
+    status: str
+    task_definition: str | None
+    last_deployment_at: datetime | None
+
+
 def _get_ecs_client() -> Any:
     """Get a boto3 ECS client using the current AWS profile."""
     return boto3.client("ecs", region_name=AWS_REGION)
 
 
-# pysmelly: ignore dict-as-dataclass — strong candidate but 15+ call sites; defer to focused session
-def _format_service(svc: dict) -> dict:
-    """Format raw ECS service data into a consistent dict structure.
+def _format_service(svc: dict) -> ServiceInfo:
+    """Format raw ECS service data into a ServiceInfo.
 
     Args:
         svc: Raw service dict from AWS API.
 
     Returns:
-        Formatted service dict with standardized keys.
+        ServiceInfo with standardized fields.
     """
     # Get the most recent deployment time (PRIMARY deployment)
     last_deployment_at = None
@@ -36,18 +49,18 @@ def _format_service(svc: dict) -> dict:
     if not last_deployment_at and deployments:
         last_deployment_at = deployments[0].get("updatedAt")
 
-    return {
-        "name": svc["serviceName"],
-        "arn": svc["serviceArn"],
-        "desired_count": svc["desiredCount"],
-        "running_count": svc["runningCount"],
-        "status": svc["status"],
-        "task_definition": svc.get("taskDefinition"),
-        "last_deployment_at": last_deployment_at,
-    }
+    return ServiceInfo(
+        name=svc["serviceName"],
+        arn=svc["serviceArn"],
+        desired_count=svc["desiredCount"],
+        running_count=svc["runningCount"],
+        status=svc["status"],
+        task_definition=svc.get("taskDefinition"),
+        last_deployment_at=last_deployment_at,
+    )
 
 
-def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[dict]:
+def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[ServiceInfo]:
     """List all ECS services in a cluster with their current state.
 
     Args:
@@ -55,7 +68,7 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[dict]
         ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
-        List of service dicts with name, arn, desired_count, running_count, status.
+        List of ServiceInfo objects with name, arn, desired_count, running_count, status.
     """
     if ecs_client is None:
         ecs_client = _get_ecs_client()

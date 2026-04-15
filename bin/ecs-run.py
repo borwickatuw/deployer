@@ -213,12 +213,12 @@ def cmd_list(environment: str) -> int:
     print("-" * 60)
 
     for svc in services:
-        status_indicator = "+" if svc["running_count"] > 0 else "-"
-        print(f"  [{status_indicator}] {svc['name']}")
-        print(f"      Status: {svc['status']}")
-        print(f"      Running: {svc['running_count']}/{svc['desired_count']}")
+        status_indicator = "+" if svc.running_count > 0 else "-"
+        print(f"  [{status_indicator}] {svc.name}")
+        print(f"      Status: {svc.status}")
+        print(f"      Running: {svc.running_count}/{svc.desired_count}")
 
-        task_def = svc.get("task_definition")
+        task_def = svc.task_definition
         if task_def:
             containers = ecs.get_task_containers(task_def)
             if containers:

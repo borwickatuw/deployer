@@ -117,7 +117,7 @@ def cmd_status(environment: str | None) -> int:
                 print(f"  {'-' * 30} {'-' * 10} {'-' * 10} {'-' * 15}")
                 for svc in services:
                     print(
-                        f"  {svc['name']:<30} {svc['desired_count']:<10} {svc['running_count']:<10} {svc['status']:<15}"
+                        f"  {svc.name:<30} {svc.desired_count:<10} {svc.running_count:<10} {svc.status:<15}"
                     )
             else:
                 print("  No ECS services found")
@@ -150,11 +150,11 @@ def cmd_stop(environment: str) -> int:
     print("\n1. Scaling ECS services to 0...")
     services = ecs.get_services(cluster_name)
     for svc in services:
-        print(f"   Scaling {svc['name']} to 0...")
-        if not ecs.scale_service(cluster_name, svc["name"], 0):
-            print(f"   Warning: Failed to scale {svc['name']}", file=sys.stderr)
+        print(f"   Scaling {svc.name} to 0...")
+        if not ecs.scale_service(cluster_name, svc.name, 0):
+            print(f"   Warning: Failed to scale {svc.name}", file=sys.stderr)
         else:
-            print(f"   Scaled {svc['name']} to 0")
+            print(f"   Scaled {svc.name} to 0")
 
     # Step 2: Stop RDS instance
     print("\n2. Stopping RDS instance...")
@@ -236,12 +236,12 @@ def cmd_start(environment: str) -> int:
 
     for svc in services:
         # Use configured replicas if available, otherwise default to 1
-        target_replicas = configured_replicas.get(svc["name"], 1)
-        print(f"   Scaling {svc['name']} to {target_replicas}...")
-        if not ecs.scale_service(cluster_name, svc["name"], target_replicas):
-            print(f"   Warning: Failed to scale {svc['name']}", file=sys.stderr)
+        target_replicas = configured_replicas.get(svc.name, 1)
+        print(f"   Scaling {svc.name} to {target_replicas}...")
+        if not ecs.scale_service(cluster_name, svc.name, target_replicas):
+            print(f"   Warning: Failed to scale {svc.name}", file=sys.stderr)
         else:
-            print(f"   Scaled {svc['name']} to {target_replicas}")
+            print(f"   Scaled {svc.name} to {target_replicas}")
 
     print(f"\nEnvironment {environment} started.")
     return 0

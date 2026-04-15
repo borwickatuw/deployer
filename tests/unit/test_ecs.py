@@ -356,10 +356,10 @@ class TestGetServices:
         result = ecs.get_services("test-cluster", ecs_client=mock_ecs_client)
 
         assert len(result) == 1
-        assert result[0]["name"] == "web"
-        assert result[0]["desired_count"] == 2
-        assert result[0]["running_count"] == 2
-        assert result[0]["status"] == "ACTIVE"
+        assert result[0].name == "web"
+        assert result[0].desired_count == 2
+        assert result[0].running_count == 2
+        assert result[0].status == "ACTIVE"
 
     def test_returns_empty_on_no_services(self, mock_ecs_client):
         """Test returns empty list when no services exist."""

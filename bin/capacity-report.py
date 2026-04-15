@@ -82,9 +82,9 @@ def check_environment(  # noqa: C901 — checks OOM across all services
     total_oom = 0
 
     for service in services:
-        service_name = service["name"]
-        task_def_arn = service["task_definition"]
-        last_deployment_at = service.get("last_deployment_at")
+        service_name = service.name
+        task_def_arn = service.task_definition
+        last_deployment_at = service.last_deployment_at
 
         # Parse deployment time for OOM filtering
         deployment_cutoff = None
@@ -137,8 +137,8 @@ def check_environment(  # noqa: C901 — checks OOM across all services
     end_time_ms = int(end_time.timestamp() * 1000)
 
     for service in services:
-        service_name = service["name"]
-        last_deployment_at = service.get("last_deployment_at")
+        service_name = service.name
+        last_deployment_at = service.last_deployment_at
 
         if last_deployment_at:
             try:
