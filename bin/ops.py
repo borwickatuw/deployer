@@ -346,24 +346,25 @@ def get_repository_scan_summary(repository_name: str, max_images: int = 5) -> li
 def list_repositories_for_environment(environment: str, service_names: list[str]) -> list[str]:
     """List ECR repositories for an environment."""
     client = boto3.client("ecr")
-    result = []
 
     repo_names = [f"{environment}-{svc}" for svc in service_names]
     try:
         response = client.describe_repositories(repositoryNames=repo_names)
-        for repo in response.get("repositories", []):
-            result.append(repo.get("repositoryName", ""))
+        return [repo.get("repositoryName", "") for repo in response.get("repositories", [])]
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
-        if error_code == "RepositoryNotFoundException":
-            for repo_name in repo_names:
-                try:
-                    response = client.describe_repositories(repositoryNames=[repo_name])
-                    for repo in response.get("repositories", []):
-                        result.append(repo.get("repositoryName", ""))
-                except ClientError:
-                    pass
+        if error_code != "RepositoryNotFoundException":
+            return []
 
+    # At least one repo doesn't exist — try each individually
+    result = []
+    for repo_name in repo_names:
+        try:
+            response = client.describe_repositories(repositoryNames=[repo_name])
+            for repo in response.get("repositories", []):
+                result.append(repo.get("repositoryName", ""))
+        except ClientError:
+            pass
     return result
 
 

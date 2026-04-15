@@ -177,6 +177,45 @@ def cmd_stop(environment: str) -> int:
     return 0
 
 
+def _ensure_rds_available(rds_id: str) -> None:
+    """Start RDS instance and wait for it to become available."""
+
+    def status_callback(status: str) -> None:
+        print(f"  RDS status: {status}...")
+
+    rds_status = rds.get_status(rds_id)
+    if not rds_status:
+        print("   Warning: Unable to get RDS status", file=sys.stderr)
+        return
+
+    current = rds_status["status"]
+    if current == "available":
+        print("   RDS instance already running")
+        return
+
+    if current == "stopping":
+        print("   RDS is currently stopping, waiting for it to stop first...")
+        if not rds.wait_for_status(rds_id, "stopped", status_callback=status_callback):
+            print("   Warning: Timeout waiting for RDS to stop", file=sys.stderr)
+            return
+        print("   RDS stopped, now starting...")
+        current = "stopped"
+
+    if current == "stopped":
+        if not rds.start(rds_id):
+            print("   Warning: Failed to start RDS instance", file=sys.stderr)
+            return
+        print("   RDS start initiated...")
+    else:
+        print(f"   RDS in state: {current}, waiting for available...")
+
+    print("   Waiting for RDS to become available...")
+    if rds.wait_for_status(rds_id, "available", status_callback=status_callback):
+        print("   RDS is now available")
+    else:
+        print("   Warning: Timeout waiting for RDS", file=sys.stderr)
+
+
 def cmd_start(environment: str) -> int:
     """Start an environment."""
     config, cluster_name, rds_id = _load_environment_context(environment)
@@ -185,50 +224,9 @@ def cmd_start(environment: str) -> int:
     # Get configured replica counts from config
     configured_replicas = get_service_replicas_from_config(config)
 
-    # Callback for RDS wait status updates
-    def rds_status_callback(status: str) -> None:
-        print(f"  RDS status: {status}...")
-
     # Step 1: Start RDS instance and wait for it to be available
     print("\n1. Starting RDS instance...")
-    rds_status = rds.get_status(rds_id)
-    if rds_status:
-        if rds_status["status"] == "available":
-            print("   RDS instance already running")
-        elif rds_status["status"] == "stopping":
-            print("   RDS is currently stopping, waiting for it to stop first...")
-            if rds.wait_for_status(rds_id, "stopped", status_callback=rds_status_callback):
-                print("   RDS stopped, now starting...")
-                if rds.start(rds_id):
-                    print("   Waiting for RDS to become available...")
-                    if rds.wait_for_status(
-                        rds_id, "available", status_callback=rds_status_callback
-                    ):
-                        print("   RDS is now available")
-                    else:
-                        print("   Warning: Timeout waiting for RDS", file=sys.stderr)
-                else:
-                    print("   Warning: Failed to start RDS instance", file=sys.stderr)
-            else:
-                print("   Warning: Timeout waiting for RDS to stop", file=sys.stderr)
-        elif rds_status["status"] == "stopped":
-            if rds.start(rds_id):
-                print("   RDS start initiated...")
-                print("   Waiting for RDS to become available...")
-                if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
-                    print("   RDS is now available")
-                else:
-                    print("   Warning: Timeout waiting for RDS", file=sys.stderr)
-            else:
-                print("   Warning: Failed to start RDS instance", file=sys.stderr)
-        else:
-            print(f"   RDS in state: {rds_status['status']}, waiting for available...")
-            if rds.wait_for_status(rds_id, "available", status_callback=rds_status_callback):
-                print("   RDS is now available")
-            else:
-                print("   Warning: Timeout waiting for RDS", file=sys.stderr)
-    else:
-        print("   Warning: Unable to get RDS status", file=sys.stderr)
+    _ensure_rds_available(rds_id)
 
     # Step 2: Scale ECS services back up
     print("\n2. Scaling ECS services...")

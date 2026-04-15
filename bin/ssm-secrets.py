@@ -198,6 +198,34 @@ def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
     return 0
 
 
+def _get_secret_value_interactively(secret_name: str) -> str | None:
+    """Prompt user for a secret value. Returns None if cancelled or invalid."""
+    try:
+        print(f"Set value for {secret_name}:")
+        print("  [1] Enter value manually")
+        print("  [2] Generate random value (32 chars)")
+        choice = input("Choice [1/2]: ").strip()
+
+        if choice == "2":
+            value = _generate_random_secret(32)
+            print(f"Generated: {value}")
+            return value
+
+        # Default to manual entry
+        value = getpass.getpass(f"Enter value for {secret_name}: ")
+        if not value:
+            print("Error: Value cannot be empty", file=sys.stderr)
+            return None
+        confirm = getpass.getpass("Confirm value: ")
+        if value != confirm:
+            print("Error: Values do not match", file=sys.stderr)
+            return None
+        return value
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        return None
+
+
 def cmd_put(
     environment: str, secret_name: str, value: str | None, from_file: str | None, random: int | None
 ) -> int:
@@ -218,34 +246,12 @@ def cmd_put(
     elif value:
         pass  # value already set
     elif random is not None:
-        # Generate random value (random is the length, default 32)
         length = random
         value = _generate_random_secret(length)
         print(f"Generated random value ({length} chars): {value}")
     else:
-        # Interactive mode - offer choice
-        try:
-            print(f"Set value for {secret_name}:")
-            print("  [1] Enter value manually")
-            print("  [2] Generate random value (32 chars)")
-            choice = input("Choice [1/2]: ").strip()
-
-            if choice == "2":
-                value = _generate_random_secret(32)
-                print(f"Generated: {value}")
-            else:
-                # Default to manual entry
-                value = getpass.getpass(f"Enter value for {secret_name}: ")
-                if not value:
-                    print("Error: Value cannot be empty", file=sys.stderr)
-                    return 1
-                # Confirm the value
-                confirm = getpass.getpass("Confirm value: ")
-                if value != confirm:
-                    print("Error: Values do not match", file=sys.stderr)
-                    return 1
-        except KeyboardInterrupt:
-            print("\nCancelled.")
+        value = _get_secret_value_interactively(secret_name)
+        if value is None:
             return 1
 
     # Check if parameter exists

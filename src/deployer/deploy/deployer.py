@@ -193,33 +193,30 @@ class Deployer:
             Tuple of (warning messages, is_critical). is_critical=True means
             deployment should not proceed without --force.
         """
-        warnings = []
-        is_critical = False
-
-        # Check RDS status
         rds_instance_id = self.infra_config.get("rds_instance_id")
-        if rds_instance_id:
-            try:
-                response = self.rds.describe_db_instances(DBInstanceIdentifier=rds_instance_id)
-                if response["DBInstances"]:
-                    status = response["DBInstances"][0]["DBInstanceStatus"]
-                    if status != "available":
-                        msg = f"RDS instance '{rds_instance_id}' is {status} (not available)."
-                        is_critical = True
+        if not rds_instance_id:
+            return [], False
 
-                        # Add scheduler info if available
-                        scheduler = self.infra_config.get("scheduler", {})
-                        if scheduler.get("enabled") and scheduler.get("description"):
-                            msg += f"\n         Service hours: {scheduler['description']}"
+        try:
+            response = self.rds.describe_db_instances(DBInstanceIdentifier=rds_instance_id)
+        except self.rds.exceptions.DBInstanceNotFoundFault:
+            return [f"RDS instance '{rds_instance_id}' not found"], True
+        except Exception:  # noqa: BLE001, S110 — don't fail deploy for infra-check errors
+            return [], False
 
-                        warnings.append(msg)
-            except self.rds.exceptions.DBInstanceNotFoundFault:
-                warnings.append(f"RDS instance '{rds_instance_id}' not found")
-                is_critical = True
-            except Exception:  # noqa: BLE001, S110 — don't fail deploy for infra-check errors
-                pass
+        if not response["DBInstances"]:
+            return [], False
 
-        return warnings, is_critical
+        status = response["DBInstances"][0]["DBInstanceStatus"]
+        if status == "available":
+            return [], False
+
+        msg = f"RDS instance '{rds_instance_id}' is {status} (not available)."
+        scheduler = self.infra_config.get("scheduler", {})
+        if scheduler.get("enabled") and scheduler.get("description"):
+            msg += f"\n         Service hours: {scheduler['description']}"
+
+        return [msg], True
 
     def deploy(self) -> tuple[dict[str, str], list[str]]:  # noqa: C901 — full deployment pipeline
         """Run the full deployment pipeline.
