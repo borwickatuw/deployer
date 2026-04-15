@@ -150,7 +150,6 @@ def get_rds_snapshots(
         return []
 
 
-# pysmelly: ignore dict-as-dataclass — 10 mixed-type fields (str, list, datetime), internal to module
 def get_rds_instance_details(instance_id: str) -> dict | None:
     """Get details of an RDS instance.
 

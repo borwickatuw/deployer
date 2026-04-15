@@ -115,7 +115,6 @@ def format_welcome_message(
     return "\n".join(lines)
 
 
-# pysmelly: ignore dict-as-dataclass — simple formatting helper for display output
 def format_user(user: dict) -> dict:
     """Extract relevant fields from a Cognito user record.
 

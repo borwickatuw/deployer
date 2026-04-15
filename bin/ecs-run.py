@@ -324,7 +324,6 @@ def cmd_run(  # noqa: C901 — ECS run command orchestration
 
     try:
         cmd = get_run_command(dt, command_name, list(extra_args))
-    # pysmelly: ignore duplicate-except-blocks — CLI error boundary pattern
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

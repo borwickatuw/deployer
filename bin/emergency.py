@@ -184,7 +184,6 @@ class EmergencyContext:
     logger: EmergencyLogger
 
 
-# pysmelly: ignore duplicate-blocks — config loading pattern shared with ops.py
 def _load_emergency_context(
     environment: str,
     require_cluster: bool = False,
@@ -194,7 +193,6 @@ def _load_emergency_context(
 
     Raises SystemExit(1) if required infrastructure is missing.
     """
-    # pysmelly: ignore duplicate-blocks — config loading pattern shared with ops.py
     env_path = get_environment_path(environment)
     config = load_environment_config(env_path)
     cluster_name = config.get("infrastructure", {}).get("cluster_name")
@@ -250,12 +248,10 @@ def _validate_and_configure(environment: str) -> None:
 # =============================================================================
 
 
-# pysmelly: ignore param-clumps — distinct CLI params from Click decorators
 def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
     environment: str, service: str | None, revision: int | None, yes: bool
 ) -> int:
     """Roll back ECS service(s) to previous task definition."""
-    # pysmelly: ignore duplicate-blocks — _load_cluster_services unpacking shared across commands
     result = _load_cluster_services(environment)
     if result is None:
         return 1
@@ -546,7 +542,6 @@ def cmd_snapshot(environment: str, no_wait: bool) -> int:
 # =============================================================================
 
 
-# pysmelly: ignore inconsistent-error-handling — CLI command, Click handles uncaught exceptions
 def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
     environment: str, snapshot: str | None, time: str | None
 ) -> int:
@@ -639,7 +634,6 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
             except ValueError:
                 return cmd_restore_db(environment, snapshot=None, time=choice)
 
-        # pysmelly: ignore duplicate-except-blocks — CLI user cancellation handler
         except (EOFError, KeyboardInterrupt):
             print()
             log_error("Cancelled")

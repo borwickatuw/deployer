@@ -193,7 +193,6 @@ def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
         return False
 
 
-# pysmelly: ignore param-clumps — ctx, service_name, credential_mode are distinct deployment params
 def register_task_definition(
     ctx,
     service_name: str,

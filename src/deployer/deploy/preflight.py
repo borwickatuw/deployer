@@ -41,14 +41,12 @@ class PreflightOptions:
     skip_audit: bool = False
 
 
-# pysmelly: ignore pass-through-params — preflight wrapper adds PreflightError translation
 def check_environment_config(env_config: dict) -> None:
     """Validate required fields are present in environment config.
 
     Raises:
         PreflightError: If required config fields are missing.
     """
-    # pysmelly: ignore duplicate-blocks — preflight checks share error formatting pattern
     config_errors = validate_environment_config(env_config)
     if config_errors:
         lines = ["Environment config is missing required fields:"]
@@ -91,13 +89,11 @@ def check_audit(
         print()
 
 
-# pysmelly: ignore param-clumps — deploy_config, env_config, environment are distinct objects
 def check_ecr_repositories(
     deploy_config: DeployConfig,
     env_config: dict,
     environment: str,
 ) -> None:
-    # pysmelly: ignore duplicate-blocks — ECR/ECS checks share AWS validation pattern
     """Verify all required ECR repositories exist.
 
     Raises:

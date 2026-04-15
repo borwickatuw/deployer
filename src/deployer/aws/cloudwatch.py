@@ -55,7 +55,6 @@ def get_log_events(
         return None
 
 
-# pysmelly: ignore pass-through-params — convenience wrapper that constructs stream name
 def get_task_logs(
     log_group: str,
     stream_prefix: str,

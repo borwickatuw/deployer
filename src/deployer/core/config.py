@@ -202,8 +202,6 @@ def _resolve_tofu_placeholders(value: Any, env_path: Path, tofu_outputs: dict[st
         return value
 
 
-# pysmelly: ignore inconsistent-error-handling — raises FileNotFoundError/RuntimeError; callers
-# catch at their CLI boundary or let propagate for fail-fast behavior.
 def load_environment_config(env_path: Path) -> dict:
     """Load and resolve an environment's config.toml.
 

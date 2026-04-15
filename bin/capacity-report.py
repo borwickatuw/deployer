@@ -204,7 +204,6 @@ def cli(environment, days):
         env_path = get_environment_path(env_name)
 
         print()
-        # pysmelly: ignore duplicate-blocks — environment header pattern shared with environment.py
         print(f"{'=' * 60}")
         print(f"Environment: {env_name} (last {days} days)")
         print(f"{'=' * 60}")

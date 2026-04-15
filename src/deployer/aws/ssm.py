@@ -8,7 +8,6 @@ def _get_client():
     return boto3.client("ssm")
 
 
-# pysmelly: ignore inconsistent-error-handling — returns (success, error) tuple, callers check
 def put_parameter(
     name: str,
     value: str,
@@ -44,7 +43,6 @@ def put_parameter(
         return False, str(e)
 
 
-# pysmelly: ignore inconsistent-error-handling — returns (value, error) tuple, callers check
 def get_parameter(name: str) -> tuple[str | None, str | None]:
     """Get an SSM parameter value.
 
@@ -130,7 +128,6 @@ def list_parameters(path_prefix: str) -> tuple[list[dict], str | None]:
         return [], str(e)
 
 
-# pysmelly: ignore pass-through-params — convenience wrapper returning bool
 def parameter_exists(name: str) -> bool:
     """Check if an SSM parameter exists.
 

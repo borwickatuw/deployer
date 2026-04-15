@@ -149,7 +149,6 @@ def list_task_definition_revisions(
     return result
 
 
-# pysmelly: ignore dict-as-dataclass — complex nested structure (env_vars dict-of-dicts), single caller
 def get_task_definition_details(task_def_arn: str) -> dict | None:
     """Get details of a task definition.
 

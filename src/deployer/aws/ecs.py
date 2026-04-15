@@ -89,7 +89,6 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[Servi
     return services
 
 
-# pysmelly: ignore param-clumps — boto3 client + cluster + service are distinct AWS identifiers
 def scale_service(
     cluster_name: str,
     service_name: str,
@@ -162,7 +161,6 @@ def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> 
         return []
 
 
-# pysmelly: ignore inconsistent-error-handling — callers handle ClientError at their boundaries
 def run_task(
     cluster_name: str,
     task_definition: str,

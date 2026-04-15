@@ -121,7 +121,6 @@ def deploy(  # noqa: C901 — main deploy orchestration
     # Configure AWS profile
     try:
         configure_aws_profile_for_environment("deploy", environment, validate=True)
-    # pysmelly: ignore duplicate-except-blocks — CLI error boundary pattern
     except RuntimeError as e:
         log_error(str(e))
         sys.exit(1)
@@ -159,7 +158,6 @@ def deploy(  # noqa: C901 — main deploy orchestration
     try:
         environment_type = get_environment_type(env_config)
         log(f"Environment type: {environment_type}")
-    # pysmelly: ignore duplicate-except-blocks — CLI error boundary pattern
     except ValueError as e:
         log_error(str(e))
         sys.exit(1)
@@ -181,7 +179,6 @@ def deploy(  # noqa: C901 — main deploy orchestration
             project_dir=config_path.parent,
             options=preflight_options,
         )
-    # pysmelly: ignore duplicate-except-blocks — CLI error boundary pattern
     except PreflightError as e:
         log_error(str(e))
         sys.exit(1)
