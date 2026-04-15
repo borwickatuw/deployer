@@ -60,12 +60,11 @@ def detect_framework(
         for framework, patterns in FRAMEWORK_ENV_PATTERNS.items():
             for pattern in patterns:
                 # Check for exact match or prefix match (for NEXT_PUBLIC_ etc)
-                for env_var in env_vars_upper:
-                    if env_var == pattern or (
-                        pattern.endswith("_") and env_var.startswith(pattern)
-                    ):
-                        scores[framework] = scores.get(framework, 0) + 2
-                        break
+                if any(
+                    env_var == pattern or (pattern.endswith("_") and env_var.startswith(pattern))
+                    for env_var in env_vars_upper
+                ):
+                    scores[framework] = scores.get(framework, 0) + 2
 
     # Check Dockerfile content
     if dockerfile_content:

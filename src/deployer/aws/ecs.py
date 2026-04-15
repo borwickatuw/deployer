@@ -16,7 +16,6 @@ class ServiceInfo:
     """Normalized view of an ECS service's current state."""
 
     name: str
-    arn: str
     desired_count: int
     running_count: int
     status: str
@@ -51,7 +50,6 @@ def _format_service(svc: dict) -> ServiceInfo:
 
     return ServiceInfo(
         name=svc["serviceName"],
-        arn=svc["serviceArn"],
         desired_count=svc["desiredCount"],
         running_count=svc["runningCount"],
         status=svc["status"],

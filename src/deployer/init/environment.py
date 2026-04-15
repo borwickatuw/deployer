@@ -45,17 +45,18 @@ def get_next_listener_priority(env_type: str) -> int:
     # Find all environments that reference this shared infra
     existing_priorities = []
     for env_path in env_dir.iterdir():
-        if env_path.is_dir() and env_path.name != shared_infra_name:
-            tfvars_path = env_path / "terraform.tfvars"
-            if tfvars_path.exists():
-                try:
-                    content = tfvars_path.read_text()
-                    # Parse listener_rule_priority from tfvars
-                    match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
-                    if match:
-                        existing_priorities.append(int(match.group(1)))
-                except Exception:  # noqa: BLE001, S110 — best-effort priority scan
-                    pass
+        if not env_path.is_dir() or env_path.name == shared_infra_name:
+            continue
+        tfvars_path = env_path / "terraform.tfvars"
+        if not tfvars_path.exists():
+            continue
+        try:
+            content = tfvars_path.read_text()
+            match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
+            if match:
+                existing_priorities.append(int(match.group(1)))
+        except Exception:  # noqa: BLE001, S110 — best-effort priority scan
+            pass
 
     # Return next available (100, 200, 300, ...)
     if not existing_priorities:
