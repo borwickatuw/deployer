@@ -6,6 +6,7 @@ and stability checks.
 """
 
 import functools
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import boto3
@@ -24,6 +25,14 @@ from deployer.deploy.service import (
 from deployer.deploy.task_definition import get_environment_variables, get_service_sizing
 from deployer.timing import DeploymentTimer, set_timer
 from deployer.utils import Colors, log, log_error, log_warning
+
+
+@dataclass
+class InfraStatus:
+    """Result of infrastructure availability check."""
+
+    warnings: list[str] = field(default_factory=list)
+    is_critical: bool = False
 
 
 class Deployer:
@@ -186,37 +195,34 @@ class Deployer:
             print(f"  {key}={display_value}")
         print()
 
-    def check_infrastructure_status(self) -> tuple[list[str], bool]:
-        """Check if critical infrastructure is available.
-
-        Returns:
-            Tuple of (warning messages, is_critical). is_critical=True means
-            deployment should not proceed without --force.
-        """
+    def check_infrastructure_status(self) -> InfraStatus:
+        """Check if critical infrastructure is available."""
         rds_instance_id = self.infra_config.get("rds_instance_id")
         if not rds_instance_id:
-            return [], False
+            return InfraStatus()
 
         try:
             response = self.rds.describe_db_instances(DBInstanceIdentifier=rds_instance_id)
         except self.rds.exceptions.DBInstanceNotFoundFault:
-            return [f"RDS instance '{rds_instance_id}' not found"], True
+            return InfraStatus(
+                warnings=[f"RDS instance '{rds_instance_id}' not found"], is_critical=True
+            )
         except Exception:  # noqa: BLE001, S110 — don't fail deploy for infra-check errors
-            return [], False
+            return InfraStatus()
 
         if not response["DBInstances"]:
-            return [], False
+            return InfraStatus()
 
         status = response["DBInstances"][0]["DBInstanceStatus"]
         if status == "available":
-            return [], False
+            return InfraStatus()
 
         msg = f"RDS instance '{rds_instance_id}' is {status} (not available)."
         scheduler = self.infra_config.get("scheduler", {})
         if scheduler.get("enabled") and scheduler.get("description"):
             msg += f"\n         Service hours: {scheduler['description']}"
 
-        return [msg], True
+        return InfraStatus(warnings=[msg], is_critical=True)
 
     def deploy(self) -> tuple[dict[str, str], list[str]]:  # noqa: C901 — full deployment pipeline
         """Run the full deployment pipeline.
@@ -237,11 +243,11 @@ class Deployer:
         print()
 
         # Check infrastructure status and fail if critical services are down
-        infra_warnings, infra_critical = self.check_infrastructure_status()
-        if infra_warnings:
-            for warning in infra_warnings:
+        infra = self.check_infrastructure_status()
+        if infra.warnings:
+            for warning in infra.warnings:
                 log_warning(warning)
-            if infra_critical and not self.force:
+            if infra.is_critical and not self.force:
                 print()
                 log_error("Cannot deploy: critical infrastructure is unavailable.")
                 print()
