@@ -217,7 +217,7 @@ def run_audit(  # noqa: C901 — deploy.toml vs docker-compose audit with multip
     deploy = parse_deploy_config(deploy_path)
 
     # Extract data
-    compose_services = get_compose_services(compose)
+    compose_services = get_compose_services(compose, base_dir=compose_path.parent)
     deploy_services = deploy.services
     deploy_images = deploy.images
     deploy_env_vars = deploy.get_all_env_var_names()

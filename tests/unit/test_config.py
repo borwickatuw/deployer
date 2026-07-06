@@ -349,6 +349,66 @@ class TestGetComposeServices:
         result = get_compose_services(compose)
         assert result["tool"]["profiles"] == ["dev"]
 
+    def test_env_file_vars_merged(self, tmp_path):
+        """Vars from env_file must be seen by the audit, or removing a
+        variable from a shared env file is never flagged."""
+        (tmp_path / "django.env").write_text(
+            "# comment\n\nDB_HOST=postgres\nexport LOG_LEVEL=INFO\nEMPTY=\n"
+        )
+        compose = {
+            "services": {
+                "app": {
+                    "build": ".",
+                    "env_file": "django.env",
+                    "environment": ["SECRET_KEY=${SECRET_KEY}"],
+                }
+            }
+        }
+
+        result = get_compose_services(compose, base_dir=tmp_path)
+
+        assert "DB_HOST" in result["app"]["environment"]
+        assert "LOG_LEVEL" in result["app"]["environment"]
+        assert "EMPTY" in result["app"]["environment"]
+        assert "SECRET_KEY" in result["app"]["environment"]
+
+    def test_env_file_list_and_mapping_forms(self, tmp_path):
+        """env_file accepts a list of strings or {path: ...} mappings."""
+        (tmp_path / "a.env").write_text("FROM_A=1\n")
+        (tmp_path / "b.env").write_text("FROM_B=2\n")
+        compose = {
+            "services": {
+                "app": {
+                    "build": ".",
+                    "env_file": ["a.env", {"path": "b.env", "required": False}],
+                }
+            }
+        }
+
+        result = get_compose_services(compose, base_dir=tmp_path)
+
+        assert "FROM_A" in result["app"]["environment"]
+        assert "FROM_B" in result["app"]["environment"]
+
+    def test_env_file_missing_optional_ignored(self, tmp_path):
+        """A missing env file marked required: false is skipped; without
+        base_dir env_file entries are ignored entirely."""
+        compose = {
+            "services": {
+                "app": {
+                    "build": ".",
+                    "env_file": [{"path": "absent.env", "required": False}],
+                }
+            }
+        }
+
+        result = get_compose_services(compose, base_dir=tmp_path)
+        assert result["app"]["environment"] == []
+
+        # No base_dir: env_file silently skipped (backward compatible)
+        result = get_compose_services(compose)
+        assert result["app"]["environment"] == []
+
 
 class TestImageConfig:
     """Tests for ImageConfig dataclass."""
