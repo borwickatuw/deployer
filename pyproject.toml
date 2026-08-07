@@ -26,10 +26,11 @@ dev = [
     "black>=24.0",
     "isort>=5.13",
     "ruff",
-    # Security scanning (local only)
+    # Security scanning (local only). Dependency CVE scanning uses
+    # `uv audit` (built into uv). Checkov runs via `uvx checkov` (see
+    # Makefile) so its pinned-vulnerable dep tree (aiohttp<3.14, ecdsa)
+    # stays out of this project's lock.
     "bandit>=1.7",
-    "pip-audit>=2.6",
-    "checkov>=3.0",
     # Code analysis
     "vulture",
     "radon",

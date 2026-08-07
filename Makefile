@@ -138,13 +138,13 @@ CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_A
 .PHONY: security-checkov
 security-checkov: ## Run Checkov IaC scanner on OpenTofu modules
 	@echo "=== Checkov IaC Security Scanner ==="
-	@uv run checkov --directory modules --framework terraform --compact --quiet \
+	@uvx checkov --directory modules --framework terraform --compact --quiet \
 		--skip-check $(CHECKOV_SKIP)
 
 .PHONY: security-deps
 security-deps: ## Check dependency vulnerabilities
-	@echo "=== Dependency Vulnerability Scan (pip-audit) ==="
-	@uv run pip-audit
+	@echo "=== Dependency Vulnerability Scan (uv audit) ==="
+	@uv audit
 
 # =============================================================================
 # Code Analysis
