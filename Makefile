@@ -73,7 +73,7 @@ check: lint test ## Run lint and tests
 # =============================================================================
 
 .PHONY: security
-security: security-bandit security-deps security-checkov ## Run all security checks
+security: security-bandit security-deps security-secrets security-checkov ## Run all security checks
 	@echo ""
 	@echo "=== Security Checks Complete ==="
 
@@ -145,6 +145,18 @@ security-checkov: ## Run Checkov IaC scanner on OpenTofu modules
 security-deps: ## Check dependency vulnerabilities
 	@echo "=== Dependency Vulnerability Scan (uv audit) ==="
 	@uv audit
+
+.PHONY: security-secrets
+security-secrets: ## Scan for committed secrets against the baseline
+	@echo "=== Secrets Scan (detect-secrets) ==="
+	@uvx detect-secrets scan --baseline .secrets.baseline
+
+.PHONY: security-updates
+security-updates: ## CVE scan + outdated-package report (quarterly review)
+	@echo "=== CVE + adverse-status scan ==="
+	@uv audit
+	@echo "=== Outdated packages ==="
+	@uv pip list --outdated
 
 # =============================================================================
 # Code Analysis
