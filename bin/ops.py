@@ -28,7 +28,7 @@ Usage:
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
@@ -111,7 +111,7 @@ def scan_logs_for_errors(
         for event in response.get("events", []):
             timestamp = event.get("timestamp", 0)
             if timestamp:
-                dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                dt = datetime.fromtimestamp(timestamp / 1000, tz=UTC)
                 timestamp = dt.isoformat()
 
             result.append(

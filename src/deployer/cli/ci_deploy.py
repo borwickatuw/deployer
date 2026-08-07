@@ -18,7 +18,7 @@ Usage:
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
@@ -148,7 +148,7 @@ def print_config_age(meta: dict) -> None:
 
     try:
         resolved_at = datetime.fromisoformat(resolved_at_str)
-        age = datetime.now(timezone.utc) - resolved_at
+        age = datetime.now(UTC) - resolved_at
         hours = age.total_seconds() / 3600
 
         if hours < 1:
@@ -237,7 +237,7 @@ def main(  # noqa: C901 — CI deploy orchestration
         if resolved_at_str:
             try:
                 resolved_at = datetime.fromisoformat(resolved_at_str)
-                age_hours = (datetime.now(timezone.utc) - resolved_at).total_seconds() / 3600
+                age_hours = (datetime.now(UTC) - resolved_at).total_seconds() / 3600
                 if age_hours > max_config_age:
                     msg = (
                         f"Resolved config is {age_hours:.1f} hours old "

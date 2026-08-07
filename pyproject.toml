@@ -68,6 +68,9 @@ branch = true
 [tool.coverage.report]
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
 # require real AWS credentials. 25% covers the testable business logic layer.
+# Known gap: emergency/ subsystem (checkpoint.py is pure logic at 6%; rds/ecs
+# are moto-mockable) — queued as a carry-forward phase in claude-meta PLAN.md.
+# (re-evaluate-by: 2026-11 review)
 fail_under = 25
 show_missing = true
 exclude_lines = [
@@ -111,6 +114,7 @@ select = [
     "S",      # flake8-bandit (security)
     "SIM",    # flake8-simplify
     "T20",    # flake8-print
+    "UP",     # pyupgrade (modern type hints and syntax)
     "W",      # pycodestyle warnings
     # Selected pylint rules (avoid the complexity-counting ones in PLR)
     "PLC",    # convention

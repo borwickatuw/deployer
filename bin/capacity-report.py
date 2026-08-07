@@ -18,7 +18,7 @@ Requires:
 """
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import click
@@ -75,7 +75,7 @@ def check_environment(  # noqa: C901 — checks OOM across all services
         print(f"  No services found in cluster {cluster_name}", file=sys.stderr)
         return 1
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     start_time = end_time - timedelta(days=days)
 
     # Check each service for OOM kills

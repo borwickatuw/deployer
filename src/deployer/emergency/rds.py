@@ -6,7 +6,7 @@ Provides functions for:
 - Restoring from snapshots or point-in-time
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -29,7 +29,7 @@ def generate_emergency_snapshot_id(instance_id: str) -> str:
     Returns:
         Snapshot ID like 'myapp-production-db-emergency-2026-02-04-120000'
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return f"{instance_id}-emergency-{now.strftime('%Y-%m-%d-%H%M%S')}"
 
 

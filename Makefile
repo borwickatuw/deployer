@@ -14,15 +14,15 @@ MAKEFLAGS += --no-builtin-rules
 
 .PHONY: help
 help: ## Show this help
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 # =============================================================================
 # Setup
 # =============================================================================
 
 .PHONY: install
-install: ## Install dependencies
-	@uv sync
+install: ## Install dependencies (incl. dev group; default-groups is [])
+	@uv sync --group dev
 
 # =============================================================================
 # Code Quality

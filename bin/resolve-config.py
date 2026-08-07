@@ -23,7 +23,7 @@ Examples:
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
@@ -70,7 +70,7 @@ def build_meta(
     return {
         "environment": environment,
         "environment_type": environment_type,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": datetime.now(UTC).isoformat(),
         "config_toml_hash": _compute_hash(config_toml_content),
         "tofu_outputs_hash": _compute_hash(tofu_outputs_json),
     }

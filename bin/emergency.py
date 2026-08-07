@@ -30,7 +30,7 @@ Usage:
 
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import click
 
@@ -94,7 +94,7 @@ class EmergencyLogger:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _write(self, category: str, message: str) -> None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         line = f"{timestamp} [{self.environment}] {category}: {message}\n"
         with open(self.log_path, "a") as f:
             f.write(line)

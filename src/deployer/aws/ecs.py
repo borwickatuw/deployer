@@ -2,7 +2,7 @@
 
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
@@ -338,7 +338,7 @@ def get_oom_events(
         if since_datetime is not None:
             cutoff = since_datetime
         else:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=since_hours)
         return _filter_oom_tasks(tasks, cutoff)
 
     except ClientError:

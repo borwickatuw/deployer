@@ -5,7 +5,7 @@ Saves state before changes to enable recovery/undo of emergency actions.
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..utils import get_deployer_root
@@ -108,7 +108,7 @@ def generate_checkpoint_filename() -> str:
     Returns:
         Filename like 'emergency-2026-02-04-120000.json'
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return f"emergency-{now.strftime('%Y-%m-%d-%H%M%S')}.json"
 
 
@@ -138,7 +138,7 @@ def create_checkpoint(
     filepath = checkpoint_dir / filename
 
     checkpoint = Checkpoint(
-        timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        timestamp=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         environment=environment,
         action=action,
         reason=reason,
@@ -226,7 +226,7 @@ def cleanup_old_checkpoints(
         return []
 
     # Calculate cutoff date
-    cutoff = datetime.now(timezone.utc).timestamp() - (keep_days * 24 * 60 * 60)
+    cutoff = datetime.now(UTC).timestamp() - (keep_days * 24 * 60 * 60)
 
     deleted = []
     checkpoint_dir = get_checkpoint_dir()
