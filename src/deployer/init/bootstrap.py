@@ -109,10 +109,8 @@ def generate_bootstrap(
     env_label: str,
     project_prefixes: list[str],
     trusted_user_arns: list[str],
+    cognito_app_domains: dict[str, str] | None,
     include_cognito: bool = False,
-    cognito_app_domains: (
-        dict[str, str] | None
-    ) = None,  # pysmelly: ignore unused-defaults — semantically optional (only used when include_cognito=True)
 ) -> dict[str, str]:
     """Generate bootstrap directory files from templates.
 

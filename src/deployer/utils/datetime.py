@@ -1,10 +1,11 @@
-# pysmelly: ignore inconsistent-error-handling — leaf utility called within boto3 response
-# processing; callers handle ClientError at their own boundaries.
 """Datetime formatting utilities for boto3 responses."""
 
 from datetime import datetime
 
 
+# Leaf utility called within boto3 response processing; callers handle
+# ClientError at their own boundaries.
+# pysmelly: ignore inconsistent-error-handling
 def format_iso(value: object) -> str | None:
     """Format a value as ISO 8601 string if it's a datetime.
 

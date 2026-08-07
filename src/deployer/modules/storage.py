@@ -59,11 +59,13 @@ class StorageModule(ResourceModule):
 
         return errors
 
+    # context is required by the Module interface even when unused here.
+    # pysmelly: ignore vestigial-params
     def collect(
         self,
         app_config: dict[str, Any],
         env_config: dict[str, Any],
-        context: ModuleContext,  # noqa: ARG002 — required by Module interface  # pysmelly: ignore vestigial-params
+        context: ModuleContext,  # noqa: ARG002 — required by Module interface
     ) -> ModuleOutput:
         """Collect storage environment variables."""
         if not app_config or not app_config.get("type"):

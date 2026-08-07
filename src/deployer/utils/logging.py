@@ -1,5 +1,7 @@
-# pysmelly: ignore inconsistent-error-handling — leaf logging utilities called from
-# many error contexts; "inconsistency" is in callers' try/except boundaries, not here.
+# Leaf logging utilities are called from many error contexts; the
+# "inconsistency" pysmelly reports is in callers' try/except boundaries, not
+# here. Per-function ignore lines below (placement must be 1-2 lines above
+# each flagged def).
 """Logging utilities for formatted console output."""
 
 import sys
@@ -35,6 +37,7 @@ def log_debug(msg: str) -> None:
         print(f"  {Colors.CYAN}[debug]{Colors.NC} {msg}")
 
 
+# pysmelly: ignore inconsistent-error-handling
 def log(msg: str) -> None:
     """Print a message in blue."""
     print(f"{Colors.BLUE}{msg}{Colors.NC}")
@@ -50,21 +53,25 @@ def log_ok(msg: str) -> None:
     print(f"  {Colors.GREEN}✓{Colors.NC} {msg}")
 
 
+# pysmelly: ignore inconsistent-error-handling
 def log_success(msg: str) -> None:
     """Print a message with [done] suffix in green."""
     print(f"  {msg} {Colors.GREEN}[done]{Colors.NC}")
 
 
+# pysmelly: ignore inconsistent-error-handling
 def log_status(msg: str, status: str) -> None:
     """Print a message with a status suffix in yellow."""
     print(f"  {msg} {Colors.YELLOW}[{status}]{Colors.NC}")
 
 
+# pysmelly: ignore inconsistent-error-handling
 def log_warning(msg: str) -> None:
     """Print a warning message with yellow indicator."""
     print(f"  {Colors.YELLOW}⚠{Colors.NC} {msg}")
 
 
+# pysmelly: ignore inconsistent-error-handling
 def log_error(msg: str) -> None:
     """Print an error message with red indicator."""
     print(f"  {Colors.RED}✗{Colors.NC} {msg}")

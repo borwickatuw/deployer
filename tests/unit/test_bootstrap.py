@@ -111,6 +111,7 @@ class TestGenerateBootstrap:
             env_label="staging",
             project_prefixes=["myapp"],
             trusted_user_arns=["arn:aws:iam::123456789012:user/deployer"],
+            cognito_app_domains=None,
         )
         assert "main.tf" in files
         assert "terraform.tfvars" in files
@@ -126,6 +127,7 @@ class TestGenerateBootstrap:
             env_label="production",
             project_prefixes=["myapp", "otherapp"],
             trusted_user_arns=["arn:aws:iam::123456789012:user/deployer"],
+            cognito_app_domains=None,
         )
         # Check main.tf
         assert "123456789012" in files["main.tf"]
@@ -142,6 +144,7 @@ class TestGenerateBootstrap:
             env_label="staging",
             project_prefixes=["myapp"],
             trusted_user_arns=["arn:aws:iam::123456789012:user/deployer"],
+            cognito_app_domains=None,
         )
         main_tf = files["main.tf"]
         assert "BOOTSTRAP-BACKEND-START" in main_tf
@@ -173,6 +176,7 @@ class TestGenerateBootstrap:
             project_prefixes=["myapp"],
             trusted_user_arns=["arn:aws:iam::123456789012:user/deployer"],
             include_cognito=False,
+            cognito_app_domains=None,
         )
         assert "cognito_shared" not in files["main.tf"]
 
