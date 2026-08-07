@@ -217,7 +217,7 @@ def _handle_restore_error(e: ClientError, target_id: str) -> dict:
                 f"--db-instance-identifier {target_id} --skip-final-snapshot"
             ),
         }
-    raise
+    raise e
 
 
 def restore_from_snapshot(

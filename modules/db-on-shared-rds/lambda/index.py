@@ -264,7 +264,7 @@ def handle_create_extensions(event) -> dict:
         conn.close()
 
 
-# pysmelly: ignore dict-as-dataclass — Lambda handler return must be dict for JSON serialization
+# pysmelly: ignore dict-as-dataclass — Lambda handler return must be dict for JSON serialization  (re-evaluate-by: 2026-11 review)
 def handle_setup_database() -> dict:
     """Handle the setup_database action (default behavior)."""
     master = get_secret(os.environ["MASTER_SECRET_ARN"])
@@ -364,7 +364,7 @@ def handle_setup_database() -> dict:
     }
 
 
-def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature
+def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature  (re-evaluate-by: 2026-11 review)
     """Lambda handler to create database/users or extensions on shared RDS.
 
     Dispatches on event["action"]:

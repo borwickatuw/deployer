@@ -259,7 +259,7 @@ class Deployer:
                 print()
                 print("  Or use --force to deploy anyway (migrations will fail).")
                 raise RuntimeError("Infrastructure unavailable")
-            elif infra_critical:
+            elif infra.is_critical:
                 log_warning("Continuing anyway due to --force flag. Migrations will likely fail.")
             print()
 
@@ -347,10 +347,10 @@ class Deployer:
                 wait_for_migrations(self.ecs, migration_task)
         except RuntimeError:
             # Re-display infrastructure warnings to help diagnose the failure
-            if infra_warnings:
+            if infra.warnings:
                 print()
                 log_warning("Reminder: infrastructure issues were detected earlier:")
-                for warning in infra_warnings:
+                for warning in infra.warnings:
                     log_warning(f"  {warning}")
             raise
         print()

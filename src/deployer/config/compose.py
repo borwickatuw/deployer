@@ -47,8 +47,8 @@ def _env_file_var_names(config: dict[str, Any], base_dir: Path) -> list[str]:
                 raise FileNotFoundError(f"env_file not found: {path}")
             continue
 
-        for line in path.read_text().splitlines():
-            line = line.strip()
+        for raw_line in path.read_text().splitlines():
+            line = raw_line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             name = line.split("=")[0].strip()
@@ -59,7 +59,10 @@ def _env_file_var_names(config: dict[str, Any], base_dir: Path) -> list[str]:
     return names
 
 
-# pysmelly: ignore isinstance-chain — YAML values can be str, list, or dict
+# YAML values can be str, list, or dict  (re-evaluate-by: 2026-11 review)
+
+
+# pysmelly: ignore isinstance-chain
 def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) -> dict[str, dict]:
     """Extract services from docker-compose.yml with their properties.
 

@@ -144,7 +144,7 @@ def start_environment(cluster_name: str, services: dict, rds_instance_id: str):
     return results
 
 
-def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature
+def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature  (re-evaluate-by: 2026-11 review)
     """Lambda handler for start/stop actions."""
     logger.info(f"Received event: {json.dumps(event)}")
 

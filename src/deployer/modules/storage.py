@@ -60,7 +60,7 @@ class StorageModule(ResourceModule):
         return errors
 
     # context is required by the Module interface even when unused here.
-    # pysmelly: ignore vestigial-params
+    # pysmelly: ignore vestigial-params  (re-evaluate-by: 2026-11 review)
     def collect(
         self,
         app_config: dict[str, Any],

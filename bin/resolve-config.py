@@ -49,7 +49,7 @@ def _compute_hash(data: str) -> str:
     return f"sha256:{hashlib.sha256(data.encode()).hexdigest()}"
 
 
-# pysmelly: ignore dict-as-dataclass — return value is serialized to JSON via json.dumps
+# pysmelly: ignore dict-as-dataclass — return value is serialized to JSON via json.dumps  (re-evaluate-by: 2026-11 review)
 def build_meta(
     environment: str,
     environment_type: str,
