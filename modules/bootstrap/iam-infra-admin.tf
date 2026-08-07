@@ -168,6 +168,27 @@ data "aws_iam_policy_document" "infra_admin_data" {
     resources = ["*"]
   }
 
+  # CloudWatch metrics and alarms (cloudwatch-alarms module apply +
+  # read-only alarm state for ops tooling; metrics APIs do not support
+  # resource-level scoping)
+  statement {
+    sid    = "CloudWatchMetricsAlarms"
+    effect = "Allow"
+    actions = [
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmHistory",
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:ListTagsForResource",
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+    ]
+    resources = ["*"]
+  }
+
   # SSM (scoped to projects and deployer)
   statement {
     sid     = "SSM"

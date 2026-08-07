@@ -106,7 +106,7 @@ def cmd_setup_profiles(dry_run: bool) -> int:
     # Ensure ~/.aws directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(config_path, "a") as f:
+    with open(config_path, "a", encoding="utf-8") as f:
         # Add a newline separator if the file isn't empty
         if config_path.stat().st_size > 0:
             f.write("\n")

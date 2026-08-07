@@ -81,7 +81,7 @@ def load_resolved_config(config_path: str) -> tuple[dict, dict]:
     if not path.exists():
         raise FileNotFoundError(f"Resolved config not found: {path}")
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError as e:

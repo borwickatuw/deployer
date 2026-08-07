@@ -235,7 +235,7 @@ def cmd_put(
     # Get the value
     if from_file:
         try:
-            with open(from_file) as f:
+            with open(from_file, encoding="utf-8") as f:
                 value = f.read()
         except FileNotFoundError:
             print(f"Error: File not found: {from_file}", file=sys.stderr)

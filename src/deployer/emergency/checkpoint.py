@@ -147,7 +147,7 @@ def create_checkpoint(
         filename=filename,
     )
 
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(checkpoint.to_dict(), f, indent=2)
 
     return checkpoint
@@ -166,7 +166,7 @@ def load_checkpoint(filename: str) -> Checkpoint:
         FileNotFoundError: If checkpoint file doesn't exist
     """
     filepath = get_checkpoint_dir() / filename
-    with open(filepath) as f:
+    with open(filepath, encoding="utf-8") as f:
         data = json.load(f)
     return Checkpoint.from_dict(data, filename=filename)
 
@@ -187,7 +187,7 @@ def list_checkpoints(environment: str) -> list[Checkpoint]:
     checkpoints = []
     for filepath in checkpoint_dir.glob("emergency-*.json"):
         try:
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
             checkpoint = Checkpoint.from_dict(data, filename=filepath.name)
             if checkpoint.environment == environment:

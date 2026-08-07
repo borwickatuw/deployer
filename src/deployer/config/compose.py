@@ -19,7 +19,7 @@ def parse_docker_compose(path: Path) -> dict[str, Any]:
         FileNotFoundError: If file doesn't exist.
         yaml.YAMLError: If file is invalid YAML.
     """
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

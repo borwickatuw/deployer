@@ -52,7 +52,7 @@ def parse_dockerignore(context_path: Path) -> list[str]:
     patterns.append(".git")
 
     if dockerignore_path.exists():
-        with open(dockerignore_path) as f:
+        with open(dockerignore_path, encoding="utf-8") as f:
             for raw_line in f:
                 stripped = raw_line.strip()
                 # Skip empty lines and comments

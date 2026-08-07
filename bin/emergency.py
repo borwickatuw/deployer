@@ -96,7 +96,7 @@ class EmergencyLogger:
     def _write(self, category: str, message: str) -> None:
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         line = f"{timestamp} [{self.environment}] {category}: {message}\n"
-        with open(self.log_path, "a") as f:
+        with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(line)
 
     def action(self, action_name: str) -> None:

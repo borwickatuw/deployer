@@ -242,7 +242,7 @@ def cli(environment, output_file, push_s3, verify, verify_file):
             log_error(f"Resolved config not found: {verify_path}")
             sys.exit(1)
 
-        with open(verify_path) as f:
+        with open(verify_path, encoding="utf-8") as f:
             resolved = json.load(f)
 
         log(f"Verifying resolved config for {environment}...")
