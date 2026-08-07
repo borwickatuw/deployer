@@ -358,8 +358,11 @@ module "infrastructure" {
   # Service Discovery (for internal service-to-service communication)
   service_discovery_enabled = var.service_discovery_enabled
 
-  # CloudFront for custom error pages (shows friendly 503 when services are stopped)
-  cloudfront_alb_enabled = var.cloudfront_alb_enabled
+  # CloudFront for custom error pages (shows friendly 503 when services are stopped).
+  # Each environment provides a branded error-503.html in its directory; the module's
+  # unbranded default is only a fallback for environments without one.
+  cloudfront_alb_enabled            = var.cloudfront_alb_enabled
+  cloudfront_alb_error_page_content = fileexists("${path.root}/error-503.html") ? file("${path.root}/error-503.html") : null
 
   # IAM permissions boundary (required for role creation)
   iam_permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
