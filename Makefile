@@ -42,12 +42,15 @@ ruff: ## Run ruff linter
 	@uv run ruff check bin src tests
 
 .PHONY: lint
-lint: ## Check code formatting (black, isort)
+lint: ## Check formatting (black, isort) and lint (ruff)
 	@echo "=== Checking Black Formatting ==="
 	@uv run black --check bin src tests
 	@echo ""
 	@echo "=== Checking isort ==="
 	@uv run isort --check-only bin src tests
+	@echo ""
+	@echo "=== Ruff Linter ==="
+	@uv run ruff check bin src tests
 
 # =============================================================================
 # Testing
