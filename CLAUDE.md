@@ -60,7 +60,7 @@ uv run python bin/init.py environment --app-name myapp --template standalone-sta
 uv run python bin/init.py update-services myapp-staging --deploy-toml /path/to/deploy.toml
 
 # Link environment to deploy.toml (one-time setup)
-uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+uv run python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 
 # Run commands in containers (uses linked deploy.toml)
 uv run python bin/ecs-run.py run myapp-staging migrate

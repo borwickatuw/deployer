@@ -8,32 +8,32 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 
 | File                                     | Lines | Notes                                                      |
 | ---------------------------------------- | ----- | ---------------------------------------------------------- |
-| `bin/ops.py`                             | 1066  | Largest bin/ script; read-only monitoring commands         |
-| `src/deployer/deploy/service.py`         | 990   | Core service deployment logic                              |
-| `bin/emergency.py`                       | 864   | Emergency operations (rollback, scale, snapshot)           |
-| `bin/init.py`                            | 605   | Init subcommands (bootstrap, environment, update-services) |
+| `bin/ops.py`                             | 1058  | Largest bin/ script; read-only monitoring commands         |
+| `src/deployer/deploy/service.py`         | 1003  | Core service deployment logic                              |
+| `bin/emergency.py`                       | 867   | Emergency operations (rollback, scale, snapshot)           |
+| `bin/init.py`                            | 643   | Init subcommands (bootstrap, environment, update-services) |
+| `src/deployer/aws/ecs.py`                | 507   | AWS ECS operations                                         |
+| `src/deployer/core/config.py`            | 485   | Configuration loading                                      |
+| `src/deployer/init/deploy_toml.py`       | 473   | deploy.toml generation                                     |
+| `src/deployer/deploy/task_definition.py` | 469   | ECS task definition builder                                |
+| `bin/ecs-run.py`                         | 467   | ECS command execution                                      |
+| `bin/ssm-secrets.py`                     | 460   | SSM Parameter Store management                             |
+| `src/deployer/deploy/images.py`          | 455   | Docker image build/push                                    |
+| `src/deployer/config/deploy_config.py`   | 445   | Deploy config parsing                                      |
+| `bin/cognito.py`                         | 445   | Cognito user management                                    |
+| `src/deployer/deploy/deployer.py`        | 429   | Deployment orchestrator                                    |
 | `tests/unit/test_modules.py`             | 579   | Test file, above 400 threshold                             |
-| `tests/unit/test_init.py`                | 575   | Test file, above 400 threshold                             |
-| `tests/unit/test_audit.py`               | 554   | Test file, above 400 threshold                             |
+| `tests/unit/test_init.py`                | 573   | Test file, above 400 threshold                             |
+| `tests/unit/test_audit.py`               | 555   | Test file, above 400 threshold                             |
 | `tests/unit/test_ecs.py`                 | 510   | Test file, above 400 threshold                             |
-| `src/deployer/aws/ecs.py`                | 498   | AWS ECS operations                                         |
-| `src/deployer/core/config.py`            | 484   | Configuration loading                                      |
-| `tests/unit/test_core.py`                | 483   | Test file, above 400 threshold                             |
-| `src/deployer/init/deploy_toml.py`       | 475   | deploy.toml generation                                     |
-| `src/deployer/deploy/task_definition.py` | 470   | ECS task definition builder                                |
-| `src/deployer/deploy/images.py`          | 460   | Docker image build/push                                    |
-| `bin/cognito.py`                         | 452   | Cognito user management                                    |
-| `bin/ssm-secrets.py`                     | 441   | SSM Parameter Store management                             |
-| `src/deployer/config/deploy_config.py`   | 440   | Deploy config parsing                                      |
-| `src/deployer/deploy/deployer.py`        | 416   | Deployment orchestrator                                    |
-| `bin/ecs-run.py`                         | 411   | ECS command execution                                      |
-| `tests/unit/test_config.py`              | 403   | Test file, at 400 threshold                                |
+| `tests/unit/test_core.py`                | 482   | Test file, above 400 threshold                             |
+| `tests/unit/test_config.py`              | 460   | Test file, above 400 threshold                             |
 
 ### Terraform (threshold: 200 lines)
 
 | File                                    | Lines | Notes                                 |
 | --------------------------------------- | ----- | ------------------------------------- |
-| `environments/deployer.tf`              | 678   | Shared environment config (symlinked) |
+| `environments/deployer.tf`              | 681   | Shared environment config (symlinked) |
 | `main.tf`                               | 545   | Root module orchestration             |
 | `modules/bootstrap/iam-infra-admin.tf`  | 462   | IAM policies for infra admin role     |
 | `modules/waf/main.tf`                   | 444   | WAF rules and associations            |
@@ -49,13 +49,24 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | Document                         | Lines | Notes                                       |
 | -------------------------------- | ----- | ------------------------------------------- |
 | `docs/CONFIG-REFERENCE.md`       | 1073  | Reference doc; large but may be appropriate |
-| `docs/internal/SOMEDAY-MAYBE.md` | 600   | At threshold; review for completed items    |
-| `docs/internal/DECISIONS.md`     | 557   | Approaching ADR/ migration threshold        |
+| `docs/internal/SOMEDAY-MAYBE.md` | 607   | Above threshold; review for completed items |
+| `docs/internal/DECISIONS.md`     | 556   | Approaching ADR/ migration threshold        |
 | `docs/internal/DESIGN.md`        | 410   | Design rationale; at guide threshold        |
 
 ## Pysmelly Status
 
-110 findings (from 147 original). 19 genuine false-positive suppressions remain (Lambda context params, JSON serialization constraints, query function semantics, Click patterns). All other suppress comments removed — findings left standing as design reminders.
+97 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
+review). 22 suppression lines stand, all operator-approved false positives
+tagged `re-evaluate-by: 2026-11 review` (Lambda context params, JSON
+serialization constraints, query-function None contracts, Click patterns,
+leaf logging utilities). The 2026-08 S2 review found five Phase 42-2
+suppressions had never taken effect due to comment placement — four
+relocated, one (`generate_bootstrap` unused-default) fixed for real.
+
+**The per-finding work is queued as Phase 53 (subphases 53a–53i) in
+claude-meta `docs/PLAN.md`** — one finding-type × one subsystem per
+operator-gated session, duplicate-block extraction before long-function
+decomposition.
 
 ### Code improvements made (Phases 42 + 42-2)
 
@@ -68,20 +79,23 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 - Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
 - Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-### Remaining findings (110)
+### Remaining findings (97)
 
-| Category | Count | Notes |
-| --- | --- | --- |
-| duplicate-blocks | 19 | Mostly CLI boilerplate and security-distinct privilege grants |
-| long-function | 16 | Orchestration functions (100-167 lines) |
-| arrow-code | 7 | Remaining moderate nesting (depth 5) |
-| inconsistent-error-handling | 9 | Logging leaf functions + CLI boundary patterns |
-| law-of-demeter | 4 | Chain depth 4 on deploy config and path traversal |
-| single-call-site | 3 | Named helpers that document intent |
-| dict-as-dataclass | 2 | Restore function return dicts |
-| inconsistent-returns | 2 | Restore functions (dict\|None) |
-| vestigial-params | 2 | Module interface `context` (required by contract) |
-| write-only-attributes | 1 | ServiceInfo fields used via iteration |
-| unused-defaults | 1 | Semantically optional param (suppressed) |
+| Category                    | Count | Notes                                                |
+| --------------------------- | ----- | ---------------------------------------------------- |
+| duplicate-blocks            | 24    | Lambda twins, CLI boilerplate, deploy/ pairs (53a–c) |
+| long-function               | 17    | Orchestration functions (100–166 lines) (53d–e)      |
+| pass-through-params         | 9     | ssm_secrets/preflight/aws plumbing (53g)             |
+| param-clumps                | 9     | Context-object candidates (53g–h)                    |
+| duplicate-except-blocks     | 6     | Same handler text across CLI commands (53b)          |
+| inconsistent-error-handling | 5     | Caller-contract policy needed (53i)                  |
+| dict-as-dataclass           | 5     | emergency/rds, ecs, cognito returns (53f)            |
+| foo-equals-foo              | 4     | Single-use locals to inline (53i)                    |
+| arrow-code                  | 6     | Depth-5/6 nesting (53d–e)                            |
+| law-of-demeter              | 4     | Chain depth 4 (53e, 53i)                             |
+| single-call-site            | 3     | Named helpers that document intent (53i)             |
+| feature-envy                | 2     | DatabaseModule methods (53h)                         |
+| write-only-attributes       | 1     | ModuleContext.domain_name (53h)                      |
+| temp-accumulators           | 1     | images.py hash_modifiers (53e)                       |
 
-*Last updated: 2026-04-15*
+*Last updated: 2026-08-07 (S2 comprehensive review)*
