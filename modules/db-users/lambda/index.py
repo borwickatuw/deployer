@@ -1,5 +1,9 @@
 """Lambda function to create database users with appropriate privileges.
 
+Security model: **dedicated instance**. This module owns the whole RDS instance,
+so a user's privileges are granted once, at creation time, across the database
+and the public schema together.
+
 Creates two users:
 - App user: DML only (SELECT, INSERT, UPDATE, DELETE)
 - Migrate user: DDL + DML (CREATE, ALTER, DROP, etc.)
@@ -7,46 +11,36 @@ Creates two users:
 This reduces blast radius if the application is compromised - attackers
 cannot drop tables or alter schema with the app user.
 
+The shared vocabulary (escaping, secrets, connections, individual GRANTs) lives
+in ``db_common``, copied into this bundle at apply time from
+``modules/lambda-shared/db_common.py``. The *composition* of those grants stays
+here: db-on-shared-rds deliberately composes them differently.
+
 """
 
 import json
-import os
 import logging
 
-import boto3
-import pg8000.native
+from db_common import (
+    DbCredentials,
+    DbUser,
+    connect,
+    create_user,
+    escape_identifier,
+    grant_all_on_existing,
+    grant_dml_on_existing,
+    handle_create_extensions,
+    set_default_privileges,
+    transfer_ownership,
+    update_user_password,
+    user_exists,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def escape_literal(value: str) -> str:
-    """Escape a string for use as a PostgreSQL literal.
-
-    PostgreSQL DDL statements (CREATE USER, ALTER USER) don't support
-    parameterized queries, so we must escape values manually.
-    """
-    # Replace single quotes with two single quotes, wrap in quotes
-    return "'" + value.replace("'", "''") + "'"
-
-
-def get_secret(secret_arn: str) -> dict:
-    """Retrieve a secret from Secrets Manager."""
-    client = boto3.client("secretsmanager")
-    response = client.get_secret_value(SecretId=secret_arn)
-    return json.loads(response["SecretString"])
-
-
-def user_exists(conn, username: str) -> bool:
-    """Check if a PostgreSQL user already exists."""
-    result = conn.run(
-        "SELECT 1 FROM pg_roles WHERE rolname = :username",
-        username=username
-    )
-    return len(result) > 0
-
-
-def create_app_user(conn, username: str, password: str, db_name: str) -> None:
+def create_app_user(conn, user: DbUser, db_name: str) -> None:
     """Create the app user with DML-only privileges.
 
     The app user can:
@@ -59,29 +53,21 @@ def create_app_user(conn, username: str, password: str, db_name: str) -> None:
     - TRUNCATE tables
     - Manage other users
     """
-    # Create user (DDL doesn't support parameters, so we escape the password)
-    conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
+    create_user(conn, user)
 
     # Grant connect
-    conn.run(f"GRANT CONNECT ON DATABASE {db_name} TO {username}")
+    conn.run(f"GRANT CONNECT ON DATABASE {escape_identifier(db_name)} TO {user.username}")
 
     # Grant schema usage
-    conn.run(f"GRANT USAGE ON SCHEMA public TO {username}")
+    conn.run(f"GRANT USAGE ON SCHEMA public TO {user.username}")
 
-    # Grant DML on existing tables
-    conn.run(
-        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {username}"
-    )
+    # Grant DML on existing tables and sequence usage (for auto-increment columns)
+    grant_dml_on_existing(conn, user.username)
 
-    # Grant sequence usage (for auto-increment columns)
-    conn.run(
-        f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {username}"
-    )
-
-    logger.info(f"Created app user '{username}' with DML-only privileges")
+    logger.info(f"Created app user '{user.username}' with DML-only privileges")
 
 
-def create_migrate_user(conn, username: str, password: str, db_name: str) -> None:
+def create_migrate_user(conn, user: DbUser, db_name: str) -> None:
     """Create the migrate user with DDL + DML privileges.
 
     The migrate user can:
@@ -92,229 +78,75 @@ def create_migrate_user(conn, username: str, password: str, db_name: str) -> Non
 
     This user is only used for running migrations.
     """
-    # Create user (DDL doesn't support parameters, so we escape the password)
-    conn.run(f"CREATE USER {username} WITH PASSWORD {escape_literal(password)}")
+    create_user(conn, user)
 
     # Grant connect and create (CREATE needed for CREATE EXTENSION)
-    conn.run(f"GRANT CONNECT, CREATE ON DATABASE {db_name} TO {username}")
+    conn.run(
+        f"GRANT CONNECT, CREATE ON DATABASE {escape_identifier(db_name)} TO {user.username}"
+    )
 
     # Grant full schema privileges (DDL + DML)
-    conn.run(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {username}")
+    conn.run(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {user.username}")
 
-    # Grant full privileges on existing tables
-    conn.run(
-        f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {username}"
-    )
+    # Grant full privileges on existing tables and sequences
+    grant_all_on_existing(conn, user.username)
 
-    # Grant full privileges on sequences
-    conn.run(
-        f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {username}"
-    )
-
-    logger.info(f"Created migrate user '{username}' with DDL + DML privileges")
-
-
-def update_user_password(conn, username: str, password: str) -> None:
-    """Update an existing user's password."""
-    conn.run(f"ALTER USER {username} WITH PASSWORD {escape_literal(password)}")
-    logger.info(f"Updated password for user '{username}'")
-
-
-def setup_default_privileges(
-    conn, master_username: str, migrate_username: str, app_username: str
-) -> None:
-    """Set up default privileges so app user can access tables created by migrate user.
-
-    This uses ALTER DEFAULT PRIVILEGES FOR ROLE which sets the defaults for objects
-    created by the migrate user, not the current user (master).
-
-    Requires master to be a member of migrate role (granted below).
-
-    This is idempotent and should be run on every Lambda invocation.
-    """
-    # Master must be a member of migrate role to set its default privileges
-    # GRANT ... TO ... is idempotent (no error if already granted)
-    conn.run(f"GRANT {migrate_username} TO {master_username}")
-
-    # Tables created by migrate user should be accessible by app user
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES FOR ROLE {migrate_username} IN SCHEMA public "
-        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {app_username}"
-    )
-
-    # Sequences created by migrate user should be accessible by app user
-    conn.run(
-        f"ALTER DEFAULT PRIVILEGES FOR ROLE {migrate_username} IN SCHEMA public "
-        f"GRANT USAGE, SELECT ON SEQUENCES TO {app_username}"
-    )
-
-    logger.info(
-        f"Set up default privileges: {migrate_username}'s objects grant access to {app_username}"
-    )
-
-
-def grant_app_permissions(conn, app_username: str) -> None:
-    """Grant app user permissions on all existing tables and sequences.
-
-    This handles tables that may have been created before default privileges
-    were properly configured. Idempotent - safe to run multiple times.
-    """
-    conn.run(
-        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {app_username}"
-    )
-    conn.run(
-        f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {app_username}"
-    )
-    logger.info(f"Granted permissions on existing objects to {app_username}")
-
-
-def transfer_ownership(conn, migrate_username: str) -> None:
-    """Transfer ownership of existing tables and sequences to the migrate user.
-
-    This is needed when migrating existing databases to the two-account model.
-    Tables created by the old master user need to be owned by the migrate user
-    so that migrations can ALTER them.
-    """
-    # Get tables not owned by migrate user
-    tables = conn.run(
-        """
-        SELECT tablename, tableowner
-        FROM pg_tables
-        WHERE schemaname = 'public' AND tableowner != :username
-        """,
-        username=migrate_username
-    )
-
-    for table_row in tables:
-        tablename = table_row[0]
-        old_owner = table_row[1]
-        conn.run(f'ALTER TABLE public."{tablename}" OWNER TO {migrate_username}')
-        logger.info(f"Transferred ownership of table '{tablename}' from '{old_owner}' to '{migrate_username}'")
-
-    if tables:
-        logger.info(f"Transferred ownership of {len(tables)} table(s) to '{migrate_username}'")
-    else:
-        logger.info("No tables need ownership transfer")
-
-    # Get sequences not owned by migrate user
-    sequences = conn.run(
-        """
-        SELECT sequencename, sequenceowner
-        FROM pg_sequences
-        WHERE schemaname = 'public' AND sequenceowner != :username
-        """,
-        username=migrate_username
-    )
-
-    for seq_row in sequences:
-        seqname = seq_row[0]
-        old_owner = seq_row[1]
-        conn.run(f'ALTER SEQUENCE public."{seqname}" OWNER TO {migrate_username}')
-        logger.info(f"Transferred ownership of sequence '{seqname}' from '{old_owner}' to '{migrate_username}'")
-
-    if sequences:
-        logger.info(f"Transferred ownership of {len(sequences)} sequence(s) to '{migrate_username}'")
-
-
-def create_extensions(conn, extensions: list[str]) -> None:
-    """Create PostgreSQL extensions using the master (rds_superuser) connection.
-
-    Extensions like pg_bigm require rds_superuser privileges which the migrate
-    user does not have. This function runs as the master user.
-    """
-    for ext in extensions:
-        conn.run(f'CREATE EXTENSION IF NOT EXISTS "{ext}"')
-        logger.info(f"Ensured extension '{ext}' exists")
-
-
-def handle_create_extensions(event) -> dict:
-    """Handle the create_extensions action.
-
-    Connects to the database as master user and creates requested extensions.
-    """
-    extensions = event.get("extensions", [])
-    if not extensions:
-        logger.info("No extensions requested")
-        return {"status": "success", "extensions": []}
-
-    master = get_secret(os.environ["MASTER_SECRET_ARN"])
-    db_name = os.environ["DB_NAME"]
-
-    logger.info(f"Creating extensions {extensions} in database {db_name}")
-
-    conn = pg8000.native.Connection(
-        host=master["host"],
-        port=int(master["port"]),
-        database=db_name,
-        user=master["username"],
-        password=master["password"],
-    )
-
-    try:
-        create_extensions(conn, extensions)
-        return {"status": "success", "extensions": extensions}
-    except Exception as e:
-        logger.error(f"Error creating extensions: {e}")
-        raise
-    finally:
-        conn.close()
+    logger.info(f"Created migrate user '{user.username}' with DDL + DML privileges")
 
 
 def handle_create_users() -> dict:
     """Handle the create_users action (default behavior)."""
-    master = get_secret(os.environ["MASTER_SECRET_ARN"])
-    app = get_secret(os.environ["APP_SECRET_ARN"])
-    migrate = get_secret(os.environ["MIGRATE_SECRET_ARN"])
-    db_name = os.environ["DB_NAME"]
+    creds = DbCredentials.from_environment()
+    app, migrate, db_name = creds.app, creds.migrate, creds.db_name
 
-    logger.info(f"Connecting to database {db_name} at {master['host']}:{master['port']}")
-
-    conn = pg8000.native.Connection(
-        host=master["host"],
-        port=int(master["port"]),
-        database=db_name,
-        user=master["username"],
-        password=master["password"],
+    logger.info(
+        f"Connecting to database {db_name} at {creds.master['host']}:{creds.master['port']}"
     )
+
+    conn = connect(creds.master, db_name)
 
     try:
         # Create or update app user
-        if user_exists(conn, app["username"]):
-            logger.info(f"App user '{app['username']}' already exists, updating password")
-            update_user_password(conn, app["username"], app["password"])
+        if user_exists(conn, app.username):
+            logger.info(f"App user '{app.username}' already exists, updating password")
+            update_user_password(conn, app)
         else:
-            create_app_user(conn, app["username"], app["password"], db_name)
+            create_app_user(conn, app, db_name)
 
         # Create or update migrate user
-        if user_exists(conn, migrate["username"]):
-            logger.info(f"Migrate user '{migrate['username']}' already exists, updating password")
-            update_user_password(conn, migrate["username"], migrate["password"])
+        if user_exists(conn, migrate.username):
+            logger.info(
+                f"Migrate user '{migrate.username}' already exists, updating password"
+            )
+            update_user_password(conn, migrate)
         else:
-            create_migrate_user(conn, migrate["username"], migrate["password"], db_name)
+            create_migrate_user(conn, migrate, db_name)
 
         # Ensure migrate user has CREATE on the database (for CREATE EXTENSION)
         # This is idempotent and handles existing users that were created
         # before this privilege was included in create_migrate_user()
-        conn.run(f"GRANT CREATE ON DATABASE {db_name} TO {migrate['username']}")
+        conn.run(
+            f"GRANT CREATE ON DATABASE {escape_identifier(db_name)} TO {migrate.username}"
+        )
 
         # Transfer ownership of existing tables/sequences to migrate user
         # This handles migration from single-user to two-account model
-        transfer_ownership(conn, migrate["username"])
+        transfer_ownership(conn, migrate.username)
 
         # Set up default privileges so tables created by migrate user
         # are automatically accessible by app user
-        setup_default_privileges(
-            conn, master["username"], migrate["username"], app["username"]
+        set_default_privileges(
+            conn, creds.master["username"], migrate.username, app.username
         )
 
         # Grant app user access to any existing tables
         # (handles tables created before defaults were configured)
-        grant_app_permissions(conn, app["username"])
+        grant_dml_on_existing(conn, app.username)
 
         return {
             "status": "success",
-            "app_user": app["username"],
-            "migrate_user": migrate["username"],
+            "app_user": app.username,
+            "migrate_user": migrate.username,
         }
 
     except Exception as e:

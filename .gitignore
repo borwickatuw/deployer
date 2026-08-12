@@ -41,6 +41,13 @@ modules/db-users/lambda/dateutil/
 modules/db-users/lambda/*.dist-info/
 modules/db-users/lambda/six.py
 
+# Shared Lambda code, copied into each bundle at apply time by
+# null_resource.lambda_dependencies. The tracked copy is
+# modules/lambda-shared/db_common.py -- edit that, never these.
+# Listed by exact path, never a glob: index.py must stay tracked.
+modules/db-users/lambda/db_common.py
+modules/db-on-shared-rds/lambda/db_common.py
+
 # IDE
 .idea/
 .vscode/

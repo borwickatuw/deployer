@@ -28,29 +28,35 @@ install: ## Install dependencies (incl. dev group; default-groups is [])
 # Code Quality
 # =============================================================================
 
+# Python trees the formatters and linters own. modules/lambda-shared holds the
+# tracked copy of the db-* Lambda shared code; the per-module lambda/ dirs are
+# NOT here on purpose -- they are build-artifact directories full of pip-vendored
+# packages (and ruff's extend-exclude covers them if they are ever passed).
+PY_SOURCES = bin src tests modules/lambda-shared
+
 .PHONY: format
 format: ## Auto-format code with black and isort
 	@echo "=== Running Black ==="
-	@uv run black bin src tests
+	@uv run black $(PY_SOURCES)
 	@echo ""
 	@echo "=== Running isort ==="
-	@uv run isort bin src tests
+	@uv run isort $(PY_SOURCES)
 
 .PHONY: ruff
 ruff: ## Run ruff linter
 	@echo "=== Ruff Linter ==="
-	@uv run ruff check bin src tests
+	@uv run ruff check $(PY_SOURCES)
 
 .PHONY: lint
 lint: ## Check formatting (black, isort) and lint (ruff)
 	@echo "=== Checking Black Formatting ==="
-	@uv run black --check bin src tests
+	@uv run black --check $(PY_SOURCES)
 	@echo ""
 	@echo "=== Checking isort ==="
-	@uv run isort --check-only bin src tests
+	@uv run isort --check-only $(PY_SOURCES)
 	@echo ""
 	@echo "=== Ruff Linter ==="
-	@uv run ruff check bin src tests
+	@uv run ruff check $(PY_SOURCES)
 
 # =============================================================================
 # Testing
@@ -83,7 +89,7 @@ security: security-bandit security-deps security-secrets security-checkov ## Run
 .PHONY: security-bandit
 security-bandit: ## Run bandit Python security linter
 	@echo "=== Bandit Security Linter ==="
-	@uv run bandit -c pyproject.toml -r bin src -ll
+	@uv run bandit -c pyproject.toml -r bin src modules/lambda-shared -ll
 
 # Checkov skip-check rationale (grouped by category):
 #   KMS encryption not needed (SSE-S3/default sufficient for our use case):

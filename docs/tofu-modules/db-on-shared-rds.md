@@ -41,3 +41,20 @@ module "db_on_shared_rds" {
 | migrate_username_arn | ARN for migrate username (for ECS secrets)     |
 | migrate_password_arn | ARN for migrate password (for ECS secrets)     |
 | lambda_function_name | Lambda function name (for creating extensions) |
+
+## Lambda source
+
+`lambda/index.py` holds this module's privilege policy: **shared instance** —
+users get CONNECT on exactly one database at creation time, and schema/table
+privileges are granted in a second pass from inside that database. This is
+deliberately *not* how `db-users` composes the same grants; see that module's
+Lambda source note.
+
+The shared vocabulary it imports (`escape_literal`, `get_secret`, `connect`, the
+individual GRANT helpers, `DbUser`, `DbCredentials`) lives in
+`modules/lambda-shared/db_common.py`. That is the only tracked copy;
+`null_resource.lambda_dependencies` copies it into `lambda/` at apply time
+alongside the pip dependencies, and the copy is gitignored. **Edit
+`modules/lambda-shared/db_common.py`, never `lambda/db_common.py`.**
+
+Tests: `tests/unit/test_lambda_db_common.py`.

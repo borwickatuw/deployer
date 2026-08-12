@@ -47,6 +47,10 @@ test = [
     "pytest-mock>=3.12",
     "pytest-cov>=4.1",
     "moto[ecs,ecr,rds,cloudwatch]>=5.0",
+    # Pure-Python Postgres driver. Not a runtime dependency of the CLI -- it is
+    # here so tests/unit/test_lambda_db_common.py can import the shared Lambda
+    # module (modules/lambda-shared/db_common.py) exactly as the bundle does.
+    "pg8000>=1.31",
 ]
 
 [tool.uv]
@@ -64,7 +68,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
-pythonpath = ["src"]
+# modules/lambda-shared is on the path so `import db_common` resolves the same
+# way it does from a Lambda bundle root (see modules/lambda-shared/db_common.py).
+pythonpath = ["src", "modules/lambda-shared"]
 
 [tool.coverage.run]
 source = ["src/deployer"]
@@ -161,6 +167,13 @@ max-complexity = 15
     "S603",    # subprocess calls to external tools (tofu, docker, aws) expected
     "S607",    # partial executable paths for CLI tools (tofu, docker) expected
     "T20",     # print is the primary output mechanism for CLI scripts
+]
+"modules/lambda-shared/*" = [
+    # PostgreSQL DDL (CREATE USER, GRANT, ALTER DEFAULT PRIVILEGES) cannot be
+    # parameterized, so the SQL is necessarily built by f-string. That is exactly
+    # why escape_literal()/escape_identifier() exist. Bandit's equivalent (B608)
+    # is already skipped globally in [tool.bandit].
+    "S608",    # hardcoded-sql-expression
 ]
 "src/*" = [
     "S603",    # subprocess calls to external tools (tofu, docker, aws) expected

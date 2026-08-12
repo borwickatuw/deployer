@@ -213,10 +213,16 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
 resource "null_resource" "lambda_dependencies" {
   triggers = {
     requirements = filemd5("${path.module}/lambda/requirements.txt")
+    shared       = filemd5("${path.module}/../lambda-shared/db_common.py")
   }
 
+  # db_common.py is the single tracked copy (modules/lambda-shared/); the copy
+  # landing in lambda/ is a gitignored build artifact, like the pip installs.
   provisioner "local-exec" {
-    command = "pip install -r ${path.module}/lambda/requirements.txt -t ${path.module}/lambda --upgrade --quiet"
+    command = <<-EOT
+      pip install -r ${path.module}/lambda/requirements.txt -t ${path.module}/lambda --upgrade --quiet
+      cp ${path.module}/../lambda-shared/db_common.py ${path.module}/lambda/db_common.py
+    EOT
   }
 }
 
