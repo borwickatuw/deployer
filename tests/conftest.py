@@ -5,6 +5,9 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from moto import mock_aws
+
+from deployer.emergency import checkpoint as checkpoint_module
 
 
 @pytest.fixture
@@ -69,4 +72,36 @@ def mock_aws_credentials(mock_env_vars):
         AWS_SECURITY_TOKEN="testing",
         AWS_SESSION_TOKEN="testing",
         AWS_DEFAULT_REGION="us-west-2",
+        # A developer's real AWS_PROFILE must not leak into mocked calls:
+        # boto3 resolves the profile before moto ever sees the request, so a
+        # profile that doesn't exist locally fails the test for the wrong reason.
+        AWS_PROFILE=None,
     )
+
+
+@pytest.fixture
+def mocked_aws(mock_aws_credentials):
+    """Run the test against moto's in-memory AWS backends.
+
+    Region is us-west-2, matching ``mock_aws_credentials``. Clients created
+    inside the fixture's scope (including those built by the emergency
+    modules' own ``_get_*_client`` helpers) are intercepted by moto.
+    """
+    with mock_aws():
+        yield
+
+
+@pytest.fixture
+def checkpoint_dir(tmp_path, monkeypatch) -> Path:
+    """Redirect the emergency checkpoint directory into ``tmp_path``.
+
+    ``create_checkpoint``/``list_checkpoints`` take no directory argument by
+    design -- their only production caller (``bin/emergency.py``) wants the
+    single global location under the deployer root -- so ``get_deployer_root``
+    is the seam tests use instead of widening the API for testability.
+
+    Returns:
+        Path to the redirected local/checkpoints/ directory (not created).
+    """
+    monkeypatch.setattr(checkpoint_module, "get_deployer_root", lambda: tmp_path)
+    return tmp_path / "local" / "checkpoints"
