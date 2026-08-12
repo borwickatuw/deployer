@@ -150,9 +150,14 @@ security-deps: ## Check dependency vulnerabilities
 	@uv audit
 
 .PHONY: security-secrets
-security-secrets: ## Scan for committed secrets against the baseline
+security-secrets: ## Check tracked files for secrets not in .secrets.baseline
 	@echo "=== Secrets Scan (detect-secrets) ==="
-	@uvx detect-secrets scan --baseline .secrets.baseline
+	@test -f .secrets.baseline || { echo "Error: .secrets.baseline missing. Bootstrap with 'make security-secrets-init' and review before committing."; exit 1; }
+	@uv run --group dev detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
+
+.PHONY: security-secrets-init
+security-secrets-init: ## Bootstrap/regenerate .secrets.baseline (review the diff before committing)
+	@uv run --group dev detect-secrets scan > .secrets.baseline
 
 .PHONY: security-updates
 security-updates: ## CVE scan + outdated-package report (quarterly review)

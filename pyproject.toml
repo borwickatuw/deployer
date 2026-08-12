@@ -29,8 +29,13 @@ dev = [
     # Security scanning (local only). Dependency CVE scanning uses
     # `uv audit` (built into uv). Checkov runs via `uvx checkov` (see
     # Makefile) so its pinned-vulnerable dep tree (aiohttp<3.14, ecdsa)
-    # stays out of this project's lock.
+    # stays out of this project's lock. detect-secrets is the opposite
+    # case and belongs *in* the lock: the secrets gate must run a pinned
+    # scanner, because a version mismatch against the committed
+    # .secrets.baseline makes detect-secrets-hook rewrite it and exit 3
+    # (SECURITY.md §8).
     "bandit>=1.7",
+    "detect-secrets>=1.5",
     # Code analysis
     "vulture",
     "radon",
