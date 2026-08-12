@@ -7,6 +7,10 @@ _No repo-local phases yet._ This file exists so cross-repo backlog has a
 visible home in-repo (fleet convention).
 
 Cross-repo backlog queued against this repo: claude-meta docs/PLAN.md
-Phase 52 (container-level health checks for non-HTTP services), Phase 53
-(pysmelly subphase backlog 53a–53i), and Phase 54 (emergency-subsystem
-test coverage; pairs with 53f).
+Phase 52 (container-level health checks for non-HTTP services) and Phase
+53 (pysmelly subphase backlog 53a–53i).
+
+Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
+`5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record
+in claude-meta docs/PLAN-ARCHIVE.md. Its tests pin today's
+swallow-ClientError contracts on purpose, for 53i to decide.
