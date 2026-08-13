@@ -30,7 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **57** (measured at the Phase 53e-1 commit; was 60 at `805d516`,
+Standing total: **56** (measured at the Phase 53e-2 commit; was 57 at
+`9903e2b`, 60 at `805d516`,
 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
 `a8800cd`, 97 at `8e57264`).
 
@@ -781,6 +782,92 @@ floor stays at **53** (53 is still the integer just under). 852 → 872 tests.
 
 None. Only `long-function` and `duplicate-blocks` moved.
 
+### 53e-2 — `core/audit.py` (2026-08-13)
+
+**1 target** at `9903e2b` (repo total 57): `audit.py:180 run_audit` (114L,
+`long-function`, carrying `# noqa: C901`). **Cleared**; repo total **57 → 56**,
+`long-function` 8 → 7, and the `# noqa: C901` came off (8 → 7 repo-wide).
+Nothing minted — the category diff against the baseline moves `long-function`
+and nothing else. `core/audit.py` now has **no findings of any category**.
+
+#### The length was triplication pysmelly could not see
+
+33 of the 114 lines were the same block written three times: print a heading,
+run a check, warn each issue or print an all-clear, accumulate. pysmelly
+flagged the length but not the repetition, because the three copies
+**interleave with their own audit calls** and so are not runs of consecutive
+statements — the shape `duplicate-blocks` keys on. Same lesson as 53d-1's
+unflagged three-way `deploy.toml`-resolution twin and 53d-2a's six no-op
+`format_timestamp` guards: **on this codebase, the long-function findings keep
+turning out to be duplication findings the checker could not reach.**
+
+The three blocks became a three-entry table (`_audit_checks`) and a four-line
+loop, alongside `_print_header`, `_print_audit_config`, `_report_check` and
+`_print_summary`. `run_audit` went **114L → 33L** and reads as its own outline.
+The orienting comments (`# Parse files`, `# Extract data`, `# Audit services`)
+went with them.
+
+#### Two simplifications the length was hiding
+
+- **`total_issues` duplicated `len(all_issues)`.** It was incremented by
+  `len()` of each list that had just been `extend`ed onto `all_issues`. Two
+  names for one number, kept in sync by hand across three blocks — a
+  `temp-accumulators` shape that the check did not flag here.
+- **Three single-use aliases.** `deploy_services` / `deploy_images` /
+  `deploy_env_vars` were bound in one paragraph and each read once, many lines
+  later. Now read at the point of use.
+
+#### One deliberate behaviour change, named
+
+The three checks now all run **before** any section prints; previously each
+heading printed just ahead of its own check. Every observable output is
+byte-identical — the audit functions are pure list-builders over already-parsed
+data, verified against the sample fixtures — but "output-identical" is not
+"behaviour-identical": if a check ever raised, the operator would no longer see
+that check's heading before the traceback. Recorded rather than glossed.
+
+#### Latent bug: a section header with no body
+
+Found by reading before refactoring, same family as 53d-2b's dead
+`except RuntimeError: pass`. The Audit Configuration section is gated on **any**
+of the four `[audit]` keys being set — including `ignore_images` — but only
+**three** of them had a `log_info` line inside it. A `deploy.toml` configuring
+only `ignore_images` printed an empty `=== Audit Configuration ===` heading and
+nothing under it.
+
+Display-only: `ignore_images` was already honoured by `audit_images`, which
+folds it into its ignore set. The setting worked; it just never said so, and
+every other suppressing key reports itself. Fixed in its own commit so the
+decomposition stayed behaviour-preserving.
+
+#### Characterization tests first
+
+`run_audit`'s **entire reporting half was unexercised** — all four pre-existing
+tests passed `verbose=False`, which is exactly why the file sat at 66% while
+its pure helpers were well covered. `TestRunAuditOutput` pins section text and
+order, the issue lines under each heading, custom filenames, the mixed
+one-check-fails case, that `verbose=False` prints nothing at all, and that both
+not-found guards return before any output.
+
+Third subphase running the same pinning discipline, and the same
+pin-what-survives trick: the `ignore_images` case was pinned in commit 1 as
+"the section opens" — still true after the fix — so commit 2 *added* the
+body assertion rather than editing the test.
+
+**`assert issue_count >= 0` was deleted, not kept.** That assertion held for
+every value `run_audit` can return except the `-1` not-found case, so it pinned
+nothing while looking like coverage. Replaced with an exact pin on the sample
+fixtures, which are built to match.
+
+#### Coverage
+
+`core/audit.py` **66% → 100%**, with no partial branches left. Total 53.91% →
+**54.62%**; floor **53 → 54**. 872 → 891 tests.
+
+#### Side effects and mints
+
+None. Only `long-function` moved.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -813,17 +900,17 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-11 of the 57 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2). The other **46** are queued behind claude-meta
-`docs/PLAN.md` Phase 53e-2–53i:
+11 of the 56 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2). The other **45** are queued behind claude-meta
+`docs/PLAN.md` Phase 53e-3–53i:
 
-`long-function` 8, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
+`long-function` 7, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
 `foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
 `write-only-attributes` 1, `temp-accumulators` 1.
 
 They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
-remaining `long-function` is in `src/deployer/`, four of the eight in
+remaining `long-function` is in `src/deployer/deploy/`, four of the seven in
 `deploy/service.py` — which 53e-5 owns and which is the only file left on the
 convergence-hotspot list. `bin/emergency.py` has one finding left (the
 adjudicated `param-clump`) and `bin/init.py` two (both `foo-equals-foo`, routed

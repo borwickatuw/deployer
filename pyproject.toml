@@ -80,8 +80,8 @@ branch = true
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
 # require real AWS credentials.
 #
-# The floor is measured, not aspirational: `make test-cov` reports 53.91% at
-# the commit that finished Phase 53e-1, so 53 is the floor just under it.
+# The floor is measured, not aspirational: `make test-cov` reports 54.62% at
+# the commit that finished Phase 53e-2, so 54 is the floor just under it.
 # Note that `make test-cov` passes `--cov=src --cov=bin`, which OVERRIDES the
 # `[tool.coverage.run] source` setting above — bare `pytest --cov` measures
 # src/deployer only. The floor is set against the `make test-cov` number
@@ -108,10 +108,13 @@ branch = true
 # Phase 53e-1 pinned the two files it refactored before touching them:
 # deploy/extensions.py 94% -> 100% and init/setup_profiles.py 39% -> 100%.
 #
+# Phase 53e-2 did the same for core/audit.py, 66% -> 100%. Its whole gap was
+# run_audit()'s reporting half: every pre-existing test passed verbose=False.
+#
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 53
+fail_under = 54
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

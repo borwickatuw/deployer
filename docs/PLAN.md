@@ -111,8 +111,8 @@ small well-covered files before it reaches the untested heart:
 | Slice | Scope                                                      | Coverage at split | Status |
 | ----- | ---------------------------------------------------------- | ----------------- | ------ |
 | 53e-1 | `extensions.py` + `setup_profiles.py`                      | 94% / 39%         | done   |
-| 53e-2 | `core/audit.py` — `run_audit`                              | 66%               | next   |
-| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | 35%               | open   |
+| 53e-2 | `core/audit.py` — `run_audit`                              | 66%               | done   |
+| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | 35%               | next   |
 | 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | 16%               | open   |
 | 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | 11%               | open   |
 
@@ -142,7 +142,45 @@ took it to 21L. Pinned but not endorsed, routed to **53i**:
 `extensions.py`'s bare `except Exception` reports any non-`ClientError`
 failure as a credentials or network problem.
 
-**Phase 53e-2 (`core/audit.py`) is the next open subphase.**
+Phase 53e-2 (`core/audit.py`) **shipped 2026-08-13** — `run_audit`
+cleared, pysmelly 57 → 56, `long-function` 8 → 7, and its
+`# noqa: C901` came off (7 remain repo-wide). Nothing minted.
+
+The length turned out to be **triplication pysmelly could not see**: 33
+of the 114 lines were the same block written three times (heading, run a
+check, warn each issue or print an all-clear, accumulate), but the copies
+interleave with their own audit calls, so they are not the runs of
+consecutive statements `duplicate-blocks` keys on. Third time in this
+arc that a `long-function` finding was really a duplication finding out
+of the checker's reach — after 53d-1's three-way deploy.toml-resolution
+twin and 53d-2a's six no-op `format_timestamp` guards. The three blocks
+became a three-entry table and a four-line loop; `run_audit` went
+114L → 33L. Two things the length was hiding also went: `total_issues`,
+which tracked exactly what `len(all_issues)` already knew, and three
+single-use aliases for `deploy.services` / `.images` /
+`.get_all_env_var_names()`.
+
+**Latent bug fixed**, same family as 53d-2b's dead
+`except RuntimeError: pass`: the Audit Configuration section is gated on
+any of the four `[audit]` keys being set — including `ignore_images` —
+but only three had a line inside it, so a deploy.toml configuring only
+`ignore_images` printed an empty heading and nothing under it. Display
+only; `audit_images` already honoured the setting. Fixed in its own
+commit so the decomposition stayed behaviour-preserving.
+
+One deliberate change, named: the three checks now all run before any
+section prints. Output is byte-identical (the audit functions are pure
+list-builders over parsed data), but a check that raised would no longer
+show its heading first.
+
+`core/audit.py` **66% → 100%** — its whole gap was `run_audit`'s
+reporting half, since all four pre-existing tests passed `verbose=False`.
+Coverage floor **53 → 54** (54.62% measured), 872 → 891 tests. Also
+deleted an `assert issue_count >= 0` that held for every value the
+function can return but the `-1` case, so it pinned nothing.
+Adjudication record: [docs/internal/PYSMELLY.md](internal/PYSMELLY.md).
+
+**Phase 53e-3 (`deploy/deployer.py`) is the next open subphase.**
 
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record

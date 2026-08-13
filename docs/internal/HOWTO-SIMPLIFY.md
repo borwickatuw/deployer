@@ -14,6 +14,7 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `bin/init.py`                            | 769   | Init subcommands (bootstrap, environment, update-services) |
 | `src/deployer/aws/ecs.py`                | 507   | AWS ECS operations                                         |
 | `src/deployer/core/config.py`            | 485   | Configuration loading                                      |
+| `src/deployer/core/audit.py`             | 315   | Audit checks + reporting; decomposed in 53e-2              |
 | `src/deployer/init/deploy_toml.py`       | 473   | deploy.toml generation                                     |
 | `src/deployer/deploy/task_definition.py` | 469   | ECS task definition builder                                |
 | `bin/ecs-run.py`                         | 457   | ECS command execution                                      |
@@ -30,7 +31,7 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `src/deployer/init/template.py`          | 320   | Template substitution                                      |
 | `tests/unit/test_modules.py`             | 579   | Test file, above 400 threshold                             |
 | `tests/unit/test_init.py`                | 573   | Test file, above 400 threshold                             |
-| `tests/unit/test_audit.py`               | 555   | Test file, above 400 threshold                             |
+| `tests/unit/test_audit.py`               | 927   | Test file, above 400 threshold; grew in 53e-2              |
 | `tests/unit/test_ecs.py`                 | 510   | Test file, above 400 threshold                             |
 | `tests/unit/test_core.py`                | 482   | Test file, above 400 threshold                             |
 | `tests/unit/test_deploy.py`              | 470   | Test file, above 400 threshold                             |
@@ -40,7 +41,7 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `tests/unit/test_emergency_cli.py`       | 553   | Test file, above 400 threshold                             |
 | `tests/unit/test_extensions.py`          | 428   | Test file, above 400 threshold; new in 53e-1               |
 
-Re-measured at the Phase 53e-1 commit. Five files were already over threshold
+Re-measured at the Phase 53e-2 commit. Five files were already over threshold
 and missing from this table before the 53d-1 re-measurement
 (`emergency/ecs.py`, `emergency/rds.py`, `init/environment.py`,
 `init/template.py`, `test_lambda_db_common.py`); they are listed now.
@@ -60,6 +61,16 @@ than the `pytest.raises`-only tests they joined. Same call as
 `src/deployer/deploy/extensions.py` grew 131 → 184 across the same subphase
 (the `print_with_advice` call framing plus three helper signatures and their
 docstrings) and stays well under threshold.
+
+`tests/unit/test_audit.py` is now the second-largest test file (555 → 927 in
+53e-2), because `run_audit`'s entire verbose output had to be pinned before it
+could be decomposed. It covers two subjects — `deployer.config` parsing and
+`deployer.core.audit` — so unlike `test_init_cli.py` it **is** a split
+candidate, along `test_audit_config.py` / `test_audit.py` lines. Not done here:
+53e-2's rule was that its own tests pass unchanged, and moving them is a
+separate operator call. `src/deployer/core/audit.py` crossed the 300-line
+threshold in the same subphase (293 → 315) — five helper signatures and their
+docstrings against 81 lines removed from `run_audit`'s body.
 
 ### Terraform (threshold: 200 lines)
 
@@ -87,12 +98,13 @@ docstrings) and stays well under threshold.
 
 ## Pysmelly Status
 
-57 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
+56 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
 review; 97 before Phase 53a, 91 before 53b, 82 before 53c, 74 before 53d-1,
-71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1). Suppressions, measured at
-the 53e-1 commit across tracked files: **22 `# pysmelly: ignore` lines and 8
-`# noqa: C901`**. 53d-1 removed four `# noqa: C901`, 53d-2a a fifth
-(`cmd_rollback`) and 53d-2b two more (`cmd_bootstrap`, `cmd_environment`);
+71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1, 57 before 53e-2).
+Suppressions, measured at the 53e-2 commit across tracked files:
+**22 `# pysmelly: ignore` lines and 7 `# noqa: C901`**. 53d-1 removed four
+`# noqa: C901`, 53d-2a a fifth (`cmd_rollback`), 53d-2b two more
+(`cmd_bootstrap`, `cmd_environment`) and 53e-2 an eighth (`run_audit`);
 53e-1 removed none, because the 114-line function it decomposed never carried
 one. None added any, and none touched a `# pysmelly: ignore`. (This paragraph
 previously claimed "18 suppression lines", which matched neither count at the
@@ -113,8 +125,9 @@ operator-gated session, duplicate-block extraction before long-function
 decomposition. 53a (db-\* Lambda twins), 53b (CLI boilerplate), 53c
 (`src/deployer` dedup), 53d-1 (the `bin/` deploy.toml-resolution family) and
 53d-2a (`emergency.py` + `ops.py`), 53d-2b (`init.py` + the print-run
-re-measure) and 53e-1 (`extensions.py` + `setup_profiles.py`) are done;
-per-finding dispositions are in `docs/internal/PYSMELLY.md`.
+re-measure), 53e-1 (`extensions.py` + `setup_profiles.py`) and 53e-2
+(`core/audit.py`) are done; per-finding dispositions are in
+`docs/internal/PYSMELLY.md`.
 
 53d was split twice — first when re-measuring at HEAD showed the plan entry
 undercounted it (7 `bin/` long-function findings, not 6), and again when 53d-2
@@ -132,14 +145,14 @@ files before it reaches the untested heart:
 | Slice | Scope                                                      | Status |
 | ----- | ---------------------------------------------------------- | ------ |
 | 53e-1 | `extensions.py` + `setup_profiles.py`                      | done   |
-| 53e-2 | `core/audit.py` — `run_audit`                              | next   |
-| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | open   |
+| 53e-2 | `core/audit.py` — `run_audit`                              | done   |
+| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | next   |
 | 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | open   |
 | 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | open   |
 
 `deploy/service.py` (1003 lines, 11% coverage, four `long-function` targets) is
 the only file left on the convergence-hotspot list, and 53e-5 is deliberately
-last. **53e-2** (`core/audit.py`) is the next open subphase.
+last. **53e-3** (`deploy/deployer.py`) is the next open subphase.
 
 ### Code improvements made (Phases 42 + 42-2)
 
