@@ -23,3 +23,20 @@ def format_iso(value: object) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def format_timestamp(value: str, fmt: str = "%Y-%m-%d %H:%M UTC") -> str:
+    """Parse an ISO timestamp and reformat it, returning the original on failure.
+
+    Args:
+        value: ISO 8601 timestamp string (a trailing "Z" is accepted).
+        fmt: strftime format for the result.
+
+    Returns:
+        The reformatted timestamp, or ``value`` unchanged if it cannot be parsed.
+    """
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.strftime(fmt)
+    except (ValueError, AttributeError):
+        return value

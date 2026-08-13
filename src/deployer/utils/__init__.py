@@ -6,13 +6,21 @@ from .aws_profile import (
 )
 from .cli import (
     EnvironmentConfigError,
+    EnvironmentInfrastructure,
+    configure_aws_for_operation,
+    configure_profile_or_exit,
     confirm_action,
+    exit_on,
+    iter_deployed_environments,
+    load_environment_infrastructure,
+    prompt_or_cancel,
     require_environment,
     require_validated_environment,
+    validate_and_configure,
 )
 from .colors import Colors
 from .constants import AWS_REGION
-from .datetime import format_iso
+from .datetime import format_iso, format_timestamp
 from .environment import (
     ensure_environments_symlinks,
     get_all_environments,
@@ -49,11 +57,16 @@ __all__ = [
     "AWS_REGION",
     "Colors",
     "EnvironmentConfigError",
+    "EnvironmentInfrastructure",
+    "configure_aws_for_operation",
     "configure_aws_profile",
     "format_iso",
+    "format_timestamp",
     "configure_aws_profile_for_environment",
+    "configure_profile_or_exit",
     "confirm_action",
     "ensure_environments_symlinks",
+    "exit_on",
     "get_all_environments",
     "get_all_links",
     "get_deployer_root",
@@ -62,6 +75,8 @@ __all__ = [
     "get_linked_deploy_toml",
     "get_links_file",
     "is_verbose",
+    "iter_deployed_environments",
+    "load_environment_infrastructure",
     "log",
     "log_debug",
     "log_error",
@@ -73,11 +88,13 @@ __all__ = [
     "log_success",
     "log_warning",
     "log_warning_stderr",
+    "prompt_or_cancel",
     "require_environment",
     "require_validated_environment",
     "run_command",
     "set_linked_deploy_toml",
     "set_verbose",
     "unlink_deploy_toml",
+    "validate_and_configure",
     "validate_environment_deployed",
 ]

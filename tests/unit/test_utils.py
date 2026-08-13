@@ -2,6 +2,7 @@
 
 from deployer.utils import (
     Colors,
+    format_timestamp,
     log,
     log_error,
     log_info,
@@ -123,3 +124,27 @@ class TestRunCommand:
         success, output = run_command(["ls", "/nonexistent_dir_xyz"])
         assert success is False
         assert output  # Should have error message
+
+
+class TestFormatTimestamp:
+    """Tests for format_timestamp()."""
+
+    def test_formats_iso_with_offset(self):
+        """Test that an offset-aware ISO timestamp is reformatted."""
+        assert format_timestamp("2026-08-13T14:05:00+00:00") == "2026-08-13 14:05 UTC"
+
+    def test_accepts_trailing_z(self):
+        """Test that a trailing Z is accepted (datetime.fromisoformat pre-3.11 style)."""
+        assert format_timestamp("2026-08-13T14:05:00Z") == "2026-08-13 14:05 UTC"
+
+    def test_custom_format(self):
+        """Test that the strftime format is configurable."""
+        assert format_timestamp("2026-08-13T14:05:00Z", "%Y-%m-%d") == "2026-08-13"
+
+    def test_unparseable_string_passes_through(self):
+        """Test that a non-ISO string is returned unchanged."""
+        assert format_timestamp("unknown") == "unknown"
+
+    def test_non_string_passes_through(self):
+        """Test that a non-string value is returned unchanged (AttributeError path)."""
+        assert format_timestamp(None) is None
