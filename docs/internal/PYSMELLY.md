@@ -30,7 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **53** (measured at the Phase 53e-3 commit `57bc874`; was 56 at
+Standing total: **52** (measured at the Phase 53e-4 commit `9c95d79`; was 53 at
+`d75d24e` and `57bc874`, 56 at
 `a304fa1`, 57 at `9903e2b`, 60 at `805d516`,
 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
 `a8800cd`, 97 at `8e57264`).
@@ -995,21 +996,199 @@ dataclass conversion cannot be done by field access alone.**
 53e-3a's tests pin all three as **current behaviour, not as endorsements**; each
 is a real defect left for a subphase that owns the contract.
 
-| Bug                                                                                                                                                                                                                                                                                                                                                                                                                    | Status                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it.                     | Pinned by `test_a_non_string_value_under_a_non_masked_name_raises`.                                                                              |
-| **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                                            | Pinned, not endorsed. Fixing it is a display-contract decision, not a refactor.                                                                   |
-| **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                                          | Same family already recorded under **53i** for `extensions.py` and `bin/init.py`; this is the third instance and the one with real blast radius. |
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                | Status                                                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it. | Pinned by `test_a_non_string_value_under_a_non_masked_name_raises`.                                                                              |
+| **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                          | Pinned, not endorsed. Fixing it is a display-contract decision, not a refactor.                                                                  |
+| **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                       | Same family already recorded under **53i** for `extensions.py` and `bin/init.py`; this is the third instance and the one with real blast radius. |
 
 #### Side effects and mints
 
-| Finding                                                                    | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dict-as-dataclass` — `deployer.py:38` `_build_infra_config`, 18 keys      | **Minted, left unsuppressed, routed to 53f.** A pre-existing 18-key literal made visible by moving to `return` position; see above for the mechanism and for the three rejected dodges.                                                                                                                                                                                                                                        |
-| `law-of-demeter` — `deployer.py:217` (was `:202`)                          | **Left unsuppressed, recommended leave-standing.** `except self.rds.exceptions.DBInstanceNotFoundFault:` reaches through a **boto3 client's runtime-only `.exceptions` namespace** — a botocore idiom, not a design chain; the intermediate object has no meaningful thing to be asked. Drafted fix: cache the exception class as an attribute in `__init__`. That trades a real finding for an odd attribute. Not fixed, not suppressed, no ignore comment. |
+| Finding                                                               | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dict-as-dataclass` — `deployer.py:38` `_build_infra_config`, 18 keys | **Minted, left unsuppressed, routed to 53f.** A pre-existing 18-key literal made visible by moving to `return` position; see above for the mechanism and for the three rejected dodges.                                                                                                                                                                                                                                                                      |
+| `law-of-demeter` — `deployer.py:217` (was `:202`)                     | **Left unsuppressed, recommended leave-standing.** `except self.rds.exceptions.DBInstanceNotFoundFault:` reaches through a **boto3 client's runtime-only `.exceptions` namespace** — a botocore idiom, not a design chain; the intermediate object has no meaningful thing to be asked. Drafted fix: cache the exception class as an attribute in `__init__`. That trades a real finding for an odd attribute. Not fixed, not suppressed, no ignore comment. |
 
 One `feature-envy` was minted mid-draft in 53e-3b and **fixed rather than
 recorded** (see above), so it never reached a commit.
+
+### 53e-4 — `deploy/images.py` (2026-08-13)
+
+**1 target** at `d75d24e` (repo total 53), the scope 53e-1's split table
+reserved: `images.py:214 build_and_push_images` (166L, `long-function`, carrying
+`# noqa: C901`), alongside the file's `temp-accumulators` finding. **The target
+cleared; the accumulator relocated and did not clear**, which is what the plan
+predicted. The repo total went **53 → 52**. One `foo-equals-foo` was minted
+mid-draft and **fixed, not suppressed**, so it never reached a commit; nothing
+else moved.
+
+Two commits: `1c55ce9` characterization tests (0 findings cleared), `9c95d79`
+the decomposition (53 → 52).
+
+#### 53e-4a — characterization tests first (`1c55ce9`)
+
+`tests/unit/test_deploy_images.py`, **112 tests**, 963 → 1075 repo-wide.
+`src/deployer/deploy/images.py` **16% → 100%** — 198 statements, 80 branches, 0
+partials. Total 56.70% → **59.42%**; floor **56 → 59**. pysmelly unchanged at
+53, every category identical. No production line moved.
+
+Fifth subphase running the pin-first discipline (53d-2a, 53d-2b, 53e-1, 53e-3,
+now this).
+
+**The test-design decision that carried the slice: stubbing is at
+`subprocess.run` / `subprocess.Popen` / the real filesystem — no `deployer`
+binding is patched anywhere.** That is why all 112 pins survived 53e-4b's code
+motion without an edit: six functions were extracted out from under them and the
+seams the tests hold are all outside this module. It is 53d-2a's
+`builtins.input` lesson applied one layer down.
+
+Five pins exist specifically to make the decomposition verifiable, and each one
+guards a property a naïve extraction would have silently changed:
+
+| Class                           | Pins                                                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `TestTagFailureModeDiverges`    | `docker tag` raises `CalledProcessError` printing nothing; build/push raise `RuntimeError` after echoing  |
+| `TestBuildArgsDispatchDiverges` | both arms of the `DeployConfig`-vs-dict dispatch, including the divergence itself                         |
+| `TestCacheHit`                  | the loop's only early exit, across all four states of the `ecr_client` / `dry_run` / `force_build` gate   |
+| `TestHashModifiers`             | `args:` before `target:`, against a digest of the literal string — swapping them rewrites every cache tag |
+| `TestTimerArmsAgree`            | timed and untimed runs produce byte-identical output and call lists, mirroring 53e-3a's timer pin         |
+
+#### 53e-4b — the target that was **not** duplication (`9c95d79`)
+
+**166L → 79L**; `long-function` 5 → 4, nothing else moved.
+
+Five slices running, every `long-function` target in this arc turned out to be
+repetition pysmelly could not see — 53d-1's three-way `deploy.toml` resolution,
+53d-2a's six no-op guards, 53e-2's triplicated audit block, 53e-3b's nine timer
+conditionals. **This is the sixth and it breaks the pattern.**
+`build_and_push_images` is one linear pipeline of six sequential phases inside a
+single loop: normalize → resolve → cache-check → build → tag/push → record.
+Measured, not assumed: the available duplication was ~31 lines against a 67-line
+requirement. Collapsing every repeated line in the function would not have
+cleared the finding. Only decomposition could.
+
+**Measure the span, not the body.** pysmelly's `check_long_function`
+(`checks/structure.py:962`, `min_lines = 100`) counts `end_lineno - lineno + 1`.
+The 24-line docstring and the 11-line signature are inside the 166 and are not
+available to shrink — 35 of the lines were untouchable before a single statement
+moved.
+
+##### The staged measurement, which is the point
+
+| Stage    | Lines   | Flagged? |
+| -------- | ------- | -------- |
+| baseline | 166     | yes      |
+| E1       | 159     | yes      |
+| E2       | 144     | yes      |
+| E3       | 130     | yes      |
+| **E4**   | **107** | **yes**  |
+| E5 + E6  | 79      | no       |
+
+A three-extraction plan stops at **107** — above the bar, with the work
+apparently finished and the function reading much better. **53e-1 made exactly
+that mistake in the other direction** (114L → 118L, an adoption that grew the
+function). Both are the same lesson: the number is not a corollary of the
+refactor, and it has to be re-measured at every stage rather than at the end.
+
+##### The six extractions
+
+`_normalize_images`, `_resolve_image_spec` (returning an `ImageBuildSpec`
+**`NamedTuple`**), `_cache_tag`, `_docker_build_cmd`, `_tag_and_push`,
+`_run_docker` — plus `_merge_build_args`, which exists to fix the one mint
+(below) rather than to shorten anything.
+
+**Complexity 17 → 7** against `max-complexity = 15`, so the
+`# noqa: C901` came off and ruff is clean without it. Worth recording that the
+suppression was **independently load-bearing**: getting under 100 lines was
+necessary but not sufficient, and a decomposition that cleared the pysmelly
+finding while leaving the function at complexity 16 would have had to keep it.
+
+##### One mint, fixed rather than suppressed
+
+The first draft's `ImageBuildSpec(context=context, dockerfile=dockerfile, …)`
+minted `foo-equals-foo`. The locals existed only to hold left-to-right
+evaluation order — they were not names for anything. Extracting
+`_merge_build_args` freed the constructor to take inline expressions **in the
+original order**, so the finding never exists. The only statement hoisted is a
+side-effect-free `image_config.get("target")`.
+
+##### Every designed-around mint held
+
+The discipline 53e-3c introduced — read pysmelly's source *before* choosing the
+extraction shape, rather than re-running and reacting — is now **2 for 2**:
+
+| Would have minted                        | Avoided by                                                                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `dict-as-dataclass` (guaranteed, 5 keys) | a `NamedTuple` — `callers.py:1246` only walks `ast.Return` whose value is an `ast.Dict` with 4+ string keys                               |
+| `pass-through-params` ×up to 3           | merging print + timed-run + result-check into one `_run_docker` — `callers.py:682` skips functions with more than 2 meaningful statements |
+| `param-clumps`                           | passing the spec object rather than its fields                                                                                            |
+| `single-call-site` ×7                    | all seven helpers clear `callers.py:231`, which skips a function with more than 4 top-level statements **or** a span over 10 lines        |
+
+##### The accumulator relocated and did not clear
+
+`temp-accumulators` moved `:295 → :301`, into `_cache_tag`. **Predicted, and the
+predicted outcome**: the two independent conditions building `hash_modifiers`
+travel together, so extracting them into a helper changes the finding's address
+and nothing else. `images.py` now carries exactly that one finding.
+
+##### Two divergences preserved deliberately
+
+Both are 53e-4a pins, and both are now stated in the helper docstrings so the
+next reader does not "tidy" them:
+
+- **`_tag_and_push` keeps `subprocess.run(tag_cmd, check=True)` outside
+  `_run_docker`.** A tag failure raises `CalledProcessError` and prints nothing;
+  build and push raise `RuntimeError` after echoing both streams. Routing all
+  three through one helper would have changed three properties at once,
+  invisibly.
+- **The `build_args` dispatch divergence is carried verbatim into
+  `_merge_build_args`** — no `isinstance` guard, so `.update(5)` raises
+  `TypeError` and `.update("abc")` raises `ValueError`, while the `ImageConfig`
+  arm guards and passes scalars straight through. See the latent-bug table
+  below: this is a real defect, and preserving it is what keeps the commit a
+  refactor.
+
+112/112 pins pass with `git diff tests/` **empty**. Coverage 59.42% →
+**59.45%**, `images.py` 100%.
+
+#### Independent validation: ACCEPT, zero defects
+
+Over both commits. The validator reproduced every numeric claim, re-measured
+complexity itself rather than taking the commit message's word, and ran a
+line-level `comm` diff of the full finding list: **2 vanished, 1 appeared** —
+the `long-function` clear and the accumulator relocation — with **zero
+unreported mints**.
+
+**Fragility note, from the validator and worth acting on before anyone edits
+this file.** `_normalize_images` (span 19, 4 statements) and `_merge_build_args`
+(span 21, 4 statements) clear `single-call-site` **only** on the >10-line span
+filter, and both spans are **docstring-dominated**. Trimming either docstring
+would mint the finding. The docstrings are load-bearing in a way that is
+invisible from the code.
+
+#### Latent bugs pinned, not fixed
+
+Continuing the section 53e-3 opened. 53e-4a's tests pin all eight as **current
+behaviour, not as endorsements**; each is a real defect left for a subphase that
+owns the contract. Ordered by importance.
+
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`build_args.<env>` dispatch divergence — a production crash on a typo.** The dict arm's `.update(<non-dict>)` raises `TypeError` for an int and `ValueError: dictionary update sequence…` for a string; the `ImageConfig` arm does not raise and passes the scalar through as a literal `--build-arg staging=5`. **Production always takes the dict arm** (`deployer.py:112` passes `get_raw_dict()`), so a typo'd `build_args.staging = "x"` crashes the deploy with an opaque message naming **neither the image nor the key**. | Pinned by `TestBuildArgsDispatchDiverges`. The highest-severity item in this table; belongs with whichever subphase owns the config-error contract. |
+| **A non-existent `context` directory is not an error.** `rglob` yields nothing, so the image gets the digest of nothing (`e3b0c44298fc`) and `docker build` then runs against a path that does not exist.                                                                                                                                                                                                                                                                                                                           | Pinned. Two failures for the price of one typo — a wrong cache tag *and* a misleading docker error.                                                 |
+| **`ecr_login` discards both streams** (`DEVNULL`), so a `docker login` failure surfaces as a bare `RuntimeError("ECR login failed")` with no diagnostics.                                                                                                                                                                                                                                                                                                                                                                           | Pinned. Same family as the `except Exception` items already recorded under **53i**.                                                                 |
+| **The Dockerfile is hashed twice** — once under the `Dockerfile:` prefix, then again as an ordinary context file.                                                                                                                                                                                                                                                                                                                                                                                                                   | Pinned. Harmless today (the tag is still stable and still changes when it should), but it makes the hash inputs read wrong.                         |
+| **`.dockerignore` edits always bust the cache**, even comment-only ones, because the file is hashed as context.                                                                                                                                                                                                                                                                                                                                                                                                                     | Pinned. A rebuild of every image for a comment.                                                                                                     |
+| **`should_ignore`'s final `fnmatch` is dead** for real files — it can only fire when the path *is* the context root, which `rglob` never yields.                                                                                                                                                                                                                                                                                                                                                                                    | Pinned. Dead code that looks like a pattern-matching feature.                                                                                       |
+| **`parse_dockerignore` does not de-duplicate `.git`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Pinned. Cosmetic.                                                                                                                                   |
+| **`NullTimer` would raise `AttributeError` in `_run_timed_subprocess`** — it is truthy and has no `_current_step`.                                                                                                                                                                                                                                                                                                                                                                                                                  | Pinned. Confirms the 53e-3b null-object never reaches this module, and pins the trap for whoever tries to extend it here.                           |
+
+#### Side effects and mints
+
+Nothing cleared as a side effect and nothing was minted that survived to a
+commit. The one mid-draft mint (`foo-equals-foo` on the `ImageBuildSpec`
+constructor) was fixed rather than recorded — see above — as were the four
+categories designed around before the extraction shape was chosen.
 
 ### Standing inline suppressions
 
@@ -1043,21 +1222,24 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-**Live per-category counts, re-measured 2026-08-13 at `57bc874` (53 total).**
+**Live per-category counts, re-measured 2026-08-13 at `9c95d79` (52 total).**
 This table is the authoritative one; scope each subphase from it, not from the
 prose below. Measured with `pysmelly . --more-please` — **the plain
 `make pysmelly` view truncates to the top ten categories and under-reports
 `inconsistent-error-handling` as 3.**
 
 `pass-through-params` 14, `param-clumps` 7, `dict-as-dataclass` 6,
-`long-function` 5, `inconsistent-error-handling` 4, `foo-equals-foo` 3,
+`long-function` 4, `inconsistent-error-handling` 4, `foo-equals-foo` 3,
 `single-call-site` 3, `arrow-code` 3, `law-of-demeter` 2, `feature-envy` 2,
 `return-none-instead-of-raise` 1, `duplicate-blocks` 1,
-`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 53.)
+`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 52.)
 
-12 of the 53 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53e-4 moved exactly one number: `long-function` 5 → 4. Every other category is
+unchanged from the `57bc874` measurement.
+
+12 of the 52 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
 53d-2a 1, 53d-2b 2, 53e-3 1 — itemized total is self-consistent). The remainder
-is queued behind claude-meta `docs/PLAN.md` Phase 53e-4–53i, plus the one
+is queued behind claude-meta `docs/PLAN.md` Phase 53e-5–53i, plus the one
 `dict-as-dataclass` 53e-3c minted and routed to 53f.
 
 **Correction 2026-08-13 (unattended run W0): the earlier per-category split of
@@ -1078,14 +1260,18 @@ would need. Reconciling that is an adjudication question, so it is left for an
 operator-in-the-loop session. **Each subphase re-measures at HEAD anyway**,
 which is what the live table above is for.
 
-They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
-remaining `long-function` is in `src/deployer/deploy/`, **four of the five** in
-`deploy/service.py` — which 53e-5 owns and which is the only file left on the
-convergence-hotspot list; the fifth is `deploy/images.py:214`, which 53e-4 owns.
-`bin/emergency.py` has one finding left (the adjudicated `param-clump`) and
-`bin/init.py` two (both `foo-equals-foo`, routed to 53i).
-`deploy/deployer.py` is down to two findings, both adjudicated by 53e-3 (the
-standing `law-of-demeter` and the `dict-as-dataclass` routed to 53f).
+They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. **All
+four remaining `long-function` findings are now in `deploy/service.py`** —
+`create_service():235` (107L), `deploy_services():344` (110L),
+`start_migrations():456` (100L), `_wait_for_service_stable():810` (118L) — which
+53e-5 owns and which is the only file left on the convergence-hotspot list
+(flagged by three checks: `arrow-code`, `long-function`, `param-clumps`). No
+other file in the repo carries a `long-function` finding.
+`deploy/images.py` is down to one finding, the `temp-accumulators` 53e-4b
+relocated into `_cache_tag`. `bin/emergency.py` has one finding left (the
+adjudicated `param-clump`) and `bin/init.py` two (both `foo-equals-foo`, routed
+to 53i). `deploy/deployer.py` is down to two findings, both adjudicated by 53e-3
+(the standing `law-of-demeter` and the `dict-as-dataclass` routed to 53f).
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
 to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
