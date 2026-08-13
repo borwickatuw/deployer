@@ -17,6 +17,7 @@ from .cli import (
     require_environment,
     require_validated_environment,
     resolve_deploy_toml_or_exit,
+    select_index,
     validate_and_configure,
 )
 from .colors import Colors
@@ -98,6 +99,7 @@ __all__ = [
     "require_validated_environment",
     "resolve_deploy_toml_or_exit",
     "run_command",
+    "select_index",
     "set_linked_deploy_toml",
     "set_verbose",
     "unlink_deploy_toml",

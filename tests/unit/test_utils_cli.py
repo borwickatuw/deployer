@@ -17,6 +17,7 @@ from deployer.utils.cli import (
     require_environment,
     require_validated_environment,
     resolve_deploy_toml_or_exit,
+    select_index,
     validate_and_configure,
 )
 
@@ -76,6 +77,67 @@ class TestConfirmAction:
         _answer(monkeypatch, EOFError)
         with pytest.raises(SystemExit) as exc_info:
             confirm_action()
+        assert exc_info.value.code == 1
+        assert "Cancelled" in capsys.readouterr().out
+
+
+class TestSelectIndex:
+    """Tests for select_index()."""
+
+    LABELS = ["web", "worker", "beat"]
+
+    def _select(self, monkeypatch, answer, **kwargs):
+        _answer(monkeypatch, answer)
+        return select_index("Available services:", self.LABELS, "Select: ", **kwargs)
+
+    def test_lists_every_label_under_the_header(self, monkeypatch, capsys):
+        self._select(monkeypatch, "1")
+        out = capsys.readouterr().out
+        assert "Available services:" in out
+        assert "  1. web" in out
+        assert "  2. worker" in out
+        assert "  3. beat" in out
+
+    def test_returns_the_zero_based_index(self, monkeypatch):
+        assert self._select(monkeypatch, "2") == 1
+
+    def test_start_zero_numbers_the_list_from_zero(self, monkeypatch, capsys):
+        assert self._select(monkeypatch, "0", start=0) == 0
+        assert "  0. web" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("answer", ["0", "4", "99"])
+    def test_out_of_range_returns_none(self, monkeypatch, capsys, answer):
+        assert self._select(monkeypatch, answer) is None
+        assert "Invalid selection" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("answer", ["web", "-1", "1.5", "two"])
+    def test_a_non_numeric_choice_returns_none(self, monkeypatch, capsys, answer):
+        assert self._select(monkeypatch, answer) is None
+        assert "Invalid selection" in capsys.readouterr().out
+
+    def test_empty_input_without_a_default_is_invalid(self, monkeypatch, capsys):
+        assert self._select(monkeypatch, "") is None
+        assert "Invalid selection" in capsys.readouterr().out
+
+    def test_empty_input_takes_the_default(self, monkeypatch):
+        assert self._select(monkeypatch, "", default=1) == 1
+
+    def test_an_explicit_choice_beats_the_default(self, monkeypatch):
+        assert self._select(monkeypatch, "3", default=1) == 2
+
+    def test_the_invalid_message_is_the_callers(self, monkeypatch, capsys):
+        assert self._select(monkeypatch, "9", invalid_message="Pick a service") is None
+        assert "Pick a service" in capsys.readouterr().out
+
+    def test_an_empty_menu_rejects_every_choice(self, monkeypatch, capsys):
+        _answer(monkeypatch, "1")
+        assert select_index("Nothing:", [], "Select: ") is None
+        assert "Invalid selection" in capsys.readouterr().out
+
+    def test_cancelling_the_prompt_exits_1(self, monkeypatch, capsys):
+        _answer(monkeypatch, EOFError)
+        with pytest.raises(SystemExit) as exc_info:
+            select_index("Available services:", self.LABELS, "Select: ")
         assert exc_info.value.code == 1
         assert "Cancelled" in capsys.readouterr().out
 

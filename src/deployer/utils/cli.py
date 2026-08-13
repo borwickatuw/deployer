@@ -1,12 +1,13 @@
 """Shared CLI utilities for bin/ scripts."""
 
 import sys
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from .aws_profile import configure_aws_profile, configure_aws_profile_for_environment
+from .colors import Colors
 from .environment import get_environment_path, validate_environment_deployed
 from .links import get_linked_deploy_toml
 from .logging import log, log_error, log_error_stderr
@@ -64,6 +65,62 @@ def confirm_action(skip: bool = False) -> bool:
         return False
 
     return True
+
+
+def select_index(
+    header: str,
+    labels: Sequence[str],
+    prompt: str,
+    *,
+    start: int = 1,
+    default: int | None = None,
+    invalid_message: str = "Invalid selection",
+) -> int | None:
+    """Print a numbered menu and read a choice, returning its 0-based index.
+
+    Callers render their own labels, so the menu itself only owns the
+    numbering, the prompt and the bounds check. Domain rules about which
+    entries are selectable stay with the caller: reject the index it does not
+    want, rather than teaching the menu about it.
+
+    Args:
+        header: Heading printed above the list, in blue.
+        labels: Already-rendered text for each entry.
+        prompt: Text passed to prompt_or_exit().
+        start: Number shown against the first entry — 1 for a plain menu,
+            0 where the displayed number is meaningful in its own right.
+        default: 0-based index chosen when the input is empty. None makes
+            empty input an invalid selection.
+        invalid_message: Error printed for a non-numeric, empty-with-no-default
+            or out-of-range choice.
+
+    Returns:
+        The 0-based index of the chosen entry, or None if the choice was
+        invalid (the message has already been printed).
+
+    Raises:
+        SystemExit: With code 1 if the user cancels the prompt.
+    """
+    print()
+    print(f"{Colors.BLUE}{header}{Colors.NC}")
+    for offset, label in enumerate(labels):
+        print(f"  {offset + start}. {label}")
+    print()
+
+    choice = prompt_or_exit(prompt)
+
+    if not choice:
+        index = default
+    elif choice.isdigit():
+        index = int(choice) - start
+    else:
+        index = None
+
+    if index is None or not 0 <= index < len(labels):
+        log_error(invalid_message)
+        return None
+
+    return index
 
 
 @contextmanager
