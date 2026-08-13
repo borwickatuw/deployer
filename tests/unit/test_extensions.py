@@ -1,4 +1,22 @@
-"""Tests for the database extensions module."""
+"""Tests for the database extensions module.
+
+Every error branch of create_database_extensions() ends in a
+"log_error, print remediation advice, raise RuntimeError" block, and the advice
+text is the whole point of those blocks. The TestAdviceBlocks tests below pin
+that text and its order so that adopting print_with_advice() and decomposing
+the function can be shown to preserve it.
+
+Blank-line placement is deliberately not pinned: _lines() drops blank lines the
+way tests/unit/test_init_cli.py's helper of the same name does, because
+print_with_advice() emits a leading blank line that today's code does not.
+
+"pinned, not endorsed": the invoke path catches bare `Exception` and reports
+every non-ClientError failure as "Unexpected error invoking Lambda", so a bug
+raised inside boto3 is presented to the operator as a credentials or network
+problem. Whether it should catch at all is an error-contract question tracked
+as claude-meta Phase 53i; test_unexpected_error_advice() pins today's
+behaviour so 53i's change is visible when it happens.
+"""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -7,6 +25,32 @@ import pytest
 from botocore.exceptions import ClientError
 
 from deployer.deploy.extensions import create_database_extensions
+from deployer.utils import Colors
+
+EXTENSIONS_LAMBDA = "myapp-staging-create-db-users"
+
+
+def _lines(capsys):
+    """Return stdout's non-blank lines.
+
+    Blank lines are dropped on purpose — see the module docstring.
+    """
+    return [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+def _error(message: str) -> str:
+    """Return the line log_error() prints for `message`."""
+    return f"  {Colors.RED}✗{Colors.NC} {message}"
+
+
+def _info(message: str) -> str:
+    """Return the line log() prints for `message`."""
+    return f"{Colors.BLUE}{message}{Colors.NC}"
+
+
+def _success(message: str) -> str:
+    """Return the line log_success() prints for `message`."""
+    return f"  {message} {Colors.GREEN}[done]{Colors.NC}"
 
 
 class TestCreateDatabaseExtensions:
@@ -152,3 +196,167 @@ class TestCreateDatabaseExtensions:
 
         with pytest.raises(RuntimeError, match="Lambda invocation failed"):
             create_database_extensions(config, env_config, "us-west-2")
+
+
+class TestAdviceBlocks:
+    """Pin the operator-facing advice printed by every failure path."""
+
+    def test_missing_lambda_advice(self, capsys):
+        """Missing extensions_lambda prints the deploy.toml/config.toml fix."""
+        config = {"database": {"extensions": ["unaccent", "pg_bigm"]}}
+        env_config = {"database": {"host": "db.example.com"}}
+
+        with pytest.raises(RuntimeError, match="Missing extensions_lambda"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys) == [
+            _info("Creating database extensions: unaccent, pg_bigm"),
+            _error(
+                "deploy.toml declares database extensions, but config.toml is missing "
+                "[database] extensions_lambda."
+            ),
+            "  Your deploy.toml declares:",
+            "    [database]",
+            '    extensions = ["unaccent", "pg_bigm"]',
+            "  But your environment's config.toml needs:",
+            "    [database]",
+            '    extensions_lambda = "${tofu:db_users_lambda_function_name}"',
+            "  Steps to fix:",
+            "    1. Add the extensions_lambda line to your config.toml",
+            "    2. Add the db_users_lambda_function_name output to your main.tf",
+            "    3. Run 'tofu apply' to create the output",
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_resource_not_found_advice(self, mock_boto3, capsys):
+        """A missing Lambda points the operator at tofu apply."""
+        mock_boto3.client.return_value.invoke.side_effect = ClientError(
+            {"Error": {"Code": "ResourceNotFoundException", "Message": "Function not found"}},
+            "Invoke",
+        )
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="not found"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[1:] == [
+            _error(f"Lambda function '{EXTENSIONS_LAMBDA}' not found."),
+            "  The extensions_lambda in your config.toml points to a Lambda",
+            "  function that doesn't exist. This usually means:",
+            "    - The tofu output has not been applied yet",
+            "    - The Lambda function was deleted",
+            "  Run 'tofu apply' in your environment directory, then retry.",
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_access_denied_advice(self, mock_boto3, capsys):
+        """A permissions failure points the operator at the bootstrap IAM apply."""
+        mock_boto3.client.return_value.invoke.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Not authorized"}},
+            "Invoke",
+        )
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="Access denied"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[1:] == [
+            _error(f"Permission denied invoking Lambda '{EXTENSIONS_LAMBDA}'."),
+            "  The deploy role does not have lambda:InvokeFunction permission",
+            "  for this Lambda function. Apply the bootstrap IAM changes:",
+            "    cd deployer-environments/bootstrap-staging",
+            "    tofu apply",
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_generic_client_error_advice(self, mock_boto3, capsys):
+        """An unrecognised AWS error code is reported with no advice lines."""
+        mock_boto3.client.return_value.invoke.side_effect = ClientError(
+            {"Error": {"Code": "ServiceException", "Message": "Internal error"}},
+            "Invoke",
+        )
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="Lambda invocation failed"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[1:] == [
+            _error(
+                f"Failed to invoke Lambda '{EXTENSIONS_LAMBDA}': "
+                "ServiceException - Internal error"
+            ),
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_unexpected_error_advice(self, mock_boto3, capsys):
+        """A non-ClientError failure is reported as a credentials/network problem.
+
+        Pinned, not endorsed — see the module docstring on Phase 53i.
+        """
+        mock_boto3.client.return_value.invoke.side_effect = OSError("connection reset")
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="Failed to invoke extensions Lambda"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[1:] == [
+            _error(f"Unexpected error invoking Lambda '{EXTENSIONS_LAMBDA}': connection reset"),
+            "  Check your AWS credentials and network connectivity.",
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_function_error_advice(self, mock_boto3, capsys):
+        """A Lambda-level error prints its message and the CloudWatch tail command."""
+        mock_payload = MagicMock()
+        mock_payload.read.return_value = json.dumps(
+            {"errorType": "DatabaseError", "errorMessage": "could not connect"}
+        ).encode()
+        mock_boto3.client.return_value.invoke.return_value = {
+            "FunctionError": "Unhandled",
+            "Payload": mock_payload,
+        }
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="Extensions Lambda failed"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[1:] == [
+            _error(f"Lambda '{EXTENSIONS_LAMBDA}' returned an error: DatabaseError"),
+            "  could not connect",
+            "  The Lambda function ran but failed to create extensions.",
+            "  Check the Lambda's CloudWatch logs for details:",
+            f"    aws logs tail /aws/lambda/{EXTENSIONS_LAMBDA} --since 5m",
+        ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_success_logs_the_created_extensions(self, mock_boto3, capsys):
+        """A successful invocation reports what the Lambda says it created."""
+        mock_payload = MagicMock()
+        mock_payload.read.return_value = json.dumps(
+            {"status": "success", "extensions": ["unaccent", "pg_bigm"]}
+        ).encode()
+        mock_boto3.client.return_value.invoke.return_value = {"Payload": mock_payload}
+        config = {"database": {"extensions": ["unaccent", "pg_bigm"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        create_database_extensions(config, env_config, "us-west-2")
+
+        assert _lines(capsys)[-1] == _success("Extensions ready: unaccent, pg_bigm")
+
+    def test_dry_run_advice(self, capsys):
+        """Dry run names the Lambda it would have invoked."""
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with patch("deployer.deploy.extensions.boto3"):
+            create_database_extensions(config, env_config, "us-west-2", dry_run=True)
+
+        assert _lines(capsys)[-1] == (
+            f"  {Colors.YELLOW}⚠{Colors.NC} DRY RUN: Would invoke Lambda "
+            f"'{EXTENSIONS_LAMBDA}' to create extensions: ['unaccent']"
+        )
