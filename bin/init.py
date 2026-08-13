@@ -43,6 +43,7 @@ import stat
 import subprocess
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -73,6 +74,12 @@ from deployer.utils import (
 # =============================================================================
 # Helpers
 # =============================================================================
+
+_ENVIRONMENTS_DIR_UNSET = (
+    "Error: DEPLOYER_ENVIRONMENTS_DIR is not set.\n"
+    "Add it to your .env file, e.g.:\n"
+    "  DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments"
+)
 
 
 def _print_dry_run_preview(
@@ -149,22 +156,41 @@ def _run_tofu(subcommand: str, env_path: Path, admin_profile: str) -> bool:
 # =============================================================================
 
 
-def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap with multiple inputs
-    """Interactively set up bootstrap infrastructure for a new AWS account."""
-    print("Setting up deployer bootstrap for a new AWS account.\n")
+@dataclass(frozen=True)
+class _BootstrapInputs:
+    """The answers cmd_bootstrap() collects before it generates anything."""
 
-    # Collect inputs
+    account_id: str
+    region: str
+    env_label: str
+    project_prefixes: list[str]
+    trusted_user_arns: list[str]
+    include_cognito: bool
+    cognito_app_domains: dict[str, str] | None
+
+    @property
+    def env_name(self) -> str:
+        """Name of the bootstrap directory these inputs describe."""
+        return f"bootstrap-{self.env_label}"
+
+
+def _prompt_bootstrap_inputs() -> _BootstrapInputs | None:
+    """Collect every bootstrap answer interactively.
+
+    Returns:
+        The collected inputs, or None if an answer was rejected (the reason
+        is printed).
+    """
     account_id, region = prompt_account_id_and_region()
     env_label = click.prompt(
         "Environment label (e.g., staging, production)", default="staging", type=str
     ).strip()
-    env_name = f"bootstrap-{env_label}"
 
     prefixes_str = click.prompt("Project prefixes (comma-separated)", type=str).strip()
     project_prefixes = [p.strip() for p in prefixes_str.split(",") if p.strip()]
     if not project_prefixes:
         print("Error: At least one project prefix is required.", file=sys.stderr)
-        return 1
+        return None
 
     default_arn = f"arn:aws:iam::{account_id}:user/deployer"
     arns_str = click.prompt(
@@ -172,7 +198,6 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     ).strip()
     trusted_user_arns = [a.strip() for a in arns_str.split(",") if a.strip()]
 
-    # Optionally configure Cognito
     include_cognito = click.confirm("Include shared Cognito user pool?", default=False)
     cognito_app_domains = None
     if include_cognito:
@@ -182,75 +207,73 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
         ).strip()
         cognito_app_domains = {}
         for pair in domains_str.split(","):
-            pair = pair.strip()  # noqa: PLW2901
-            if "=" not in pair:
+            stripped = pair.strip()
+            if "=" not in stripped:
                 print(
-                    f"Error: Invalid app domain format '{pair}'. Expected appname=domain.",
+                    f"Error: Invalid app domain format '{stripped}'. Expected appname=domain.",
                     file=sys.stderr,
                 )
-                return 1
-            app, domain = pair.split("=", 1)
+                return None
+            app, domain = stripped.split("=", 1)
             cognito_app_domains[app.strip()] = domain.strip()
 
-    # Check for existing directory
+    return _BootstrapInputs(
+        account_id=account_id,
+        region=region,
+        env_label=env_label,
+        project_prefixes=project_prefixes,
+        trusted_user_arns=trusted_user_arns,
+        include_cognito=include_cognito,
+        cognito_app_domains=cognito_app_domains,
+    )
+
+
+def _resolve_bootstrap_path(env_name: str, dry_run: bool) -> Path | None:
+    """Work out where the bootstrap directory goes and check it is free.
+
+    Returns:
+        The directory to create, or None if the environments directory is
+        unconfigured or the target already exists (the reason is printed).
+    """
     try:
         env_dir = get_environments_dir()
     except RuntimeError:
-        print(
-            "Error: DEPLOYER_ENVIRONMENTS_DIR is not set.\n"
-            "Add it to your .env file, e.g.:\n"
-            "  DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments",
-            file=sys.stderr,
-        )
-        return 1
+        print(_ENVIRONMENTS_DIR_UNSET, file=sys.stderr)
+        return None
 
     env_path = env_dir / env_name
     if env_path.exists() and not dry_run:
         print(f"Error: Directory already exists: {env_path}", file=sys.stderr)
-        return 1
+        return None
+    return env_path
 
-    # Generate files
-    try:
-        files = generate_bootstrap(
-            account_id=account_id,
-            region=region,
-            env_label=env_label,
-            project_prefixes=project_prefixes,
-            trusted_user_arns=trusted_user_arns,
-            include_cognito=include_cognito,
-            cognito_app_domains=cognito_app_domains,
-        )
-    except (ValueError, FileNotFoundError) as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
-    if dry_run:
-        _print_dry_run_preview(f"Would create directory: {env_path}", files)
-        return 0
-
-    # Create environments directory and symlinks
+def _write_bootstrap_files(env_path: Path, files: dict[str, str]) -> None:
+    """Create the bootstrap directory, write its files and mark the script +x."""
+    env_dir = env_path.parent
     env_dir.mkdir(parents=True, exist_ok=True)
     created_symlinks = ensure_environments_symlinks()
     if created_symlinks:
         print(f"Created symlinks in {env_dir}: {', '.join(created_symlinks)}")
 
-    # Create bootstrap directory and write files
     env_path.mkdir(parents=True, exist_ok=True)
     for filename, content in files.items():
         filepath = env_path / filename
         filepath.write_text(content)
         print(f"Created: {filepath}")
 
-    # Make import-existing.sh executable
     import_script = env_path / "import-existing.sh"
     if import_script.exists():
         import_script.chmod(
             import_script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
         )
 
-    print()
 
-    # Offer to apply immediately
+def _apply_bootstrap(env_path: Path, env_name: str) -> int:
+    """Offer to run tofu init/apply, then enable the S3 backend.
+
+    Declining prints the manual checklist instead. Returns the exit code.
+    """
     if not click.confirm("Run 'tofu init && tofu apply' now?", default=False):
         _numbered_steps(
             "Next steps:",
@@ -271,7 +294,6 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     if not _run_tofu("apply", env_path, admin_profile):
         return 1
 
-    # Enable S3 backend
     print("\nApply succeeded. Enabling S3 backend...")
     migrate_result = cmd_bootstrap_migrate(env_name, dry_run=False)
     if migrate_result != 0:
@@ -282,6 +304,41 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     print(f"  AWS_PROFILE={admin_profile} tofu init -migrate-state")
     print('  (answer "yes" to copy state to S3)')
     return 0
+
+
+def cmd_bootstrap(dry_run: bool) -> int:
+    """Interactively set up bootstrap infrastructure for a new AWS account."""
+    print("Setting up deployer bootstrap for a new AWS account.\n")
+
+    inputs = _prompt_bootstrap_inputs()
+    if inputs is None:
+        return 1
+
+    env_path = _resolve_bootstrap_path(inputs.env_name, dry_run)
+    if env_path is None:
+        return 1
+
+    try:
+        files = generate_bootstrap(
+            account_id=inputs.account_id,
+            region=inputs.region,
+            env_label=inputs.env_label,
+            project_prefixes=inputs.project_prefixes,
+            trusted_user_arns=inputs.trusted_user_arns,
+            include_cognito=inputs.include_cognito,
+            cognito_app_domains=inputs.cognito_app_domains,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if dry_run:
+        _print_dry_run_preview(f"Would create directory: {env_path}", files)
+        return 0
+
+    _write_bootstrap_files(env_path, files)
+    print()
+    return _apply_bootstrap(env_path, inputs.env_name)
 
 
 def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
