@@ -63,3 +63,6 @@ Thumbs.db
 
 # Project-specific local files (notes, results, custom docs)
 local/
+
+# detect-secrets bootstrap temp file (see SECURITY.md Practice #8)
+.secrets.baseline.tmp
