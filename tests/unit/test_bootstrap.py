@@ -11,6 +11,7 @@ from deployer.init.bootstrap import (
     format_hcl_list,
     format_hcl_map,
     generate_bootstrap,
+    prompt_account_id_and_region,
     uncomment_backend_block,
 )
 
@@ -207,3 +208,41 @@ class TestBootstrapDirExists:
             os.environ.pop("DEPLOYER_ENVIRONMENTS_DIR", None)
             result = bootstrap_dir_exists()
             assert result is None
+
+
+class TestPromptAccountIdAndRegion:
+    """Tests for prompt_account_id_and_region."""
+
+    @staticmethod
+    def _prompts(monkeypatch, *answers):
+        queue = list(answers)
+        monkeypatch.setattr("deployer.init.bootstrap.click.prompt", lambda *_a, **_kw: queue.pop(0))
+
+    def test_returns_account_id_and_region(self, monkeypatch):
+        """Test that both prompted values are returned, stripped."""
+        monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: None)
+        self._prompts(monkeypatch, "  123456789012  ", " us-east-1 ")
+        assert prompt_account_id_and_region() == ("123456789012", "us-east-1")
+
+    def test_detected_account_id_is_offered_as_default(self, monkeypatch):
+        """Test that a detected account ID becomes the prompt default."""
+        monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: "210987654321")
+        seen = {}
+
+        def fake_prompt(text, default=None, **kwargs):
+            seen[text] = default
+            return "210987654321" if "Account" in text else "us-west-2"
+
+        monkeypatch.setattr("deployer.init.bootstrap.click.prompt", fake_prompt)
+        prompt_account_id_and_region()
+        assert seen["AWS Account ID"] == "210987654321"
+
+    @pytest.mark.parametrize("bad", ["", "12345", "12345678901a", "1234567890123"])
+    def test_invalid_account_id_exits_1(self, monkeypatch, capsys, bad):
+        """Test that anything but exactly 12 digits exits 1."""
+        monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: None)
+        self._prompts(monkeypatch, bad, "us-west-2")
+        with pytest.raises(SystemExit) as exc_info:
+            prompt_account_id_and_region()
+        assert exc_info.value.code == 1
+        assert "exactly 12 digits" in capsys.readouterr().err

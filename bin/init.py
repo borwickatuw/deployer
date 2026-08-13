@@ -54,8 +54,8 @@ from deployer.init import (
 )
 from deployer.init.bootstrap import (
     bootstrap_dir_exists,
-    detect_aws_account_id,
     generate_bootstrap,
+    prompt_account_id_and_region,
     uncomment_backend_block,
 )
 from deployer.init.deploy_toml import format_deploy_toml
@@ -66,6 +66,61 @@ from deployer.init.verify import cmd_verify
 from deployer.utils import ensure_environments_symlinks, get_environments_dir
 
 # =============================================================================
+# Helpers
+# =============================================================================
+
+
+def _print_dry_run_preview(
+    caption: str, payload: str | dict[str, str], max_lines: int | None = None
+) -> None:
+    """Print the dry-run banner followed by what would have been written.
+
+    Args:
+        caption: The "Would ..." line shown inside the banner.
+        payload: Either one blob of text, or a mapping of filename to content.
+        max_lines: Truncate each file's content to this many lines.
+    """
+    print("=" * 60)
+    print(caption)
+    print("=" * 60)
+    print()
+
+    if isinstance(payload, str):
+        print(payload)
+        return
+
+    for filename, content in payload.items():
+        print(f"--- {filename} ---")
+        lines = content.split("\n")
+        for line in lines if max_lines is None else lines[:max_lines]:
+            print(line)
+        if max_lines is not None and len(lines) > max_lines:
+            print(f"... ({len(lines) - max_lines} more lines)")
+        print()
+
+
+def _run_tofu(subcommand: str, env_path: Path, admin_profile: str) -> bool:
+    """Run an interactive `tofu <subcommand>` in an environment directory.
+
+    utils.run_command is not a substitute here: it captures output, and
+    `tofu apply` is interactive.
+
+    Returns:
+        True if tofu exited 0, False otherwise (the error is printed).
+    """
+    print(f"\nRunning: tofu {subcommand} (in {env_path})")
+    result = subprocess.run(  # noqa: PLW1510
+        ["tofu", subcommand],
+        cwd=str(env_path),
+        env={**os.environ, "AWS_PROFILE": admin_profile},
+    )
+    if result.returncode != 0:
+        print(f"Error: 'tofu {subcommand}' failed.", file=sys.stderr)
+        return False
+    return True
+
+
+# =============================================================================
 # Commands
 # =============================================================================
 
@@ -74,16 +129,8 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
     """Interactively set up bootstrap infrastructure for a new AWS account."""
     print("Setting up deployer bootstrap for a new AWS account.\n")
 
-    # Auto-detect account ID
-    detected_id = detect_aws_account_id()
-
     # Collect inputs
-    account_id = click.prompt("AWS Account ID", default=detected_id or "", type=str).strip()
-    if not account_id or not account_id.isdigit() or len(account_id) != 12:
-        print("Error: AWS Account ID must be exactly 12 digits.", file=sys.stderr)
-        return 1
-
-    region = click.prompt("AWS Region", default="us-west-2", type=str).strip()
+    account_id, region = prompt_account_id_and_region()
     env_label = click.prompt(
         "Environment label (e.g., staging, production)", default="staging", type=str
     ).strip()
@@ -154,14 +201,7 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
         return 1
 
     if dry_run:
-        print("=" * 60)
-        print(f"Would create directory: {env_path}")
-        print("=" * 60)
-        print()
-        for filename, content in files.items():
-            print(f"--- {filename} ---")
-            print(content)
-            print()
+        _print_dry_run_preview(f"Would create directory: {env_path}", files)
         return 0
 
     # Create environments directory and symlinks
@@ -199,26 +239,10 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
 
     admin_profile = click.prompt("AWS admin profile name", default="admin", type=str).strip()
 
-    # tofu init
-    print(f"\nRunning: tofu init (in {env_path})")
-    result = subprocess.run(  # noqa: PLW1510
-        ["tofu", "init"],
-        cwd=str(env_path),
-        env={**os.environ, "AWS_PROFILE": admin_profile},
-    )
-    if result.returncode != 0:
-        print("Error: 'tofu init' failed.", file=sys.stderr)
+    if not _run_tofu("init", env_path, admin_profile):
         return 1
 
-    # tofu apply
-    print(f"\nRunning: tofu apply (in {env_path})")
-    result = subprocess.run(  # noqa: PLW1510
-        ["tofu", "apply"],
-        cwd=str(env_path),
-        env={**os.environ, "AWS_PROFILE": admin_profile},
-    )
-    if result.returncode != 0:
-        print("Error: 'tofu apply' failed.", file=sys.stderr)
+    if not _run_tofu("apply", env_path, admin_profile):
         return 1
 
     # Enable S3 backend
@@ -258,11 +282,7 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
         return 1
 
     if dry_run:
-        print("=" * 60)
-        print(f"Would update: {main_tf}")
-        print("=" * 60)
-        print()
-        print(updated)
+        _print_dry_run_preview(f"Would update: {main_tf}", updated)
         return 0
 
     main_tf.write_text(updated)
@@ -317,11 +337,7 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
     output_path = Path(output) if output else compose_path.parent / "deploy.toml"
 
     if dry_run:
-        print("=" * 60)
-        print(f"Would write to: {output_path}")
-        print("=" * 60)
-        print()
-        print(content)
+        _print_dry_run_preview(f"Would write to: {output_path}", content)
         return 0
 
     # Write file
@@ -420,19 +436,7 @@ def cmd_environment(  # noqa: C901 — environment creation with template handli
         return 1
 
     if dry_run:
-        print("=" * 60)
-        print(f"Would create directory: {env_path}")
-        print("=" * 60)
-        print()
-        for filepath, content in files.items():
-            print(f"--- {filepath} ---")
-            # Show first 50 lines of each file
-            lines = content.split("\n")
-            for line in lines[:50]:
-                print(line)
-            if len(lines) > 50:
-                print(f"... ({len(lines) - 50} more lines)")
-            print()
+        _print_dry_run_preview(f"Would create directory: {env_path}", files, max_lines=50)
         return 0
 
     # Ensure root-level symlinks exist for external environments directory

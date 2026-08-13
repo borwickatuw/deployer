@@ -7,8 +7,29 @@ and permissions boundary. All other environments depend on these resources.
 import json
 import re
 
-from ..utils import get_environments_dir, run_command
+import click
+
+from ..utils import get_environments_dir, log_error_stderr, run_command
 from .template import load_all_templates, substitute
+
+
+def prompt_account_id_and_region() -> tuple[str, str]:
+    """Prompt for the AWS account ID (auto-detected if possible) and region.
+
+    Returns:
+        Tuple of (account_id, region).
+
+    Raises:
+        SystemExit: With code 1 if the account ID is not exactly 12 digits.
+    """
+    detected_id = detect_aws_account_id()
+    account_id = click.prompt("AWS Account ID", default=detected_id or "", type=str).strip()
+    if not account_id.isdigit() or len(account_id) != 12:
+        log_error_stderr("AWS Account ID must be exactly 12 digits.")
+        raise SystemExit(1)
+
+    region = click.prompt("AWS Region", default="us-west-2", type=str).strip()
+    return account_id, region
 
 
 def detect_aws_account_id() -> str | None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from .bootstrap import detect_aws_account_id
+from .bootstrap import prompt_account_id_and_region
 
 # Profile name -> IAM role name
 ROLE_PROFILES = {
@@ -61,13 +61,7 @@ def _find_existing_profiles(config_path: Path) -> list[str]:
 def cmd_setup_profiles(dry_run: bool) -> int:
     """Generate and optionally write AWS CLI profile configuration."""
     # Collect inputs
-    detected_id = detect_aws_account_id()
-    account_id = click.prompt("AWS Account ID", default=detected_id or "", type=str).strip()
-    if not account_id or not account_id.isdigit() or len(account_id) != 12:
-        print("Error: AWS Account ID must be exactly 12 digits.", file=sys.stderr)
-        return 1
-
-    region = click.prompt("AWS Region", default="us-west-2", type=str).strip()
+    account_id, region = prompt_account_id_and_region()
     source_profile = click.prompt(
         "Source profile name (base credentials)", default="deployer", type=str
     ).strip()
