@@ -75,6 +75,7 @@ from deployer.utils import (
     log_success,
     log_warning,
     prompt_or_exit,
+    select_index,
     validate_and_configure,
 )
 
@@ -226,102 +227,168 @@ def _validate_and_configure(environment: str) -> None:
 # Rollback Command
 # =============================================================================
 
+CANNOT_SELECT_CURRENT = "Invalid selection (cannot select current revision)"
 
-def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
-    environment: str, service: str | None, revision: int | None, yes: bool
-) -> int:
-    """Roll back ECS service(s) to previous task definition."""
-    ctx, services = _load_cluster_services(environment)
-    cluster_name = ctx.cluster_name
-    logger = ctx.logger
 
-    # Determine which service to roll back
+def _select_service(services: dict, service: str | None) -> str | None:
+    """Resolve which service to act on, prompting when one was not named.
+
+    Args:
+        services: Service name to state, as returned by get_all_services_state().
+        service: The --service value, or None to prompt.
+
+    Returns:
+        The service name, or None if it was unknown or the choice was invalid.
+        The error has already been printed either way.
+    """
     if service:
         if service not in services:
             log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
-            return 1
-        service_name = service
+            return None
+        return service
+
+    names = sorted(services)
+    labels = [
+        f"{name} (current revision: {services[name].task_definition.split(':')[-1]})"
+        for name in names
+    ]
+    index = select_index("Available services:", labels, "Select service to roll back (number): ")
+    return None if index is None else names[index]
+
+
+def _select_revision(service_name: str, revisions: list[dict], revision: int | None) -> dict | None:
+    """Resolve which revision to roll back to, prompting when one was not named.
+
+    Entry 0 is the currently deployed revision. It is listed so the operator
+    can see what they are moving away from, and rejected if chosen — rolling
+    back to the running revision is not a rollback.
+
+    Args:
+        service_name: Service being rolled back, used in the menu header.
+        revisions: Revisions newest first, as list_task_definition_revisions()
+            returns them.
+        revision: The --revision value, or None to prompt.
+
+    Returns:
+        The chosen revision, or None if it was unknown or the choice was
+        invalid. The error has already been printed either way.
+    """
+    if revision:
+        for rev in revisions:
+            if rev["revision"] == revision:
+                return rev
+        log_error(f"Revision {revision} not found")
+        return None
+
+    labels = []
+    for i, rev in enumerate(revisions):
+        registered = format_timestamp(rev.get("registered_at", "unknown"))
+        current = " (current)" if i == 0 else ""
+        labels.append(f"revision {rev['revision']:>3} - {registered}{current}")
+
+    index = select_index(
+        f"Recent revisions for {service_name}:",
+        labels,
+        "Select revision to roll back to (number, default=1 for previous): ",
+        start=0,
+        default=1,
+        invalid_message=CANNOT_SELECT_CURRENT,
+    )
+    if index is None:
+        return None
+    if index == 0:
+        log_error(CANNOT_SELECT_CURRENT)
+        return None
+    return revisions[index]
+
+
+def _print_env_var_diff(current_arn: str, target_arn: str) -> None:
+    """Print the environment variable changes between two task definitions."""
+    diff = compare_task_definitions(current_arn, target_arn)
+    if not diff:
+        return
+
+    print()
+    print(f"{Colors.YELLOW}Environment variable changes:{Colors.NC}")
+    for changes in diff.values():
+        for var, val in (changes.get("added") or {}).items():
+            print(f"  + {var}={val}")
+        for var, val in (changes.get("removed") or {}).items():
+            print(f"  - {var}={val}")
+        for var, vals in (changes.get("changed") or {}).items():
+            print(f"  ~ {var}: {vals['old']} -> {vals['new']}")
+
+
+def _checkpoint_and_log(
+    ctx: EmergencyContext, environment: str, services: dict, action: str, reason: str
+) -> None:
+    """Record the action, snapshot every service to a checkpoint, and say where.
+
+    Args:
+        ctx: Loaded emergency context, for its logger and RDS instance.
+        environment: Environment the checkpoint belongs to.
+        services: Every service in the cluster — the whole cluster is captured,
+            not just the ones being changed, so a revert restores the lot.
+        action: Action name recorded in the log and the checkpoint.
+        reason: Human-readable reason stored in the checkpoint.
+    """
+    ctx.logger.action(action)
+    log("Creating checkpoint...")
+
+    checkpoint = create_checkpoint(
+        environment=environment,
+        action=action,
+        reason=reason,
+        services=_snapshot_services(services),
+        rds=_capture_rds_state(ctx.rds_id),
+    )
+    ctx.logger.checkpoint(f"Created {checkpoint.filename}")
+    log_success(f"Checkpoint saved: local/checkpoints/{checkpoint.filename}")
+
+
+def _await_deployment(cluster_name: str, service_name: str, logger: EmergencyLogger) -> None:
+    """Wait for a rollback deployment to settle, reporting progress as it goes.
+
+    A timeout is reported as a warning, not a failure: the deployment is still
+    running, we simply stopped watching.
+    """
+
+    def progress_callback(running: int, desired: int) -> None:
+        print(f"  Waiting for deployment ({running}/{desired} tasks running)...")
+
+    log("Waiting for deployment to complete...")
+    if wait_for_deployment(cluster_name, service_name, callback=progress_callback):
+        state = get_service_state(cluster_name, service_name)
+        running = state.running_count if state else 0
+        logger.ecs(f"Rollback complete, running_count={running}")
+        logger.success("Rollback completed")
+        log_success(f"Rollback complete: {running} tasks running")
     else:
-        # Interactive mode: list services and prompt
-        print()
-        print(f"{Colors.BLUE}Available services:{Colors.NC}")
-        service_list = sorted(services.keys())
-        for i, name in enumerate(service_list, 1):
-            state = services[name]
-            rev = state.task_definition.split(":")[-1]
-            print(f"  {i}. {name} (current revision: {rev})")
-        print()
+        logger.ecs("Rollback timed out waiting for deployment")
+        log_warning("Deployment still in progress (timed out waiting)")
 
-        choice = prompt_or_exit("Select service to roll back (number): ")
-        if not choice.isdigit():
-            log_error("Invalid selection")
-            return 1
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(service_list):
-            log_error("Invalid selection")
-            return 1
-        service_name = service_list[idx]
 
-    # Get current state
+def cmd_rollback(environment: str, service: str | None, revision: int | None, yes: bool) -> int:
+    """Roll back ECS service(s) to previous task definition."""
+    ctx, services = _load_cluster_services(environment)
+
+    service_name = _select_service(services, service)
+    if not service_name:
+        return 1
+
     current_state = services[service_name]
     family = current_state.task_definition.split("/")[-1].rsplit(":", 1)[0]
 
-    # Get recent revisions
     revisions = list_task_definition_revisions(family, max_results=10)
     if len(revisions) < 2:
         log_error(f"Not enough revisions to roll back for {service_name}")
         return 1
 
-    # Determine target revision
-    if revision:
-        target_rev = None
-        for rev in revisions:
-            if rev["revision"] == revision:
-                target_rev = rev
-                break
-        if not target_rev:
-            log_error(f"Revision {revision} not found")
-            return 1
-    else:
-        # Interactive mode
-        print()
-        print(f"{Colors.BLUE}Recent revisions for {service_name}:{Colors.NC}")
-        for i, rev in enumerate(revisions):
-            registered = format_timestamp(rev.get("registered_at", "unknown"))
-            current = " (current)" if i == 0 else ""
-            print(f"  {i}. revision {rev['revision']:>3} - {registered}{current}")
-        print()
+    target_rev = _select_revision(service_name, revisions, revision)
+    if not target_rev:
+        return 1
 
-        choice = prompt_or_exit(
-            "Select revision to roll back to (number, default=1 for previous): "
-        )
-        if choice and not choice.isdigit():
-            log_error("Invalid selection (cannot select current revision)")
-            return 1
-        idx = 1 if not choice else int(choice)
-        if idx < 1 or idx >= len(revisions):
-            log_error("Invalid selection (cannot select current revision)")
-            return 1
-        target_rev = revisions[idx]
-
-    # Show diff of environment variables
-    current_arn = current_state.task_definition
-    target_arn = target_rev["arn"]
-    diff = compare_task_definitions(current_arn, target_arn)
-
-    if diff:
-        print()
-        print(f"{Colors.YELLOW}Environment variable changes:{Colors.NC}")
-        for _container, changes in diff.items():
-            if changes.get("added"):
-                for var, val in changes["added"].items():
-                    print(f"  + {var}={val}")
-            if changes.get("removed"):
-                for var, val in changes["removed"].items():
-                    print(f"  - {var}={val}")
-            if changes.get("changed"):
-                for var, vals in changes["changed"].items():
-                    print(f"  ~ {var}: {vals['old']} -> {vals['new']}")
+    _print_env_var_diff(current_state.task_definition, target_rev["arn"])
 
     current_rev = current_state.task_definition.split(":")[-1]
     target_revision_num = target_rev["revision"]
@@ -337,45 +404,26 @@ def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
     if not confirm_action(skip=yes):
         return 1
 
-    # Create checkpoint
-    logger.action("rollback")
-    log("Creating checkpoint...")
-
-    checkpoint = create_checkpoint(
-        environment=environment,
-        action="rollback",
-        reason=f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}",
-        services=_snapshot_services(services),
-        rds=_capture_rds_state(ctx.rds_id),
+    _checkpoint_and_log(
+        ctx,
+        environment,
+        services,
+        "rollback",
+        f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}",
     )
-    logger.checkpoint(f"Created {checkpoint.filename}")
-    log_success(f"Checkpoint saved: local/checkpoints/{checkpoint.filename}")
 
-    # Perform rollback
     log(f"Rolling back {service_name} to revision {target_revision_num}...")
-    logger.ecs(f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}")
+    ctx.logger.ecs(
+        f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}"
+    )
 
-    if not update_service_task_definition(cluster_name, service_name, target_arn):
-        logger.error(f"Failed to update service {service_name}")
+    if not update_service_task_definition(ctx.cluster_name, service_name, target_rev["arn"]):
+        ctx.logger.error(f"Failed to update service {service_name}")
         log_error("Failed to update service")
         return 1
 
-    logger.ecs("update-service returned: deployment in progress")
-
-    # Wait for deployment
-    def progress_callback(running: int, desired: int) -> None:
-        print(f"  Waiting for deployment ({running}/{desired} tasks running)...")
-
-    log("Waiting for deployment to complete...")
-    if wait_for_deployment(cluster_name, service_name, callback=progress_callback):
-        state = get_service_state(cluster_name, service_name)
-        running = state.running_count if state else 0
-        logger.ecs(f"Rollback complete, running_count={running}")
-        logger.success("Rollback completed")
-        log_success(f"Rollback complete: {running} tasks running")
-    else:
-        logger.ecs("Rollback timed out waiting for deployment")
-        log_warning("Deployment still in progress (timed out waiting)")
+    ctx.logger.ecs("update-service returned: deployment in progress")
+    _await_deployment(ctx.cluster_name, service_name, ctx.logger)
 
     cleanup_old_checkpoints(environment=environment)
 
