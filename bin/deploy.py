@@ -23,14 +23,14 @@ from pathlib import Path
 
 import click
 
-from deployer.config import parse_deploy_config
 from deployer.core.audit import run_audit
 from deployer.core.config import (
     get_environment_type,
     load_environment_config,
 )
-from deployer.deploy.deployer import Deployer, common_deploy_options, handle_push_error
-from deployer.deploy.preflight import PreflightError, PreflightOptions, run_preflight_checks
+from deployer.deploy.deployer import common_deploy_options
+from deployer.deploy.pipeline import run_deploy_pipeline
+from deployer.deploy.preflight import PreflightOptions
 from deployer.timing import DeploymentTimer
 from deployer.utils import (
     Colors,
@@ -159,65 +159,32 @@ def deploy(  # noqa: C901 — main deploy orchestration
         sys.exit(1)
     print()
 
-    # Run pre-flight checks
-    preflight_options = PreflightOptions(
-        skip_ecr_check=skip_ecr_check,
-        skip_secrets_check=skip_secrets_check,
-        skip_cluster_check=skip_cluster_check,
-        skip_audit=ignore_audit,
-    )
-    try:
-        run_preflight_checks(
-            deploy_config=parse_deploy_config(config_path),
-            env_config=env_config,
-            environment=environment,
-            environment_type=environment_type,
-            project_dir=config_path.parent,
-            options=preflight_options,
-        )
-    except PreflightError as e:
-        log_error(str(e))
-        sys.exit(1)
-
     # Set up timing
     timer = None
     if timing_output:
         rid = run_id or f"deploy-{secrets.token_hex(4)}"
         timer = DeploymentTimer(rid)
 
-    try:
-        deployer = Deployer(
+    sys.exit(
+        run_deploy_pipeline(
             config_path,
-            environment_type,
             env_config,
+            environment,
+            environment_type,
+            options=PreflightOptions(
+                skip_ecr_check=skip_ecr_check,
+                skip_secrets_check=skip_secrets_check,
+                skip_cluster_check=skip_cluster_check,
+                skip_audit=ignore_audit,
+            ),
             dry_run=dry_run,
             force=force,
             force_build=force_build,
             timer=timer,
+            timing_output=Path(timing_output) if timing_output else None,
+            ecr_hint=True,
         )
-    except ValueError as e:
-        log_error(str(e))
-        sys.exit(1)
-
-    try:
-        _, health_failures = deployer.deploy()
-    except RuntimeError as e:
-        if handle_push_error(e, include_ecr_hint=True):
-            sys.exit(1)
-        raise
-
-    if timer:
-        print()
-        log("Timing report:")
-        print(timer.report.to_json())
-
-        if timing_output:
-            output_path = Path(timing_output)
-            timer.report.save_json(output_path)
-            log_success(f"Timing saved to {output_path}")
-
-    if health_failures:
-        sys.exit(2)
+    )
 
 
 @cli.command()

@@ -16,6 +16,7 @@ from importlib.util import module_from_spec, spec_from_file_location  # noqa: E4
 from deployer.config import ImageConfig  # noqa: E402
 from deployer.core.deploy import topological_sort  # noqa: E402
 from deployer.deploy.context import DeploymentContext  # noqa: E402
+from deployer.deploy.deployer import Deployer  # noqa: E402
 from deployer.deploy.task_definition import _resolve_legacy_placeholders  # noqa: E402
 from deployer.deploy.task_definition import (  # noqa: E402
     get_environment_variables,
@@ -387,7 +388,7 @@ memory = 512
             "scheduler": {},
         }
 
-        deployer = deploy.Deployer(str(deploy_toml), "staging", deployment_config, dry_run=True)
+        deployer = Deployer(str(deploy_toml), "staging", deployment_config, dry_run=True)
 
         assert deployer.app_name == "testapp"
         assert deployer.environment == "staging"

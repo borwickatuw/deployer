@@ -25,9 +25,9 @@ import boto3
 import click
 from botocore.exceptions import ClientError
 
-from deployer.config import parse_deploy_config
-from deployer.deploy.deployer import Deployer, common_deploy_options, handle_push_error
-from deployer.deploy.preflight import PreflightError, PreflightOptions, run_preflight_checks
+from deployer.deploy.deployer import common_deploy_options
+from deployer.deploy.pipeline import run_deploy_pipeline
+from deployer.deploy.preflight import PreflightOptions
 from deployer.utils import Colors, log, log_error, log_warning
 
 
@@ -251,54 +251,24 @@ def main(  # noqa: C901 — CI deploy orchestration
             except (ValueError, TypeError):
                 log_warning("Could not parse resolved_at timestamp for staleness check")
 
-    # Run preflight checks (skip audit by default in CI — no docker-compose)
-    preflight_options = PreflightOptions(
-        skip_ecr_check=skip_ecr_check,
-        skip_secrets_check=skip_secrets_check,
-        skip_cluster_check=skip_cluster_check,
-        skip_audit=True,
-    )
-    try:
-        deploy_config = parse_deploy_config(deploy_toml_path)
-    except Exception as e:  # noqa: BLE001 — CLI error handler for deploy.toml parse
-        log_error(f"Failed to parse deploy.toml: {e}")
-        sys.exit(1)
-
-    try:
-        run_preflight_checks(
-            deploy_config=deploy_config,
-            env_config=env_config,
-            environment=environment,
-            environment_type=environment_type,
-            project_dir=deploy_toml_path.parent,
-            options=preflight_options,
-        )
-    except PreflightError as e:
-        log_error(str(e))
-        sys.exit(1)
-
-    try:
-        deployer = Deployer(
-            config_path=str(deploy_toml_path),
-            environment=environment_type,
-            env_config=env_config,
+    # Skip the audit by default in CI — there is no docker-compose.yml there.
+    sys.exit(
+        run_deploy_pipeline(
+            deploy_toml_path,
+            env_config,
+            environment,
+            environment_type,
+            options=PreflightOptions(
+                skip_ecr_check=skip_ecr_check,
+                skip_secrets_check=skip_secrets_check,
+                skip_cluster_check=skip_cluster_check,
+                skip_audit=True,
+            ),
             dry_run=dry_run,
             force=force,
             force_build=force_build,
         )
-    except ValueError as e:
-        log_error(str(e))
-        sys.exit(1)
-
-    try:
-        _, health_failures = deployer.deploy()
-    except RuntimeError as e:
-        if handle_push_error(e):
-            sys.exit(1)
-        raise
-
-    if health_failures:
-        sys.exit(2)
+    )
 
 
 if __name__ == "__main__":
