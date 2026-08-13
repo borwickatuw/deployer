@@ -24,7 +24,7 @@ from deployer.deploy.images import (
 )
 from deployer.deploy.validation import validate_ecs_cluster
 from deployer.modules import ModuleRegistry
-from deployer.utils import log, log_debug, log_success, log_warning
+from deployer.utils import advice_block, log, log_debug, log_success, log_warning
 
 
 class PreflightError(Exception):
@@ -49,14 +49,17 @@ def check_environment_config(env_config: dict) -> None:
     """
     config_errors = validate_environment_config(env_config)
     if config_errors:
-        lines = ["Environment config is missing required fields:"]
-        for error in config_errors:
-            lines.append(f"    {error}")
-        lines.append("")
-        lines.append("  These fields are typically set via ${tofu:...} placeholders.")
-        lines.append("  Run 'tofu apply' in the environment directory to create infrastructure,")
-        lines.append("  then update config.toml with the appropriate placeholders.")
-        raise PreflightError("\n".join(lines))
+        raise PreflightError(
+            advice_block(
+                "Environment config is missing required fields:",
+                config_errors,
+                (
+                    "  These fields are typically set via ${tofu:...} placeholders.",
+                    "  Run 'tofu apply' in the environment directory to create infrastructure,",
+                    "  then update config.toml with the appropriate placeholders.",
+                ),
+            )
+        )
 
 
 def check_audit(
@@ -76,14 +79,18 @@ def check_audit(
         log_warning(f"Audit skipped: {issues[0]}")
         print()
     elif issue_count > 0:
-        lines = [f"Audit found {issue_count} issue(s):"]
-        for issue in issues:
-            lines.append(f"  - {issue}")
-        lines.append("")
-        lines.append("To fix: add an [audit] section to deploy.toml to acknowledge differences,")
-        lines.append(f"        or run: python bin/deploy.py audit {project_dir}")
-        lines.append("        or use --ignore-audit to skip this check")
-        raise PreflightError("\n".join(lines))
+        raise PreflightError(
+            advice_block(
+                f"Audit found {issue_count} issue(s):",
+                issues,
+                (
+                    "To fix: add an [audit] section to deploy.toml to acknowledge differences,",
+                    f"        or run: python bin/deploy.py audit {project_dir}",
+                    "        or use --ignore-audit to skip this check",
+                ),
+                bullet="  - ",
+            )
+        )
     else:
         log_success("Audit passed")
         print()
@@ -162,10 +169,7 @@ def check_modules(deploy_config: DeployConfig, env_config: dict) -> None:
     log("Checking resource modules...")
     errors = ModuleRegistry.validate_all(deploy_config.get_raw_dict(), env_config)
     if errors:
-        lines = ["Resource module validation failed:"]
-        for error in errors:
-            lines.append(f"    {error}")
-        raise PreflightError("\n".join(lines))
+        raise PreflightError(advice_block("Resource module validation failed:", errors))
     log_success("Resource modules validated")
     print()
 

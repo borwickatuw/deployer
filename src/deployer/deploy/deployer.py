@@ -24,7 +24,7 @@ from deployer.deploy.service import (
 )
 from deployer.deploy.task_definition import get_environment_variables, get_service_sizing
 from deployer.timing import DeploymentTimer, set_timer
-from deployer.utils import Colors, log, log_error, log_warning
+from deployer.utils import Colors, log, log_warning, print_with_advice
 
 
 @dataclass
@@ -248,16 +248,15 @@ class Deployer:
             for warning in infra.warnings:
                 log_warning(warning)
             if infra.is_critical and not self.force:
-                print()
-                log_error("Cannot deploy: critical infrastructure is unavailable.")
-                print()
-                print("  The database must be running for migrations to succeed.")
-                print("  Start the environment first:")
-                print(
-                    f"    uv run python bin/environment.py {self.app_name}-{self.environment} start"
+                print_with_advice(
+                    "Cannot deploy: critical infrastructure is unavailable.",
+                    "  The database must be running for migrations to succeed.",
+                    "  Start the environment first:",
+                    "    uv run python bin/environment.py "
+                    f"{self.app_name}-{self.environment} start",
+                    "",
+                    "  Or use --force to deploy anyway (migrations will fail).",
                 )
-                print()
-                print("  Or use --force to deploy anyway (migrations will fail).")
                 raise RuntimeError("Infrastructure unavailable")
             elif infra.is_critical:
                 log_warning("Continuing anyway due to --force flag. Migrations will likely fail.")
@@ -417,11 +416,11 @@ def handle_push_error(error: RuntimeError, include_ecr_hint: bool = False) -> bo
     if "Push failed" not in error_msg:
         return False
 
-    print()
-    log_error(error_msg)
-    print()
-    print("  This is often caused by a temporary network issue.")
-    print("  Please try running the deploy command again.")
+    print_with_advice(
+        error_msg,
+        "  This is often caused by a temporary network issue.",
+        "  Please try running the deploy command again.",
+    )
     if include_ecr_hint:
         print()
         print("  If the problem persists, check your network connection")

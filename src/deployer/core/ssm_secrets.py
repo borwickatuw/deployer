@@ -4,6 +4,7 @@ from pathlib import Path
 
 from deployer.aws import ssm
 from deployer.config import parse_deploy_config
+from deployer.utils import advice_block
 
 
 def parse_environment(env_name: str) -> tuple[str, str]:
@@ -243,16 +244,13 @@ def format_missing_secrets_error(
     Returns:
         Formatted error message with remediation commands
     """
-    lines = [f"Missing {len(missing)} required SSM secret(s):"]
-
-    for env_var, ssm_path in missing:
-        lines.append(f"  - {env_var}: {ssm_path}")
-
-    lines.append("")
-    lines.append("To create missing secrets, run:")
-
-    for _env_var, ssm_path in missing:
-        secret_name = ssm_path.split("/")[-1]
-        lines.append(f"  uv run python bin/ssm-secrets.py put {env_name} {secret_name}")
-
-    return "\n".join(lines)
+    commands = [
+        f"  uv run python bin/ssm-secrets.py put {env_name} {ssm_path.split('/')[-1]}"
+        for _env_var, ssm_path in missing
+    ]
+    return advice_block(
+        f"Missing {len(missing)} required SSM secret(s):",
+        (f"{env_var}: {ssm_path}" for env_var, ssm_path in missing),
+        ["To create missing secrets, run:", *commands],
+        bullet="  - ",
+    )
