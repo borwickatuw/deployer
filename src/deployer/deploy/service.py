@@ -508,6 +508,54 @@ def deploy_services(
             log_status(service_name, "service created")
 
 
+def _resolve_migration_image(ctx, migration_service: str, image_uris: dict[str, str]) -> str | None:
+    """Resolve the ECR image URI to run migrations with.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        migration_service: Name of the service whose image runs migrations.
+        image_uris: Dictionary mapping image names to ECR URIs.
+
+    Returns:
+        The ECR image URI, or None if no image was built for that service.
+    """
+    services_config = ctx.config.get("services", {})
+    svc_config = services_config.get(migration_service, {})
+    image_name = svc_config.get("image", migration_service)
+    image_uri = image_uris.get(image_name)
+
+    if not image_uri:
+        log_error(f"No image URI for migration service {migration_service} (image: {image_name})")
+
+    return image_uri
+
+
+def _migration_network_config(ctx, migration_service: str) -> dict | None:
+    """Get the network configuration to run the migration task in.
+
+    Reuses the network configuration of an already-deployed service.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        migration_service: Name of the service to copy network config from.
+
+    Returns:
+        The service's networkConfiguration, or None if it could not be read.
+    """
+    try:
+        services = ctx.ecs_client.describe_services(
+            cluster=ctx.cluster_name, services=[migration_service]
+        )
+        if not services["services"]:
+            log_error(f"No {migration_service} service found to get network configuration")
+            return None
+
+        return services["services"][0]["networkConfiguration"]
+    except ClientError as e:
+        log_error(f"Could not get network configuration: {e}")
+        return None
+
+
 def start_migrations(
     ctx,
     image_uris: dict[str, str],
@@ -531,15 +579,9 @@ def start_migrations(
     if not migrations.get("enabled", False):
         return None
 
-    # Determine which service to use for migrations
     migration_service = migrations.get("service", "web")
-    services_config = ctx.config.get("services", {})
-    svc_config = services_config.get(migration_service, {})
-    image_name = svc_config.get("image", migration_service)
-    image_uri = image_uris.get(image_name)
-
+    image_uri = _resolve_migration_image(ctx, migration_service, image_uris)
     if not image_uri:
-        log_error(f"No image URI for migration service {migration_service} (image: {image_name})")
         return None
 
     # Always register the migrate task definition so it's available for ecs-run.py
@@ -570,18 +612,8 @@ def start_migrations(
 
     command = migrations.get("command", ["python", "manage.py", "migrate"])
 
-    # Get network configuration from an existing service
-    try:
-        services = ctx.ecs_client.describe_services(
-            cluster=ctx.cluster_name, services=[migration_service]
-        )
-        if not services["services"]:
-            log_error(f"No {migration_service} service found to get network configuration")
-            return None
-
-        network_config = services["services"][0]["networkConfiguration"]
-    except ClientError as e:
-        log_error(f"Could not get network configuration: {e}")
+    network_config = _migration_network_config(ctx, migration_service)
+    if network_config is None:
         return None
 
     # Run the migration task using the newly registered task definition
