@@ -51,6 +51,43 @@ def cli():
     """Deploy applications to AWS ECS."""
 
 
+def _load_env_config_or_exit(environment: str) -> tuple[dict, str]:
+    """Validate the environment directory, load its config.toml, report its type.
+
+    Args:
+        environment: Environment name (e.g. "myapp-staging").
+
+    Returns:
+        Tuple of (resolved config, environment type).
+
+    Raises:
+        SystemExit: With code 1 if the directory is missing, the config cannot
+            be loaded, or the environment type is invalid.
+    """
+    env_path = get_environments_dir() / environment
+    if not env_path.exists():
+        log_error(f"Environment directory not found: {env_path}")
+        sys.exit(1)
+
+    log(f"Loading deployment config from {env_path}...")
+    try:
+        env_config = load_environment_config(env_path)
+        log_success("Loaded config from config.toml")
+    except FileNotFoundError:
+        log_error(f"Config file not found: {env_path / 'config.toml'}")
+        sys.exit(1)
+    except Exception as e:
+        log_error(f"Failed to load deployment config: {e}")
+        sys.exit(1)
+
+    with exit_on(ValueError):
+        environment_type = get_environment_type(env_config)
+    log(f"Environment type: {environment_type}")
+    print()
+
+    return env_config, environment_type
+
+
 @cli.command()
 @click.argument("environment")
 @click.option(
@@ -69,7 +106,7 @@ def cli():
     "--run-id", metavar="ID", help="Run ID for timing report (auto-generated if not specified)"
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed debug information")
-def deploy(  # noqa: C901 — main deploy orchestration
+def deploy(
     environment,
     deploy_toml,
     ignore_audit,
@@ -105,28 +142,7 @@ def deploy(  # noqa: C901 — main deploy orchestration
     configure_profile_or_exit("deploy", environment)
     print()
 
-    # Validate environment directory
-    env_path = get_environments_dir() / environment
-    if not env_path.exists():
-        log_error(f"Environment directory not found: {env_path}")
-        sys.exit(1)
-
-    # Load config
-    log(f"Loading deployment config from {env_path}...")
-    try:
-        env_config = load_environment_config(env_path)
-        log_success("Loaded config from config.toml")
-    except FileNotFoundError:
-        log_error(f"Config file not found: {env_path / 'config.toml'}")
-        sys.exit(1)
-    except Exception as e:
-        log_error(f"Failed to load deployment config: {e}")
-        sys.exit(1)
-
-    with exit_on(ValueError):
-        environment_type = get_environment_type(env_config)
-    log(f"Environment type: {environment_type}")
-    print()
+    env_config, environment_type = _load_env_config_or_exit(environment)
 
     # Set up timing
     timer = None

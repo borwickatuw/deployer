@@ -395,3 +395,76 @@ memory = 512
         assert deployer.app_name == "testapp"
         assert deployer.environment == "staging"
         assert deployer.options.dry_run is True
+
+
+class TestLoadEnvConfigOrExit:
+    """Tests for deploy.py's _load_env_config_or_exit()."""
+
+    def _stub_environments_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(deploy, "get_environments_dir", lambda: tmp_path)
+
+    def test_returns_config_and_type(self, monkeypatch, tmp_path):
+        self._stub_environments_dir(monkeypatch, tmp_path)
+        (tmp_path / "myapp-staging").mkdir()
+        monkeypatch.setattr(deploy, "load_environment_config", lambda _path: {"loaded": True})
+        monkeypatch.setattr(deploy, "get_environment_type", lambda _cfg: "staging")
+
+        config, env_type = deploy._load_env_config_or_exit("myapp-staging")
+
+        assert config == {"loaded": True}
+        assert env_type == "staging"
+
+    def test_missing_directory_exits_1(self, monkeypatch, tmp_path, capsys):
+        self._stub_environments_dir(monkeypatch, tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            deploy._load_env_config_or_exit("absent")
+
+        assert exc_info.value.code == 1
+        assert "Environment directory not found" in capsys.readouterr().out
+
+    def test_missing_config_toml_exits_1(self, monkeypatch, tmp_path, capsys):
+        self._stub_environments_dir(monkeypatch, tmp_path)
+        (tmp_path / "myapp-staging").mkdir()
+
+        def boom(path):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(deploy, "load_environment_config", boom)
+
+        with pytest.raises(SystemExit) as exc_info:
+            deploy._load_env_config_or_exit("myapp-staging")
+
+        assert exc_info.value.code == 1
+        assert "config.toml" in capsys.readouterr().out
+
+    def test_unreadable_config_exits_1(self, monkeypatch, tmp_path, capsys):
+        self._stub_environments_dir(monkeypatch, tmp_path)
+        (tmp_path / "myapp-staging").mkdir()
+
+        def boom(path):
+            raise RuntimeError("tofu output failed")
+
+        monkeypatch.setattr(deploy, "load_environment_config", boom)
+
+        with pytest.raises(SystemExit) as exc_info:
+            deploy._load_env_config_or_exit("myapp-staging")
+
+        assert exc_info.value.code == 1
+        assert "tofu output failed" in capsys.readouterr().out
+
+    def test_invalid_environment_type_exits_1(self, monkeypatch, tmp_path, capsys):
+        self._stub_environments_dir(monkeypatch, tmp_path)
+        (tmp_path / "myapp-staging").mkdir()
+        monkeypatch.setattr(deploy, "load_environment_config", lambda _path: {})
+
+        def boom(cfg):
+            raise ValueError("unknown environment type 'banana'")
+
+        monkeypatch.setattr(deploy, "get_environment_type", boom)
+
+        with pytest.raises(SystemExit) as exc_info:
+            deploy._load_env_config_or_exit("myapp-staging")
+
+        assert exc_info.value.code == 1
+        assert "banana" in capsys.readouterr().err
