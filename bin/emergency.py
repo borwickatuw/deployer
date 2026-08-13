@@ -230,6 +230,23 @@ def _validate_and_configure(environment: str) -> None:
 CANNOT_SELECT_CURRENT = "Invalid selection (cannot select current revision)"
 
 
+def _require_service(services: dict, service: str) -> str | None:
+    """Return `service` if the cluster has it, else say what the cluster does have.
+
+    Args:
+        services: Service name to state, as returned by get_all_services_state().
+        service: The --service value to check.
+
+    Returns:
+        The service name, or None if the cluster has no such service (the
+        error has already been printed).
+    """
+    if service not in services:
+        log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
+        return None
+    return service
+
+
 def _select_service(services: dict, service: str | None) -> str | None:
     """Resolve which service to act on, prompting when one was not named.
 
@@ -242,10 +259,7 @@ def _select_service(services: dict, service: str | None) -> str | None:
         The error has already been printed either way.
     """
     if service:
-        if service not in services:
-            log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
-            return None
-        return service
+        return _require_service(services, service)
 
     names = sorted(services)
     labels = [
@@ -435,6 +449,34 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
 # =============================================================================
 
 
+def _scaled_counts(
+    services: dict, multiplier: float | None, count: int | None
+) -> dict[str, int] | None:
+    """Desired counts for every service under --all, from --multiplier or --count.
+
+    Args:
+        services: Service name to current state.
+        multiplier: Factor applied to each service's current desired count. A
+            scaled count never falls below 1 — --all is for riding out load,
+            not for stopping the environment.
+        count: Flat desired count for every service, used when no multiplier
+            is given. Zero is honoured.
+
+    Returns:
+        Service name to new desired count, or None if neither flag was given
+        (the error has already been printed).
+    """
+    if multiplier:
+        return {
+            name: max(1, int(state.desired_count * multiplier)) for name, state in services.items()
+        }
+    if count is not None:
+        return {name: count for name in services}
+
+    log_error("--multiplier or --count is required with --all")
+    return None
+
+
 def cmd_scale(
     environment: str,
     service: str | None,
@@ -454,23 +496,15 @@ def cmd_scale(
         configured_replicas = get_service_replicas_from_config(ctx.config)
         to_scale = {name: configured_replicas.get(name, 1) for name in services}
     elif service:
-        if service not in services:
-            log_error(f"Service '{service}' not found")
+        if not _require_service(services, service):
             return 1
         if count is None:
             log_error("--count is required when using --service")
             return 1
         to_scale = {service: count}
     elif all_services:
-        if multiplier:
-            to_scale = {
-                name: max(1, int(state.desired_count * multiplier))
-                for name, state in services.items()
-            }
-        elif count is not None:
-            to_scale = {name: count for name in services}
-        else:
-            log_error("--multiplier or --count is required with --all")
+        to_scale = _scaled_counts(services, multiplier, count)
+        if to_scale is None:
             return 1
     else:
         log_error("Specify --service, --all, or --reset")
@@ -487,19 +521,9 @@ def cmd_scale(
     if not confirm_action(skip=yes):
         return 1
 
-    # Create checkpoint
-    logger.action("scale")
-    log("Creating checkpoint...")
-
-    checkpoint = create_checkpoint(
-        environment=environment,
-        action="scale",
-        reason=f"Scaling services: {', '.join(to_scale.keys())}",
-        services=_snapshot_services(services),
-        rds=_capture_rds_state(ctx.rds_id),
+    _checkpoint_and_log(
+        ctx, environment, services, "scale", f"Scaling services: {', '.join(to_scale.keys())}"
     )
-    logger.checkpoint(f"Created {checkpoint.filename}")
-    log_success(f"Checkpoint saved: local/checkpoints/{checkpoint.filename}")
 
     # Perform scaling
     for name, new_count in to_scale.items():
@@ -745,8 +769,7 @@ def cmd_force_deploy(environment: str, service: str | None, all_services: bool, 
     logger = ctx.logger
 
     if service:
-        if service not in services:
-            log_error(f"Service '{service}' not found. Available: {', '.join(services.keys())}")
+        if not _require_service(services, service):
             return 1
         target_services = [service]
     elif all_services:
