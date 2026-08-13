@@ -5,6 +5,7 @@ import fnmatch
 import hashlib
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from botocore.exceptions import ClientError
 
@@ -211,7 +212,215 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     log_success("ECR login")
 
 
-def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-run, and ECR logic
+class ImageBuildSpec(NamedTuple):
+    """The build inputs for one image, resolved for a single environment."""
+
+    context: Path
+    dockerfile: str
+    should_push: bool
+    build_args: dict
+    target: str | None
+
+
+def _merge_build_args(build_args_config: dict, environment: str) -> dict:
+    """Merge global and per-environment build args from a raw dict config.
+
+    Values that are themselves dicts are read as per-environment blocks
+    rather than as build args, and the block for ``environment`` is merged
+    last so it wins.
+
+    Args:
+        build_args_config: The raw ``build_args`` table.
+        environment: Target environment whose block wins.
+
+    Returns:
+        The merged build args.
+
+    Raises:
+        TypeError, ValueError: If the value under ``environment`` is not a
+            mapping. The ``ImageConfig`` arm does not share this behaviour.
+    """
+    build_args = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
+    build_args.update(build_args_config.get(environment, {}))
+    return build_args
+
+
+def _resolve_image_spec(
+    image_config: ImageConfig | dict, source_dir: Path, environment: str
+) -> ImageBuildSpec:
+    """Resolve one image's config entry into concrete build inputs.
+
+    The two arms are not equivalent and deliberately stay separate: the raw
+    dict arm merges per-environment build args itself, so a non-dict value
+    under the environment key raises, while the ``ImageConfig`` arm defers to
+    the dataclass and passes any scalar straight through.
+
+    Args:
+        image_config: Either an ``ImageConfig`` or the raw dict form.
+        source_dir: Root of the source tree that ``context`` is relative to.
+        environment: Target environment, selecting per-environment build
+            args and build target.
+
+    Returns:
+        The resolved :class:`ImageBuildSpec`.
+    """
+    if isinstance(image_config, ImageConfig):
+        return ImageBuildSpec(
+            context=source_dir / image_config.context,
+            dockerfile=image_config.dockerfile,
+            should_push=image_config.push,
+            build_args=image_config.get_build_args(environment),
+            target=image_config.get_target(environment),
+        )
+
+    # Legacy dict support - inline the logic
+    target_config = image_config.get("target")
+    return ImageBuildSpec(
+        context=source_dir / image_config["context"],
+        dockerfile=image_config.get("dockerfile", "Dockerfile"),
+        should_push=image_config.get("push", True),
+        build_args=_merge_build_args(image_config.get("build_args", {}), environment),
+        target=target_config.get(environment) if isinstance(target_config, dict) else target_config,
+    )
+
+
+def _cache_tag(spec: ImageBuildSpec) -> str:
+    """Compute the content-addressed cache tag for one image.
+
+    The tag starts as a hash of the build context, then is re-hashed together
+    with the build args and target so that changing either yields a new tag.
+
+    Args:
+        spec: The resolved build inputs for the image.
+
+    Returns:
+        A 12-character hex tag.
+    """
+    content_hash = compute_context_hash(spec.context, spec.dockerfile)
+
+    hash_modifiers = []
+    if spec.build_args:
+        args_str = ",".join(f"{k}={v}" for k, v in sorted(spec.build_args.items()))
+        hash_modifiers.append(f"args:{args_str}")
+    if spec.target:
+        hash_modifiers.append(f"target:{spec.target}")
+
+    if hash_modifiers:
+        combined = f"{content_hash}:{';'.join(hash_modifiers)}"
+        content_hash = hashlib.sha256(combined.encode()).hexdigest()[:12]
+
+    return content_hash
+
+
+def _docker_build_cmd(spec: ImageBuildSpec, local_tag: str) -> list[str]:
+    """Assemble the ``docker build`` argv for one image.
+
+    ``--platform`` ensures consistent builds for Fargate (x86_64) regardless
+    of host architecture. We rely on content-based hashing to detect changes,
+    so Docker layer caching is safe and speeds up rebuilds when only some
+    files change.
+
+    Args:
+        spec: The resolved build inputs for the image.
+        local_tag: The local ``name:tag`` to build into.
+
+    Returns:
+        The full ``docker build`` argv.
+    """
+    build_cmd = [
+        "docker",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        local_tag,
+        "-f",
+        str(spec.context / spec.dockerfile),
+    ]
+
+    # Add target if specified (for multi-stage builds)
+    if spec.target:
+        build_cmd.extend(["--target", spec.target])
+
+    # Add build arguments
+    for key, value in spec.build_args.items():
+        build_cmd.extend(["--build-arg", f"{key}={value}"])
+
+    build_cmd.append(str(spec.context))
+    return build_cmd
+
+
+def _run_docker(cmd: list[str], image_name: str, operation: str, dry_run: bool) -> None:
+    """Run one docker command for an image, honouring dry-run.
+
+    Args:
+        cmd: The argv to run.
+        image_name: Image the command belongs to, used in the timer sub-step
+            name and in failure messages.
+        operation: Short verb ("build", "push") naming the step.
+        dry_run: If True, print the command instead of running it.
+
+    Raises:
+        RuntimeError: If the command exits non-zero. Both captured streams
+            are echoed first.
+    """
+    if dry_run:
+        print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(cmd)}")
+        return
+
+    result = _run_timed_subprocess(cmd, f"{image_name}_{operation}")
+    _check_subprocess_result(result, image_name, operation)
+
+
+def _tag_and_push(local_tag: str, ecr_uri: str, image_name: str, dry_run: bool) -> None:
+    """Tag a locally built image for ECR and push it.
+
+    The ``docker tag`` call deliberately does *not* go through
+    :func:`_run_docker`. It is neither captured nor timed, so a tag failure
+    raises ``CalledProcessError`` with nothing echoed to the operator, unlike
+    build and push which raise ``RuntimeError`` after printing both streams.
+    Unifying the three would silently change all of that at once.
+
+    Args:
+        local_tag: The local ``name:tag`` produced by the build.
+        ecr_uri: The fully qualified ECR URI to tag and push.
+        image_name: Image name, used in messages.
+        dry_run: If True, print the commands instead of running them.
+    """
+    # Tag for ECR
+    tag_cmd = ["docker", "tag", local_tag, ecr_uri]
+    if dry_run:
+        print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(tag_cmd)}")
+    else:
+        subprocess.run(tag_cmd, check=True)
+
+    # Push to ECR
+    _run_docker(["docker", "push", ecr_uri], image_name, "push", dry_run)
+    log_success(f"{image_name} (push)")
+
+
+def _normalize_images(config: DeployConfig | dict) -> tuple[dict, dict]:
+    """Split a deploy config into its image map and a dependency-only map.
+
+    Args:
+        config: Deployment configuration, either a ``DeployConfig`` or the
+            raw dict form the legacy callers still pass.
+
+    Returns:
+        An ``(images, images_for_sort)`` pair. ``images`` holds whatever the
+        config carried -- ``ImageConfig`` values or raw dicts. The second is
+        always a plain dict shaped for :func:`topological_sort`.
+    """
+    if isinstance(config, DeployConfig):
+        images = config.images
+        # Convert to dict format for topological_sort
+        return images, {name: {"depends_on": img.depends_on} for name, img in images.items()}
+
+    images = config.get("images", {})
+    return images, images
+
+
+def build_and_push_images(
     config: DeployConfig | dict,
     source_dir: Path,
     ecr_prefix: str,
@@ -250,14 +459,7 @@ def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-ru
 
     image_uris = {}
 
-    # Support both DeployConfig dataclass and raw dict
-    if isinstance(config, DeployConfig):
-        images = config.images
-        # Convert to dict format for topological_sort
-        images_for_sort = {name: {"depends_on": img.depends_on} for name, img in images.items()}
-    else:
-        images = config.get("images", {})
-        images_for_sort = images
+    images, images_for_sort = _normalize_images(config)
 
     # Sort images by dependencies
     try:
@@ -267,47 +469,12 @@ def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-ru
         raise
 
     for image_name in build_order:
-        image_config = images[image_name]
-
-        # Handle both ImageConfig dataclass and raw dict
-        if isinstance(image_config, ImageConfig):
-            context = source_dir / image_config.context
-            dockerfile = image_config.dockerfile
-            should_push = image_config.push
-            build_args = image_config.get_build_args(environment)
-            target = image_config.get_target(environment)
-        else:
-            context = source_dir / image_config["context"]
-            dockerfile = image_config.get("dockerfile", "Dockerfile")
-            should_push = image_config.get("push", True)
-            # Legacy dict support - inline the logic
-            build_args_config = image_config.get("build_args", {})
-            build_args = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
-            build_args.update(build_args_config.get(environment, {}))
-            target_config = image_config.get("target")
-            target = (
-                target_config.get(environment) if isinstance(target_config, dict) else target_config
-            )
-
-        # Compute content hash for cache key
-        content_hash = compute_context_hash(context, dockerfile)
-
-        hash_modifiers = []
-        if build_args:
-            args_str = ",".join(f"{k}={v}" for k, v in sorted(build_args.items()))
-            hash_modifiers.append(f"args:{args_str}")
-        if target:
-            hash_modifiers.append(f"target:{target}")
-
-        if hash_modifiers:
-            combined = f"{content_hash}:{';'.join(hash_modifiers)}"
-            content_hash = hashlib.sha256(combined.encode()).hexdigest()[:12]
-
-        tag = content_hash
+        spec = _resolve_image_spec(images[image_name], source_dir, environment)
+        tag = _cache_tag(spec)
 
         # Local-only images are tagged with just their name (for FROM references)
         # Pushed images get the ecr_prefix
-        if should_push:
+        if spec.should_push:
             repo_name = f"{ecr_prefix}-{image_name}"
             local_tag = f"{repo_name}:{tag}"
             ecr_repo = f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
@@ -322,56 +489,11 @@ def build_and_push_images(  # noqa: C901 — image build/push with cache, dry-ru
         else:
             local_tag = f"{image_name}:{tag}"
 
-        # Build image
-        # --platform ensures consistent builds for Fargate (x86_64) regardless of host architecture
-        # Note: We rely on content-based hashing to detect changes, so Docker layer
-        # caching is safe and speeds up rebuilds when only some files change.
-        build_cmd = [
-            "docker",
-            "build",
-            "--platform",
-            "linux/amd64",
-            "-t",
-            local_tag,
-            "-f",
-            str(context / dockerfile),
-        ]
-
-        # Add target if specified (for multi-stage builds)
-        if target:
-            build_cmd.extend(["--target", target])
-
-        # Add build arguments
-        for key, value in build_args.items():
-            build_cmd.extend(["--build-arg", f"{key}={value}"])
-
-        build_cmd.append(str(context))
-
-        if dry_run:
-            print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(build_cmd)}")
-        else:
-            result = _run_timed_subprocess(build_cmd, f"{image_name}_build")
-            _check_subprocess_result(result, image_name, "build")
-
+        _run_docker(_docker_build_cmd(spec, local_tag), image_name, "build", dry_run)
         log_success(f"{image_name} (build {tag[:8]})")
 
-        if should_push:
-            # Tag for ECR
-            tag_cmd = ["docker", "tag", local_tag, ecr_uri]
-            if dry_run:
-                print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(tag_cmd)}")
-            else:
-                subprocess.run(tag_cmd, check=True)
-
-            # Push to ECR
-            push_cmd = ["docker", "push", ecr_uri]
-            if dry_run:
-                print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(push_cmd)}")
-            else:
-                result = _run_timed_subprocess(push_cmd, f"{image_name}_push")
-                _check_subprocess_result(result, image_name, "push")
-
-            log_success(f"{image_name} (push)")
+        if spec.should_push:
+            _tag_and_push(local_tag, ecr_uri, image_name, dry_run)
             image_uris[image_name] = ecr_uri
         else:
             log_status(f"{image_name}", "local only")
