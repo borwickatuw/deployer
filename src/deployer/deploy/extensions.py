@@ -32,33 +32,13 @@ def create_database_extensions(
     Raises:
         RuntimeError: If the Lambda invocation fails or returns an error
     """
-    # Read extensions from deploy.toml
     extensions = config.get("database", {}).get("extensions", [])
     if not extensions:
         return
 
     log(f"Creating database extensions: {', '.join(extensions)}")
 
-    # Read lambda function name from config.toml
-    lambda_name = env_config.get("database", {}).get("extensions_lambda")
-    if not lambda_name:
-        print_with_advice(
-            "deploy.toml declares database extensions, but config.toml is missing "
-            "[database] extensions_lambda.",
-            "  Your deploy.toml declares:",
-            "    [database]",
-            f"    extensions = {json.dumps(extensions)}",
-            "",
-            "  But your environment's config.toml needs:",
-            "    [database]",
-            '    extensions_lambda = "${tofu:db_users_lambda_function_name}"',
-            "",
-            "  Steps to fix:",
-            "    1. Add the extensions_lambda line to your config.toml",
-            "    2. Add the db_users_lambda_function_name output to your main.tf",
-            "    3. Run 'tofu apply' to create the output",
-        )
-        raise RuntimeError("Missing extensions_lambda in config.toml [database] section")
+    lambda_name = _require_lambda_name(env_config, extensions)
 
     if dry_run:
         log_warning(
@@ -66,6 +46,65 @@ def create_database_extensions(
         )
         return
 
+    response = _invoke_extensions_lambda(lambda_name, extensions, region)
+    _raise_on_function_error(response, lambda_name)
+
+    result = json.loads(response["Payload"].read().decode())
+    created = result.get("extensions", [])
+    log_success(f"Extensions ready: {', '.join(created)}")
+
+
+def _require_lambda_name(env_config: dict, extensions: list[str]) -> str:
+    """Read the extensions Lambda name from config.toml.
+
+    Args:
+        env_config: Resolved config.toml dict.
+        extensions: The extensions deploy.toml declared, echoed back in the advice.
+
+    Returns:
+        The Lambda function name.
+
+    Raises:
+        RuntimeError: If config.toml has no [database] extensions_lambda.
+    """
+    lambda_name = env_config.get("database", {}).get("extensions_lambda")
+    if lambda_name:
+        return lambda_name
+
+    print_with_advice(
+        "deploy.toml declares database extensions, but config.toml is missing "
+        "[database] extensions_lambda.",
+        "  Your deploy.toml declares:",
+        "    [database]",
+        f"    extensions = {json.dumps(extensions)}",
+        "",
+        "  But your environment's config.toml needs:",
+        "    [database]",
+        '    extensions_lambda = "${tofu:db_users_lambda_function_name}"',
+        "",
+        "  Steps to fix:",
+        "    1. Add the extensions_lambda line to your config.toml",
+        "    2. Add the db_users_lambda_function_name output to your main.tf",
+        "    3. Run 'tofu apply' to create the output",
+    )
+    raise RuntimeError("Missing extensions_lambda in config.toml [database] section")
+
+
+def _invoke_extensions_lambda(lambda_name: str, extensions: list[str], region: str) -> dict:
+    """Invoke the db-users Lambda synchronously and return its raw response.
+
+    Args:
+        lambda_name: The Lambda function to invoke.
+        extensions: Extension names passed in the create_extensions payload.
+        region: AWS region.
+
+    Returns:
+        The boto3 invoke() response. A Lambda-level failure is reported in its
+        FunctionError key, not raised here — see _raise_on_function_error().
+
+    Raises:
+        RuntimeError: If the invocation itself fails.
+    """
     payload = {
         "action": "create_extensions",
         "extensions": extensions,
@@ -73,7 +112,7 @@ def create_database_extensions(
 
     try:
         client = boto3.client("lambda", region_name=region)
-        response = client.invoke(
+        return client.invoke(
             FunctionName=lambda_name,
             InvocationType="RequestResponse",
             Payload=json.dumps(payload),
@@ -113,23 +152,33 @@ def create_database_extensions(
         )
         raise RuntimeError(f"Failed to invoke extensions Lambda: {e}") from e
 
-    # Check for Lambda-level errors (function error, not invocation error)
-    if "FunctionError" in response:
-        error_payload = json.loads(response["Payload"].read().decode())
-        error_type = error_payload.get("errorType", "Unknown")
-        error_message = error_payload.get("errorMessage", "No details")
 
-        print_with_advice(
-            f"Lambda '{lambda_name}' returned an error: {error_type}",
-            f"  {error_message}",
-            "",
-            "  The Lambda function ran but failed to create extensions.",
-            "  Check the Lambda's CloudWatch logs for details:",
-            f"    aws logs tail /aws/lambda/{lambda_name} --since 5m",
-        )
-        raise RuntimeError(f"Extensions Lambda failed: {error_type} - {error_message}")
+def _raise_on_function_error(response: dict, lambda_name: str) -> None:
+    """Raise if the Lambda ran but reported an error.
 
-    # Parse successful response
-    result = json.loads(response["Payload"].read().decode())
-    created = result.get("extensions", [])
-    log_success(f"Extensions ready: {', '.join(created)}")
+    A function error is distinct from an invocation error: the call succeeded,
+    so boto3 raised nothing, but the handler failed.
+
+    Args:
+        response: The boto3 invoke() response.
+        lambda_name: The Lambda that was invoked, named in the advice.
+
+    Raises:
+        RuntimeError: If the response carries a FunctionError.
+    """
+    if "FunctionError" not in response:
+        return
+
+    error_payload = json.loads(response["Payload"].read().decode())
+    error_type = error_payload.get("errorType", "Unknown")
+    error_message = error_payload.get("errorMessage", "No details")
+
+    print_with_advice(
+        f"Lambda '{lambda_name}' returned an error: {error_type}",
+        f"  {error_message}",
+        "",
+        "  The Lambda function ran but failed to create extensions.",
+        "  Check the Lambda's CloudWatch logs for details:",
+        f"    aws logs tail /aws/lambda/{lambda_name} --since 5m",
+    )
+    raise RuntimeError(f"Extensions Lambda failed: {error_type} - {error_message}")
