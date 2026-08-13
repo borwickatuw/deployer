@@ -230,7 +230,29 @@ def cmd_list(environment: str) -> int:
     return 0
 
 
-def cmd_run(  # noqa: C901 — ECS run command orchestration
+def _print_available_commands(dt: dict) -> int:
+    """Print deploy.toml's [commands] section.
+
+    Args:
+        dt: Parsed deploy.toml.
+
+    Returns:
+        0 if any commands were listed, 1 if the section is empty or absent.
+    """
+    commands = dt.get("commands", {})
+    if not commands:
+        print("No commands defined in [commands] section", file=sys.stderr)
+        return 1
+
+    print("Available commands:")
+    for name, cmd in commands.items():
+        cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+        print(f"  {name}: {cmd_str}")
+
+    return 0
+
+
+def cmd_run(
     environment: str,
     command_name: str | None,
     deploy_toml: str | None,
@@ -277,15 +299,7 @@ def cmd_run(  # noqa: C901 — ECS run command orchestration
         return 1
 
     if list_commands:
-        commands = dt.get("commands", {})
-        if not commands:
-            print("No commands defined in [commands] section", file=sys.stderr)
-            return 1
-        print("Available commands:")
-        for name, cmd in commands.items():
-            cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
-            print(f"  {name}: {cmd_str}")
-        return 0
+        return _print_available_commands(dt)
 
     if not environment:
         print("Error: environment is required (or use --list-commands)", file=sys.stderr)
