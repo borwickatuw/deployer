@@ -238,6 +238,8 @@ def run_audit(  # noqa: C901 — deploy.toml vs docker-compose audit with multip
             log_info(f"Service mappings: {', '.join(mappings)}")
         if audit_config.ignore_env_vars:
             log_info(f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}")
+        if audit_config.ignore_images:
+            log_info(f"Ignoring images: {', '.join(sorted(audit_config.ignore_images))}")
 
     total_issues = 0
 

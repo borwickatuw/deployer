@@ -735,6 +735,53 @@ ignore_images = ["legacy"]
 
         assert _section("Audit Configuration") in _lines(capsys)
 
+    def test_ignore_images_is_listed(self, tmp_path, capsys):
+        """ignore_images gets its own line, like the other three keys.
+
+        Before this was fixed, ignore_images opened the section but printed
+        nothing inside it, so a deploy.toml configuring only ignore_images
+        showed an empty heading and no way to confirm the setting took.
+        """
+        deploy = """\
+[application]
+name = "t"
+
+[audit]
+ignore_images = ["legacy", "vendor"]
+"""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, deploy), verbose=True)
+
+        out = _lines(capsys)
+        start = out.index(_section("Audit Configuration"))
+        assert out[start : start + 2] == [
+            _section("Audit Configuration"),
+            _info("Ignoring images: legacy, vendor"),
+        ]
+
+    def test_every_audit_config_key_is_listed_together(self, tmp_path, capsys):
+        """All four keys set at once print in declaration order."""
+        deploy = """\
+[application]
+name = "t"
+
+[audit]
+ignore_services = ["seeder"]
+service_mapping = { "app" = "web" }
+ignore_env_vars = ["NOISY"]
+ignore_images = ["legacy"]
+"""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, deploy), verbose=True)
+
+        out = _lines(capsys)
+        start = out.index(_section("Audit Configuration"))
+        assert out[start : start + 5] == [
+            _section("Audit Configuration"),
+            _info("Ignoring services: seeder"),
+            _info("Service mappings: app→web"),
+            _info("Ignoring env vars: NOISY"),
+            _info("Ignoring images: legacy"),
+        ]
+
     def test_all_clear_prints_an_ok_line_per_section(self, tmp_path, capsys):
         """Three headings, each followed by its own all-accounted-for line."""
         run_audit(_project(tmp_path, MINIMAL_COMPOSE, MINIMAL_DEPLOY), verbose=True)
