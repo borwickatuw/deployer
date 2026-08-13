@@ -44,14 +44,15 @@ from deployer.emergency.ecs import (
 from deployer.emergency.rds import get_rds_snapshots
 from deployer.utils import (
     Colors,
-    configure_aws_profile_for_environment,
     format_iso,
+    format_timestamp,
     get_environment_path,
+    load_environment_infrastructure,
     log_error,
     log_info,
     log_success,
     log_warning,
-    validate_environment_deployed,
+    validate_and_configure,
 )
 
 # =============================================================================
@@ -368,29 +369,14 @@ def list_repositories_for_environment(environment: str, service_names: list[str]
     return result
 
 
-def _format_timestamp(value: str, fmt: str = "%Y-%m-%d %H:%M UTC") -> str:
-    """Parse an ISO timestamp and reformat it, returning the original on failure."""
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return dt.strftime(fmt)
-    except (ValueError, AttributeError):
-        return value
-
-
 def _validate_and_configure(environment: str) -> None:
-    """Validate environment and configure AWS profile. Exits on error."""
-    env_path, error = validate_environment_deployed(environment)
-    if error:
-        log_error(error)
-        sys.exit(1)
+    """Show the ops.py banner, then validate the environment and configure AWS.
 
-    # Show banner
+    Uses the infra profile for broader read access. Exits on error.
+    """
     print()
     print(f"{Colors.CYAN}ops.py: Production monitoring tool (read-only){Colors.NC}")
-
-    # Configure AWS profile - use infra profile for broader read access
-    configure_aws_profile_for_environment("infra", environment)
-    print()
+    validate_and_configure(environment)
 
 
 # =============================================================================
@@ -400,11 +386,10 @@ def _validate_and_configure(environment: str) -> None:
 
 def cmd_status(environment: str) -> int:
     """Show current state of environment."""
-    env_path = get_environment_path(environment)
-    config = load_environment_config(env_path)
-
-    cluster_name = config.get("infrastructure", {}).get("cluster_name")
-    rds_id = config.get("infrastructure", {}).get("rds_instance_id")
+    infra = load_environment_infrastructure(environment)
+    config = infra.config
+    cluster_name = infra.cluster_name
+    rds_id = infra.rds_id
 
     print()
     print(f"{Colors.BLUE}Environment: {environment}{Colors.NC}")
@@ -438,7 +423,7 @@ def cmd_status(environment: str) -> int:
                 for rev in revisions:
                     registered = rev.get("registered_at", "unknown")
                     if registered and "T" in registered:
-                        registered = _format_timestamp(registered)
+                        registered = format_timestamp(registered)
                     print(f"    revision {rev['revision']:>3} - {registered}")
         print()
     else:
@@ -464,7 +449,7 @@ def cmd_status(environment: str) -> int:
             for snap in snapshots:
                 created = snap.get("created_at", "unknown")
                 if created and "T" in created:
-                    created = _format_timestamp(created)
+                    created = format_timestamp(created)
                 snap_type = snap.get("type", "")
                 print(f"  {snap['id']:<50} {snap_type:<10} {created}")
         print()
@@ -577,7 +562,7 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
             for event in events[:10]:  # Show first 10
                 timestamp = event["timestamp"]
                 if "T" in timestamp:
-                    timestamp = _format_timestamp(timestamp, "%H:%M:%S")
+                    timestamp = format_timestamp(timestamp, "%H:%M:%S")
 
                 # Truncate long messages
                 message = event["message"][:200]

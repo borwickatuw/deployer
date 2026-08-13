@@ -13,7 +13,7 @@ from deployer.utils.cli import (
     exit_on,
     iter_deployed_environments,
     load_environment_infrastructure,
-    prompt_or_cancel,
+    prompt_or_exit,
     require_environment,
     require_validated_environment,
     validate_and_configure,
@@ -33,25 +33,23 @@ def _answer(monkeypatch, *responses):
     monkeypatch.setattr("builtins.input", fake_input)
 
 
-class TestPromptOrCancel:
-    """Tests for prompt_or_cancel()."""
+class TestPromptOrExit:
+    """Tests for prompt_or_exit()."""
 
     def test_returns_stripped_value(self, monkeypatch):
         _answer(monkeypatch, "  myapp-staging  ")
-        assert prompt_or_cancel("Name: ") == "myapp-staging"
+        assert prompt_or_exit("Name: ") == "myapp-staging"
 
     def test_empty_input_is_not_a_cancellation(self, monkeypatch):
         _answer(monkeypatch, "")
-        assert prompt_or_cancel("Name: ") == ""
+        assert prompt_or_exit("Name: ") == ""
 
-    def test_eof_returns_none(self, monkeypatch, capsys):
-        _answer(monkeypatch, EOFError)
-        assert prompt_or_cancel("Name: ") is None
-        assert "Cancelled" in capsys.readouterr().out
-
-    def test_keyboard_interrupt_returns_none(self, monkeypatch, capsys):
-        _answer(monkeypatch, KeyboardInterrupt)
-        assert prompt_or_cancel("Name: ") is None
+    @pytest.mark.parametrize("interrupt", [EOFError, KeyboardInterrupt])
+    def test_cancellation_exits_1(self, monkeypatch, capsys, interrupt):
+        _answer(monkeypatch, interrupt)
+        with pytest.raises(SystemExit) as exc_info:
+            prompt_or_exit("Name: ")
+        assert exc_info.value.code == 1
         assert "Cancelled" in capsys.readouterr().out
 
 
@@ -72,9 +70,12 @@ class TestConfirmAction:
         assert confirm_action() is False
         assert "Cancelled" in capsys.readouterr().out
 
-    def test_eof_cancels(self, monkeypatch, capsys):
+    def test_eof_exits_1(self, monkeypatch, capsys):
+        """EOF/Ctrl-C exits rather than returning False; callers turned False into exit(1)."""
         _answer(monkeypatch, EOFError)
-        assert confirm_action() is False
+        with pytest.raises(SystemExit) as exc_info:
+            confirm_action()
+        assert exc_info.value.code == 1
         assert "Cancelled" in capsys.readouterr().out
 
 
@@ -191,7 +192,6 @@ class TestLoadEnvironmentInfrastructure:
             {"infrastructure": {"cluster_name": "myapp-cluster", "rds_instance_id": "myapp-db"}},
         )
         infra = load_environment_infrastructure("myapp-staging")
-        assert infra.env_path == tmp_path / "myapp-staging"
         assert infra.cluster_name == "myapp-cluster"
         assert infra.rds_id == "myapp-db"
         assert infra.config["infrastructure"]["cluster_name"] == "myapp-cluster"

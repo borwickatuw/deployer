@@ -31,8 +31,10 @@ from deployer.core.config import (
 from deployer.utils import (
     configure_aws_profile,
     get_all_environments,
-    get_environment_path,
     get_environments_dir,
+    iter_deployed_environments,
+    load_environment_infrastructure,
+    log_error,
     validate_environment_deployed,
 )
 
@@ -46,29 +48,13 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
     Returns:
         Tuple of (config, cluster_name, rds_id).
     """
-    env_path, error = validate_environment_deployed(environment)
+    _, error = validate_environment_deployed(environment)
     if error:
-        print(f"Error: {error}", file=sys.stderr)
+        log_error(error)
         raise SystemExit(1)
 
-    try:
-        config = load_environment_config(env_path)
-    except (FileNotFoundError, RuntimeError) as e:
-        print(f"Error loading config: {e}", file=sys.stderr)
-        raise SystemExit(1) from None
-
-    cluster_name = config.get("infrastructure", {}).get("cluster_name")
-    rds_id = config.get("infrastructure", {}).get("rds_instance_id")
-
-    if not cluster_name:
-        print("Error: Unable to determine ECS cluster name", file=sys.stderr)
-        raise SystemExit(1)
-
-    if not rds_id:
-        print("Error: Unable to determine RDS instance ID", file=sys.stderr)
-        raise SystemExit(1)
-
-    return config, cluster_name, rds_id
+    infra = load_environment_infrastructure(environment, require_cluster=True, require_rds=True)
+    return infra.config, infra.cluster_name, infra.rds_id
 
 
 # =============================================================================
@@ -84,22 +70,7 @@ def cmd_status(environment: str | None) -> int:
         print("No environments found.", file=sys.stderr)
         return 1
 
-    for env_name in environments:
-        env_path = get_environment_path(env_name)
-
-        print(f"\n{'=' * 60}")
-        print(f"Environment: {env_name}")
-        print(f"{'=' * 60}")
-
-        if not env_path.exists():
-            print("  Directory not found")
-            continue
-
-        state_file = env_path / "terraform.tfstate"
-        if not state_file.exists():
-            print("  Status: Not deployed")
-            continue
-
+    for _env_name, env_path in iter_deployed_environments(environments):
         # Load config from config.toml
         try:
             config = load_environment_config(env_path)

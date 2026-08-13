@@ -34,7 +34,7 @@ from deployer.deploy.preflight import PreflightError, PreflightOptions, run_pref
 from deployer.timing import DeploymentTimer
 from deployer.utils import (
     Colors,
-    configure_aws_profile_for_environment,
+    configure_profile_or_exit,
     get_environments_dir,
     get_linked_deploy_toml,
     log,
@@ -119,11 +119,7 @@ def deploy(  # noqa: C901 — main deploy orchestration
         print(f"     to deploy with just: deploy.py deploy {environment}\n")
 
     # Configure AWS profile
-    try:
-        configure_aws_profile_for_environment("deploy", environment, validate=True)
-    except RuntimeError as e:
-        log_error(str(e))
-        sys.exit(1)
+    configure_profile_or_exit("deploy", environment)
     print()
 
     # Validate config file

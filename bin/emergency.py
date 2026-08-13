@@ -35,10 +35,7 @@ from datetime import UTC, datetime
 import click
 
 from deployer.aws import rds
-from deployer.core.config import (
-    get_service_replicas_from_config,
-    load_environment_config,
-)
+from deployer.core.config import get_service_replicas_from_config
 from deployer.emergency.checkpoint import (
     RdsState,
     ServiceState,
@@ -66,18 +63,19 @@ from deployer.emergency.rds import (
 )
 from deployer.utils import (
     Colors,
-    configure_aws_profile_for_environment,
     confirm_action,
     format_iso,
+    format_timestamp,
     get_deployer_root,
-    get_environment_path,
+    load_environment_infrastructure,
     log,
     log_error,
     log_info,
     log_ok,
     log_success,
     log_warning,
-    validate_environment_deployed,
+    prompt_or_exit,
+    validate_and_configure,
 )
 
 # =============================================================================
@@ -121,15 +119,6 @@ class EmergencyLogger:
 # =============================================================================
 # Helpers
 # =============================================================================
-
-
-def _format_utc_timestamp(iso_string: str) -> str:
-    """Format an ISO timestamp string to 'YYYY-MM-DD HH:MM UTC'."""
-    try:
-        dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d %H:%M UTC")
-    except ValueError:
-        return iso_string
 
 
 def _capture_rds_state(rds_id: str | None) -> RdsState | None:
@@ -193,54 +182,44 @@ def _load_emergency_context(
 
     Raises SystemExit(1) if required infrastructure is missing.
     """
-    env_path = get_environment_path(environment)
-    config = load_environment_config(env_path)
-    cluster_name = config.get("infrastructure", {}).get("cluster_name")
-    rds_id = config.get("infrastructure", {}).get("rds_instance_id")
-
-    if require_cluster and not cluster_name:
-        log_error("Unable to determine ECS cluster name")
-        raise SystemExit(1)
-
-    if require_rds and not rds_id:
-        log_error("RDS instance not configured for this environment")
-        raise SystemExit(1)
-
+    infra = load_environment_infrastructure(
+        environment, require_cluster=require_cluster, require_rds=require_rds
+    )
     return EmergencyContext(
-        config=config, cluster_name=cluster_name, rds_id=rds_id, logger=EmergencyLogger(environment)
+        config=infra.config,
+        cluster_name=infra.cluster_name,
+        rds_id=infra.rds_id,
+        logger=EmergencyLogger(environment),
     )
 
 
-def _load_cluster_services(environment: str) -> tuple[EmergencyContext, dict] | None:
+def _load_cluster_services(environment: str) -> tuple[EmergencyContext, dict]:
     """Load emergency context and fetch all services in the cluster.
 
+    Raises SystemExit(1) if the cluster has no services, matching
+    _load_emergency_context's own convention.
+
     Returns:
-        Tuple of (ctx, services) if successful, None if no services found.
+        Tuple of (ctx, services).
     """
     ctx = _load_emergency_context(environment, require_cluster=True)
     services = get_all_services_state(ctx.cluster_name)
     if not services:
         log_error("No services found in cluster")
-        return None
+        raise SystemExit(1)
     return ctx, services
 
 
 def _validate_and_configure(environment: str) -> None:
-    """Validate environment and configure AWS. Exits on error."""
-    _, error = validate_environment_deployed(environment)
-    if error:
-        log_error(error)
-        sys.exit(1)
+    """Show the emergency warning banner, then validate and configure AWS.
 
-    # Show warning banner
+    Exits on error.
+    """
     print()
     print(f"{Colors.YELLOW}{'=' * 62}")
     print(f"  EMERGENCY TOOL - This command can modify {environment}")
     print(f"{'=' * 62}{Colors.NC}")
-
-    # Configure AWS profile
-    configure_aws_profile_for_environment("infra", environment)
-    print()
+    validate_and_configure(environment)
 
 
 # =============================================================================
@@ -252,10 +231,7 @@ def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
     environment: str, service: str | None, revision: int | None, yes: bool
 ) -> int:
     """Roll back ECS service(s) to previous task definition."""
-    result = _load_cluster_services(environment)
-    if result is None:
-        return 1
-    ctx, services = result
+    ctx, services = _load_cluster_services(environment)
     cluster_name = ctx.cluster_name
     logger = ctx.logger
 
@@ -276,17 +252,15 @@ def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
             print(f"  {i}. {name} (current revision: {rev})")
         print()
 
-        try:
-            choice = input("Select service to roll back (number): ").strip()
-            idx = int(choice) - 1
-            if idx < 0 or idx >= len(service_list):
-                log_error("Invalid selection")
-                return 1
-            service_name = service_list[idx]
-        except (ValueError, EOFError, KeyboardInterrupt):
-            print()
-            log_error("Cancelled")
+        choice = prompt_or_exit("Select service to roll back (number): ")
+        if not choice.isdigit():
+            log_error("Invalid selection")
             return 1
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(service_list):
+            log_error("Invalid selection")
+            return 1
+        service_name = service_list[idx]
 
     # Get current state
     current_state = services[service_name]
@@ -315,24 +289,22 @@ def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
         for i, rev in enumerate(revisions):
             registered = rev.get("registered_at", "unknown")
             if registered and "T" in registered:
-                registered = _format_utc_timestamp(registered)
+                registered = format_timestamp(registered)
             current = " (current)" if i == 0 else ""
             print(f"  {i}. revision {rev['revision']:>3} - {registered}{current}")
         print()
 
-        try:
-            choice = input(
-                "Select revision to roll back to (number, default=1 for previous): "
-            ).strip()
-            idx = 1 if not choice else int(choice)
-            if idx < 1 or idx >= len(revisions):
-                log_error("Invalid selection (cannot select current revision)")
-                return 1
-            target_rev = revisions[idx]
-        except (ValueError, EOFError, KeyboardInterrupt):
-            print()
-            log_error("Cancelled")
+        choice = prompt_or_exit(
+            "Select revision to roll back to (number, default=1 for previous): "
+        )
+        if choice and not choice.isdigit():
+            log_error("Invalid selection (cannot select current revision)")
             return 1
+        idx = 1 if not choice else int(choice)
+        if idx < 1 or idx >= len(revisions):
+            log_error("Invalid selection (cannot select current revision)")
+            return 1
+        target_rev = revisions[idx]
 
     # Show diff of environment variables
     current_arn = current_state.task_definition
@@ -427,10 +399,7 @@ def cmd_scale(
     yes: bool,
 ) -> int:
     """Scale ECS services."""
-    result = _load_cluster_services(environment)
-    if result is None:
-        return 1
-    ctx, services = result
+    ctx, services = _load_cluster_services(environment)
     cluster_name = ctx.cluster_name
     logger = ctx.logger
 
@@ -603,7 +572,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         for i, snap in enumerate(snapshots):
             created = snap.get("created_at", "unknown")
             if created and "T" in created:
-                created = _format_utc_timestamp(created)
+                created = format_timestamp(created)
             snap_type = snap.get("type", "")
             print(f"  {i}. {snap['id']:<50} {snap_type:<10} {created}")
         print()
@@ -619,25 +588,20 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         print("  Or enter a time in ISO format (e.g., 2026-02-04T12:00:00Z) for point-in-time")
         print()
 
-        try:
-            choice = input("Selection: ").strip()
-            if not choice:
-                log_error("Cancelled")
-                return 1
-
-            try:
-                idx = int(choice)
-                if idx < 0 or idx >= len(snapshots):
-                    log_error("Invalid selection")
-                    return 1
-                return cmd_restore_db(environment, snapshot=snapshots[idx]["id"], time=None)
-            except ValueError:
-                return cmd_restore_db(environment, snapshot=None, time=choice)
-
-        except (EOFError, KeyboardInterrupt):
-            print()
+        choice = prompt_or_exit("Selection: ")
+        if not choice:
             log_error("Cancelled")
             return 1
+
+        # A bare number selects a snapshot; anything else is a point-in-time stamp.
+        if not choice.isdigit():
+            return cmd_restore_db(environment, snapshot=None, time=choice)
+
+        idx = int(choice)
+        if idx < 0 or idx >= len(snapshots):
+            log_error("Invalid selection")
+            return 1
+        return cmd_restore_db(environment, snapshot=snapshots[idx]["id"], time=None)
 
 
 # =============================================================================
@@ -660,7 +624,7 @@ def cmd_revert(
         for cp in checkpoints:
             timestamp = cp.timestamp
             if "T" in timestamp:
-                timestamp = _format_utc_timestamp(timestamp)
+                timestamp = format_timestamp(timestamp)
             print(f"  {cp.filename:<45} {cp.action:<12} {timestamp}")
             print(f"    Reason: {cp.reason}")
         print()
@@ -734,10 +698,7 @@ def cmd_revert(
 
 def cmd_force_deploy(environment: str, service: str | None, all_services: bool, yes: bool) -> int:
     """Force a new deployment of ECS service(s)."""
-    result = _load_cluster_services(environment)
-    if result is None:
-        return 1
-    ctx, services = result
+    ctx, services = _load_cluster_services(environment)
     cluster_name = ctx.cluster_name
     logger = ctx.logger
 

@@ -36,7 +36,7 @@ from deployer.core.config import (
     load_environment_config,
 )
 from deployer.utils import (
-    configure_aws_profile_for_environment,
+    configure_profile_or_exit,
     get_environment_path,
     log,
     log_error,
@@ -224,11 +224,7 @@ def cli(environment, output_file, push_s3, verify, verify_file):
       python resolve-config.py myapp-staging --verify
     """
     # Configure AWS profile (needs infra profile for tofu outputs)
-    try:
-        configure_aws_profile_for_environment("infra", environment, validate=True)
-    except RuntimeError as e:
-        log_error(str(e))
-        sys.exit(1)
+    configure_profile_or_exit("infra", environment)
 
     if verify:
         # Verify mode: check if resolved config is still fresh

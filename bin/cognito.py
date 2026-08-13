@@ -48,8 +48,7 @@ from deployer.core.config import (
 )
 from deployer.utils import (
     EnvironmentConfigError,
-    configure_aws_profile,
-    configure_aws_profile_for_environment,
+    configure_aws_for_operation,
     get_all_environments,
     get_environment_path,
     get_environments_dir,
@@ -59,10 +58,7 @@ from deployer.utils import (
 
 def _configure_aws(environment: str | None) -> None:
     """Configure AWS profile for the given environment."""
-    if environment:
-        configure_aws_profile_for_environment("cognito", environment)
-    else:
-        configure_aws_profile("cognito")
+    configure_aws_for_operation("cognito", environment)
 
 
 def get_cognito_environments() -> list[str]:

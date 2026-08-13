@@ -32,8 +32,8 @@ from deployer.utils import (
     Colors,
     configure_aws_profile,
     get_all_environments,
-    get_environment_path,
     get_environments_dir,
+    iter_deployed_environments,
 )
 
 
@@ -200,23 +200,9 @@ def cli(environment, days):
 
     exit_code = 0
 
-    for env_name in environments:
-        env_path = get_environment_path(env_name)
-
-        print()
-        print(f"{'=' * 60}")
-        print(f"Environment: {env_name} (last {days} days)")
-        print(f"{'=' * 60}")
-
-        if not env_path.exists():
-            print("  Directory not found")
-            continue
-
-        state_file = env_path / "terraform.tfstate"
-        if not state_file.exists():
-            print("  Status: Not deployed")
-            continue
-
+    for env_name, env_path in iter_deployed_environments(
+        environments, header_suffix=f" (last {days} days)"
+    ):
         print()
         if check_environment(env_name, env_path, days) != 0:
             exit_code = 1

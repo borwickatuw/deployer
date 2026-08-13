@@ -19,28 +19,31 @@ class EnvironmentConfigError(Exception):
 class EnvironmentInfrastructure:
     """Infrastructure identifiers read from an environment's config.toml."""
 
-    env_path: Path
     config: dict
     cluster_name: str | None
     rds_id: str | None
 
 
-def prompt_or_cancel(prompt: str) -> str | None:
-    """Read a line from stdin, treating EOF/Ctrl-C as a cancellation.
+def prompt_or_exit(prompt: str) -> str:
+    """Read a line from stdin, treating EOF/Ctrl-C as "Cancelled" and exiting.
 
     Args:
         prompt: Text to show before reading.
 
     Returns:
-        The stripped input, or None if the user cancelled (EOF/Ctrl-C).
-        A cancellation prints a newline followed by "Cancelled".
+        The stripped input.
+
+    Raises:
+        SystemExit: With code 1 if the user cancels (EOF/Ctrl-C). Every bin/
+            command wraps its body in sys.exit(cmd_...()), so this is the same
+            exit status the old per-site "return 1" produced.
     """
     try:
         return input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         log_error("Cancelled")
-        return None
+        raise SystemExit(1) from None
 
 
 def confirm_action(skip: bool = False) -> bool:
@@ -55,10 +58,7 @@ def confirm_action(skip: bool = False) -> bool:
     if skip:
         return True
 
-    confirm = prompt_or_cancel("Continue? [y/N]: ")
-    if confirm is None:
-        return False
-    if confirm.lower() not in ("y", "yes"):
+    if prompt_or_exit("Continue? [y/N]: ").lower() not in ("y", "yes"):
         log_error("Cancelled")
         return False
 
@@ -151,7 +151,7 @@ def load_environment_infrastructure(
         require_rds: Exit if no RDS instance ID is configured.
 
     Returns:
-        The environment path, resolved config, cluster name and RDS instance ID.
+        The resolved config, cluster name and RDS instance ID.
 
     Raises:
         SystemExit: With code 1 if the config cannot be loaded or a required
@@ -178,9 +178,7 @@ def load_environment_infrastructure(
         log_error("RDS instance not configured for this environment")
         raise SystemExit(1)
 
-    return EnvironmentInfrastructure(
-        env_path=env_path, config=config, cluster_name=cluster_name, rds_id=rds_id
-    )
+    return EnvironmentInfrastructure(config=config, cluster_name=cluster_name, rds_id=rds_id)
 
 
 def iter_deployed_environments(

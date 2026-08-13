@@ -44,8 +44,7 @@ from deployer.core.ssm_secrets import (
 )
 from deployer.core.ssm_secrets import parse_environment as _parse_environment
 from deployer.utils import (
-    configure_aws_profile,
-    configure_aws_profile_for_environment,
+    configure_aws_for_operation,
     get_linked_deploy_toml,
 )
 
@@ -380,10 +379,7 @@ class SSMGroup(click.Group):
 
 def _configure_aws(environment: str | None) -> None:
     """Configure AWS profile for the given environment."""
-    if environment:
-        configure_aws_profile_for_environment("secrets", environment)
-    else:
-        configure_aws_profile("secrets")
+    configure_aws_for_operation("secrets", environment)
 
 
 @click.group()
