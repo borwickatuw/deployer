@@ -27,6 +27,20 @@ findings (the `bin/init.py` print-runs) are left standing there **pending
 operator confirmation**, with the drafted fix and the reason it was kept
 out; re-measure them after 53d.
 
+Phase 53c (`src/deployer` dedup) **shipped 2026-08-13** — an
+error-with-advice vocabulary in `src/deployer/utils/logging.py`
+(`advice_block` / `print_with_advice`) adopted at six sites, a shared
+`aws` CLI surface in `src/deployer/aws/cli.py` that collapsed five twins
+pysmelly could not see, and `EnvironmentTarget` / `DeployOptions` in
+`src/deployer/deploy/context.py` for the two findings 53b routed here;
+pysmelly 82 → 74, `duplicate-blocks` left with no open items, coverage
+floor 36 → 37. The `aws/` package got its first tests ever (cognito 12% →
+100%, rds 18% → 100%). Adjudication record:
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md). Two findings were
+minted and are left standing there **pending operator confirmation**; it
+also lists five inline suppressions carrying neither a rationale nor a
+`re-evaluate-by:` tag, routed to 53i.
+
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record
 in claude-meta docs/PLAN-ARCHIVE.md. Its tests pin today's
