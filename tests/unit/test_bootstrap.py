@@ -226,18 +226,18 @@ class TestPromptAccountIdAndRegion:
 
     def test_detected_account_id_is_offered_as_default(self, monkeypatch):
         """Test that a detected account ID becomes the prompt default."""
-        monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: "210987654321")
+        monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: "111122223333")
         seen = {}
 
         def fake_prompt(text, default=None, **kwargs):
             seen[text] = default
-            return "210987654321" if "Account" in text else "us-west-2"
+            return "111122223333" if "Account" in text else "us-west-2"
 
         monkeypatch.setattr("deployer.init.bootstrap.click.prompt", fake_prompt)
         prompt_account_id_and_region()
-        assert seen["AWS Account ID"] == "210987654321"
+        assert seen["AWS Account ID"] == "111122223333"
 
-    @pytest.mark.parametrize("bad", ["", "12345", "12345678901a", "1234567890123"])
+    @pytest.mark.parametrize("bad", ["", "12345", "12345678901x", "1234567890123"])
     def test_invalid_account_id_exits_1(self, monkeypatch, capsys, bad):
         """Test that anything but exactly 12 digits exits 1."""
         monkeypatch.setattr("deployer.init.bootstrap.detect_aws_account_id", lambda: None)

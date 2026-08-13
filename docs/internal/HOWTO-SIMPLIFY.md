@@ -55,18 +55,19 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 
 ## Pysmelly Status
 
-97 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
-review). 22 suppression lines stand, all operator-approved false positives
-tagged `re-evaluate-by: 2026-11 review` (Lambda context params, JSON
-serialization constraints, query-function None contracts, Click patterns,
-leaf logging utilities). The 2026-08 S2 review found five Phase 42-2
-suppressions had never taken effect due to comment placement — four
-relocated, one (`generate_bootstrap` unused-default) fixed for real.
+82 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
+review; 97 before Phase 53a, 91 before 53b). 22 suppression lines stand, all
+operator-approved false positives tagged `re-evaluate-by: 2026-11 review`
+(Lambda context params, JSON serialization constraints, query-function None
+contracts, Click patterns, leaf logging utilities). The 2026-08 S2 review found
+five Phase 42-2 suppressions had never taken effect due to comment placement —
+four relocated, one (`generate_bootstrap` unused-default) fixed for real.
 
 **The per-finding work is queued as Phase 53 (subphases 53a–53i) in
 claude-meta `docs/PLAN.md`** — one finding-type × one subsystem per
 operator-gated session, duplicate-block extraction before long-function
-decomposition.
+decomposition. 53a (db-\* Lambda twins) and 53b (CLI boilerplate) are done;
+per-finding dispositions are in `docs/internal/PYSMELLY.md`.
 
 ### Code improvements made (Phases 42 + 42-2)
 
@@ -79,23 +80,30 @@ decomposition.
 - Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
 - Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-### Remaining findings (97)
+### Remaining findings (82)
 
-| Category                    | Count | Notes                                                |
-| --------------------------- | ----- | ---------------------------------------------------- |
-| duplicate-blocks            | 24    | Lambda twins, CLI boilerplate, deploy/ pairs (53a–c) |
-| long-function               | 17    | Orchestration functions (100–166 lines) (53d–e)      |
-| pass-through-params         | 9     | ssm_secrets/preflight/aws plumbing (53g)             |
-| param-clumps                | 9     | Context-object candidates (53g–h)                    |
-| duplicate-except-blocks     | 6     | Same handler text across CLI commands (53b)          |
-| inconsistent-error-handling | 5     | Caller-contract policy needed (53i)                  |
-| dict-as-dataclass           | 5     | emergency/rds, ecs, cognito returns (53f)            |
-| foo-equals-foo              | 4     | Single-use locals to inline (53i)                    |
-| arrow-code                  | 6     | Depth-5/6 nesting (53d–e)                            |
-| law-of-demeter              | 4     | Chain depth 4 (53e, 53i)                             |
-| single-call-site            | 3     | Named helpers that document intent (53i)             |
-| feature-envy                | 2     | DatabaseModule methods (53h)                         |
-| write-only-attributes       | 1     | ModuleContext.domain_name (53h)                      |
-| temp-accumulators           | 1     | images.py hash_modifiers (53e)                       |
+Live counts, re-measured after Phase 53b. Ten of the 14 remaining
+`duplicate-blocks` and one `param-clumps` are already adjudicated
+leave-standings (53a + 53b) rather than open work.
 
-*Last updated: 2026-08-07 (S2 comprehensive review)*
+| Category                    | Count | Notes                                                      |
+| --------------------------- | ----- | ---------------------------------------------------------- |
+| long-function               | 16    | Orchestration functions (100–166 lines) (53d–e)            |
+| duplicate-blocks            | 14    | 8 init.py print-runs + 1 Lambda: adjudicated; 5 open (53c) |
+| pass-through-params         | 12    | ssm_secrets/preflight/aws/cli plumbing (53g)               |
+| param-clumps                | 9     | Context-object candidates (53g–h)                          |
+| arrow-code                  | 5     | Depth-5/6 nesting (53d–e)                                  |
+| dict-as-dataclass           | 5     | emergency/rds, ecs, cognito returns (53f)                  |
+| foo-equals-foo              | 4     | Single-use locals to inline (53i)                          |
+| inconsistent-error-handling | 4     | Caller-contract policy needed (53i)                        |
+| law-of-demeter              | 4     | Chain depth 4 (53e, 53i)                                   |
+| single-call-site            | 3     | Named helpers that document intent (53i)                   |
+| feature-envy                | 2     | DatabaseModule methods (53h)                               |
+| boolean-param-explosion     | 1     | pipeline.run_deploy_pipeline — needs DeployOptions (53c–d) |
+| write-only-attributes       | 1     | ModuleContext.domain_name (53h)                            |
+| temp-accumulators           | 1     | images.py hash_modifiers (53e)                             |
+
+`duplicate-except-blocks` (6 at the 2026-08-07 measurement, 5 at `a8800cd`) is
+empty for the first time — cleared by 53a and 53b.
+
+*Last updated: 2026-08-13 (Phase 53b)*

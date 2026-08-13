@@ -17,6 +17,16 @@ time; pysmelly 97 → 91. Adjudication record:
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md). Two findings are left
 standing there **pending operator confirmation**.
 
+Phase 53b (CLI boilerplate dedup) **shipped 2026-08-13** — the shared
+`bin/` helpers now live in `src/deployer/utils/cli.py` and the
+`deploy.py` / `ci-deploy` clone in `src/deployer/deploy/pipeline.py`;
+pysmelly 91 → 82, `duplicate-except-blocks` empty for the first time,
+coverage floor 32 → 36. Adjudication record:
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md). Eight `duplicate-blocks`
+findings (the `bin/init.py` print-runs) are left standing there **pending
+operator confirmation**, with the drafted fix and the reason it was kept
+out; re-measure them after 53d.
+
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record
 in claude-meta docs/PLAN-ARCHIVE.md. Its tests pin today's
