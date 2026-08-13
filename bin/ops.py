@@ -384,6 +384,77 @@ def _validate_and_configure(environment: str) -> None:
 # =============================================================================
 
 
+def _print_service_table(services: dict) -> None:
+    """Print one row per ECS service: running count, desired count, task definition."""
+    print(f"{Colors.BLUE}ECS Services:{Colors.NC}")
+    if not services:
+        print("  No services found")
+        return
+
+    print(f"  {'Service':<25} {'Running':<10} {'Desired':<10} {'Task Definition'}")
+    print(f"  {'-' * 25} {'-' * 10} {'-' * 10} {'-' * 40}")
+    for name, state in sorted(services.items()):
+        # Extract revision from task definition ARN
+        revision = state.task_definition.split(":")[-1]
+        family = state.task_definition.split("/")[-1].rsplit(":", 1)[0]
+        print(
+            f"  {name:<25} {state.running_count:<10} {state.desired_count:<10} {family}:{revision}"
+        )
+
+
+def _print_recent_task_definitions(environment: str, services: dict) -> None:
+    """Print the most recent task definition revisions for each service.
+
+    A service with no revisions is skipped rather than shown empty: it means
+    the family was never registered under this environment's name.
+    """
+    print(f"{Colors.BLUE}Recent Task Definitions:{Colors.NC}")
+    for name in sorted(services):
+        revisions = list_task_definition_revisions(f"{environment}-{name}", max_results=5)
+        if not revisions:
+            continue
+        print(f"  {name}:")
+        for rev in revisions:
+            registered = format_timestamp(rev.get("registered_at", "unknown"))
+            print(f"    revision {rev['revision']:>3} - {registered}")
+
+
+def _print_rds_status(rds_id: str) -> None:
+    """Print the RDS instance's status, instance class and engine."""
+    print(f"{Colors.BLUE}RDS Instance: {rds_id}{Colors.NC}")
+    rds_status = rds.get_status(rds_id)
+    if not rds_status:
+        print("  Unable to retrieve status")
+        return
+
+    print(f"  Status: {rds_status['status']}")
+    print(f"  Class: {rds_status['instance_class']}")
+    print(f"  Engine: {rds_status['engine']}")
+
+
+def _print_recent_snapshots(rds_id: str) -> None:
+    """Print the most recent RDS snapshots, or nothing at all if there are none."""
+    snapshots = get_rds_snapshots(rds_id, max_results=5)
+    if not snapshots:
+        return
+
+    print(f"{Colors.BLUE}Recent Snapshots:{Colors.NC}")
+    for snap in snapshots:
+        created = format_timestamp(snap.get("created_at", "unknown"))
+        snap_type = snap.get("type", "")
+        print(f"  {snap['id']:<50} {snap_type:<10} {created}")
+
+
+def _print_scaling_config(scaling_config: dict) -> None:
+    """Print each service's auto-scaling bounds and CPU target."""
+    print(f"{Colors.BLUE}Auto-Scaling Configuration:{Colors.NC}")
+    for name, cfg in scaling_config.items():
+        min_r = cfg.get("min_replicas", "?")
+        max_r = cfg.get("max_replicas", "?")
+        target = cfg.get("cpu_target", "?")
+        print(f"  {name}: min={min_r}, max={max_r}, cpu_target={target}%")
+
+
 def cmd_status(environment: str) -> int:
     """Show current state of environment."""
     infra = load_environment_infrastructure(environment)
@@ -395,73 +466,28 @@ def cmd_status(environment: str) -> int:
     print(f"{Colors.BLUE}Environment: {environment}{Colors.NC}")
     print()
 
-    # ECS Services
     if cluster_name:
-        print(f"{Colors.BLUE}ECS Services:{Colors.NC}")
         services = get_all_services_state(cluster_name)
-        if services:
-            print(f"  {'Service':<25} {'Running':<10} {'Desired':<10} {'Task Definition'}")
-            print(f"  {'-' * 25} {'-' * 10} {'-' * 10} {'-' * 40}")
-            for name, state in sorted(services.items()):
-                # Extract revision from task definition ARN
-                revision = state.task_definition.split(":")[-1]
-                family = state.task_definition.split("/")[-1].rsplit(":", 1)[0]
-                print(
-                    f"  {name:<25} {state.running_count:<10} {state.desired_count:<10} {family}:{revision}"
-                )
-        else:
-            print("  No services found")
+        _print_service_table(services)
         print()
-
-        # Recent task definition revisions for each service
-        print(f"{Colors.BLUE}Recent Task Definitions:{Colors.NC}")
-        for name in sorted(services.keys()):
-            family = f"{environment}-{name}"
-            revisions = list_task_definition_revisions(family, max_results=5)
-            if revisions:
-                print(f"  {name}:")
-                for rev in revisions:
-                    registered = format_timestamp(rev.get("registered_at", "unknown"))
-                    print(f"    revision {rev['revision']:>3} - {registered}")
+        _print_recent_task_definitions(environment, services)
         print()
     else:
         log_warning("Unable to determine ECS cluster name")
         print()
 
-    # RDS Status
     if rds_id:
-        print(f"{Colors.BLUE}RDS Instance: {rds_id}{Colors.NC}")
-        rds_status = rds.get_status(rds_id)
-        if rds_status:
-            print(f"  Status: {rds_status['status']}")
-            print(f"  Class: {rds_status['instance_class']}")
-            print(f"  Engine: {rds_status['engine']}")
-        else:
-            print("  Unable to retrieve status")
+        _print_rds_status(rds_id)
         print()
-
-        # Recent snapshots
-        snapshots = get_rds_snapshots(rds_id, max_results=5)
-        if snapshots:
-            print(f"{Colors.BLUE}Recent Snapshots:{Colors.NC}")
-            for snap in snapshots:
-                created = format_timestamp(snap.get("created_at", "unknown"))
-                snap_type = snap.get("type", "")
-                print(f"  {snap['id']:<50} {snap_type:<10} {created}")
+        _print_recent_snapshots(rds_id)
         print()
     else:
         log_warning("RDS instance not configured")
         print()
 
-    # Auto-scaling info (if available)
     scaling_config = config.get("services", {}).get("scaling", {})
     if scaling_config:
-        print(f"{Colors.BLUE}Auto-Scaling Configuration:{Colors.NC}")
-        for name, cfg in scaling_config.items():
-            min_r = cfg.get("min_replicas", "?")
-            max_r = cfg.get("max_replicas", "?")
-            target = cfg.get("cpu_target", "?")
-            print(f"  {name}: min={min_r}, max={max_r}, cpu_target={target}%")
+        _print_scaling_config(scaling_config)
         print()
 
     return 0
