@@ -118,10 +118,16 @@ branch = true
 # build_and_push_images: images.py 16% -> 100%. Eight of its ten functions had
 # never been executed by a test.
 #
+# Phase 53e-5a pinned deploy/service.py before 53e-5c/5d refactor it, in two
+# parallel units: 5a-1 took the deploy path, 5a-2 the migration + wait path.
+# Together they take service.py 11% -> 99%, and its 120 branches from zero
+# taken to all but one. The floor moves 59 -> 65 against the 65.62% measured
+# with both units in the tree (5a-2 alone measures 63.93%).
+#
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 59
+fail_under = 65
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
