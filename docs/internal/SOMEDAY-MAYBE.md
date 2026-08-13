@@ -123,11 +123,11 @@ def handler(event, context):
 
 ### ~~ECR Vulnerability Notifications~~
 
-Moved to [PLAN.md](PLAN.md) #4.
+Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md).
 
 ### ~~Cost Anomaly Detection~~
 
-Moved to [PLAN.md](PLAN.md) #3.
+Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md).
 
 ### Blue-Green Deployments
 
@@ -319,21 +319,21 @@ ______________________________________________________________________
 
 ## Checkov Deferred Items
 
-These Checkov findings are valid but require infrastructure changes. Currently suppressed via `--skip-check` in the Makefile. See `PLAN-ARCHIVE.md` for resolved items.
+These Checkov findings are valid but require infrastructure changes. Currently suppressed via `--skip-check` in the Makefile. See [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md) for resolved items.
 
 ### RDS Enhancements (deferred)
 
-| Check           | Description               | Complexity | Notes                                |
-| --------------- | ------------------------- | ---------- | ------------------------------------ |
-| CKV_AWS_161     | IAM authentication        | Medium     | Requires app changes to use IAM auth |
-| ~~CKV2_AWS_69~~ | ~~Encryption in transit~~ | ~~Low~~    | Moved to [PLAN.md](PLAN.md) #5       |
+| Check           | Description               | Complexity | Notes                                          |
+| --------------- | ------------------------- | ---------- | ---------------------------------------------- |
+| CKV_AWS_161     | IAM authentication        | Medium     | Requires app changes to use IAM auth           |
+| ~~CKV2_AWS_69~~ | ~~Encryption in transit~~ | ~~Low~~    | Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md) |
 
 ### Other
 
-| Check           | Description                       | Complexity | Notes                                     |
-| --------------- | --------------------------------- | ---------- | ----------------------------------------- |
-| ~~CKV_AWS_134~~ | ~~ElastiCache automatic backups~~ | ~~Low~~    | Moved to [PLAN.md](PLAN.md) #6            |
-| CKV_AWS_51      | ECR immutable tags                | Medium     | Deploy workflow uses `latest` tag pattern |
+| Check           | Description                       | Complexity | Notes                                          |
+| --------------- | --------------------------------- | ---------- | ---------------------------------------------- |
+| ~~CKV_AWS_134~~ | ~~ElastiCache automatic backups~~ | ~~Low~~    | Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md) |
+| CKV_AWS_51      | ECR immutable tags                | Medium     | Deploy workflow uses `latest` tag pattern      |
 
 ______________________________________________________________________
 
@@ -476,7 +476,7 @@ ______________________________________________________________________
 
 When considering implementation:
 
-1. **High value, low effort**: ~~ECR vulnerability notifications, cost anomaly detection~~ (moved to [PLAN.md](PLAN.md))
+1. **High value, low effort**: ~~ECR vulnerability notifications, cost anomaly detection~~ (moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md))
 1. **High value, medium effort**: Slack integration, synthetic monitoring
 1. **High value, high effort**: PagerDuty integration, automated restore testing
 1. **Lower priority**: Blue-green deployments, multi-region DR (only if specifically needed)
@@ -495,13 +495,13 @@ To add ideas to this list:
 
 ______________________________________________________________________
 
-~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert when there are unused secrets~~ Moved to [PLAN.md](PLAN.md) #7.
+~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert when there are unused secrets~~ Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md).
 
 ______________________________________________________________________
 
 ### ~~Remove Django Default Commands Fallback~~
 
-Moved to [PLAN.md](PLAN.md) #1.
+Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md).
 
 ______________________________________________________________________
 
@@ -546,7 +546,7 @@ availability_critical = 99.0      # Page at 99.0%
 
 ### ~~Incident Response Tooling~~
 
-Moved to [PLAN.md](PLAN.md) #8.
+Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md).
 
 ### Postmortem Automation
 
@@ -599,9 +599,9 @@ uv run python bin/ops.py myapp-production slo
 
 ### Prioritization
 
-| Enhancement                         | Value  | Effort | Priority                       |
-| ----------------------------------- | ------ | ------ | ------------------------------ |
-| SLOs in config.toml                 | High   | Medium | 1                              |
-| ~~Incident start/resolve commands~~ |        |        | Moved to [PLAN.md](PLAN.md) #8 |
-| Error budget dashboard              | Medium | Medium | 2                              |
-| Postmortem automation               | Low    | High   | 3                              |
+| Enhancement                         | Value  | Effort | Priority                                       |
+| ----------------------------------- | ------ | ------ | ---------------------------------------------- |
+| SLOs in config.toml                 | High   | Medium | 1                                              |
+| ~~Incident start/resolve commands~~ |        |        | Moved to [PLAN-ARCHIVE.md](../PLAN-ARCHIVE.md) |
+| Error budget dashboard              | Medium | Medium | 2                                              |
+| Postmortem automation               | Low    | High   | 3                                              |
