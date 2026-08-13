@@ -7,7 +7,50 @@ from pathlib import Path
 import pytest
 from moto import mock_aws
 
+from deployer.aws import cli as aws_cli_module
 from deployer.emergency import checkpoint as checkpoint_module
+
+
+class FakeAwsCli:
+    """Records the argv the `aws` CLI would have been run with.
+
+    Replies with a queue of (success, output) results; the final result
+    repeats, so a test that only cares about the argv can ignore the queue.
+    """
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+        self.results: list[tuple[bool, str]] = [(True, "{}")]
+
+    def replies(self, *results: tuple[bool, str]) -> None:
+        """Set the (success, output) results to return, in order."""
+        self.results = list(results)
+
+    def __call__(self, cmd: list[str], cwd: str | None = None) -> tuple[bool, str]:
+        """Stand in for run_command."""
+        self.calls.append(cmd)
+        if len(self.results) > 1:
+            return self.results.pop(0)
+        return self.results[0]
+
+    @property
+    def argv(self) -> list[str]:
+        """The single argv emitted, asserting there was exactly one call."""
+        assert len(self.calls) == 1, f"expected 1 call, got {len(self.calls)}"
+        return self.calls[0]
+
+
+@pytest.fixture
+def aws_cli(monkeypatch) -> FakeAwsCli:
+    """Stub the `aws` CLI at the deployer.aws.cli seam.
+
+    cognito, rds and cloudwatch all reach the CLI through deployer.aws.cli, so
+    patching run_command there covers every caller. No `aws` binary and no
+    credentials are involved.
+    """
+    fake = FakeAwsCli()
+    monkeypatch.setattr(aws_cli_module, "run_command", fake)
+    return fake
 
 
 @pytest.fixture

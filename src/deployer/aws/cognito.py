@@ -1,8 +1,6 @@
 """AWS Cognito user pool operations."""
 
-import json
-
-from ..utils import AWS_REGION, run_command
+from .cli import run_aws, run_aws_json
 
 
 def _handle_user_not_found(success: bool, output: str, username: str) -> tuple[bool, str]:
@@ -23,6 +21,28 @@ def _handle_user_not_found(success: bool, output: str, username: str) -> tuple[b
     return True, ""
 
 
+def _admin_user_action(operation: str, user_pool_id: str, username: str) -> tuple[bool, str]:
+    """Run an admin operation whose only arguments are a pool and a username.
+
+    Args:
+        operation: The cognito-idp subcommand, e.g. "admin-delete-user".
+        user_pool_id: The Cognito User Pool ID.
+        username: The username to act on.
+
+    Returns:
+        Tuple of (success, error_message). Error message is empty on success.
+    """
+    success, output = run_aws(
+        "cognito-idp",
+        operation,
+        "--user-pool-id",
+        user_pool_id,
+        "--username",
+        username,
+    )
+    return _handle_user_not_found(success, output, username)
+
+
 def get_user_pool_name(user_pool_id: str) -> str | None:
     """Get the display name of a Cognito User Pool.
 
@@ -33,20 +53,8 @@ def get_user_pool_name(user_pool_id: str) -> str | None:
         Pool name string, or None if the pool can't be described
         (e.g., insufficient permissions).
     """
-    cmd = [
-        "aws",
-        "cognito-idp",
-        "describe-user-pool",
-        "--user-pool-id",
-        user_pool_id,
-        "--region",
-        AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    if not success:
-        return None
-    data = json.loads(output)
-    return data.get("UserPool", {}).get("Name")
+    data = run_aws_json("cognito-idp", "describe-user-pool", "--user-pool-id", user_pool_id)
+    return data.get("UserPool", {}).get("Name") if data else None
 
 
 def list_users(user_pool_id: str) -> list[dict]:
@@ -58,29 +66,18 @@ def list_users(user_pool_id: str) -> list[dict]:
     Returns:
         List of raw user dicts from the Cognito API.
     """
-    users = []
+    users: list[dict] = []
     pagination_token = None
 
     while True:
-        cmd = [
-            "aws",
-            "cognito-idp",
-            "list-users",
-            "--user-pool-id",
-            user_pool_id,
-            "--region",
-            AWS_REGION,
-        ]
-
+        args = ["cognito-idp", "list-users", "--user-pool-id", user_pool_id]
         if pagination_token:
-            cmd.extend(["--pagination-token", pagination_token])
+            args.extend(["--pagination-token", pagination_token])
 
-        success, output = run_command(cmd)
-
-        if not success:
+        data = run_aws_json(*args)
+        if data is None:
             return users
 
-        data = json.loads(output)
         users.extend(data.get("Users", []))
 
         pagination_token = data.get("PaginationToken")
@@ -109,8 +106,7 @@ def create_user(
     Returns:
         Tuple of (success, error_message). Error message is empty on success.
     """
-    cmd = [
-        "aws",
+    args = [
         "cognito-idp",
         "admin-create-user",
         "--user-pool-id",
@@ -120,16 +116,14 @@ def create_user(
         "--user-attributes",
         f"Name=email,Value={email}",
         "Name=email_verified,Value=true",
-        "--region",
-        AWS_REGION,
     ]
 
     if suppress_email:
-        cmd.extend(["--message-action", "SUPPRESS"])
+        args.extend(["--message-action", "SUPPRESS"])
 
-    cmd.extend(["--temporary-password", password])
+    args.extend(["--temporary-password", password])
 
-    success, output = run_command(cmd)
+    success, output = run_aws(*args)
 
     if not success:
         if "UsernameExistsException" in output:
@@ -149,19 +143,7 @@ def delete_user(user_pool_id: str, username: str) -> tuple[bool, str]:
     Returns:
         Tuple of (success, error_message). Error message is empty on success.
     """
-    cmd = [
-        "aws",
-        "cognito-idp",
-        "admin-delete-user",
-        "--user-pool-id",
-        user_pool_id,
-        "--username",
-        username,
-        "--region",
-        AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    return _handle_user_not_found(success, output, username)
+    return _admin_user_action("admin-delete-user", user_pool_id, username)
 
 
 def disable_user(user_pool_id: str, username: str) -> tuple[bool, str]:
@@ -174,19 +156,7 @@ def disable_user(user_pool_id: str, username: str) -> tuple[bool, str]:
     Returns:
         Tuple of (success, error_message). Error message is empty on success.
     """
-    cmd = [
-        "aws",
-        "cognito-idp",
-        "admin-disable-user",
-        "--user-pool-id",
-        user_pool_id,
-        "--username",
-        username,
-        "--region",
-        AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    return _handle_user_not_found(success, output, username)
+    return _admin_user_action("admin-disable-user", user_pool_id, username)
 
 
 def enable_user(user_pool_id: str, username: str) -> tuple[bool, str]:
@@ -199,19 +169,7 @@ def enable_user(user_pool_id: str, username: str) -> tuple[bool, str]:
     Returns:
         Tuple of (success, error_message). Error message is empty on success.
     """
-    cmd = [
-        "aws",
-        "cognito-idp",
-        "admin-enable-user",
-        "--user-pool-id",
-        user_pool_id,
-        "--username",
-        username,
-        "--region",
-        AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    return _handle_user_not_found(success, output, username)
+    return _admin_user_action("admin-enable-user", user_pool_id, username)
 
 
 def set_user_password(
@@ -231,8 +189,7 @@ def set_user_password(
     Returns:
         Tuple of (success, error_message). Error message is empty on success.
     """
-    cmd = [
-        "aws",
+    args = [
         "cognito-idp",
         "admin-set-user-password",
         "--user-pool-id",
@@ -241,10 +198,9 @@ def set_user_password(
         username,
         "--password",
         password,
-        "--region",
-        AWS_REGION,
     ]
     if permanent:
-        cmd.append("--permanent")
-    success, output = run_command(cmd)
+        args.append("--permanent")
+
+    success, output = run_aws(*args)
     return _handle_user_not_found(success, output, username)

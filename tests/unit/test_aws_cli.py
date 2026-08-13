@@ -1,38 +1,11 @@
 """Tests for deployer.aws.cli — the shared `aws` CLI surface.
 
-These assert on the emitted argv. run_command is monkeypatched at the
-deployer.aws.cli seam, so no `aws` binary and no credentials are involved.
+These assert on the emitted argv. The `aws_cli` fixture patches run_command at
+this module's seam, so no `aws` binary and no credentials are involved.
 """
-
-import pytest
 
 from deployer.aws import cli
 from deployer.utils import AWS_REGION
-
-
-@pytest.fixture
-def emitted(monkeypatch):
-    """Capture the argv passed to run_command; replies success with no output."""
-    calls = []
-
-    def fake_run_command(cmd, cwd=None):
-        calls.append(cmd)
-        return True, ""
-
-    monkeypatch.setattr(cli, "run_command", fake_run_command)
-    return calls
-
-
-def reply(monkeypatch, success, output):
-    """Make run_command return a fixed (success, output) and record the argv."""
-    calls = []
-
-    def fake_run_command(cmd, cwd=None):
-        calls.append(cmd)
-        return success, output
-
-    monkeypatch.setattr(cli, "run_command", fake_run_command)
-    return calls
 
 
 class TestAwsCommand:
@@ -68,29 +41,27 @@ class TestAwsCommand:
 class TestRunAws:
     """Tests for run_aws."""
 
-    def test_emits_the_built_argv(self, emitted):
+    def test_emits_the_built_argv(self, aws_cli):
         """run_aws runs exactly what aws_command builds."""
         cli.run_aws("rds", "stop-db-instance", "--db-instance-identifier", "db-1")
-        assert emitted == [
-            [
-                "aws",
-                "rds",
-                "stop-db-instance",
-                "--db-instance-identifier",
-                "db-1",
-                "--region",
-                AWS_REGION,
-            ]
+        assert aws_cli.argv == [
+            "aws",
+            "rds",
+            "stop-db-instance",
+            "--db-instance-identifier",
+            "db-1",
+            "--region",
+            AWS_REGION,
         ]
 
-    def test_returns_output_on_success(self, monkeypatch):
+    def test_returns_output_on_success(self, aws_cli):
         """Success passes stdout through unchanged."""
-        reply(monkeypatch, True, '{"ok": true}')
+        aws_cli.replies((True, '{"ok": true}'))
         assert cli.run_aws("sts", "get-caller-identity") == (True, '{"ok": true}')
 
-    def test_returns_error_text_on_failure(self, monkeypatch):
+    def test_returns_error_text_on_failure(self, aws_cli):
         """Failure passes the error text through — callers grep it."""
-        reply(monkeypatch, False, "An error occurred: UserNotFoundException")
+        aws_cli.replies((False, "An error occurred: UserNotFoundException"))
         success, output = cli.run_aws("cognito-idp", "admin-delete-user")
         assert success is False
         assert "UserNotFoundException" in output
@@ -99,40 +70,37 @@ class TestRunAws:
 class TestRunAwsJson:
     """Tests for run_aws_json."""
 
-    def test_parses_json_output(self, monkeypatch):
+    def test_parses_json_output(self, aws_cli):
         """A successful command's JSON body is returned as a dict."""
-        reply(monkeypatch, True, '{"DBInstances": [{"DBInstanceStatus": "available"}]}')
+        aws_cli.replies((True, '{"DBInstances": [{"DBInstanceStatus": "available"}]}'))
         assert cli.run_aws_json("rds", "describe-db-instances") == {
             "DBInstances": [{"DBInstanceStatus": "available"}]
         }
 
-    def test_emits_the_built_argv(self, monkeypatch):
+    def test_emits_the_built_argv(self, aws_cli):
         """The argv is built the same way as for run_aws."""
-        emitted = reply(monkeypatch, True, "{}")
         cli.run_aws_json("cognito-idp", "describe-user-pool", "--user-pool-id", "pool-1")
-        assert emitted == [
-            [
-                "aws",
-                "cognito-idp",
-                "describe-user-pool",
-                "--user-pool-id",
-                "pool-1",
-                "--region",
-                AWS_REGION,
-            ]
+        assert aws_cli.argv == [
+            "aws",
+            "cognito-idp",
+            "describe-user-pool",
+            "--user-pool-id",
+            "pool-1",
+            "--region",
+            AWS_REGION,
         ]
 
-    def test_none_when_command_fails(self, monkeypatch):
+    def test_none_when_command_fails(self, aws_cli):
         """A failed command answers None rather than raising."""
-        reply(monkeypatch, False, "AccessDeniedException")
+        aws_cli.replies((False, "AccessDeniedException"))
         assert cli.run_aws_json("rds", "describe-db-instances") is None
 
-    def test_none_when_output_is_not_json(self, monkeypatch):
+    def test_none_when_output_is_not_json(self, aws_cli):
         """Unparseable output answers None too — both failures look the same."""
-        reply(monkeypatch, True, "not json at all")
+        aws_cli.replies((True, "not json at all"))
         assert cli.run_aws_json("rds", "describe-db-instances") is None
 
-    def test_none_when_output_is_empty(self, monkeypatch):
+    def test_none_when_output_is_empty(self, aws_cli):
         """An empty body is not valid JSON, so it answers None."""
-        reply(monkeypatch, True, "")
+        aws_cli.replies((True, ""))
         assert cli.run_aws_json("rds", "describe-db-instances") is None

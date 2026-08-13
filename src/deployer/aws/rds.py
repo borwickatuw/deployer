@@ -1,10 +1,9 @@
 """AWS RDS instance operations."""
 
-import json
 import time
 from collections.abc import Callable
 
-from ..utils import AWS_REGION, run_command
+from .cli import run_aws, run_aws_json
 
 # query function, None means "not found"  (re-evaluate-by: 2026-11 review)
 
@@ -19,20 +18,10 @@ def get_status(instance_id: str) -> dict | None:
     Returns:
         Dict with identifier, status, instance_class, engine, or None if not found.
     """
-    cmd = [
-        "aws",
-        "rds",
-        "describe-db-instances",
-        "--db-instance-identifier",
-        instance_id,
-        "--region",
-        AWS_REGION,
-    ]
-    success, output = run_command(cmd)
-    if not success:
+    data = run_aws_json("rds", "describe-db-instances", "--db-instance-identifier", instance_id)
+    if not data:
         return None
 
-    data = json.loads(output)
     instances = data.get("DBInstances", [])
     if not instances:
         return None
@@ -46,6 +35,20 @@ def get_status(instance_id: str) -> dict | None:
     }
 
 
+def _instance_action(operation: str, instance_id: str) -> bool:
+    """Run an RDS operation whose only argument is an instance identifier.
+
+    Args:
+        operation: The rds subcommand, e.g. "stop-db-instance".
+        instance_id: The DB instance identifier.
+
+    Returns:
+        True if the command succeeded, False otherwise.
+    """
+    success, _ = run_aws("rds", operation, "--db-instance-identifier", instance_id)
+    return success
+
+
 def stop(instance_id: str) -> bool:
     """Stop an RDS instance.
 
@@ -55,17 +58,7 @@ def stop(instance_id: str) -> bool:
     Returns:
         True if the stop command succeeded, False otherwise.
     """
-    cmd = [
-        "aws",
-        "rds",
-        "stop-db-instance",
-        "--db-instance-identifier",
-        instance_id,
-        "--region",
-        AWS_REGION,
-    ]
-    success, _ = run_command(cmd)
-    return success
+    return _instance_action("stop-db-instance", instance_id)
 
 
 def start(instance_id: str) -> bool:
@@ -77,17 +70,7 @@ def start(instance_id: str) -> bool:
     Returns:
         True if the start command succeeded, False otherwise.
     """
-    cmd = [
-        "aws",
-        "rds",
-        "start-db-instance",
-        "--db-instance-identifier",
-        instance_id,
-        "--region",
-        AWS_REGION,
-    ]
-    success, _ = run_command(cmd)
-    return success
+    return _instance_action("start-db-instance", instance_id)
 
 
 def wait_for_status(

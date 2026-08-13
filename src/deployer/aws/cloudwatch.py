@@ -1,12 +1,11 @@
 """AWS CloudWatch operations."""
 
-import json
 import sys
 from typing import Any
 
 from botocore.exceptions import ClientError
 
-from ..utils import AWS_REGION, run_command
+from .cli import run_aws_json
 
 
 def get_log_events(
@@ -27,8 +26,7 @@ def get_log_events(
         List of log event dicts with 'timestamp' and 'message' keys,
         or None if the stream doesn't exist or an error occurred.
     """
-    cmd = [
-        "aws",
+    args = [
         "logs",
         "get-log-events",
         "--log-group-name",
@@ -37,22 +35,16 @@ def get_log_events(
         log_stream,
         "--limit",
         str(limit),
-        "--region",
-        AWS_REGION,
     ]
 
     if start_time:
-        cmd.extend(["--start-time", str(start_time)])
+        args.extend(["--start-time", str(start_time)])
 
-    success, output = run_command(cmd)
-    if not success:
+    data = run_aws_json(*args)
+    if data is None:
         return None
 
-    try:
-        data = json.loads(output)
-        return data.get("events", [])
-    except json.JSONDecodeError:
-        return None
+    return data.get("events", [])
 
 
 def get_task_logs(

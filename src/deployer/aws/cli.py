@@ -44,7 +44,7 @@ def run_aws(*args: str) -> tuple[bool, str]:
 # The parsed dict is the answer to a query; None means "no answer" for either
 # reason it can fail. Whether query helpers should raise instead is Phase 53i's
 # call for the whole repo — see the standing suppression on rds.get_status().
-# pysmelly: ignore return-none-instead-of-raise
+# That suppression is not needed here: measured, the check does not fire.
 def run_aws_json(*args: str) -> dict | None:
     """Run an `aws` CLI command and parse its JSON output.
 
