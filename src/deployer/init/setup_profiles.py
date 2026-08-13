@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from ..utils import advice_block
 from .bootstrap import prompt_account_id_and_region
 
 # Profile name -> IAM role name
@@ -108,8 +109,15 @@ def cmd_setup_profiles(dry_run: bool) -> int:
 
     print(f"Profiles written to {config_path}")
     print()
-    print("Next: add credentials to ~/.aws/credentials:")
-    print(f"  [{source_profile}]")
-    print("  aws_access_key_id = YOUR_ACCESS_KEY")
-    print("  aws_secret_access_key = YOUR_SECRET_KEY")
+    print(
+        advice_block(
+            "Next: add credentials to ~/.aws/credentials:",
+            [
+                f"[{source_profile}]",
+                "aws_access_key_id = YOUR_ACCESS_KEY",
+                "aws_secret_access_key = YOUR_SECRET_KEY",
+            ],
+            bullet="  ",
+        )
+    )
     return 0
