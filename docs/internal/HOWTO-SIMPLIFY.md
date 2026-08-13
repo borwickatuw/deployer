@@ -11,7 +11,7 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `bin/ops.py`                             | 1076  | Largest bin/ script; read-only monitoring commands         |
 | `src/deployer/deploy/service.py`         | 1003  | Core service deployment logic                              |
 | `bin/emergency.py`                       | 893   | Emergency operations (rollback, scale, snapshot)           |
-| `bin/init.py`                            | 645   | Init subcommands (bootstrap, environment, update-services) |
+| `bin/init.py`                            | 769   | Init subcommands (bootstrap, environment, update-services) |
 | `src/deployer/aws/ecs.py`                | 507   | AWS ECS operations                                         |
 | `src/deployer/core/config.py`            | 485   | Configuration loading                                      |
 | `src/deployer/init/deploy_toml.py`       | 473   | deploy.toml generation                                     |
@@ -25,6 +25,7 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `src/deployer/emergency/ecs.py`          | 375   | Emergency ECS operations                                   |
 | `src/deployer/emergency/rds.py`          | 332   | Emergency RDS operations                                   |
 | `src/deployer/utils/cli.py`              | 388   | Shared bin/ helper surface; grew through 53b–53d-2a        |
+| `tests/unit/test_init_cli.py`            | 862   | Test file, above 400 threshold                             |
 | `src/deployer/init/environment.py`       | 325   | Environment scaffolding                                    |
 | `src/deployer/init/template.py`          | 320   | Template substitution                                      |
 | `tests/unit/test_modules.py`             | 579   | Test file, above 400 threshold                             |
@@ -38,15 +39,18 @@ Technical debt and simplification candidates for deployer. For methodology (thre
 | `tests/unit/test_utils_cli.py`           | 465   | Test file, above 400 threshold                             |
 | `tests/unit/test_emergency_cli.py`       | 553   | Test file, above 400 threshold                             |
 
-Re-measured at the Phase 53d-2a commit. Five files were already over threshold
+Re-measured at the Phase 53d-2b commit. Five files were already over threshold
 and missing from this table before the 53d-1 re-measurement
 (`emergency/ecs.py`, `emergency/rds.py`, `init/environment.py`,
 `init/template.py`, `test_lambda_db_common.py`); they are listed now.
 
-`bin/emergency.py` and `bin/ops.py` grew in 53d-2a (828 → 893, 1056 → 1076):
-decomposition trades body lines for helper signatures and docstrings. Neither
-is a candidate for a file split yet — `emergency.py` splits along mutating-ECS
-vs RDS, which is the shape a later subphase would own.
+`bin/emergency.py` and `bin/ops.py` grew in 53d-2a (828 → 893, 1056 → 1076),
+and `bin/init.py` in 53d-2b (645 → 769): decomposition trades body lines for
+helper signatures and docstrings. None is a candidate for a file split yet —
+`emergency.py` splits along mutating-ECS vs RDS, which is the shape a later
+subphase would own. `tests/unit/test_init_cli.py` (862) is new in 53d-2b and
+the largest test file in the repo; it is one subject, so it is listed rather
+than queued for a split.
 
 ### Terraform (threshold: 200 lines)
 
@@ -74,14 +78,16 @@ vs RDS, which is the shape a later subphase would own.
 
 ## Pysmelly Status
 
-68 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
+60 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
 review; 97 before Phase 53a, 91 before 53b, 82 before 53c, 74 before 53d-1,
-71 before 53d-2a). Suppressions, measured at the 53d-2a commit: **22
-`# pysmelly: ignore` lines and 10 `# noqa: C901`**. 53d-1 removed four
-`# noqa: C901` and 53d-2a removed a fifth (`cmd_rollback`); neither added any,
-and neither touched a `# pysmelly: ignore`. (This paragraph previously claimed
-"18 suppression lines", which matched neither count at the 53d-1 commit —
-22 and 11 — so it is replaced with both measurements rather than decremented.)
+71 before 53d-2a, 68 before 53d-2b). Suppressions, measured at the 53d-2b
+commit across tracked files: **22 `# pysmelly: ignore` lines and 8
+`# noqa: C901`**. 53d-1 removed four `# noqa: C901`, 53d-2a a fifth
+(`cmd_rollback`) and 53d-2b two more (`cmd_bootstrap`, `cmd_environment`);
+none added any, and none touched a `# pysmelly: ignore`. (This paragraph
+previously claimed "18 suppression lines", which matched neither count at the
+53d-1 commit — 22 and 11 — so it is replaced with both measurements rather
+than decremented.)
 
 The `# pysmelly: ignore` lines cover Lambda context params, JSON serialization
 constraints, query-function None contracts, Click patterns and leaf logging
@@ -96,16 +102,17 @@ claude-meta `docs/PLAN.md`** — one finding-type × one subsystem per
 operator-gated session, duplicate-block extraction before long-function
 decomposition. 53a (db-\* Lambda twins), 53b (CLI boilerplate), 53c
 (`src/deployer` dedup), 53d-1 (the `bin/` deploy.toml-resolution family) and
-53d-2a (`emergency.py` + `ops.py`) are done; per-finding dispositions are in
+53d-2a (`emergency.py` + `ops.py`) and 53d-2b (`init.py` + the print-run
+re-measure) are done; per-finding dispositions are in
 `docs/internal/PYSMELLY.md`.
 
-53d was split twice. First when re-measuring at HEAD showed the plan entry
-undercounted it — 7 `bin/` long-function findings, not 6 — and again when 53d-2
-proved to be two unrelated halves. **53d-2b** is what is open: `init.py`
-`cmd_bootstrap` (131L) + `cmd_environment` (104L), and a re-measure of 53b's
-eight `bin/init.py` print-run leave-standings. Three of those eight sit inside
-`cmd_bootstrap` and none inside `cmd_environment`, so the decomposition and the
-re-measure only partly overlap.
+53d was split twice — first when re-measuring at HEAD showed the plan entry
+undercounted it (7 `bin/` long-function findings, not 6), and again when 53d-2
+proved to be two unrelated halves — and is now **closed**. 53d-2b cleared both
+`init.py` decompositions and six of 53b's eight print-runs; the two that
+survive have `setup_profiles.py` as their remaining leg and are recorded
+against **53e**. **53e** (`extensions.py` / `setup_profiles.py`) is the next
+open subphase.
 
 ### Code improvements made (Phases 42 + 42-2)
 
@@ -120,39 +127,41 @@ re-measure only partly overlap.
 
 ### Remaining findings (68)
 
-Live counts, re-measured after Phase 53d-2a. 17 of the 68 are adjudicated
-leave-standings (53a 2, 53b 11, 53c 2, 53d-1 1, 53d-2a 1) rather than open work,
-so **51 are open**.
+Live counts, re-measured after Phase 53d-2b. 11 of the 60 are adjudicated
+leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1, 53d-2a 1, 53d-2b 2) rather than
+open work, so **49 are open**.
 
 | Category                     | Count | Open | Notes                                                                        |
 | ---------------------------- | ----- | ---- | ---------------------------------------------------------------------------- |
-| long-function                | 11    | 11   | Orchestration functions (100–166 lines) (53d-2b, 53e)                        |
+| long-function                | 9     | 9    | Orchestration functions (100–166 lines) (53e)                                |
 | pass-through-params          | 14    | 9    | ssm_secrets/preflight/aws plumbing; 5 adjudicated (53b ×3, 53c, 53d-1) (53g) |
-| duplicate-blocks             | 9     | 0    | 8 init.py print-runs + 1 Lambda, all adjudicated                             |
+| duplicate-blocks             | 3     | 0    | 2 unnumbered print-runs + 1 Lambda, all adjudicated (53e)                    |
 | param-clumps                 | 7     | 5    | Context-object candidates; 2 adjudicated (53a, 53d-2a) (53g–h)               |
 | dict-as-dataclass            | 5     | 5    | emergency/rds, ecs, cognito returns (53f)                                    |
 | inconsistent-error-handling  | 4     | 4    | Caller-contract policy needed (53i)                                          |
 | law-of-demeter               | 4     | 4    | Chain depth 4 (53e, 53i)                                                     |
 | arrow-code                   | 3     | 3    | Depth-5/6 nesting (53e)                                                      |
-| foo-equals-foo               | 3     | 3    | Single-use locals to inline (53d-2b for init.py's two, 53i)                  |
+| foo-equals-foo               | 3     | 3    | Single-use locals to inline; init.py's two measured in 53d-2b (53i)          |
 | single-call-site             | 3     | 3    | Named helpers that document intent (53i)                                     |
 | feature-envy                 | 2     | 2    | DatabaseModule methods (53h)                                                 |
 | return-none-instead-of-raise | 1     | 0    | aws/cli.run_aws_json — left unsuppressed for 53i to decide                   |
 | write-only-attributes        | 1     | 1    | ModuleContext.domain_name (53h)                                              |
 | temp-accumulators            | 1     | 1    | images.py hash_modifiers (53e)                                               |
 
-`long-function` dropped 16 → 12 → 11: 53d-1 cleared four `bin/` orchestrators,
-53d-2a cleared `emergency.py cmd_rollback`. All 11 remaining sit in `bin/init.py`
-and `src/deployer/`. `arrow-code` dropped 5 → 3 in 53d-2a: `ops.py cmd_status`
+`long-function` dropped 16 → 12 → 11 → 9: 53d-1 cleared four `bin/`
+orchestrators, 53d-2a cleared `emergency.py cmd_rollback`, and 53d-2b cleared
+`init.py`'s `cmd_bootstrap` and `cmd_environment`. All 9 remaining sit in
+`src/deployer/`, four of them in `deploy/service.py`; `bin/` has none. `arrow-code` dropped 5 → 3 in 53d-2a: `ops.py cmd_status`
 cleared when a redundant `"T" in x` guard — its depth-5 node — was deleted, and
 `emergency.py cmd_scale` cleared by extracting its `--all` branch.
 `pass-through-params` held at 14 across 53d-2a, finding for finding: extracting
 seven helpers minted none.
 
 `duplicate-except-blocks` (6 at the 2026-08-07 measurement, 5 at `a8800cd`) is
-empty for the first time — cleared by 53a and 53b. `duplicate-blocks` is not
-empty but has **no open items**: 53c cleared its last five, and every remaining
-finding is an adjudicated leave-standing. `boolean-param-explosion` is empty,
+empty for the first time — cleared by 53a and 53b. `duplicate-blocks` fell
+9 → 3 in 53d-2b, when `_numbered_steps` collapsed six of the eight `init.py`
+print-runs at once, and still has **no open items**: every remaining finding is
+an adjudicated leave-standing. `boolean-param-explosion` is empty,
 cleared by 53c's `DeployOptions`.
 
-*Last updated: 2026-08-13 (Phase 53d-2a)*
+*Last updated: 2026-08-13 (Phase 53d-2b)*
