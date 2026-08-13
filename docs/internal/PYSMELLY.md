@@ -900,14 +900,37 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-11 of the 56 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2). The other **45** are queued behind claude-meta
-`docs/PLAN.md` Phase 53e-3–53i:
+**Live per-category counts, re-measured 2026-08-13 at `8af9699` (56 total).**
+This table is the authoritative one; scope each subphase from it, not from the
+prose below.
 
-`long-function` 7, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
+`pass-through-params` 14, `param-clumps` 7, `long-function` 7,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
-`foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
-`write-only-attributes` 1, `temp-accumulators` 1.
+`single-call-site` 3, `foo-equals-foo` 3, `arrow-code` 3, `feature-envy` 2,
+`write-only-attributes` 1, `return-none-instead-of-raise` 1,
+`temp-accumulators` 1, `duplicate-blocks` 1. (Sums to 56.)
+
+11 of the 56 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2 — itemized total is self-consistent). The remainder is
+queued behind claude-meta `docs/PLAN.md` Phase 53e-3–53i.
+
+**Correction 2026-08-13 (unattended run W0): the earlier per-category split of
+the remainder was arithmetically broken and is withdrawn rather than
+repaired.** It claimed 11 adjudicated + **45** queued = 56, but the queued
+category list it gave summed to **47** (→ 58). The **56 total is correct**;
+the prose figure 45 reconciles and the list did not. Two of its entries were
+also stale against live counts: `pass-through-params` listed 9 / live **14**,
+`param-clumps` listed 5 / live **7**.
+
+The split is withdrawn, not corrected, because this record never captured a
+reliable per-category attribution for the 11 and the two documents that would
+supply it disagree: claude-meta `docs/PLAN.md` 53g reads all **14**
+`pass-through-params` as open and `param-clumps` as 7 total less 2 adjudicated
+(53a's Lambda one, 53d-2a's `emergency.py` one) = **5 open** — which would put
+only 2 adjudicated in these two categories, not the 9 the arithmetic above
+would need. Reconciling that is an adjudication question, so it is left for an
+operator-in-the-loop session. **Each subphase re-measures at HEAD anyway**,
+which is what the live table above is for.
 
 They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
 remaining `long-function` is in `src/deployer/deploy/`, four of the seven in
