@@ -80,8 +80,8 @@ branch = true
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
 # require real AWS credentials.
 #
-# The floor is measured, not aspirational: `make test-cov` reports 37.92% at
-# the commit that finished Phase 53c, so 37 is the floor just under it.
+# The floor is measured, not aspirational: `make test-cov` reports 44.11% at
+# the commit that finished Phase 53d-1, so 44 is the floor just under it.
 # Note that `make test-cov` passes `--cov=src --cov=bin`, which OVERRIDES the
 # `[tool.coverage.run] source` setting above — bare `pytest --cov` measures
 # src/deployer only. The floor is set against the `make test-cov` number
@@ -93,10 +93,14 @@ branch = true
 # 12% -> 100%, rds.py 18% -> 100%. cloudwatch.py stays at 15% — only its one
 # CLI-based function moved onto the shared surface; the rest is boto3.
 #
-# Remaining large gap: bin/emergency.py (467 statements, 0%) — Click-CLI-shaped
-# and queued behind its decomposition (claude-meta PLAN.md Phase 53d).
+# Phase 53d-1 gave three bin/ scripts their first tests: ssm-secrets.py
+# 0% -> 73%, ecs-run.py 0% -> 61%, capacity-report.py 0% -> 87%.
+#
+# Remaining large gaps: bin/emergency.py (467 statements, 0%) and bin/init.py
+# (318 statements, 0%) — both Click-CLI-shaped and queued behind their
+# decomposition (claude-meta PLAN.md Phase 53d-2).
 # (re-evaluate-by: 2026-11 review)
-fail_under = 37
+fail_under = 44
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

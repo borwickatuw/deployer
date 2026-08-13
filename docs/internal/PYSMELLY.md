@@ -30,8 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **74** (measured at the Phase 53c commit; was 82 at `2d79e33`,
-91 at `a8800cd`, 97 at `8e57264`).
+Standing total: **71** (measured at the Phase 53d-1 commit; was 74 at `07d65d6`,
+82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -335,6 +335,106 @@ per-commit ladder is 82 → 80 → 80 → 81 → 79 → 74.
 `duplicate-blocks` now has **no open items**: all 9 remaining are adjudicated
 leave-standings (8 `bin/init.py` print-runs from 53b, 1 Lambda from 53a).
 
+### 53d-1 — the deploy.toml-resolution family in `bin/` (2026-08-13)
+
+**4 targets** at `07d65d6` (repo total 74), all `long-function`:
+`deploy.py:72 deploy` (111L), `ssm-secrets.py:88 cmd_check` (110L),
+`ecs-run.py:233 cmd_run` (108L), `capacity-report.py:55 check_environment`
+(123L). **All 4 cleared**, one `pass-through-params` minted; the repo total went
+**74 → 71**.
+
+Re-measuring at HEAD before starting corrected claude-meta's plan entry, which
+said 53d had **6** long-function findings in `bin/`. There are **7** —
+`capacity-report.py` was in the entry's file list but not in its count. The
+operator split the subphase: 53d-1 is these four files, 53d-2 is `emergency.py`,
+`ops.py` and `init.py`.
+
+#### `resolve_deploy_toml_or_exit` (clears D1, D2 and D3 together)
+
+`deploy.py:97-121`, `ssm-secrets.py:92-123` and `ecs-run.py:251-299` each
+hand-rolled the same resolution — explicit `--deploy-toml`, else the link
+registry, else an error naming `link-environments.py`; then, if explicit, a
+"link it" nudge. Three copies, ~30 lines each, inside three of the four
+functions this subphase decomposes.
+
+pysmelly does not flag it: the message strings differ per script (`deploy.py deploy` vs `ssm-secrets.py check` vs `ecs-run.py run`), the same blind spot the
+five `aws/` twins hit in 53c. The helper takes two string parameters for the two
+axes that genuinely differ — `specify_hint` and `link_benefit` — following
+`exit_on(*excs, prefix=)`. It lives in `utils/cli.py` and is reached through the
+curated `utils/__init__.py` façade.
+
+Extracting it was most of D1–D3's decomposition. All three `cmd_*` fell under
+the threshold on that commit alone, before their own per-file splits landed.
+
+Three deliberate behaviour changes:
+
+| Change                                                                                                                     | Why                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Errors go to stderr.** `deploy.py`'s three error lines move stdout → stderr.                                             | The helper uses `log_error_stderr`, matching `exit_on`, the one existing `*_or_exit` that reports failures. The repo is inconsistent (`prompt_or_exit`, `configure_profile_or_exit` use stdout), so this picks a side rather than inheriting one. A rider on the `print` → `log_*` subphase 53b filed, not a substitute for it. |
+| **One error message, not three.** `ecs-run.py`'s four-line "To link this environment to its deploy.toml:" wording is gone. | That is the point of the extraction.                                                                                                                                                                                                                                                                                            |
+| **Path validation is uniform.** Missing path, directory and non-`.toml` suffix are all rejected.                           | `deploy.py` did all three; `ssm-secrets.py` checked only existence; `ecs-run.py` relied on `load_deploy_toml` raising. A tightening for two of the three.                                                                                                                                                                       |
+
+`ecs-run.py` keeps its own pre-check: no environment **and** no `--deploy-toml`
+is its own usage error, since there is no link to consult. The helper's
+`environment` parameter is therefore `str | None`, and it skips the tip when
+there is no environment to link.
+
+#### Per-file splits
+
+| File                 | Extracted                                                                                                                                       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy.py`          | `_load_env_config_or_exit(environment) -> (config, type)`                                                                                       |
+| `ssm-secrets.py`     | `_print_secret_table(present, missing, extra)`; the two trailing command lists became `advice_block(…, bullet="  ")`, the vocabulary 53c landed |
+| `ecs-run.py`         | `_print_available_commands(dt) -> int`                                                                                                          |
+| `capacity-report.py` | `_deployment_cutoff(last_deployment_at)`, `_count_ecs_oom`, `_count_log_oom`                                                                    |
+
+All four `# noqa: C901` suppressions on those functions were removed, not moved.
+
+`capacity-report.py` is the one target with no cross-file twin — its duplication
+is *inside* the function. The `last_deployment_at` parse appeared twice in two
+variants, one bare and one with a `try/except` and a different fallback.
+`_deployment_cutoff` returns `None` and each caller keeps its own fallback,
+because the fallbacks genuinely differ (the log scan falls back to the window
+start). Behaviour change: the ECS scan previously **crashed** on an unparseable
+timestamp — the bare `fromisoformat` had no guard — and now degrades to
+"unknown", matching what the log scan already did.
+
+An unflagged rider: the `put`-command derivation
+(`ssm_path.split("/")[-1]` → a `bin/ssm-secrets.py put` invocation) was
+duplicated between `cmd_check` and `core.ssm_secrets.format_missing_secrets_error`,
+which 53c had rewritten onto `advice_block` a day earlier. Both now call
+`ssm_put_commands(env_name, missing)`.
+
+#### Tests and coverage
+
+`ssm-secrets.py`, `ecs-run.py` and `capacity-report.py` were at **0%** and had
+never had a test. Three new files —
+`tests/unit/test_ssm_secrets_cli.py`, `test_ecs_run.py`, `test_capacity_report.py`
+— plus extensions to `test_utils_cli.py` and `test_deploy.py`. Helpers are
+tested directly; each `cmd_*` is tested through its control-flow branches with
+collaborators monkeypatched at the seam, the 53b/53c pattern. 632 → 722 tests.
+
+`make test-cov` went **37.92% → 44.11%**; the floor moved 37 → 44.
+`ssm-secrets.py` 0 → 73%, `ecs-run.py` 0 → 61%, `capacity-report.py` 0 → 87%,
+`deploy.py` 67%, `utils/cli.py` 98%.
+
+#### Side effects and mints
+
+Nothing cleared as a side effect. One minted:
+
+| Finding                                                                                                               | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pass-through-params` — `ssm_secrets.py:250` `format_missing_secrets_error` forwards `env_name` to `ssm_put_commands` | **Left unsuppressed, recommended leave-standing.** `env_name` used to be interpolated inline, so the forward is an artifact of the extraction that removed the duplication. Drafted fix: have the one production caller (`preflight.py:164`) build the commands and pass them in — that makes it pass `missing` twice and forces callers to know the pairing. Worse. The category already carries thirteen standing instances of this shape. |
+
+`long-function` is now **12**, all of them `bin/` (3) or `src/` work queued
+behind 53d-2 and later subphases.
+
+**Noticed, not changed.** `capacity-report.check_environment` returns `1` for
+"config failed to load", "no cluster name", "no services found" *and* "OOM
+found", and `cli` collapses all four into one exit code — a config error reports
+as a capacity problem. Changing a report script's exit contract is an operator
+call; routed to **53i** alongside the other error-contract work.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -367,16 +467,16 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-15 of the 74 are adjudicated leave-standings (53a 2, 53b 11, 53c 2). The other
-**59** are queued behind claude-meta `docs/PLAN.md` Phase 53d–53i:
+16 of the 71 are adjudicated leave-standings (53a 2, 53b 11, 53c 2, 53d-1 1).
+The other **55** are queued behind claude-meta `docs/PLAN.md` Phase 53d-2–53i:
 
-`long-function` 16, `pass-through-params` 9, `param-clumps` 6, `arrow-code` 5,
+`long-function` 12, `pass-through-params` 9, `param-clumps` 6, `arrow-code` 5,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
 `foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
 `write-only-attributes` 1, `temp-accumulators` 1.
 
-They are concentrated in `bin/emergency.py` and `src/deployer/`, not in
-`modules/`.
+They are concentrated in `bin/emergency.py`, `bin/init.py` and
+`src/deployer/`, not in `modules/`.
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` has no
 open items left — every one of its 9 findings is an adjudicated leave-standing.

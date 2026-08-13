@@ -41,6 +41,29 @@ minted and are left standing there **pending operator confirmation**; it
 also lists five inline suppressions carrying neither a rationale nor a
 `re-evaluate-by:` tag, routed to 53i.
 
+Phase 53d-1 (the `bin/` deploy.toml-resolution family) **shipped
+2026-08-13** — `resolve_deploy_toml_or_exit` in
+`src/deployer/utils/cli.py` replaced three hand-rolled copies of the same
+resolution in `deploy.py` / `ssm-secrets.py` / `ecs-run.py`, which was
+most of three of the four decompositions; `capacity-report.py` split into
+`_deployment_cutoff` plus two scan helpers. All four `long-function`
+targets cleared and their four `# noqa: C901` lines removed; pysmelly
+74 → 71, coverage floor 37 → 44. `ssm-secrets.py`, `ecs-run.py` and
+`capacity-report.py` got their first tests ever (0% → 73/61/87%).
+Adjudication record: [docs/internal/PYSMELLY.md](internal/PYSMELLY.md).
+One `pass-through-params` was minted and is left standing there **pending
+operator confirmation**; `capacity-report.check_environment`'s
+exit-code conflation is recorded and routed to 53i.
+
+53d was split because re-measuring at HEAD showed claude-meta's plan
+entry undercounted it — 7 `bin/` `long-function` findings, not 6.
+**Phase 53d-2 is the open half**: `emergency.py` `cmd_rollback` (155L) +
+`cmd_scale` arrow-code, `ops.py` `cmd_status` arrow-code, `init.py`
+`cmd_bootstrap` (131L) + `cmd_environment` (104L), the
+`(environment, service, yes)` param-clump, and the re-measure of 53b's
+eight `bin/init.py` print-run leave-standings that this entry's 53b
+paragraph defers to "after 53d".
+
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record
 in claude-meta docs/PLAN-ARCHIVE.md. Its tests pin today's
