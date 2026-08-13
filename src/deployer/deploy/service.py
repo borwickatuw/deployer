@@ -232,6 +232,109 @@ def register_task_definition(
     return task_def_arn
 
 
+def _require_network_config(ctx) -> tuple[list[str], str]:
+    """Return (subnet_ids, security_group_id) from infra_config, or raise.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+
+    Returns:
+        Tuple of (subnet_ids, security_group_id).
+
+    Raises:
+        RuntimeError: If either value is missing from infra_config.
+    """
+    subnet_ids = ctx.infra_config.get("subnet_ids", [])
+    security_group_id = ctx.infra_config.get("security_group_id", "")
+
+    if not subnet_ids or not security_group_id:
+        log_error("Missing network configuration in infra_config (subnet_ids, security_group_id).")
+        raise RuntimeError("Missing network configuration")
+
+    return subnet_ids, security_group_id
+
+
+def _deployment_configuration(dep_cfg: DeploymentConfig) -> dict:
+    """Build the ECS deploymentConfiguration block.
+
+    Args:
+        dep_cfg: Deployment configuration extracted from infra_config.
+
+    Returns:
+        Dict for the ``deploymentConfiguration`` service parameter.
+    """
+    deployment_configuration = {
+        "minimumHealthyPercent": dep_cfg.min_healthy,
+        "maximumPercent": dep_cfg.max_percent,
+    }
+    if dep_cfg.circuit_breaker:
+        deployment_configuration["deploymentCircuitBreaker"] = {
+            "enable": True,
+            "rollback": dep_cfg.circuit_rollback,
+        }
+    return deployment_configuration
+
+
+def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_toml: dict) -> dict:
+    """Return the load balancer keys for a service, or an empty dict.
+
+    A load-balanced service with no resolvable target group is silently
+    skipped -- it is created without load balancer registration.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+        service_cfg: Merged sizing config for the service.
+        service_toml: Raw deploy.toml stanza for the service.
+
+    Returns:
+        Dict of ECS service params to merge, empty when not applicable.
+    """
+    if not (service_cfg.get("load_balanced") and "port" in service_toml):
+        return {}
+
+    # Use per-service target group if available, otherwise default
+    service_target_groups = ctx.infra_config.get("service_target_groups", {})
+    target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.get(
+        "target_group_arn", ""
+    )
+    if not target_group_arn:
+        return {}
+
+    # Health check grace period gives the container time to start before
+    # health checks begin.
+    health_check_cfg = ctx.infra_config.get("health_check_config", {})
+    return {
+        "loadBalancers": [
+            {
+                "targetGroupArn": target_group_arn,
+                "containerName": service_name,
+                "containerPort": service_toml["port"],
+            }
+        ],
+        "healthCheckGracePeriodSeconds": health_check_cfg.get("grace_period", 60),
+    }
+
+
+def _service_registries(ctx, service_name: str) -> list[dict] | None:
+    """Return the service discovery registries for a service, or None.
+
+    For A record DNS routing only registryArn is needed (no containerPort).
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+
+    Returns:
+        List of serviceRegistries entries, or None when not configured.
+    """
+    service_discovery_registries = ctx.infra_config.get("service_discovery_registries", {})
+    registry_arn = service_discovery_registries.get(service_name)
+    if not registry_arn:
+        return None
+    return [{"registryArn": registry_arn}]
+
+
 def create_service(
     ctx,
     service_name: str,
@@ -247,13 +350,7 @@ def create_service(
     service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
     service_toml = ctx.config.get("services", {}).get(service_name, {})
 
-    # Get network configuration from infra_config
-    subnet_ids = ctx.infra_config.get("subnet_ids", [])
-    security_group_id = ctx.infra_config.get("security_group_id", "")
-
-    if not subnet_ids or not security_group_id:
-        log_error("Missing network configuration in infra_config (subnet_ids, security_group_id).")
-        raise RuntimeError("Missing network configuration")
+    subnet_ids, security_group_id = _require_network_config(ctx)
 
     dep_cfg = _get_deployment_config(ctx.infra_config)
 
@@ -269,10 +366,7 @@ def create_service(
                 "assignPublicIp": "DISABLED",
             }
         },
-        "deploymentConfiguration": {
-            "minimumHealthyPercent": dep_cfg.min_healthy,
-            "maximumPercent": dep_cfg.max_percent,
-        },
+        "deploymentConfiguration": _deployment_configuration(dep_cfg),
     }
 
     # Use capacity provider strategy for interruptible services (Fargate Spot),
@@ -285,45 +379,11 @@ def create_service(
     else:
         create_params["launchType"] = "FARGATE"
 
-    # Add circuit breaker if enabled
-    if dep_cfg.circuit_breaker:
-        create_params["deploymentConfiguration"]["deploymentCircuitBreaker"] = {
-            "enable": True,
-            "rollback": dep_cfg.circuit_rollback,
-        }
+    create_params.update(_load_balancer_params(ctx, service_name, service_cfg, service_toml))
 
-    # Add load balancer configuration if service is load balanced
-    if service_cfg.get("load_balanced") and "port" in service_toml:
-        # Use per-service target group if available, otherwise default
-        service_target_groups = ctx.infra_config.get("service_target_groups", {})
-        target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.get(
-            "target_group_arn", ""
-        )
-        if target_group_arn:
-            create_params["loadBalancers"] = [
-                {
-                    "targetGroupArn": target_group_arn,
-                    "containerName": service_name,
-                    "containerPort": service_toml["port"],
-                }
-            ]
-            # Add health check grace period for load-balanced services
-            # This gives the container time to start before health checks begin
-            health_check_cfg = ctx.infra_config.get("health_check_config", {})
-            grace_period = health_check_cfg.get("grace_period", 60)
-            create_params["healthCheckGracePeriodSeconds"] = grace_period
-
-    # Add service discovery registration if configured
-    # This allows internal service-to-service communication via DNS
-    # Note: For A record DNS routing, only registryArn is needed (no containerPort)
-    service_discovery_registries = ctx.infra_config.get("service_discovery_registries", {})
-    registry_arn = service_discovery_registries.get(service_name)
-    if registry_arn:
-        create_params["serviceRegistries"] = [
-            {
-                "registryArn": registry_arn,
-            }
-        ]
+    registries = _service_registries(ctx, service_name)
+    if registries:
+        create_params["serviceRegistries"] = registries
 
     if ctx.dry_run:
         print(
@@ -339,6 +399,38 @@ def create_service(
     # Must be done after creation since botocore doesn't support the parameter yet
     if dep_cfg.max_percent <= 100:
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
+
+
+def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig) -> None:
+    """Force a new deployment of an existing ECS service.
+
+    A ClientError is logged and swallowed so the caller keeps deploying the
+    remaining services -- the deploy as a whole still reports success.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+        task_def_arn: Task definition ARN to deploy.
+        dep_cfg: Deployment configuration extracted from infra_config.
+    """
+    try:
+        update_params = {
+            "cluster": ctx.cluster_name,
+            "service": service_name,
+            "taskDefinition": task_def_arn,
+            "forceNewDeployment": True,
+            "deploymentConfiguration": _deployment_configuration(dep_cfg),
+        }
+
+        # Ensure existing services get updated with service discovery too
+        registries = _service_registries(ctx, service_name)
+        if registries:
+            update_params["serviceRegistries"] = registries
+
+        ctx.ecs_client.update_service(**update_params)
+        log_status(service_name, "deployment started")
+    except ClientError as e:
+        log_error(f"Failed to update service {service_name}: {e}")
 
 
 def deploy_services(
@@ -405,44 +497,7 @@ def deploy_services(
                     f"circuitBreaker={dep_cfg.circuit_breaker}"
                 )
             else:
-                try:
-                    update_params = {
-                        "cluster": ctx.cluster_name,
-                        "service": service_name,
-                        "taskDefinition": task_def_arn,
-                        "forceNewDeployment": True,
-                        "deploymentConfiguration": {
-                            "minimumHealthyPercent": dep_cfg.min_healthy,
-                            "maximumPercent": dep_cfg.max_percent,
-                        },
-                    }
-
-                    # Add circuit breaker if enabled
-                    if dep_cfg.circuit_breaker:
-                        update_params["deploymentConfiguration"]["deploymentCircuitBreaker"] = {
-                            "enable": True,
-                            "rollback": dep_cfg.circuit_rollback,
-                        }
-
-                    # Add service discovery registration if configured
-                    # This ensures existing services get updated with service discovery
-                    # Note: For A record DNS routing, only registryArn is needed (no containerPort)
-                    service_discovery_registries = ctx.infra_config.get(
-                        "service_discovery_registries", {}
-                    )
-                    registry_arn = service_discovery_registries.get(service_name)
-                    if registry_arn:
-                        update_params["serviceRegistries"] = [
-                            {
-                                "registryArn": registry_arn,
-                            }
-                        ]
-
-                    ctx.ecs_client.update_service(**update_params)
-                    log_status(service_name, "deployment started")
-                except ClientError as e:
-                    log_error(f"Failed to update service {service_name}: {e}")
-                    continue
+                _update_service(ctx, service_name, task_def_arn, dep_cfg)
         else:
             # Create new service
             create_service(
