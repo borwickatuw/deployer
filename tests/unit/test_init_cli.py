@@ -61,12 +61,47 @@ def _lines(capsys):
     return [line for line in capsys.readouterr().out.splitlines() if line.strip()]
 
 
+def _blank_before(capsys):
+    """Return the first five characters of every line preceded by a blank line.
+
+    Used to assert that numbered lists are blank-separated — a blank line
+    before each step but the first, and nowhere inside a step.
+    """
+    lines = capsys.readouterr().out.splitlines()
+    return [
+        line[:5]
+        for previous, line in zip(lines, lines[1:], strict=False)
+        if not previous.strip() and line.strip()
+    ]
+
+
 @pytest.fixture
 def env_dir(tmp_path, monkeypatch):
     """Point bin/init.py's get_environments_dir() at a temporary directory."""
     directory = tmp_path / "environments"
     monkeypatch.setattr(init_cli, "get_environments_dir", lambda: directory)
     return directory
+
+
+class TestNumberedSteps:
+    """Tests for _numbered_steps(), the shared next-steps printer."""
+
+    def test_numbers_the_first_line_of_each_step(self, capsys):
+        """Test that steps are numbered from 1 and continuation lines print verbatim."""
+        init_cli._numbered_steps("Next steps:", ["do this"], ["then this", "     - detail"])
+        assert capsys.readouterr().out == (
+            "Next steps:\n  1. do this\n\n  2. then this\n     - detail\n"
+        )
+
+    def test_single_step_gets_no_leading_blank(self, capsys):
+        """Test that the blank line separates steps rather than preceding them."""
+        init_cli._numbered_steps("Next steps:", ["only this"])
+        assert capsys.readouterr().out == "Next steps:\n  1. only this\n"
+
+    def test_no_steps_prints_only_the_heading(self, capsys):
+        """Test the degenerate case, so the helper never emits a stray blank."""
+        init_cli._numbered_steps("Next steps:")
+        assert capsys.readouterr().out == "Next steps:\n"
 
 
 # =============================================================================
@@ -263,6 +298,14 @@ class TestCmdBootstrapWrites:
         ]
         assert bootstrap_stubs["tofu"] == []
 
+    def test_declining_apply_prints_blank_separated_steps(
+        self, monkeypatch, bootstrap_stubs, capsys
+    ):
+        """Test that the manual checklist is blank-separated like the others."""
+        _answer_bootstrap(monkeypatch, apply=False)
+        assert init_cli.cmd_bootstrap(dry_run=False) == 0
+        assert _blank_before(capsys)[-4:] == ["Next ", "  2. ", "  3. ", "  Aft"]
+
     def test_declining_apply_names_the_migrate_state_command(
         self, monkeypatch, bootstrap_stubs, capsys, env_dir
     ):
@@ -367,6 +410,11 @@ class TestCmdBootstrapMigrate:
             '     (should show "No changes")',
         ]
 
+    def test_next_steps_are_blank_separated(self, capsys, migrate_env):
+        """Test that the migration checklist is blank-separated like the others."""
+        assert init_cli.cmd_bootstrap_migrate("bootstrap-staging", dry_run=False) == 0
+        assert _blank_before(capsys) == ["Next ", "  2. ", "  3. "]
+
     def test_dry_run_previews_without_writing(self, capsys, migrate_env):
         """Test that --dry-run shows the updated content and leaves main.tf alone."""
         assert init_cli.cmd_bootstrap_migrate("bootstrap-staging", dry_run=True) == 0
@@ -462,6 +510,11 @@ class TestCmdDeployToml:
             "     uv run python bin/init.py environment --app-name myapp "
             "--template standalone-staging" in _lines(capsys)
         )
+
+    def test_next_steps_are_blank_separated(self, tmp_path, capsys, compose_stubs):
+        """Test that the follow-up checklist is blank-separated like the others."""
+        assert init_cli.cmd_deploy_toml(str(_compose(tmp_path)), None, None, False) == 0
+        assert _blank_before(capsys) == ["Next ", "  2. "]
 
     def test_dry_run_previews_without_writing(self, tmp_path, capsys, compose_stubs):
         """Test that --dry-run prints the TOML and writes nothing."""
@@ -770,6 +823,17 @@ class TestPrintNextSteps:
             '--value "..." --type SecureString',
             "     uv run python bin/deploy.py myapp-production",
         ]
+
+    def test_steps_are_blank_separated(self, capsys):
+        """Test that a blank line sits between steps and nowhere else."""
+        init_cli._print_next_steps(
+            "myapp-staging",
+            Path("/envs/myapp-staging"),
+            "staging",
+            "myapp",
+            "standalone-staging",
+        )
+        assert _blank_before(capsys) == ["  2. ", "  3. ", "  4. "]
 
     def test_no_app_name_drops_the_ssm_step(self, capsys):
         """Test that the SSM step needs an app name, not just a non-shared template."""

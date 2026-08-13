@@ -42,6 +42,7 @@ import os
 import stat
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
@@ -101,6 +102,25 @@ def _print_dry_run_preview(
         if max_lines is not None and len(lines) > max_lines:
             print(f"... ({len(lines) - max_lines} more lines)")
         print()
+
+
+def _numbered_steps(heading: str, *steps: Sequence[str]) -> None:
+    """Print a heading, then a blank-separated numbered list.
+
+    Args:
+        heading: The line printed above the list, e.g. "Next steps:".
+        steps: One sequence of lines per step. The first line of each is
+            numbered; the rest print verbatim, so callers keep their own
+            continuation indent.
+    """
+    print(heading)
+    for number, lines in enumerate(steps, start=1):
+        if number > 1:
+            print()
+        first, *rest = lines
+        print(f"  {number}. {first}")
+        for line in rest:
+            print(line)
 
 
 def _run_tofu(subcommand: str, env_path: Path, admin_profile: str) -> bool:
@@ -232,10 +252,12 @@ def cmd_bootstrap(dry_run: bool) -> int:  # noqa: C901 — interactive bootstrap
 
     # Offer to apply immediately
     if not click.confirm("Run 'tofu init && tofu apply' now?", default=False):
-        print("Next steps:")
-        print(f"  1. cd {env_path}")
-        print("  2. AWS_PROFILE=admin tofu init")
-        print("  3. AWS_PROFILE=admin tofu apply")
+        _numbered_steps(
+            "Next steps:",
+            [f"cd {env_path}"],
+            ["AWS_PROFILE=admin tofu init"],
+            ["AWS_PROFILE=admin tofu apply"],
+        )
         print()
         print("  After successful apply, enable S3 backend:")
         print(f"    uv run python bin/init.py bootstrap --migrate-state {env_name}")
@@ -289,12 +311,15 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
     main_tf.write_text(updated)
     print(f"S3 backend enabled in {main_tf}")
     print()
-    print("Next steps:")
-    print(f"  1. cd {env_path}")
-    print("  2. AWS_PROFILE=admin tofu init -migrate-state")
-    print('     (answer "yes" to copy state to S3)')
-    print("  3. AWS_PROFILE=admin tofu plan")
-    print('     (should show "No changes")')
+    _numbered_steps(
+        "Next steps:",
+        [f"cd {env_path}"],
+        [
+            "AWS_PROFILE=admin tofu init -migrate-state",
+            '     (answer "yes" to copy state to S3)',
+        ],
+        ["AWS_PROFILE=admin tofu plan", '     (should show "No changes")'],
+    )
     return 0
 
 
@@ -345,11 +370,13 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
     output_path.write_text(content)
     print(f"Generated: {output_path}")
     print()
-    print("Next steps:")
-    print("  1. Review and customize the generated deploy.toml")
-    print("  2. Create environment directory:")
-    print(
-        f"     uv run python bin/init.py environment --app-name {config['application']['name']} --template standalone-staging"
+    _numbered_steps(
+        "Next steps:",
+        ["Review and customize the generated deploy.toml"],
+        [
+            "Create environment directory:",
+            f"     uv run python bin/init.py environment --app-name {config['application']['name']} --template standalone-staging",
+        ],
     )
     return 0
 
@@ -471,43 +498,51 @@ def _print_next_steps(
     is_shared_infra = template_name.startswith("shared-infra-")
     is_standalone = template_name.startswith("standalone-")
 
-    print("Next steps:")
-    step = 1
-
     if is_standalone:
-        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
-        print("     - Set database credentials")
-        step += 1
-        print()
-        print(f"  {step}. Edit {env_path}/services.auto.tfvars:")
-        print("     - Configure domain and Route53 zone ID")
-        print("     - Adjust service sizing if needed")
-        step += 1
+        steps = [
+            [f"Edit {env_path}/terraform.tfvars:", "     - Set database credentials"],
+            [
+                f"Edit {env_path}/services.auto.tfvars:",
+                "     - Configure domain and Route53 zone ID",
+                "     - Adjust service sizing if needed",
+            ],
+        ]
     elif is_shared_infra:
-        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
-        print("     - Set domain and Route53 zone ID")
-        print("     - Configure Cognito if needed")
-        step += 1
+        steps = [
+            [
+                f"Edit {env_path}/terraform.tfvars:",
+                "     - Set domain and Route53 zone ID",
+                "     - Configure Cognito if needed",
+            ]
+        ]
     else:
-        print(f"  {step}. Edit {env_path}/terraform.tfvars:")
-        print("     - Set database credentials")
-        print("     - Configure domain and Route53 zone ID")
-        print("     - Verify listener_rule_priority is unique")
-        step += 1
+        steps = [
+            [
+                f"Edit {env_path}/terraform.tfvars:",
+                "     - Set database credentials",
+                "     - Configure domain and Route53 zone ID",
+                "     - Verify listener_rule_priority is unique",
+            ]
+        ]
 
-    print()
-    print(f"  {step}. Deploy infrastructure:")
-    print(f"     ./bin/tofu.sh plan {env_name}")
-    print(f"     ./bin/tofu.sh apply {env_name}")
-    step += 1
+    steps.append(
+        [
+            "Deploy infrastructure:",
+            f"     ./bin/tofu.sh plan {env_name}",
+            f"     ./bin/tofu.sh apply {env_name}",
+        ]
+    )
 
     if not is_shared_infra and app_name:
-        print()
-        print(f"  {step}. Create SSM secrets and deploy:")
-        print(
-            f'     aws ssm put-parameter --name "/{app_name}/{env_type}/secret-key" --value "..." --type SecureString'
+        steps.append(
+            [
+                "Create SSM secrets and deploy:",
+                f'     aws ssm put-parameter --name "/{app_name}/{env_type}/secret-key" --value "..." --type SecureString',
+                f"     uv run python bin/deploy.py {env_name}",
+            ]
         )
-        print(f"     uv run python bin/deploy.py {env_name}")
+
+    _numbered_steps("Next steps:", *steps)
 
 
 def cmd_update_services(env_name, deploy_toml, dry_run) -> int:
