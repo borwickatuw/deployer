@@ -48,6 +48,17 @@ def _info(message: str) -> str:
     return f"{Colors.BLUE}{message}{Colors.NC}"
 
 
+def _assert_blank_separated(capsys):
+    """Assert the error line is framed by a blank line on each side.
+
+    This is print_with_advice()'s framing, adopted in Phase 53e-1 commit 2.
+    """
+    out = capsys.readouterr().out.splitlines()
+    error_index = next(i for i, line in enumerate(out) if "✗" in line)
+    assert out[error_index - 1] == ""
+    assert out[error_index + 1] == ""
+
+
 def _success(message: str) -> str:
     """Return the line log_success() prints for `message`."""
     return f"  {message} {Colors.GREEN}[done]{Colors.NC}"
@@ -200,6 +211,61 @@ class TestCreateDatabaseExtensions:
 
 class TestAdviceBlocks:
     """Pin the operator-facing advice printed by every failure path."""
+
+    @pytest.mark.parametrize(
+        ("env_config", "side_effect", "match"),
+        [
+            ({"host": "db.example.com"}, None, "Missing extensions_lambda"),
+            (
+                {"extensions_lambda": EXTENSIONS_LAMBDA},
+                ClientError(
+                    {"Error": {"Code": "ResourceNotFoundException", "Message": "gone"}}, "Invoke"
+                ),
+                "not found",
+            ),
+            (
+                {"extensions_lambda": EXTENSIONS_LAMBDA},
+                ClientError(
+                    {"Error": {"Code": "AccessDeniedException", "Message": "nope"}}, "Invoke"
+                ),
+                "Access denied",
+            ),
+            (
+                {"extensions_lambda": EXTENSIONS_LAMBDA},
+                OSError("connection reset"),
+                "Failed to invoke extensions Lambda",
+            ),
+        ],
+    )
+    @patch("deployer.deploy.extensions.boto3")
+    def test_advice_blocks_are_blank_separated(
+        self, mock_boto3, env_config, side_effect, match, capsys
+    ):
+        """Every advice block opens with a blank line, the print_with_advice framing."""
+        mock_boto3.client.return_value.invoke.side_effect = side_effect
+        config = {"database": {"extensions": ["unaccent"]}}
+
+        with pytest.raises(RuntimeError, match=match):
+            create_database_extensions(config, {"database": env_config}, "us-west-2")
+
+        _assert_blank_separated(capsys)
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_function_error_block_is_blank_separated(self, mock_boto3, capsys):
+        """The fifth advice block gets the same framing as the four above."""
+        mock_payload = MagicMock()
+        mock_payload.read.return_value = json.dumps({"errorType": "DatabaseError"}).encode()
+        mock_boto3.client.return_value.invoke.return_value = {
+            "FunctionError": "Unhandled",
+            "Payload": mock_payload,
+        }
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(RuntimeError, match="Extensions Lambda failed"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        _assert_blank_separated(capsys)
 
     def test_missing_lambda_advice(self, capsys):
         """Missing extensions_lambda prints the deploy.toml/config.toml fix."""

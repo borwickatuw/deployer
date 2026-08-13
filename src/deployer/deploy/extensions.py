@@ -12,7 +12,7 @@ import json
 import boto3
 from botocore.exceptions import ClientError
 
-from ..utils import log, log_error, log_success, log_warning
+from ..utils import log, log_error, log_success, log_warning, print_with_advice
 
 
 def create_database_extensions(
@@ -42,23 +42,22 @@ def create_database_extensions(
     # Read lambda function name from config.toml
     lambda_name = env_config.get("database", {}).get("extensions_lambda")
     if not lambda_name:
-        log_error(
+        print_with_advice(
             "deploy.toml declares database extensions, but config.toml is missing "
-            "[database] extensions_lambda."
+            "[database] extensions_lambda.",
+            "  Your deploy.toml declares:",
+            "    [database]",
+            f"    extensions = {json.dumps(extensions)}",
+            "",
+            "  But your environment's config.toml needs:",
+            "    [database]",
+            '    extensions_lambda = "${tofu:db_users_lambda_function_name}"',
+            "",
+            "  Steps to fix:",
+            "    1. Add the extensions_lambda line to your config.toml",
+            "    2. Add the db_users_lambda_function_name output to your main.tf",
+            "    3. Run 'tofu apply' to create the output",
         )
-        print()
-        print("  Your deploy.toml declares:")
-        print("    [database]")
-        print(f"    extensions = {json.dumps(extensions)}")
-        print()
-        print("  But your environment's config.toml needs:")
-        print("    [database]")
-        print('    extensions_lambda = "${tofu:db_users_lambda_function_name}"')
-        print()
-        print("  Steps to fix:")
-        print("    1. Add the extensions_lambda line to your config.toml")
-        print("    2. Add the db_users_lambda_function_name output to your main.tf")
-        print("    3. Run 'tofu apply' to create the output")
         raise RuntimeError("Missing extensions_lambda in config.toml [database] section")
 
     if dry_run:
@@ -84,31 +83,34 @@ def create_database_extensions(
         error_message = e.response["Error"]["Message"]
 
         if error_code == "ResourceNotFoundException":
-            log_error(f"Lambda function '{lambda_name}' not found.")
-            print()
-            print("  The extensions_lambda in your config.toml points to a Lambda")
-            print("  function that doesn't exist. This usually means:")
-            print("    - The tofu output has not been applied yet")
-            print("    - The Lambda function was deleted")
-            print()
-            print("  Run 'tofu apply' in your environment directory, then retry.")
+            print_with_advice(
+                f"Lambda function '{lambda_name}' not found.",
+                "  The extensions_lambda in your config.toml points to a Lambda",
+                "  function that doesn't exist. This usually means:",
+                "    - The tofu output has not been applied yet",
+                "    - The Lambda function was deleted",
+                "",
+                "  Run 'tofu apply' in your environment directory, then retry.",
+            )
             raise RuntimeError(f"Lambda function '{lambda_name}' not found") from e
 
         if error_code == "AccessDeniedException":
-            log_error(f"Permission denied invoking Lambda '{lambda_name}'.")
-            print()
-            print("  The deploy role does not have lambda:InvokeFunction permission")
-            print("  for this Lambda function. Apply the bootstrap IAM changes:")
-            print("    cd deployer-environments/bootstrap-staging")
-            print("    tofu apply")
+            print_with_advice(
+                f"Permission denied invoking Lambda '{lambda_name}'.",
+                "  The deploy role does not have lambda:InvokeFunction permission",
+                "  for this Lambda function. Apply the bootstrap IAM changes:",
+                "    cd deployer-environments/bootstrap-staging",
+                "    tofu apply",
+            )
             raise RuntimeError(f"Access denied invoking Lambda '{lambda_name}'") from e
 
         log_error(f"Failed to invoke Lambda '{lambda_name}': {error_code} - {error_message}")
         raise RuntimeError(f"Lambda invocation failed: {error_code} - {error_message}") from e
     except Exception as e:
-        log_error(f"Unexpected error invoking Lambda '{lambda_name}': {e}")
-        print()
-        print("  Check your AWS credentials and network connectivity.")
+        print_with_advice(
+            f"Unexpected error invoking Lambda '{lambda_name}': {e}",
+            "  Check your AWS credentials and network connectivity.",
+        )
         raise RuntimeError(f"Failed to invoke extensions Lambda: {e}") from e
 
     # Check for Lambda-level errors (function error, not invocation error)
@@ -117,12 +119,14 @@ def create_database_extensions(
         error_type = error_payload.get("errorType", "Unknown")
         error_message = error_payload.get("errorMessage", "No details")
 
-        log_error(f"Lambda '{lambda_name}' returned an error: {error_type}")
-        print(f"  {error_message}")
-        print()
-        print("  The Lambda function ran but failed to create extensions.")
-        print("  Check the Lambda's CloudWatch logs for details:")
-        print(f"    aws logs tail /aws/lambda/{lambda_name} --since 5m")
+        print_with_advice(
+            f"Lambda '{lambda_name}' returned an error: {error_type}",
+            f"  {error_message}",
+            "",
+            "  The Lambda function ran but failed to create extensions.",
+            "  Check the Lambda's CloudWatch logs for details:",
+            f"    aws logs tail /aws/lambda/{lambda_name} --since 5m",
+        )
         raise RuntimeError(f"Extensions Lambda failed: {error_type} - {error_message}")
 
     # Parse successful response
