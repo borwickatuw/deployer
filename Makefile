@@ -161,9 +161,16 @@ security-secrets: ## Check tracked files for secrets not in .secrets.baseline
 	@test -f .secrets.baseline || { echo "Error: .secrets.baseline missing. Bootstrap with 'make security-secrets-init' and review before committing."; exit 1; }
 	@uv run --group dev detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
 
+# detect-secrets rewrites the baseline in place with `--baseline`, so no shell
+# redirect is involved: a plain `scan > .secrets.baseline` truncates the file
+# before the scanner runs, and under `.SHELLFLAGS := -eu` a failed init leaves
+# a 0-byte baseline that still passes the `test -f` guard in security-secrets.
+# `--baseline` also self-excludes the tracked baseline from its own scan and
+# preserves audit annotations, neither of which a bare `scan` does.
 .PHONY: security-secrets-init
 security-secrets-init: ## Bootstrap/regenerate .secrets.baseline (review the diff before committing)
-	@uv run --group dev detect-secrets scan > .secrets.baseline
+	@test -f .secrets.baseline || { uv run --group dev detect-secrets scan > .secrets.baseline.tmp && mv .secrets.baseline.tmp .secrets.baseline; }
+	@uv run --group dev detect-secrets scan --baseline .secrets.baseline
 
 .PHONY: security-updates
 security-updates: ## CVE scan + outdated-package report (quarterly review)
