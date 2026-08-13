@@ -1,5 +1,7 @@
 """Tests for audit functionality (deployer.core.audit and deployer.config)."""
 
+from pathlib import Path
+
 import pytest
 
 from deployer.config import (
@@ -17,6 +19,7 @@ from deployer.core.audit import (
     audit_services,
     run_audit,
 )
+from deployer.utils import Colors
 
 
 class TestParseDockerCompose:
@@ -436,9 +439,35 @@ class TestAuditImages:
         assert len(issues) == 1
         assert "web" in issues[0]
 
+    def test_build_service_without_a_context_is_skipped(self):
+        """A build service reporting no context contributes no expectation."""
+        issues = audit_images(
+            {"web": {"has_build": True, "build_context": "", "profiles": []}},
+            {},
+            AuditConfig(ignore_services=set(), ignore_images=set()),
+        )
+
+        assert issues == []
+
 
 class TestAuditEnvVars:
     """Tests for audit_env_vars function."""
+
+    def test_env_vars_of_non_build_services_are_ignored(self):
+        """Only services with a build contribute env vars to the audit."""
+        issues = audit_env_vars(
+            {
+                "vendor": {
+                    "has_build": False,
+                    "environment": ["VENDOR_ONLY"],
+                    "profiles": [],
+                }
+            },
+            set(),
+            AuditConfig(ignore_env_vars=set(), ignore_services=set()),
+        )
+
+        assert issues == []
 
     def test_all_env_vars_accounted_for(self):
         """Test when all env vars are in deploy.toml."""
@@ -527,12 +556,15 @@ class TestRunAudit:
     """Tests for run_audit function."""
 
     def test_run_audit_no_issues(self, temp_project_dir):
-        """Test run_audit returns 0 issues for valid config."""
+        """Test run_audit returns exactly 0 issues for the sample fixtures.
+
+        This previously asserted `issue_count >= 0`, which is true of every
+        return value the function can produce except the -1 not-found case, so
+        it pinned nothing. The sample fixtures are built to match; pin that.
+        """
         issue_count, issues = run_audit(temp_project_dir, verbose=False)
 
-        # The sample fixtures are designed to match, so should have no issues
-        # or only expected differences
-        assert issue_count >= 0  # Just verify it runs without error
+        assert (issue_count, issues) == (0, [])
 
     def test_run_audit_missing_compose_file(self, tmp_path):
         """Test run_audit handles missing docker-compose.yml."""
@@ -553,3 +585,296 @@ class TestRunAudit:
 
         assert issue_count == -1
         assert "not found" in issues[0].lower()
+
+
+# =============================================================================
+# run_audit terminal output
+# =============================================================================
+
+
+def _lines(capsys):
+    """Return stdout's non-blank lines.
+
+    Blank lines are dropped on purpose — see TestRunAuditOutput's docstring.
+    """
+    return [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+def _section(msg: str) -> str:
+    """Return the line log_section() prints for `msg`."""
+    return f"{Colors.BLUE}=== {msg} ==={Colors.NC}"
+
+
+def _ok(msg: str) -> str:
+    """Return the line log_ok() prints for `msg`."""
+    return f"  {Colors.GREEN}✓{Colors.NC} {msg}"
+
+
+def _info(msg: str) -> str:
+    """Return the line log_info() prints for `msg`."""
+    return f"  {Colors.CYAN}ℹ{Colors.NC} {msg}"
+
+
+def _warn(msg: str) -> str:
+    """Return the line log_warning() prints for `msg`."""
+    return f"  {Colors.YELLOW}⚠{Colors.NC} {msg}"
+
+
+def _project(tmp_path: Path, compose: str, deploy: str) -> Path:
+    """Write a docker-compose.yml and deploy.toml into a fresh directory."""
+    (tmp_path / "docker-compose.yml").write_text(compose)
+    (tmp_path / "deploy.toml").write_text(deploy)
+    return tmp_path
+
+
+MINIMAL_COMPOSE = "services: {}\n"
+MINIMAL_DEPLOY = '[application]\nname = "t"\n'
+
+MISMATCHED_COMPOSE = """\
+services:
+  web:
+    build:
+      context: ./web
+    environment:
+      - MYSTERY_VAR=1
+"""
+MISMATCHED_DEPLOY = """\
+[application]
+name = "t"
+
+[services]
+ghost = { image = "g" }
+"""
+
+
+class TestRunAuditOutput:
+    """Characterization tests for run_audit()'s verbose terminal output.
+
+    Every pre-existing run_audit test passes verbose=False, so the entire
+    reporting half of the function — the header, the audit-config section, the
+    three check sections and the summary — was unexercised. These pin it so a
+    decomposition can be shown to preserve it.
+
+    Blank-line placement is deliberately not pinned: _lines() drops blank lines
+    the way tests/unit/test_init_cli.py's helper of the same name does. Section
+    text, order and the issue lines under each heading are pinned and must not
+    change.
+    """
+
+    def test_header_names_the_directory_and_both_files(self, tmp_path, capsys):
+        """The header echoes the resolved project name and both filenames."""
+        project = _project(tmp_path, MINIMAL_COMPOSE, MINIMAL_DEPLOY)
+
+        run_audit(project, verbose=True)
+
+        assert _lines(capsys)[:3] == [
+            f"Auditing {Colors.CYAN}{project.name}{Colors.NC}",
+            "  docker-compose: docker-compose.yml",
+            "  deploy.toml: deploy.toml",
+        ]
+
+    def test_custom_filenames_are_echoed(self, tmp_path, capsys):
+        """Non-default filenames appear in the header and are the files read."""
+        (tmp_path / "compose.prod.yml").write_text(MINIMAL_COMPOSE)
+        (tmp_path / "deploy.prod.toml").write_text(MINIMAL_DEPLOY)
+
+        run_audit(
+            tmp_path,
+            compose_filename="compose.prod.yml",
+            deploy_filename="deploy.prod.toml",
+            verbose=True,
+        )
+
+        assert _lines(capsys)[1:3] == [
+            "  docker-compose: compose.prod.yml",
+            "  deploy.toml: deploy.prod.toml",
+        ]
+
+    def test_no_audit_config_section_when_nothing_configured(self, tmp_path, capsys):
+        """A deploy.toml with no [audit] section prints no configuration block."""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, MINIMAL_DEPLOY), verbose=True)
+
+        assert _section("Audit Configuration") not in _lines(capsys)
+
+    def test_audit_config_section_lists_every_configured_key(self, tmp_path, capsys):
+        """Ignored services, mappings and ignored env vars each get a line."""
+        deploy = """\
+[application]
+name = "t"
+
+[audit]
+ignore_services = ["seeder"]
+service_mapping = { "app" = "web" }
+ignore_env_vars = ["NOISY"]
+"""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, deploy), verbose=True)
+
+        out = _lines(capsys)
+        start = out.index(_section("Audit Configuration"))
+        assert out[start : start + 4] == [
+            _section("Audit Configuration"),
+            _info("Ignoring services: seeder"),
+            _info("Service mappings: app→web"),
+            _info("Ignoring env vars: NOISY"),
+        ]
+
+    def test_ignore_images_alone_still_opens_the_section(self, tmp_path, capsys):
+        """ignore_images gates the Audit Configuration section.
+
+        What it prints inside that section is asserted separately — see
+        test_ignore_images_is_listed.
+        """
+        deploy = """\
+[application]
+name = "t"
+
+[audit]
+ignore_images = ["legacy"]
+"""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, deploy), verbose=True)
+
+        assert _section("Audit Configuration") in _lines(capsys)
+
+    def test_all_clear_prints_an_ok_line_per_section(self, tmp_path, capsys):
+        """Three headings, each followed by its own all-accounted-for line."""
+        run_audit(_project(tmp_path, MINIMAL_COMPOSE, MINIMAL_DEPLOY), verbose=True)
+
+        assert _lines(capsys)[3:] == [
+            _section("Services"),
+            _ok("All services accounted for"),
+            _section("Images"),
+            _ok("All build contexts accounted for"),
+            _section("Environment Variables"),
+            _ok("All environment variables accounted for"),
+            _section("Summary"),
+            f"  {Colors.GREEN}No issues found!{Colors.NC}",
+        ]
+
+    def test_issues_are_warned_under_their_own_heading(self, tmp_path, capsys):
+        """Each check's issues print as warnings beneath that check's heading."""
+        project = _project(tmp_path, MISMATCHED_COMPOSE, MISMATCHED_DEPLOY)
+
+        run_audit(project, verbose=True)
+
+        assert _lines(capsys)[3:] == [
+            _section("Services"),
+            _warn("Service 'web' in docker-compose not found in deploy.toml"),
+            _warn("Service 'ghost' in deploy.toml not found in docker-compose"),
+            _section("Images"),
+            _warn("Build context 'web' (from service 'web') not found in deploy.toml [images]"),
+            _section("Environment Variables"),
+            _warn("Environment variable 'MYSTERY_VAR' in docker-compose not in deploy.toml"),
+            _section("Summary"),
+            f"  {Colors.YELLOW}4 issue(s) found{Colors.NC}",
+            "  To acknowledge intentional differences, add an [audit] section",
+            "  to deploy.toml. Run with --help or see script docstring for examples.",
+        ]
+
+    def test_return_value_matches_the_reported_issues(self, tmp_path, capsys):
+        """The count and list returned are the same issues that were printed."""
+        project = _project(tmp_path, MISMATCHED_COMPOSE, MISMATCHED_DEPLOY)
+
+        count, issues = run_audit(project, verbose=True)
+
+        assert count == len(issues) == 4
+        assert issues == [
+            "Service 'web' in docker-compose not found in deploy.toml",
+            "Service 'ghost' in deploy.toml not found in docker-compose",
+            "Build context 'web' (from service 'web') not found in deploy.toml [images]",
+            "Environment variable 'MYSTERY_VAR' in docker-compose not in deploy.toml",
+        ]
+
+    def test_only_some_checks_failing_mixes_warnings_and_ok_lines(self, tmp_path, capsys):
+        """A services-only mismatch leaves the other two checks reporting OK."""
+        compose = """\
+services:
+  web:
+    build:
+      context: .
+"""
+        deploy = """\
+[application]
+name = "t"
+
+[images]
+web = { context = ".", dockerfile = "Dockerfile" }
+"""
+        run_audit(_project(tmp_path, compose, deploy), verbose=True)
+
+        assert _lines(capsys)[3:] == [
+            _section("Services"),
+            _warn("Service 'web' in docker-compose not found in deploy.toml"),
+            _section("Images"),
+            _ok("All build contexts accounted for"),
+            _section("Environment Variables"),
+            _ok("All environment variables accounted for"),
+            _section("Summary"),
+            f"  {Colors.YELLOW}1 issue(s) found{Colors.NC}",
+            "  To acknowledge intentional differences, add an [audit] section",
+            "  to deploy.toml. Run with --help or see script docstring for examples.",
+        ]
+
+    def test_quiet_prints_nothing_at_all(self, tmp_path, capsys):
+        """verbose=False suppresses every line, issues or not."""
+        project = _project(tmp_path, MISMATCHED_COMPOSE, MISMATCHED_DEPLOY)
+
+        count, _issues = run_audit(project, verbose=False)
+
+        assert count == 4
+        assert capsys.readouterr().out == ""
+
+    def test_missing_file_reports_before_any_output(self, tmp_path, capsys):
+        """The not-found guards run before the header, even when verbose."""
+        (tmp_path / "deploy.toml").write_text(MINIMAL_DEPLOY)
+
+        count, issues = run_audit(tmp_path, verbose=True)
+
+        assert count == -1
+        assert issues == [f"docker-compose file not found: {tmp_path / 'docker-compose.yml'}"]
+        assert capsys.readouterr().out == ""
+
+    def test_missing_deploy_toml_reports_before_any_output(self, tmp_path, capsys):
+        """The deploy.toml guard likewise precedes the header."""
+        (tmp_path / "docker-compose.yml").write_text(MINIMAL_COMPOSE)
+
+        count, issues = run_audit(tmp_path, verbose=True)
+
+        assert count == -1
+        assert issues == [f"deploy.toml not found: {tmp_path / 'deploy.toml'}"]
+        assert capsys.readouterr().out == ""
+
+
+class TestAuditServicesMappingBranches:
+    """The two audit_services() branches no other test reaches."""
+
+    def test_mapped_name_is_named_in_the_issue(self):
+        """A mapped service that is still missing reports both names."""
+        issues = audit_services(
+            {"app": {"has_build": True, "profiles": []}},
+            {},
+            AuditConfig(ignore_services=set(), service_mapping={"app": "web"}),
+        )
+
+        assert issues == [
+            "Service 'app' in docker-compose not found in deploy.toml (checked as 'web')"
+        ]
+
+    def test_deploy_only_service_is_reported(self):
+        """A deploy.toml service with no compose counterpart is an issue."""
+        issues = audit_services(
+            {},
+            {"ghost": {}},
+            AuditConfig(ignore_services=set(), service_mapping={}),
+        )
+
+        assert issues == ["Service 'ghost' in deploy.toml not found in docker-compose"]
+
+    def test_reverse_mapping_excuses_a_deploy_only_service(self):
+        """A mapped deploy.toml name is matched via its compose original."""
+        issues = audit_services(
+            {"app": {"has_build": True, "profiles": []}},
+            {"web": {}},
+            AuditConfig(ignore_services=set(), service_mapping={"app": "web"}),
+        )
+
+        assert issues == []
