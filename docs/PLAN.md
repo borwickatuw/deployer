@@ -57,12 +57,34 @@ exit-code conflation is recorded and routed to 53i.
 
 53d was split because re-measuring at HEAD showed claude-meta's plan
 entry undercounted it — 7 `bin/` `long-function` findings, not 6.
-**Phase 53d-2 is the open half**: `emergency.py` `cmd_rollback` (155L) +
-`cmd_scale` arrow-code, `ops.py` `cmd_status` arrow-code, `init.py`
-`cmd_bootstrap` (131L) + `cmd_environment` (104L), the
-`(environment, service, yes)` param-clump, and the re-measure of 53b's
-eight `bin/init.py` print-run leave-standings that this entry's 53b
-paragraph defers to "after 53d".
+
+Phase 53d-2a (`emergency.py` + `ops.py`) **shipped 2026-08-13** — the
+first commit pinned `cmd_rollback` / `cmd_scale` / `cmd_force_deploy` /
+`cmd_status` at their current behaviour, and every later commit had to
+leave those tests passing unchanged. Six `if x and "T" in x:` guards
+around `format_timestamp` turned out to be provable no-ops, and deleting
+them cleared `cmd_status`'s arrow-code on its own; `select_index` in
+`src/deployer/utils/cli.py` absorbed `cmd_rollback`'s two numbered-pick
+twins; `_require_service` and `_checkpoint_and_log` unified twins
+pysmelly could not see. Three of four targets cleared, nothing minted;
+pysmelly 71 → 68, coverage floor 44 → 49. `bin/emergency.py` got its
+first tests ever (0% → 57%) and dropped off the convergence-hotspot list.
+Adjudication record: [docs/internal/PYSMELLY.md](internal/PYSMELLY.md).
+The `(environment, service, yes)` param-clump is left standing there
+**pending operator confirmation**, with the drafted `EmergencyTarget`
+dataclass and the reason it reads worse than the three parameters.
+
+**Phase 53d-2b is the open half**: `init.py` `cmd_bootstrap` (131L) +
+`cmd_environment` (104L), and the re-measure of 53b's eight
+`bin/init.py` print-run leave-standings that this entry's 53b paragraph
+defers to "after 53d". Three of those eight sit inside `cmd_bootstrap`
+and none inside `cmd_environment`, so the two halves of 53d-2b only
+partly overlap. It also carries a design call 53b did not have
+available: a `numbered_steps(heading, steps)` helper owning the counter
+would let `_print_next_steps` drop the dynamic `step` variable that 53b
+cited as the evidence *against* generalizing — but that reaches into
+`extensions.py` (53e) and `setup_profiles.py`, so it is a scope
+decision, not a free win.
 
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record

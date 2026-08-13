@@ -30,8 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **71** (measured at the Phase 53d-1 commit; was 74 at `07d65d6`,
-82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
+Standing total: **68** (measured at the Phase 53d-2a commit; was 71 at
+`26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -435,6 +435,123 @@ found", and `cli` collapses all four into one exit code — a config error repor
 as a capacity problem. Changing a report script's exit contract is an operator
 call; routed to **53i** alongside the other error-contract work.
 
+### 53d-2a — `emergency.py` and `ops.py` (2026-08-13)
+
+**4 targets** at `26d9290` (repo total 71): `emergency.py:230 cmd_rollback`
+(155L, `long-function`), `emergency.py:392 cmd_scale` (depth 5, `arrow-code`),
+`ops.py:387 cmd_status` (depth 5, `arrow-code`), and the
+`(environment, service, yes)` `param-clump` across `cmd_rollback` / `cmd_scale`
+/ `cmd_force_deploy`. **3 cleared, 1 left standing**; the repo total went
+**71 → 68**. Nothing minted — the `pass-through-params` list is unchanged,
+finding for finding.
+
+The operator split 53d-2 in half: this is `emergency.py` + `ops.py`; `init.py`
+and the re-measure of 53b's print-run leave-standings are **53d-2b**. The two
+halves cleave along the twin below — `init.py` shares nothing with either file.
+
+#### Characterization tests first
+
+`cmd_rollback` and `cmd_scale` mutate ECS and write checkpoints, at **0%**
+coverage. The first commit pinned today's behaviour — return codes, output,
+and the exact arguments handed to each mutator — and every later commit had to
+leave those tests passing **unchanged**. That is the only thing that actually
+shows a decomposition was behaviour-preserving, and it is the pattern
+sword-client 55a uses.
+
+One test-design decision earned its keep immediately: interactive prompts are
+stubbed at `builtins.input`, not at `prompt_or_exit`. When the prompt moved
+into `select_index` two commits later, the pins did not notice.
+
+#### The unflagged twin: a guard that does nothing
+
+`if x and "T" in x: x = format_timestamp(x)` appeared at **six** sites —
+`ops.py` 425/451/564 and `emergency.py` 291/574/626. `format_timestamp` already
+returns its input unchanged on any parse failure (its `except (ValueError, AttributeError)` arm covers non-ISO strings *and* `None`), so all six were
+no-ops around a function that had done their job since it was written.
+
+`cmd_status`'s depth-5 chain was `if cluster_name` → `for name` →
+`if revisions` → `for rev` → **the guard**. Deleting it cleared that
+`arrow-code` finding on its own — one of the four targets fixed by a deletion.
+
+`emergency.py:626` was the exception, and not in a good way: it had no
+truthiness half, so `"T" in timestamp` raised `TypeError` on a null checkpoint
+timestamp. The bare call cannot.
+
+#### `select_index` (the numbered-pick twin)
+
+`cmd_rollback` held two interactive numbered-pick blocks with the same shape —
+header, numbered list, prompt, digit check, bounds check, index — differing on
+five axes. Four fold into parameters (`start`, `default`, `invalid_message`,
+plus the header/prompt strings); the fifth, per-item rendering, disappears
+because callers pass already-rendered labels. It lives in `utils/cli.py` beside
+`prompt_or_exit` and `confirm_action` and is exported through the façade, where
+53b and 53d-1 put this class of helper.
+
+**The lower bound stayed in the caller.** Revision 0 is displayed on purpose
+and rejected on purpose; that is `cmd_rollback`'s domain rule, not the menu's.
+Pushing it in would have bought a sixth parameter to hide one `if`.
+
+**A third candidate, evaluated and excluded:** `cmd_restore_db`'s prompt has the
+same shape but reads non-digit input as a *timestamp* and tail-recurses into
+itself. That is a two-mode prompt, not a menu.
+
+#### Per-file splits
+
+| File           | Extracted                                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `emergency.py` | `_require_service`, `_select_service`, `_select_revision`, `_print_env_var_diff`, `_checkpoint_and_log`, `_await_deployment`, `_scaled_counts` |
+| `ops.py`       | `_print_service_table`, `_print_recent_task_definitions`, `_print_rds_status`, `_print_recent_snapshots`, `_print_scaling_config`              |
+
+`cmd_rollback`'s `# noqa: C901` was removed, not moved.
+
+Two of those are twins pysmelly did not flag. `_checkpoint_and_log` was
+byte-identical in shape between `cmd_rollback` and `cmd_scale`, differing only
+in two strings. `_require_service` unified three copies of the membership check
+— `emergency.py:240` and `:706` were byte-identical, and `:411` was a shorter
+variant that told the operator the service was missing but not what was there;
+adopting it gives `cmd_scale` the "Available: ..." list it lacked.
+
+`cmd_scale`'s `arrow-code` needed only `_scaled_counts` — the `--all` branch's
+dict comprehension was the depth-5 leaf. The whole four-way `to_scale` dispatch
+was deliberately **not** extracted: it takes seven inputs, and would have traded
+an `arrow-code` finding for a `param-clump`.
+
+`ops.py`'s five print sections did not move the number — `cmd_status` cleared in
+the guard-deletion commit and at 85 lines was never long enough to be flagged.
+It is the readability half of the same work, and it is what made the section
+order testable.
+
+#### Tests and coverage
+
+`bin/emergency.py` was at **0%** and had never had a test. New
+`tests/unit/test_emergency_cli.py` (42 tests) plus `cmd_status` coverage in
+`test_ops.py` and `select_index` coverage in `test_utils_cli.py`: 722 → 791.
+
+`make test-cov` went **44.11% → 49.20%**; the floor moved 44 → 49.
+`emergency.py` 0 → 57%, `ops.py` 12 → 24%, `utils/cli.py` 98%. The uncovered
+half of `emergency.py` is the RDS side (`snapshot`, `restore-db`, `revert`),
+which this subphase did not touch.
+
+Assertions pinning behaviour worth revisiting are marked "pinned, not endorsed"
+and name **53i**: `cmd_rollback` returns `1` both when the operator declines and
+when the update fails, and `cmd_scale` / `cmd_force_deploy` return `0` even when
+individual services fail.
+
+#### Side effects and mints
+
+`bin/emergency.py` dropped off the convergence-hotspot list (3 files → 2;
+`bin/init.py` and `deploy/service.py` remain). Nothing minted.
+
+| Finding                                                                                           | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `param-clumps` — `(environment, service, yes)` in `cmd_rollback`, `cmd_scale`, `cmd_force_deploy` | **Left unsuppressed, recommended leave-standing.** Drafted fix: an `EmergencyTarget(environment, service, yes)` dataclass. `yes` is a confirmation flag, not an attribute of a target, so the bundle reads worse than the three parameters — and these are Click parameters unpacked immediately at the wrapper, the shape 53c's register already rejected as flag-shuffling. The real duplication behind the clump was the membership check and its error, and that **was** fixed (`_require_service`). |
+
+**Noticed, not changed.** `cmd_restore_db` (`# noqa: C901`, not a pysmelly
+finding) carries a real snapshot/PITR twin at 525-536 / 550-561; it belongs with
+a subphase that owns the file's RDS half. `cmd_restore_db:539-544` and
+`cmd_revert:638-642` are hand-rolled versions of what `exit_on` covers — routed
+to **53i**, in functions this subphase did not touch.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -467,16 +584,17 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-16 of the 71 are adjudicated leave-standings (53a 2, 53b 11, 53c 2, 53d-1 1).
-The other **55** are queued behind claude-meta `docs/PLAN.md` Phase 53d-2–53i:
+17 of the 68 are adjudicated leave-standings (53a 2, 53b 11, 53c 2, 53d-1 1,
+53d-2a 1). The other **51** are queued behind claude-meta `docs/PLAN.md`
+Phase 53d-2b–53i:
 
-`long-function` 12, `pass-through-params` 9, `param-clumps` 6, `arrow-code` 5,
+`long-function` 11, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
 `foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
 `write-only-attributes` 1, `temp-accumulators` 1.
 
-They are concentrated in `bin/emergency.py`, `bin/init.py` and
-`src/deployer/`, not in `modules/`.
+They are concentrated in `bin/init.py` and `src/deployer/`, not in `modules/`.
+`bin/emergency.py` has one finding left, the adjudicated `param-clump`.
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` has no
 open items left — every one of its 9 findings is an adjudicated leave-standing.
