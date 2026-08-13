@@ -23,7 +23,7 @@ from deployer.deploy.service import (
     wait_for_stable,
 )
 from deployer.deploy.task_definition import get_environment_variables, get_service_sizing
-from deployer.timing import DeploymentTimer, set_timer
+from deployer.timing import DeploymentTimer, NullTimer, set_timer
 from deployer.utils import Colors, log, log_warning, print_with_advice
 
 
@@ -220,14 +220,47 @@ class Deployer:
 
         return InfraStatus(warnings=[msg], is_critical=True)
 
-    def deploy(self) -> tuple[dict[str, str], list[str]]:  # noqa: C901 — full deployment pipeline
+    def _check_infrastructure_or_abort(self) -> InfraStatus:
+        """Check infrastructure, report any warnings, and abort if disqualifying.
+
+        The enforcement half of check_infrastructure_status(): critical
+        infrastructure stops the deploy unless --force was passed.
+
+        Returns:
+            The status, so a later failure can re-display its warnings.
+
+        Raises:
+            RuntimeError: If infrastructure is critical and --force was not passed.
+        """
+        infra = self.check_infrastructure_status()
+        if not infra.warnings:
+            return infra
+
+        for warning in infra.warnings:
+            log_warning(warning)
+        if infra.is_critical and not self.options.force:
+            print_with_advice(
+                "Cannot deploy: critical infrastructure is unavailable.",
+                "  The database must be running for migrations to succeed.",
+                "  Start the environment first:",
+                f"    uv run python bin/environment.py {self.app_name}-{self.environment} start",
+                "",
+                "  Or use --force to deploy anyway (migrations will fail).",
+            )
+            raise RuntimeError("Infrastructure unavailable")
+        elif infra.is_critical:
+            log_warning("Continuing anyway due to --force flag. Migrations will likely fail.")
+        print()
+        return infra
+
+    def deploy(self) -> tuple[dict[str, str], list[str]]:
         """Run the full deployment pipeline.
 
         Returns:
             Tuple of (image_uris dict, health_failures list).
         """
-        if self.timer:
-            self.timer.start()
+        timer = self.timer or NullTimer()
+        timer.start()
 
         print()
         print(f"{Colors.BLUE}Deploying {self.app_name} to {self.environment}{Colors.NC}")
@@ -238,25 +271,7 @@ class Deployer:
             print(f"  Mode:    {Colors.YELLOW}DRY RUN{Colors.NC}")
         print()
 
-        # Check infrastructure status and fail if critical services are down
-        infra = self.check_infrastructure_status()
-        if infra.warnings:
-            for warning in infra.warnings:
-                log_warning(warning)
-            if infra.is_critical and not self.options.force:
-                print_with_advice(
-                    "Cannot deploy: critical infrastructure is unavailable.",
-                    "  The database must be running for migrations to succeed.",
-                    "  Start the environment first:",
-                    "    uv run python bin/environment.py "
-                    f"{self.app_name}-{self.environment} start",
-                    "",
-                    "  Or use --force to deploy anyway (migrations will fail).",
-                )
-                raise RuntimeError("Infrastructure unavailable")
-            elif infra.is_critical:
-                log_warning("Continuing anyway due to --force flag. Migrations will likely fail.")
-            print()
+        infra = self._check_infrastructure_or_abort()
 
         # Show service configuration
         self.print_service_config()
@@ -265,28 +280,12 @@ class Deployer:
         self.print_environment_config()
 
         # Step 1: ECR login
-        if self.timer:
-            with self.timer.step("ecr_login"):
-                ecr_login(self.ecr, self.options.dry_run)
-        else:
+        with timer.step("ecr_login"):
             ecr_login(self.ecr, self.options.dry_run)
         print()
 
         # Step 2: Build and push images
-        if self.timer:
-            with self.timer.step("build_and_push_images"):
-                image_uris = build_and_push_images(
-                    config=self.config,
-                    source_dir=self.source_dir,
-                    ecr_prefix=self.ecr_prefix,
-                    account_id=self.account_id,
-                    region=self.region,
-                    environment=self.environment,
-                    dry_run=self.options.dry_run,
-                    ecr_client=self.ecr,
-                    force_build=self.options.force_build,
-                )
-        else:
+        with timer.step("build_and_push_images"):
             image_uris = build_and_push_images(
                 config=self.config,
                 source_dir=self.source_dir,
@@ -301,15 +300,7 @@ class Deployer:
         print()
 
         # Step 3: Create database extensions (if declared)
-        if self.timer:
-            with self.timer.step("create_extensions"):
-                create_database_extensions(
-                    config=self.config,
-                    env_config=self.env_config,
-                    region=self.region,
-                    dry_run=self.options.dry_run,
-                )
-        else:
+        with timer.step("create_extensions"):
             create_database_extensions(
                 config=self.config,
                 env_config=self.env_config,
@@ -318,27 +309,18 @@ class Deployer:
             )
 
         # Step 4: Start migrations (non-blocking)
-        if self.timer:
-            with self.timer.step("start_migrations"):
-                migration_task = start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
-        else:
+        with timer.step("start_migrations"):
             migration_task = start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
         print()
 
         # Step 5: Deploy services (triggers ECS to pull images)
-        if self.timer:
-            with self.timer.step("deploy_services"):
-                deploy_services(self.ctx, image_uris)
-        else:
+        with timer.step("deploy_services"):
             deploy_services(self.ctx, image_uris)
         print()
 
         # Step 6: Wait for migrations to complete
         try:
-            if self.timer:
-                with self.timer.step("wait_for_migrations"):
-                    wait_for_migrations(self.ecs, migration_task)
-            else:
+            with timer.step("wait_for_migrations"):
                 wait_for_migrations(self.ecs, migration_task)
         except RuntimeError:
             # Re-display infrastructure warnings to help diagnose the failure
@@ -351,15 +333,11 @@ class Deployer:
         print()
 
         # Step 7: Wait for services to stabilize (parallel)
-        if self.timer:
-            with self.timer.step("wait_for_stable"):
-                health_failures = wait_for_stable(self.ctx)
-        else:
+        with timer.step("wait_for_stable"):
             health_failures = wait_for_stable(self.ctx)
         print()
 
-        if self.timer:
-            self.timer.finish()
+        timer.finish()
 
         if health_failures:
             print(f"{Colors.YELLOW}Deployment completed with warnings:{Colors.NC}")

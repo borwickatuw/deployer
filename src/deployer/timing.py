@@ -164,6 +164,34 @@ class DeploymentTimer:
             self._current_step.sub_steps.append(sub)
 
 
+class NullTimer:
+    """A do-nothing stand-in for DeploymentTimer.
+
+    Callers that only need to *run* the pipeline — not measure it — can hold
+    one of these instead of ``DeploymentTimer | None``, so the pipeline has a
+    single code path rather than a timed and an untimed copy of every step.
+    Nothing is recorded and no clock is read.
+    """
+
+    def start(self) -> None:
+        """Do nothing; there is no run to time."""
+
+    def finish(self) -> None:
+        """Do nothing; there is no run to time."""
+
+    @contextmanager
+    def step(self, name: str) -> Iterator[StepTiming]:
+        """Run a step untimed, yielding an unrecorded StepTiming.
+
+        Args:
+            name: Name of the step being run.
+
+        Yields:
+            A StepTiming that is never timed, finished, or reported.
+        """
+        yield StepTiming(name=name)
+
+
 # Global timer instance for optional use in modules
 _global_timer: DeploymentTimer | None = None
 
