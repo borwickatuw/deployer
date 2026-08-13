@@ -5,6 +5,7 @@ from typing import Any
 
 from ..config import (
     AuditConfig,
+    DeployConfig,
     ImageConfig,
     get_compose_services,
     parse_deploy_config,
@@ -177,7 +178,94 @@ def audit_env_vars(
     return issues
 
 
-def run_audit(  # noqa: C901 — deploy.toml vs docker-compose audit with multiple checks
+def _print_header(project_dir: Path, compose_path: Path, deploy_path: Path) -> None:
+    """Print which project and which two files are being audited."""
+    print(f"Auditing {Colors.CYAN}{project_dir.name}{Colors.NC}")
+    print(f"  docker-compose: {compose_path.name}")
+    print(f"  deploy.toml: {deploy_path.name}")
+
+
+def _print_audit_config(audit_config: AuditConfig) -> None:
+    """Print the [audit] settings in effect, if any are set.
+
+    Every key that suppresses a finding reports itself here, so the operator
+    can tell a clean audit from a silenced one.
+    """
+    lines = []
+    if audit_config.ignore_services:
+        lines.append(f"Ignoring services: {', '.join(sorted(audit_config.ignore_services))}")
+    if audit_config.service_mapping:
+        mappings = [f"{k}→{v}" for k, v in audit_config.service_mapping.items()]
+        lines.append(f"Service mappings: {', '.join(mappings)}")
+    if audit_config.ignore_env_vars:
+        lines.append(f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}")
+    if audit_config.ignore_images:
+        lines.append(f"Ignoring images: {', '.join(sorted(audit_config.ignore_images))}")
+
+    if not lines:
+        return
+
+    log_section("Audit Configuration")
+    for line in lines:
+        log_info(line)
+
+
+def _audit_checks(
+    compose_services: dict[str, dict],
+    deploy: DeployConfig,
+    audit_config: AuditConfig,
+) -> list[tuple[str, list[str], str]]:
+    """Run every audit check and return (heading, issues, all_clear) for each.
+
+    Args:
+        compose_services: Services extracted from docker-compose.yml.
+        deploy: Parsed deploy.toml.
+        audit_config: Audit configuration from deploy.toml.
+
+    Returns:
+        One tuple per check, in report order.
+    """
+    return [
+        (
+            "Services",
+            audit_services(compose_services, deploy.services, audit_config),
+            "All services accounted for",
+        ),
+        (
+            "Images",
+            audit_images(compose_services, deploy.images, audit_config),
+            "All build contexts accounted for",
+        ),
+        (
+            "Environment Variables",
+            audit_env_vars(compose_services, deploy.get_all_env_var_names(), audit_config),
+            "All environment variables accounted for",
+        ),
+    ]
+
+
+def _report_check(heading: str, issues: list[str], all_clear: str) -> None:
+    """Print one check's heading, then its issues or its all-clear line."""
+    log_section(heading)
+    if not issues:
+        log_ok(all_clear)
+        return
+    for issue in issues:
+        log_warning(issue)
+
+
+def _print_summary(issue_count: int) -> None:
+    """Print the closing tally, with the [audit] hint when anything was found."""
+    log_section("Summary")
+    if issue_count == 0:
+        print(f"  {Colors.GREEN}No issues found!{Colors.NC}")
+        return
+    print(f"  {Colors.YELLOW}{issue_count} issue(s) found{Colors.NC}")
+    print("\n  To acknowledge intentional differences, add an [audit] section")
+    print("  to deploy.toml. Run with --help or see script docstring for examples.")
+
+
+def run_audit(
     project_dir: Path,
     compose_filename: str = "docker-compose.yml",
     deploy_filename: str = "deploy.toml",
@@ -199,97 +287,29 @@ def run_audit(  # noqa: C901 — deploy.toml vs docker-compose audit with multip
     compose_path = project_dir / compose_filename
     deploy_path = project_dir / deploy_filename
 
-    all_issues = []
-
-    # Check files exist
     if not compose_path.exists():
         return (-1, [f"docker-compose file not found: {compose_path}"])
     if not deploy_path.exists():
         return (-1, [f"deploy.toml not found: {deploy_path}"])
 
     if verbose:
-        print(f"Auditing {Colors.CYAN}{project_dir.name}{Colors.NC}")
-        print(f"  docker-compose: {compose_path.name}")
-        print(f"  deploy.toml: {deploy_path.name}")
+        _print_header(project_dir, compose_path, deploy_path)
 
-    # Parse files
     compose = parse_docker_compose(compose_path)
     deploy = parse_deploy_config(deploy_path)
-
-    # Extract data
     compose_services = get_compose_services(compose, base_dir=compose_path.parent)
-    deploy_services = deploy.services
-    deploy_images = deploy.images
-    deploy_env_vars = deploy.get_all_env_var_names()
     audit_config = deploy.audit
 
-    # Show audit config if present
-    if verbose and (
-        audit_config.ignore_services
-        or audit_config.service_mapping
-        or audit_config.ignore_env_vars
-        or audit_config.ignore_images
-    ):
-        log_section("Audit Configuration")
-        if audit_config.ignore_services:
-            log_info(f"Ignoring services: {', '.join(sorted(audit_config.ignore_services))}")
-        if audit_config.service_mapping:
-            mappings = [f"{k}→{v}" for k, v in audit_config.service_mapping.items()]
-            log_info(f"Service mappings: {', '.join(mappings)}")
-        if audit_config.ignore_env_vars:
-            log_info(f"Ignoring env vars: {', '.join(sorted(audit_config.ignore_env_vars))}")
-        if audit_config.ignore_images:
-            log_info(f"Ignoring images: {', '.join(sorted(audit_config.ignore_images))}")
-
-    total_issues = 0
-
-    # Audit services
     if verbose:
-        log_section("Services")
-    service_issues = audit_services(compose_services, deploy_services, audit_config)
-    if service_issues:
+        _print_audit_config(audit_config)
+
+    all_issues = []
+    for heading, issues, all_clear in _audit_checks(compose_services, deploy, audit_config):
         if verbose:
-            for issue in service_issues:
-                log_warning(issue)
-        all_issues.extend(service_issues)
-        total_issues += len(service_issues)
-    elif verbose:
-        log_ok("All services accounted for")
+            _report_check(heading, issues, all_clear)
+        all_issues.extend(issues)
 
-    # Audit images
     if verbose:
-        log_section("Images")
-    image_issues = audit_images(compose_services, deploy_images, audit_config)
-    if image_issues:
-        if verbose:
-            for issue in image_issues:
-                log_warning(issue)
-        all_issues.extend(image_issues)
-        total_issues += len(image_issues)
-    elif verbose:
-        log_ok("All build contexts accounted for")
+        _print_summary(len(all_issues))
 
-    # Audit environment variables
-    if verbose:
-        log_section("Environment Variables")
-    env_issues = audit_env_vars(compose_services, deploy_env_vars, audit_config)
-    if env_issues:
-        if verbose:
-            for issue in env_issues:
-                log_warning(issue)
-        all_issues.extend(env_issues)
-        total_issues += len(env_issues)
-    elif verbose:
-        log_ok("All environment variables accounted for")
-
-    # Summary
-    if verbose:
-        log_section("Summary")
-        if total_issues == 0:
-            print(f"  {Colors.GREEN}No issues found!{Colors.NC}")
-        else:
-            print(f"  {Colors.YELLOW}{total_issues} issue(s) found{Colors.NC}")
-            print("\n  To acknowledge intentional differences, add an [audit] section")
-            print("  to deploy.toml. Run with --help or see script docstring for examples.")
-
-    return (total_issues, all_issues)
+    return (len(all_issues), all_issues)
