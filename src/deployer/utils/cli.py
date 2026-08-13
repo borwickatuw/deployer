@@ -88,7 +88,7 @@ def exit_on(*excs: type[BaseException], prefix: str = "") -> Iterator[None]:
 
 
 def resolve_deploy_toml_or_exit(
-    environment: str,
+    environment: str | None,
     deploy_toml: str | None,
     *,
     specify_hint: str,
@@ -101,7 +101,10 @@ def resolve_deploy_toml_or_exit(
     link is printed so the flag can be dropped next time.
 
     Args:
-        environment: Environment name whose link is looked up.
+        environment: Environment name whose link is looked up. May be None only
+            when ``deploy_toml`` is given — there is then nothing to link, so
+            the tip is skipped. Callers that allow this must reject
+            "no environment and no flag" themselves, with their own usage error.
         deploy_toml: Explicit --deploy-toml value, or None.
         specify_hint: The "Or specify:" invocation for this script, e.g.
             "ssm-secrets.py check myapp-staging --deploy-toml /path/to/deploy.toml".
@@ -117,8 +120,9 @@ def resolve_deploy_toml_or_exit(
     """
     if deploy_toml:
         config_path = Path(deploy_toml).expanduser().resolve()
-        print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
-        print(f"     to {link_benefit}\n")
+        if environment:
+            print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
+            print(f"     to {link_benefit}\n")
     else:
         config_path = get_linked_deploy_toml(environment)
         if config_path is None:

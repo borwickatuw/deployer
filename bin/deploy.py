@@ -38,10 +38,10 @@ from deployer.utils import (
     configure_profile_or_exit,
     exit_on,
     get_environments_dir,
-    get_linked_deploy_toml,
     log,
     log_error,
     log_success,
+    resolve_deploy_toml_or_exit,
     set_verbose,
 )
 
@@ -94,46 +94,16 @@ def deploy(  # noqa: C901 — main deploy orchestration
     if verbose:
         set_verbose(True)
 
-    # Resolve deploy.toml path
-    config_path = None
-    used_explicit_flag = False
-
-    if deploy_toml:
-        config_path = Path(deploy_toml).expanduser().resolve()
-        used_explicit_flag = True
-    else:
-        linked_path = get_linked_deploy_toml(environment)
-        if linked_path:
-            config_path = linked_path
-            log(f"Using linked deploy.toml: {config_path}")
-        else:
-            log_error(f"No deploy.toml linked for '{environment}'")
-            log_error(
-                f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml"
-            )
-            log_error(
-                f"Or specify: deploy.py deploy {environment} --deploy-toml /path/to/deploy.toml"
-            )
-            sys.exit(1)
-
-    if used_explicit_flag:
-        print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
-        print(f"     to deploy with just: deploy.py deploy {environment}\n")
+    config_path = resolve_deploy_toml_or_exit(
+        environment,
+        deploy_toml,
+        specify_hint=f"deploy.py deploy {environment} --deploy-toml /path/to/deploy.toml",
+        link_benefit=f"deploy with just: deploy.py deploy {environment}",
+    )
 
     # Configure AWS profile
     configure_profile_or_exit("deploy", environment)
     print()
-
-    # Validate config file
-    if config_path.is_dir():
-        log_error(f"Config path is a directory, expected a .toml file: {config_path}")
-        sys.exit(1)
-    if not config_path.exists():
-        log_error(f"Config file not found: {config_path}")
-        sys.exit(1)
-    if config_path.suffix != ".toml":
-        log_error(f"Config file must be a .toml file, got: {config_path}")
-        sys.exit(1)
 
     # Validate environment directory
     env_path = get_environments_dir() / environment

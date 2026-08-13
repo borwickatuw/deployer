@@ -32,7 +32,6 @@ import getpass
 import secrets as secrets_module
 import sys
 from datetime import datetime
-from pathlib import Path
 
 import click
 
@@ -45,7 +44,7 @@ from deployer.core.ssm_secrets import (
 from deployer.core.ssm_secrets import parse_environment as _parse_environment
 from deployer.utils import (
     configure_aws_for_operation,
-    get_linked_deploy_toml,
+    resolve_deploy_toml_or_exit,
 )
 
 
@@ -89,38 +88,12 @@ def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
     environment: str, deploy_toml: str | None
 ) -> int:
     """Check which secrets from deploy.toml are missing in SSM, and which SSM secrets are unused."""
-    # Resolve deploy.toml path: explicit --deploy-toml, or linked, or error
-    deploy_toml_path = None
-    used_explicit_flag = False
-
-    if deploy_toml:
-        deploy_toml_path = Path(deploy_toml).expanduser().resolve()
-        used_explicit_flag = True
-    else:
-        linked_path = get_linked_deploy_toml(environment)
-        if linked_path:
-            deploy_toml_path = linked_path
-            print(f"Using linked deploy.toml: {deploy_toml_path}")
-        else:
-            print(f"Error: No deploy.toml linked for '{environment}'", file=sys.stderr)
-            print(
-                f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml",
-                file=sys.stderr,
-            )
-            print(
-                f"Or specify: ssm-secrets.py check {environment} --deploy-toml /path/to/deploy.toml",
-                file=sys.stderr,
-            )
-            return 1
-
-    if not deploy_toml_path.exists():
-        print(f"Error: File not found: {deploy_toml_path}", file=sys.stderr)
-        return 1
-
-    # Print tip if --deploy-toml was explicitly provided
-    if used_explicit_flag:
-        print(f"Tip: Run 'python bin/link-environments.py {environment} {deploy_toml_path}'")
-        print(f"     to check with just: ssm-secrets.py check {environment}\n")
+    deploy_toml_path = resolve_deploy_toml_or_exit(
+        environment,
+        deploy_toml,
+        specify_hint=f"ssm-secrets.py check {environment} --deploy-toml /path/to/deploy.toml",
+        link_benefit=f"check with just: ssm-secrets.py check {environment}",
+    )
 
     # Parse environment name
     project, env = parse_environment(environment)

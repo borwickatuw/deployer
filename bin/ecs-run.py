@@ -39,7 +39,7 @@ from deployer.core.config import (
 from deployer.utils import (
     configure_aws_profile,
     exit_on,
-    get_linked_deploy_toml,
+    resolve_deploy_toml_or_exit,
     validate_environment_deployed,
 )
 
@@ -248,44 +248,26 @@ def cmd_run(  # noqa: C901 — ECS run command orchestration
         list_commands = True
         extra_args = tuple(a for a in extra_args if a != "--list-commands")
 
-    # Resolve deploy.toml path
-    deploy_toml_path = None
-    used_explicit_flag = False
-
-    if deploy_toml:
-        deploy_toml_path = Path(deploy_toml).expanduser().resolve()
-        used_explicit_flag = True
-    elif environment:
-        linked_path = get_linked_deploy_toml(environment)
-        if linked_path:
-            deploy_toml_path = linked_path
-            print(f"Using linked deploy.toml: {deploy_toml_path}")
-
-    if list_commands and not deploy_toml_path:
-        print(
-            "Error: --deploy-toml is required when using --list-commands without environment",
-            file=sys.stderr,
-        )
-        return 1
-
-    if not deploy_toml_path:
-        if not environment:
+    # Without an environment there is no link to consult, so --deploy-toml is
+    # the only way through — its own usage error, not the shared resolver's.
+    if not environment and not deploy_toml:
+        if list_commands:
+            print(
+                "Error: --deploy-toml is required when using --list-commands without environment",
+                file=sys.stderr,
+            )
+        else:
             print("Error: environment is required", file=sys.stderr)
             print("\nUsage: ecs-run.py run <environment> <command>", file=sys.stderr)
             print("       ecs-run.py run <environment> --list-commands", file=sys.stderr)
-        else:
-            print(f"Error: No deploy.toml linked for '{environment}'", file=sys.stderr)
-            print("\nTo link this environment to its deploy.toml:", file=sys.stderr)
-            print(
-                f"  python bin/link-environments.py {environment} /path/to/deploy.toml",
-                file=sys.stderr,
-            )
-            print("\nOr specify --deploy-toml explicitly:", file=sys.stderr)
-            print(
-                f"  ecs-run.py run {environment} <command> --deploy-toml /path/to/deploy.toml",
-                file=sys.stderr,
-            )
         return 1
+
+    deploy_toml_path = resolve_deploy_toml_or_exit(
+        environment,
+        deploy_toml,
+        specify_hint=f"ecs-run.py run {environment} <command> --deploy-toml /path/to/deploy.toml",
+        link_benefit="avoid specifying --deploy-toml next time.",
+    )
 
     # Load deploy.toml
     try:
@@ -293,10 +275,6 @@ def cmd_run(  # noqa: C901 — ECS run command orchestration
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-
-    if used_explicit_flag and environment:
-        print(f"Tip: Run 'python bin/link-environments.py {environment} {deploy_toml_path}'")
-        print("     to avoid specifying --deploy-toml next time.\n")
 
     if list_commands:
         commands = dt.get("commands", {})
