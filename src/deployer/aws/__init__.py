@@ -1,8 +1,9 @@
 """AWS service operations."""
 
-from . import cloudwatch, cognito, ecs, rds, ssm
+from . import cli, cloudwatch, cognito, ecs, rds, ssm
 
 __all__ = [
+    "cli",
     "cloudwatch",
     "cognito",
     "ecs",
