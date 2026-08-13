@@ -421,9 +421,7 @@ def cmd_status(environment: str) -> int:
             if revisions:
                 print(f"  {name}:")
                 for rev in revisions:
-                    registered = rev.get("registered_at", "unknown")
-                    if registered and "T" in registered:
-                        registered = format_timestamp(registered)
+                    registered = format_timestamp(rev.get("registered_at", "unknown"))
                     print(f"    revision {rev['revision']:>3} - {registered}")
         print()
     else:
@@ -447,9 +445,7 @@ def cmd_status(environment: str) -> int:
         if snapshots:
             print(f"{Colors.BLUE}Recent Snapshots:{Colors.NC}")
             for snap in snapshots:
-                created = snap.get("created_at", "unknown")
-                if created and "T" in created:
-                    created = format_timestamp(created)
+                created = format_timestamp(snap.get("created_at", "unknown"))
                 snap_type = snap.get("type", "")
                 print(f"  {snap['id']:<50} {snap_type:<10} {created}")
         print()
@@ -560,9 +556,7 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
             print(f"{Colors.YELLOW}{service_name}:{Colors.NC} ({len(events)} errors)")
 
             for event in events[:10]:  # Show first 10
-                timestamp = event["timestamp"]
-                if "T" in timestamp:
-                    timestamp = format_timestamp(timestamp, "%H:%M:%S")
+                timestamp = format_timestamp(event["timestamp"], "%H:%M:%S")
 
                 # Truncate long messages
                 message = event["message"][:200]

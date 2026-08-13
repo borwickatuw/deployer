@@ -287,9 +287,7 @@ def cmd_rollback(  # noqa: C901 — rollback with interactive revision selection
         print()
         print(f"{Colors.BLUE}Recent revisions for {service_name}:{Colors.NC}")
         for i, rev in enumerate(revisions):
-            registered = rev.get("registered_at", "unknown")
-            if registered and "T" in registered:
-                registered = format_timestamp(registered)
+            registered = format_timestamp(rev.get("registered_at", "unknown"))
             current = " (current)" if i == 0 else ""
             print(f"  {i}. revision {rev['revision']:>3} - {registered}{current}")
         print()
@@ -570,9 +568,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
             return 1
 
         for i, snap in enumerate(snapshots):
-            created = snap.get("created_at", "unknown")
-            if created and "T" in created:
-                created = format_timestamp(created)
+            created = format_timestamp(snap.get("created_at", "unknown"))
             snap_type = snap.get("type", "")
             print(f"  {i}. {snap['id']:<50} {snap_type:<10} {created}")
         print()
@@ -622,9 +618,7 @@ def cmd_revert(
         print()
         print(f"{Colors.BLUE}Available checkpoints for {environment}:{Colors.NC}")
         for cp in checkpoints:
-            timestamp = cp.timestamp
-            if "T" in timestamp:
-                timestamp = format_timestamp(timestamp)
+            timestamp = format_timestamp(cp.timestamp)
             print(f"  {cp.filename:<45} {cp.action:<12} {timestamp}")
             print(f"    Reason: {cp.reason}")
         print()
