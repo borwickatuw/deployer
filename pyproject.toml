@@ -80,17 +80,20 @@ branch = true
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
 # require real AWS credentials.
 #
-# The floor is measured, not aspirational: `make test-cov` reports 33.04% at
-# the commit that added the emergency/ tests, so 32 is the floor just under it.
+# The floor is measured, not aspirational: `make test-cov` reports 36.59% at
+# the commit that finished Phase 53b, so 36 is the floor just under it.
 # Note that `make test-cov` passes `--cov=src --cov=bin`, which OVERRIDES the
 # `[tool.coverage.run] source` setting above — bare `pytest --cov` measures
-# src/deployer only and reports 51.11%. The floor is set against the
-# `make test-cov` number because that is the gate people actually run.
+# src/deployer only. The floor is set against the `make test-cov` number
+# because that is the gate people actually run.
 #
-# Remaining large gap: bin/emergency.py (506 statements, 0%) — Click-CLI-shaped
+# Phase 53b moved CLI boilerplate out of bin/ and into tested src/ helpers:
+# utils/cli.py 0% -> 98% and the new deploy/pipeline.py is at 100%.
+#
+# Remaining large gap: bin/emergency.py (467 statements, 0%) — Click-CLI-shaped
 # and queued behind its decomposition (claude-meta PLAN.md Phase 53d).
 # (re-evaluate-by: 2026-11 review)
-fail_under = 32
+fail_under = 36
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

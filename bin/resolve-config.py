@@ -37,6 +37,7 @@ from deployer.core.config import (
 )
 from deployer.utils import (
     configure_profile_or_exit,
+    exit_on,
     get_environment_path,
     log,
     log_error,
@@ -282,12 +283,9 @@ def cli(environment, output_file, push_s3, verify, verify_file):
         print(output_json)
 
     if push_s3:
-        try:
+        with exit_on(RuntimeError):
             s3_uri = push_to_s3(environment, output_json)
-            log_success(f"Resolved config pushed to {s3_uri}")
-        except RuntimeError as e:
-            log_error(str(e))
-            sys.exit(1)
+        log_success(f"Resolved config pushed to {s3_uri}")
 
 
 if __name__ == "__main__":

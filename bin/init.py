@@ -63,7 +63,11 @@ from deployer.init.environment import create_deployer_tf_symlink, get_next_liste
 from deployer.init.setup_profiles import cmd_setup_profiles
 from deployer.init.template import extract_env_type
 from deployer.init.verify import cmd_verify
-from deployer.utils import ensure_environments_symlinks, get_environments_dir
+from deployer.utils import (
+    ensure_environments_symlinks,
+    exit_on,
+    get_environments_dir,
+)
 
 # =============================================================================
 # Helpers
@@ -275,11 +279,8 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
 
     content = main_tf.read_text()
 
-    try:
+    with exit_on(ValueError):
         updated = uncomment_backend_block(content)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
     if dry_run:
         _print_dry_run_preview(f"Would update: {main_tf}", updated)
@@ -386,11 +387,8 @@ def cmd_environment(  # noqa: C901 — environment creation with template handli
         return 1
 
     # Validate template exists
-    try:
+    with exit_on(ValueError):
         env_type = extract_env_type(template_name)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
     is_shared_infra = template_name.startswith("shared-infra-")
     is_shared_app = template_name.startswith("shared-app-")

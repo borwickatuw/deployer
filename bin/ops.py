@@ -801,6 +801,10 @@ def cmd_audit(environment: str) -> int:
 
 INCIDENTS_DIR = Path(__file__).resolve().parent.parent / "local" / "incidents"
 
+# The heading every timeline note is inserted above; emitted by the incident
+# template in cmd_incident_start().
+RESOLUTION_HEADING = "## Resolution\n"
+
 
 def _require_open_incident() -> Path:
     """Find the most recent open incident file, or exit with error."""
@@ -875,17 +879,29 @@ Status: OPEN
     return 0
 
 
+def _append_timeline_note(content: str, text: str, when: datetime) -> str:
+    """Append a timeline entry to an incident, just above the Resolution heading.
+
+    The anchor deliberately swallows the blank line before the heading and puts
+    it back after the note, so repeated notes form one tight Markdown list.
+
+    Args:
+        content: Full incident file contents.
+        text: Note text, without the timestamp.
+        when: Timestamp for the note.
+
+    Returns:
+        The updated contents.
+    """
+    return content.replace(
+        f"\n{RESOLUTION_HEADING}", f"- {when.strftime('%H:%M')} {text}\n\n{RESOLUTION_HEADING}"
+    )
+
+
 def cmd_incident_note(text: str) -> int:
     """Add a note to the most recent open incident."""
     incident = _require_open_incident()
-    now = datetime.now()
-    content = incident.read_text()
-
-    # Insert note before ## Resolution
-    note_line = f"- {now.strftime('%H:%M')} {text}\n"
-    content = content.replace("## Resolution\n", f"{note_line}\n## Resolution\n")
-
-    incident.write_text(content)
+    incident.write_text(_append_timeline_note(incident.read_text(), text, datetime.now()))
     log_success(f"Note added to {incident.name}")
     return 0
 
@@ -894,18 +910,15 @@ def cmd_incident_resolve() -> int:
     """Resolve the most recent open incident."""
     incident = _require_open_incident()
     now = datetime.now()
-    content = incident.read_text()
 
-    # Mark as resolved
-    content = content.replace("Status: OPEN", "Status: RESOLVED")
-
-    # Add resolution timestamp
-    resolution = f"Resolved: {now.isoformat(timespec='seconds')}\n"
-    content = content.replace("## Resolution\n", f"## Resolution\n{resolution}")
-
-    # Add resolve note to timeline
-    note_line = f"- {now.strftime('%H:%M')} Incident resolved\n"
-    content = content.replace("\n## Resolution\n", f"{note_line}\n## Resolution\n")
+    content = incident.read_text().replace("Status: OPEN", "Status: RESOLVED")
+    # Order matters: the note goes in before the Resolved: line lands under the
+    # heading, so the note anchor still sees the untouched heading.
+    content = _append_timeline_note(content, "Incident resolved", now)
+    content = content.replace(
+        RESOLUTION_HEADING,
+        f"{RESOLUTION_HEADING}Resolved: {now.isoformat(timespec='seconds')}\n",
+    )
 
     incident.write_text(content)
     log_success(f"Incident resolved: {incident.name}")

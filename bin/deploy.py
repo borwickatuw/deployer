@@ -35,6 +35,7 @@ from deployer.timing import DeploymentTimer
 from deployer.utils import (
     Colors,
     configure_profile_or_exit,
+    exit_on,
     get_environments_dir,
     get_linked_deploy_toml,
     log,
@@ -151,12 +152,9 @@ def deploy(  # noqa: C901 — main deploy orchestration
         log_error(f"Failed to load deployment config: {e}")
         sys.exit(1)
 
-    try:
+    with exit_on(ValueError):
         environment_type = get_environment_type(env_config)
-        log(f"Environment type: {environment_type}")
-    except ValueError as e:
-        log_error(str(e))
-        sys.exit(1)
+    log(f"Environment type: {environment_type}")
     print()
 
     # Set up timing

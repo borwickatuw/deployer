@@ -38,6 +38,7 @@ from deployer.core.config import (
 )
 from deployer.utils import (
     configure_aws_profile,
+    exit_on,
     get_linked_deploy_toml,
     validate_environment_deployed,
 )
@@ -322,11 +323,8 @@ def cmd_run(  # noqa: C901 — ECS run command orchestration
 
     env_path, cluster_name = result
 
-    try:
+    with exit_on(ValueError):
         cmd = get_run_command(dt, command_name, list(extra_args))
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
     use_migrate = command_requires_ddl(dt, command_name)
 
