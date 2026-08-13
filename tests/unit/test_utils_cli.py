@@ -16,6 +16,7 @@ from deployer.utils.cli import (
     prompt_or_exit,
     require_environment,
     require_validated_environment,
+    resolve_deploy_toml_or_exit,
     validate_and_configure,
 )
 
@@ -101,6 +102,97 @@ class TestExitOn:
     def test_unlisted_exception_propagates(self):
         with pytest.raises(KeyError), exit_on(ValueError):
             raise KeyError("untouched")
+
+
+class TestResolveDeployTomlOrExit:
+    """Tests for resolve_deploy_toml_or_exit()."""
+
+    HINTS = {
+        "specify_hint": "ssm-secrets.py check myapp-staging --deploy-toml /path/to/deploy.toml",
+        "link_benefit": "check with just: ssm-secrets.py check myapp-staging",
+    }
+
+    def _resolve(self, environment, deploy_toml):
+        return resolve_deploy_toml_or_exit(environment, deploy_toml, **self.HINTS)
+
+    def test_explicit_flag_wins_over_the_link_registry(self, tmp_path, monkeypatch):
+        explicit = tmp_path / "explicit.toml"
+        explicit.write_text("")
+        linked = tmp_path / "linked.toml"
+        linked.write_text("")
+        monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", lambda _env: linked)
+
+        assert self._resolve("myapp-staging", str(explicit)) == explicit.resolve()
+
+    def test_explicit_flag_prints_the_link_tip(self, tmp_path, capsys):
+        explicit = tmp_path / "deploy.toml"
+        explicit.write_text("")
+
+        self._resolve("myapp-staging", str(explicit))
+
+        out = capsys.readouterr().out
+        assert "link-environments.py myapp-staging" in out
+        assert "check with just: ssm-secrets.py check myapp-staging" in out
+
+    def test_explicit_flag_expands_user_and_resolves(self, tmp_path, monkeypatch):
+        explicit = tmp_path / "deploy.toml"
+        explicit.write_text("")
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        assert self._resolve("myapp-staging", "~/deploy.toml") == explicit.resolve()
+
+    def test_falls_back_to_the_link_registry(self, tmp_path, monkeypatch, capsys):
+        linked = tmp_path / "linked.toml"
+        linked.write_text("")
+        monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", lambda _env: linked)
+
+        assert self._resolve("myapp-staging", None) == linked
+
+        out = capsys.readouterr().out
+        assert f"Using linked deploy.toml: {linked}" in out
+        assert "Tip:" not in out
+
+    def test_no_link_exits_1_with_stderr_guidance(self, monkeypatch, capsys):
+        monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", lambda _env: None)
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", None)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "No deploy.toml linked for 'myapp-staging'" in captured.err
+        assert "link-environments.py myapp-staging /path/to/deploy.toml" in captured.err
+        assert f"Or specify: {self.HINTS['specify_hint']}" in captured.err
+
+    def test_missing_path_exits_1(self, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", str(tmp_path / "absent.toml"))
+        assert exc_info.value.code == 1
+        assert "Config file not found" in capsys.readouterr().err
+
+    def test_directory_exits_1(self, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", str(tmp_path))
+        assert exc_info.value.code == 1
+        assert "is a directory" in capsys.readouterr().err
+
+    def test_wrong_suffix_exits_1(self, tmp_path, capsys):
+        wrong = tmp_path / "deploy.yaml"
+        wrong.write_text("")
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", str(wrong))
+        assert exc_info.value.code == 1
+        assert "must be a .toml file" in capsys.readouterr().err
+
+    def test_linked_path_is_validated_too(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(
+            cli_utils, "get_linked_deploy_toml", lambda _env: tmp_path / "vanished.toml"
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", None)
+        assert exc_info.value.code == 1
+        assert "Config file not found" in capsys.readouterr().err
 
 
 class TestConfigureProfileOrExit:

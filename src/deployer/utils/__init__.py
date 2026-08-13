@@ -16,6 +16,7 @@ from .cli import (
     prompt_or_exit,
     require_environment,
     require_validated_environment,
+    resolve_deploy_toml_or_exit,
     validate_and_configure,
 )
 from .colors import Colors
@@ -95,6 +96,7 @@ __all__ = [
     "prompt_or_exit",
     "require_environment",
     "require_validated_environment",
+    "resolve_deploy_toml_or_exit",
     "run_command",
     "set_linked_deploy_toml",
     "set_verbose",

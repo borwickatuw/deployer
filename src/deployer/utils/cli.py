@@ -8,7 +8,8 @@ from pathlib import Path
 
 from .aws_profile import configure_aws_profile, configure_aws_profile_for_environment
 from .environment import get_environment_path, validate_environment_deployed
-from .logging import log_error, log_error_stderr
+from .links import get_linked_deploy_toml
+from .logging import log, log_error, log_error_stderr
 
 
 class EnvironmentConfigError(Exception):
@@ -84,6 +85,63 @@ def exit_on(*excs: type[BaseException], prefix: str = "") -> Iterator[None]:
     except excs as e:
         log_error_stderr(f"{prefix}{e}")
         sys.exit(1)
+
+
+def resolve_deploy_toml_or_exit(
+    environment: str,
+    deploy_toml: str | None,
+    *,
+    specify_hint: str,
+    link_benefit: str,
+) -> Path:
+    """Resolve the deploy.toml to use, or exit 1 explaining how to link one.
+
+    Precedence is explicit flag, then the link registry, then an error naming
+    link-environments.py. When the explicit flag was used, a tip suggesting the
+    link is printed so the flag can be dropped next time.
+
+    Args:
+        environment: Environment name whose link is looked up.
+        deploy_toml: Explicit --deploy-toml value, or None.
+        specify_hint: The "Or specify:" invocation for this script, e.g.
+            "ssm-secrets.py check myapp-staging --deploy-toml /path/to/deploy.toml".
+        link_benefit: What linking buys, completing "to ...", e.g.
+            "check with just: ssm-secrets.py check myapp-staging".
+
+    Returns:
+        The resolved, existing deploy.toml path.
+
+    Raises:
+        SystemExit: With code 1 if no deploy.toml can be resolved or the
+            resolved path is not a readable .toml file.
+    """
+    if deploy_toml:
+        config_path = Path(deploy_toml).expanduser().resolve()
+        print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
+        print(f"     to {link_benefit}\n")
+    else:
+        config_path = get_linked_deploy_toml(environment)
+        if config_path is None:
+            log_error_stderr(f"No deploy.toml linked for '{environment}'")
+            print(
+                f"\nTo link: python bin/link-environments.py {environment} /path/to/deploy.toml",
+                file=sys.stderr,
+            )
+            print(f"Or specify: {specify_hint}", file=sys.stderr)
+            sys.exit(1)
+        log(f"Using linked deploy.toml: {config_path}")
+
+    if config_path.is_dir():
+        log_error_stderr(f"Config path is a directory, expected a .toml file: {config_path}")
+        sys.exit(1)
+    if not config_path.exists():
+        log_error_stderr(f"Config file not found: {config_path}")
+        sys.exit(1)
+    if config_path.suffix != ".toml":
+        log_error_stderr(f"Config file must be a .toml file, got: {config_path}")
+        sys.exit(1)
+
+    return config_path
 
 
 def configure_profile_or_exit(operation: str, environment: str) -> None:
