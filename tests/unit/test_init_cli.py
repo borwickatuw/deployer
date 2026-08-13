@@ -644,6 +644,26 @@ class TestCmdEnvironmentGuards:
         assert "Error: No bootstrap directory found." in err
         assert "bin/init.py bootstrap" in err
 
+    def test_environments_dir_unset_names_the_variable(
+        self, monkeypatch, capsys, environment_stubs
+    ):
+        """Test that an unset DEPLOYER_ENVIRONMENTS_DIR is reported as such.
+
+        bootstrap_dir_exists() swallows the RuntimeError and returns None, so
+        this used to be reported as a missing bootstrap directory — sending
+        the operator to run bootstrap, which would fail the same way.
+        """
+
+        def unset():
+            raise RuntimeError("not set")
+
+        monkeypatch.setattr(init_cli, "get_environments_dir", unset)
+        assert _environment("myapp", "standalone-staging") == 1
+        err = capsys.readouterr().err
+        assert "Error: DEPLOYER_ENVIRONMENTS_DIR is not set." in err
+        assert "DEPLOYER_ENVIRONMENTS_DIR=~/deployer-environments" in err
+        assert "No bootstrap directory found" not in err
+
     def test_missing_template_returns_1(self, capsys, environment_stubs):
         """Test that --template is required."""
         assert _environment("myapp", None) == 1

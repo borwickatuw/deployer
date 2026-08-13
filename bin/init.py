@@ -438,60 +438,109 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
     return 0
 
 
-def cmd_environment(  # noqa: C901 — environment creation with template handling
-    app_name, template, list_templates_flag, deploy_toml, domain, dry_run
-) -> int:
-    """Create environment directory structure."""
-    # Handle --list-templates
-    if list_templates_flag:
-        templates = list_templates()
-        print("Available templates:")
-        for name in templates:
-            print(f"  {name}")
-        return 0
+def _list_available_templates() -> int:
+    """Print the available template names."""
+    print("Available templates:")
+    for name in list_templates():
+        print(f"  {name}")
+    return 0
 
-    # Check that bootstrap has been run
+
+def _require_bootstrap() -> bool:
+    """Check that bootstrap has been run, since every environment depends on it.
+
+    Returns:
+        True if an environment can be created, False otherwise (the reason is
+        printed).
+    """
     try:
-        if not bootstrap_dir_exists():
-            print(
-                "Error: No bootstrap directory found.\n"
-                "Bootstrap creates IAM roles and S3 state bucket that all environments depend on.\n"
-                "Run 'uv run python bin/init.py bootstrap' first.",
-                file=sys.stderr,
-            )
-            return 1
+        get_environments_dir()
     except RuntimeError:
-        pass  # DEPLOYER_ENVIRONMENTS_DIR not set — let the existing error handling below catch it
+        print(_ENVIRONMENTS_DIR_UNSET, file=sys.stderr)
+        return False
 
-    template_name = template
+    if not bootstrap_dir_exists():
+        print(
+            "Error: No bootstrap directory found.\n"
+            "Bootstrap creates IAM roles and S3 state bucket that all environments depend on.\n"
+            "Run 'uv run python bin/init.py bootstrap' first.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _resolve_environment_target(
+    app_name: str | None, template_name: str | None, dry_run: bool
+) -> tuple[str, Path] | None:
+    """Validate the template and --app-name pair, and locate the target directory.
+
+    Returns:
+        The environment type and the directory to create, or None if an
+        argument is missing or the directory already exists (the reason is
+        printed).
+
+    Raises:
+        SystemExit: If the template name carries no environment type.
+    """
     if not template_name:
         print(
             "Error: --template is required (use --list-templates to see options)", file=sys.stderr
         )
-        return 1
+        return None
 
-    # Validate template exists
     with exit_on(ValueError):
         env_type = extract_env_type(template_name)
 
     is_shared_infra = template_name.startswith("shared-infra-")
-    is_shared_app = template_name.startswith("shared-app-")
-
-    # Validate --app-name
     if not is_shared_infra and not app_name:
         print("Error: --app-name is required for non-shared-infra templates", file=sys.stderr)
-        return 1
+        return None
 
-    # Compute env_name for existence check
     env_name = template_name if is_shared_infra else f"{app_name}-{env_type}"
-
     env_path = get_environments_dir() / env_name
     if env_path.exists() and not dry_run:
         print(f"Error: Environment directory already exists: {env_path}", file=sys.stderr)
         print("Remove it first or use a different name.", file=sys.stderr)
+        return None
+
+    return env_type, env_path
+
+
+def _write_environment_files(env_path: Path, files: dict[str, str], template_name: str) -> None:
+    """Create the environment directory, write its files and link deployer.tf.
+
+    The symlinks are standalone-only: shared templates take their module
+    sources from the shared-infra environment instead.
+    """
+    is_standalone = template_name.startswith("standalone-")
+    if is_standalone:
+        created_symlinks = ensure_environments_symlinks()
+        if created_symlinks:
+            print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
+
+    env_path.mkdir(parents=True, exist_ok=True)
+    for filepath, content in files.items():
+        Path(filepath).write_text(content)
+        print(f"Created: {filepath}")
+
+    if is_standalone and create_deployer_tf_symlink(env_path):
+        print(f"Created: {env_path}/deployer.tf -> shared environment config")
+
+
+def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain, dry_run) -> int:
+    """Create environment directory structure."""
+    if list_templates_flag:
+        return _list_available_templates()
+
+    if not _require_bootstrap():
         return 1
 
-    # Load deploy.toml if provided
+    target = _resolve_environment_target(app_name, template, dry_run)
+    if target is None:
+        return 1
+    env_type, env_path = target
+
     deploy_toml_path = None
     if deploy_toml:
         deploy_toml_path = Path(deploy_toml).resolve()
@@ -501,14 +550,13 @@ def cmd_environment(  # noqa: C901 — environment creation with template handli
 
     # Auto-assign listener priority for shared-app templates
     listener_priority = None
-    if is_shared_app:
+    if template.startswith("shared-app-"):
         listener_priority = get_next_listener_priority(env_type)
 
-    # Generate environment files
     try:
         files = generate_environment(
             app_name=app_name,
-            template_name=template_name,
+            template_name=template,
             deploy_toml_path=deploy_toml_path,
             domain=domain,
             listener_priority=listener_priority,
@@ -521,26 +569,10 @@ def cmd_environment(  # noqa: C901 — environment creation with template handli
         _print_dry_run_preview(f"Would create directory: {env_path}", files, max_lines=50)
         return 0
 
-    # Ensure root-level symlinks exist for external environments directory
-    if template_name.startswith("standalone-"):
-        created_symlinks = ensure_environments_symlinks()
-        if created_symlinks:
-            print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
-
-    # Create directory
-    env_path.mkdir(parents=True, exist_ok=True)
-
-    # Write files
-    for filepath, content in files.items():
-        Path(filepath).write_text(content)
-        print(f"Created: {filepath}")
-
-    # Create deployer.tf symlink (standalone templates only)
-    if template_name.startswith("standalone-") and create_deployer_tf_symlink(env_path):
-        print(f"Created: {env_path}/deployer.tf -> shared environment config")
+    _write_environment_files(env_path, files, template)
 
     print()
-    _print_next_steps(env_name, env_path, env_type, app_name, template_name)
+    _print_next_steps(env_path.name, env_path, env_type, app_name, template)
     return 0
 
 
