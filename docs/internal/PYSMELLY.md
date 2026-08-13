@@ -30,8 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **56** (measured at the Phase 53e-2 commit; was 57 at
-`9903e2b`, 60 at `805d516`,
+Standing total: **53** (measured at the Phase 53e-3 commit `57bc874`; was 56 at
+`a304fa1`, 57 at `9903e2b`, 60 at `805d516`,
 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
 `a8800cd`, 97 at `8e57264`).
 
@@ -868,6 +868,149 @@ fixtures, which are built to match.
 
 None. Only `long-function` moved.
 
+### 53e-3 — `deploy/deployer.py` (2026-08-13)
+
+**5 targets** at `a304fa1` (repo total 56), the scope 53e-1's split table
+reserved: `deployer.py:__init__` (122L) and `deployer.py:deploy` (151L), both
+`long-function` and both carrying `# noqa: C901`, plus the **three
+`law-of-demeter`** findings in the file. **4 cleared, 1 left standing**; one
+`dict-as-dataclass` minted and handed to 53f. The repo total went **56 → 53**.
+
+Three commits: `3cf319e` characterization tests (0 findings cleared),
+`b66a56a` `deploy()` (56 → 55), `57bc874` `__init__` (55 → 53).
+
+#### 53e-3a — characterization tests first (`3cf319e`)
+
+`tests/unit/test_deploy_deployer.py`, **72 tests**, 891 → 963 repo-wide.
+`src/deployer/deploy/deployer.py` **35% → 100%** — 0 missing statements, 0
+partial branches. Total 54.62% → **56.79%**; floor **54 → 56**. pysmelly
+unchanged at 56, every category identical. No production line moved.
+
+The load-bearing pin is **`TestDeployTimerArmsAgree`**. It runs each scenario
+**twice inside one test** — timed and untimed — against the same cached fake
+AWS clients, so the two `DeploymentContext` values compare equal, and asserts
+both an identical step-call list **and** identical stdout. The step stubs print
+a `[step_name]` marker, so `print()` placement is pinned too, not just call
+order. That single test is what makes 53e-3b's collapse of nine
+`if self.timer: … else: …` conditionals demonstrably safe; without it the
+collapse is an assertion, not a result.
+
+Fourth subphase running the pin-first discipline (53d-2a, 53d-2b, 53e-1, now
+this), and the first where the pin was designed *for a specific planned
+refactor* rather than for the file in general.
+
+#### 53e-3b — `deploy()` was duplication pysmelly could not see (`b66a56a`)
+
+**151L → 96L**; `long-function` 7 → 6, nothing else moved.
+
+Not complexity — **nine repetitions** of
+
+```
+if self.timer:
+    <call, wrapped in a timing context>
+else:
+    <the same call written verbatim>
+```
+
+`duplicate-blocks` cannot see it: `print()` statements and comments sit between
+the copies, so they are not runs of consecutive statements. The worst instance
+was an **11-line kwarg call repeated 15 lines later**. Same lesson as 53d-1's
+three-way `deploy.toml`-resolution twin, 53d-2a's six no-op `format_timestamp`
+guards and 53e-2's triplicated audit block: **on this codebase, `long-function`
+keeps turning out to be a duplication finding the checker could not reach.**
+
+The fix is a `NullTimer` null-object in `timing.py`; `deploy()` binds
+`timer = self.timer or NullTimer()` once and every conditional pair becomes the
+timed branch alone.
+
+**Measured at each stage: 151 → 114 (the collapse alone) → 96 (after extracting
+`_check_infrastructure_or_abort()`).** Recorded explicitly because it is this
+arc's recurring lesson, the same one 53e-1 wrote up in the other direction: the
+collapse left the function **over** the ≥100 threshold, and the decomposition
+was still owed. "Remove the duplication" and "clear the `long-function`" are not
+the same operation.
+
+`# noqa: C901` **removed, not moved** — ruff is clean without it.
+
+**A minted `feature-envy` was fixed rather than suppressed.** The first draft
+passed `InfraStatus` into `_check_infrastructure_or_abort()` as a parameter,
+which tripped the check — it counts *parameters* only. Moving the
+`check_infrastructure_status()` call inside the helper makes `infra` a local and
+the finding never exists. A better call site anyway: the helper now owns both
+halves of "check, then decide whether to abort".
+
+#### 53e-3c — `__init__` was the opposite: one oversized literal (`57bc874`)
+
+**122L → 91L**; `long-function` 6 → 5, `law-of-demeter` 4 → 2,
+`dict-as-dataclass` **5 → 6 minted**.
+
+Read before refactoring showed `__init__` is **not** duplication — the exact
+inverse of `deploy()`. One ~29-line, 18-key `infra_config` dict literal plus the
+six feeder extractions that fed only it accounted for a quarter of the function.
+One lift: a **module-level, single-argument** `_build_infra_config(env_config)`
+(44L).
+
+**Two further mints were designed around in advance**, from the same source
+read rather than discovered by re-running:
+
+- **module-level, not a method** — as a method it would read `env_config` ~8
+  times and `self` zero times, which is textbook `feature-envy`.
+- **single-argument** — a multi-arg signature over the four config sections
+  would have minted `param-clumps`; a body over the inline thresholds avoids
+  `single-call-site`.
+
+One hoist — binding `application = self.deploy_config.application` once —
+cleared **both** `law-of-demeter` findings, at `:68` and `:70`: the same depth-4
+chain four lines apart. It also retires `source_path`, a single-use local
+consumed on the very next line.
+
+##### The mint is a surfaced pre-existing condition, not a new defect
+
+`dict-as-dataclass` fires on `_build_infra_config` because pysmelly's
+`check_dict_as_dataclass` sources its candidates only from
+`_collect_dict_returning_functions` (`callers.py:1249`) and inspects dict
+literals **only in `return` position**. The identical 18-key literal existed
+before this commit and was invisible purely because it was an *assignment
+target*. Extracting it changed nothing about the design; it changed the literal's
+syntactic position.
+
+**Left standing with no ignore comment**, and handed to **53f**. The three
+available dodges were drafted and rejected as suppression by shape rather than
+design: return a named local instead of the literal; write `dict(**kwargs)`;
+split into sub-builders of fewer than 4 keys each. All three keep the same
+18-key payload and only move it out of the checker's view.
+
+The `infra_config` **dict shape itself is deliberately not converted here** —
+that is 53f/53g scope and doing it mid-slice would collide with both. Scoping
+note for whoever owns it, measured at `57bc874`: **49 references across 6
+files** (`service.py` 15, `task_definition.py` 14, `test_deploy_deployer.py` 12,
+`deployer.py` 4, `test_deploy.py` 3, `context.py` 1) — **not** the ~37 across 5
+previously recorded. 21 are direct `.get()`/`[]` key reads, but
+`task_definition.py` also consumes the payload **dynamically**: `.items()` at
+`:254` and `:345`, and a spread `{**ctx.infra_config, …}` at `:166`. **A
+dataclass conversion cannot be done by field access alone.**
+
+#### Latent bugs pinned, not fixed
+
+53e-3a's tests pin all three as **current behaviour, not as endorsements**; each
+is a real defect left for a subphase that owns the contract.
+
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                                    | Status                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it.                     | Pinned by `test_a_non_string_value_under_a_non_masked_name_raises`.                                                                              |
+| **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                                            | Pinned, not endorsed. Fixing it is a display-contract decision, not a refactor.                                                                   |
+| **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                                          | Same family already recorded under **53i** for `extensions.py` and `bin/init.py`; this is the third instance and the one with real blast radius. |
+
+#### Side effects and mints
+
+| Finding                                                                    | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dict-as-dataclass` — `deployer.py:38` `_build_infra_config`, 18 keys      | **Minted, left unsuppressed, routed to 53f.** A pre-existing 18-key literal made visible by moving to `return` position; see above for the mechanism and for the three rejected dodges.                                                                                                                                                                                                                                        |
+| `law-of-demeter` — `deployer.py:217` (was `:202`)                          | **Left unsuppressed, recommended leave-standing.** `except self.rds.exceptions.DBInstanceNotFoundFault:` reaches through a **boto3 client's runtime-only `.exceptions` namespace** — a botocore idiom, not a design chain; the intermediate object has no meaningful thing to be asked. Drafted fix: cache the exception class as an attribute in `__init__`. That trades a real finding for an odd attribute. Not fixed, not suppressed, no ignore comment. |
+
+One `feature-envy` was minted mid-draft in 53e-3b and **fixed rather than
+recorded** (see above), so it never reached a commit.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -900,19 +1043,22 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-**Live per-category counts, re-measured 2026-08-13 at `8af9699` (56 total).**
+**Live per-category counts, re-measured 2026-08-13 at `57bc874` (53 total).**
 This table is the authoritative one; scope each subphase from it, not from the
-prose below.
+prose below. Measured with `pysmelly . --more-please` — **the plain
+`make pysmelly` view truncates to the top ten categories and under-reports
+`inconsistent-error-handling` as 3.**
 
-`pass-through-params` 14, `param-clumps` 7, `long-function` 7,
-`dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
-`single-call-site` 3, `foo-equals-foo` 3, `arrow-code` 3, `feature-envy` 2,
-`write-only-attributes` 1, `return-none-instead-of-raise` 1,
-`temp-accumulators` 1, `duplicate-blocks` 1. (Sums to 56.)
+`pass-through-params` 14, `param-clumps` 7, `dict-as-dataclass` 6,
+`long-function` 5, `inconsistent-error-handling` 4, `foo-equals-foo` 3,
+`single-call-site` 3, `arrow-code` 3, `law-of-demeter` 2, `feature-envy` 2,
+`return-none-instead-of-raise` 1, `duplicate-blocks` 1,
+`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 53.)
 
-11 of the 56 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2 — itemized total is self-consistent). The remainder is
-queued behind claude-meta `docs/PLAN.md` Phase 53e-3–53i.
+12 of the 53 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2, 53e-3 1 — itemized total is self-consistent). The remainder
+is queued behind claude-meta `docs/PLAN.md` Phase 53e-4–53i, plus the one
+`dict-as-dataclass` 53e-3c minted and routed to 53f.
 
 **Correction 2026-08-13 (unattended run W0): the earlier per-category split of
 the remainder was arithmetically broken and is withdrawn rather than
@@ -933,11 +1079,13 @@ operator-in-the-loop session. **Each subphase re-measures at HEAD anyway**,
 which is what the live table above is for.
 
 They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
-remaining `long-function` is in `src/deployer/deploy/`, four of the seven in
+remaining `long-function` is in `src/deployer/deploy/`, **four of the five** in
 `deploy/service.py` — which 53e-5 owns and which is the only file left on the
-convergence-hotspot list. `bin/emergency.py` has one finding left (the
-adjudicated `param-clump`) and `bin/init.py` two (both `foo-equals-foo`, routed
-to 53i).
+convergence-hotspot list; the fifth is `deploy/images.py:214`, which 53e-4 owns.
+`bin/emergency.py` has one finding left (the adjudicated `param-clump`) and
+`bin/init.py` two (both `foo-equals-foo`, routed to 53i).
+`deploy/deployer.py` is down to two findings, both adjudicated by 53e-3 (the
+standing `law-of-demeter` and the `dict-as-dataclass` routed to 53f).
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
 to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
