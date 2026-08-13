@@ -5,6 +5,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import NoReturn
 
 import boto3
 from botocore.exceptions import ClientError
@@ -894,6 +895,89 @@ def wait_for_stable(
     return health_check_failures
 
 
+def _raise_task_failure(events: list[dict], service_name: str, failed: int) -> NoReturn:
+    """Raise a DeploymentError describing repeatedly failing tasks.
+
+    Args:
+        events: List of ECS service events (most recent first).
+        service_name: Name of the service.
+        failed: Number of failed tasks reported by the primary deployment.
+
+    Raises:
+        DeploymentError: Always.
+    """
+    error_msg = "Tasks are failing repeatedly"
+    if events:
+        error_msg = events[0].get("message", error_msg)
+
+    raise DeploymentError(
+        f"{service_name}: {failed} tasks failed. Latest event: {error_msg}",
+        service_name=service_name,
+        error_type="task_failures",
+    )
+
+
+def _track_no_progress(events: list[dict], service_name: str, consecutive_failures: int) -> int:
+    """Count a poll that made no progress, raising once the run is hopeless.
+
+    Args:
+        events: List of ECS service events (most recent first).
+        service_name: Name of the service.
+        consecutive_failures: Count of prior consecutive no-progress polls.
+
+    Returns:
+        The incremented no-progress count.
+
+    Raises:
+        DeploymentError: After 3 polls (~45s) with failures and no running tasks.
+    """
+    consecutive_failures += 1
+    if consecutive_failures >= 3 and events:
+        # 3 polls (~45s) with failures and no running tasks
+        _check_for_fatal_errors(events, service_name)
+        # If no pattern matched, raise generic error
+        raise DeploymentError(
+            f"{service_name}: No tasks running after multiple attempts. "
+            f"Check ECS console for details. "
+            f"Latest: {events[0].get('message', 'No events')}",
+            service_name=service_name,
+            error_type="no_progress",
+        )
+    return consecutive_failures
+
+
+def _describe_service_or_raise(ctx: DeploymentContext, service_name: str) -> dict:
+    """Describe a single service, raising if it is missing or undescribable.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+
+    Returns:
+        The ECS service description.
+
+    Raises:
+        ClientError: If the describe_services call fails.
+        DeploymentError: If the service is not present in the cluster.
+    """
+    try:
+        response = ctx.ecs_client.describe_services(
+            cluster=ctx.cluster_name, services=[service_name]
+        )
+    except ClientError as e:
+        log_error(f"Failed to describe service {service_name}: {e}")
+        raise
+
+    if not response.get("services"):
+        raise DeploymentError(
+            f"Service {service_name} not found in cluster {ctx.cluster_name}",
+            service_name=service_name,
+            error_type="service_not_found",
+        )
+
+    return response["services"][0]
+
+
 def _wait_for_service_stable(
     ctx: DeploymentContext,
     service_name: str,
@@ -910,27 +994,11 @@ def _wait_for_service_stable(
         DeploymentError: If a fatal error is detected.
         RuntimeError: If the service doesn't stabilize within max_attempts.
     """
-    ecs_client = ctx.ecs_client
-    cluster_name = ctx.cluster_name
-
     last_status = ""
     consecutive_failures = 0
 
     for _ in range(1, stability.max_attempts + 1):
-        try:
-            response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
-        except ClientError as e:
-            log_error(f"Failed to describe service {service_name}: {e}")
-            raise
-
-        if not response.get("services"):
-            raise DeploymentError(
-                f"Service {service_name} not found in cluster {cluster_name}",
-                service_name=service_name,
-                error_type="service_not_found",
-            )
-
-        service = response["services"][0]
+        service = _describe_service_or_raise(ctx, service_name)
         events = service.get("events", [])[:5]  # Check last 5 events
 
         # Check for fatal errors in events
@@ -969,38 +1037,11 @@ def _wait_for_service_stable(
 
         # Check for persistent failures
         if failed >= stability.failure_threshold:
-            # Get the most recent error message
-            error_msg = "Tasks are failing repeatedly"
-            if events:
-                error_msg = events[0].get("message", error_msg)
-
-            # Try to extract actionable info
-            try:
-                _check_for_fatal_errors(events, service_name)
-            except DeploymentError:
-                raise
-
-            # Generic failure if no pattern matched
-            raise DeploymentError(
-                f"{service_name}: {failed} tasks failed. Latest event: {error_msg}",
-                service_name=service_name,
-                error_type="task_failures",
-            )
+            _raise_task_failure(events, service_name, failed)
 
         # Track consecutive polls with no progress
         if running == 0 and failed > 0:
-            consecutive_failures += 1
-            if consecutive_failures >= 3 and events:
-                # 3 polls (~45s) with failures and no running tasks
-                _check_for_fatal_errors(events, service_name)
-                # If no pattern matched, raise generic error
-                raise DeploymentError(
-                    f"{service_name}: No tasks running after multiple attempts. "
-                    f"Check ECS console for details. "
-                    f"Latest: {events[0].get('message', 'No events')}",
-                    service_name=service_name,
-                    error_type="no_progress",
-                )
+            consecutive_failures = _track_no_progress(events, service_name, consecutive_failures)
         else:
             consecutive_failures = 0
 
