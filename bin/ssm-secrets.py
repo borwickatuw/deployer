@@ -42,7 +42,11 @@ from deployer.core.ssm_secrets import (
     get_secrets_from_deploy_toml,
 )
 from deployer.core.ssm_secrets import parse_environment as _parse_environment
+from deployer.core.ssm_secrets import (
+    ssm_put_commands,
+)
 from deployer.utils import (
+    advice_block,
     configure_aws_for_operation,
     resolve_deploy_toml_or_exit,
 )
@@ -84,9 +88,38 @@ def _generate_random_secret(length: int = 32) -> str:
 # =============================================================================
 
 
-def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
-    environment: str, deploy_toml: str | None
-) -> int:
+def _print_secret_table(
+    present: list[tuple[str, str]],
+    missing: list[tuple[str, str]],
+    extra: list[tuple[str, str]],
+) -> None:
+    """Print the name/path/status table for a check, plus its count summary.
+
+    Args:
+        present: (env_var, ssm_path) pairs required by deploy.toml and in SSM.
+        missing: (env_var, ssm_path) pairs required by deploy.toml but not in SSM.
+        extra: (secret_name, ssm_path) pairs in SSM but not in deploy.toml.
+    """
+    rows = [
+        *((env_var, ssm_path, "OK") for env_var, ssm_path in present),
+        *((env_var, ssm_path, "MISSING") for env_var, ssm_path in missing),
+        *((secret_name, ssm_path, "EXTRA") for secret_name, ssm_path in extra),
+    ]
+    name_width = max(len(name) for name, _, _ in rows) if rows else 20
+    name_width = max(name_width, len("Environment Variable"))
+
+    print(f"{'Environment Variable':<{name_width}}  {'SSM Path':<50}  {'Status'}")
+    print(f"{'-' * name_width}  {'-' * 50}  {'-' * 10}")
+
+    for name, ssm_path, status in rows:
+        print(f"{name:<{name_width}}  {ssm_path:<50}  {status}")
+
+    print()
+    print(f"Required: {len(present) + len(missing)} secret(s)")
+    print(f"Present: {len(present)}, Missing: {len(missing)}, Extra: {len(extra)}")
+
+
+def cmd_check(environment: str, deploy_toml: str | None) -> int:
     """Check which secrets from deploy.toml are missing in SSM, and which SSM secrets are unused."""
     deploy_toml_path = resolve_deploy_toml_or_exit(
         environment,
@@ -95,8 +128,7 @@ def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
         link_benefit=f"check with just: ssm-secrets.py check {environment}",
     )
 
-    # Parse environment name
-    project, env = parse_environment(environment)
+    _project, env = parse_environment(environment)
 
     print(f"Checking secrets for {environment}...")
     print(f"Reading: {deploy_toml_path}\n")
@@ -128,46 +160,36 @@ def cmd_check(  # noqa: C901 — SSM secret check with multiple output paths
     extra_paths = existing_paths - required_paths
     extra = [(path.split("/")[-1], path) for path in sorted(extra_paths)]
 
-    # Report results
-    if required_secrets or extra:
-        all_names = [s[0] for s in required_secrets.items()] + [e[0] for e in extra]
-        name_width = max(len(n) for n in all_names) if all_names else 20
-        name_width = max(name_width, len("Environment Variable"))
-
-        print(f"{'Environment Variable':<{name_width}}  {'SSM Path':<50}  {'Status'}")
-        print(f"{'-' * name_width}  {'-' * 50}  {'-' * 10}")
-
-        for env_var, ssm_path in present:
-            print(f"{env_var:<{name_width}}  {ssm_path:<50}  OK")
-
-        for env_var, ssm_path in missing:
-            print(f"{env_var:<{name_width}}  {ssm_path:<50}  MISSING")
-
-        for secret_name, ssm_path in extra:
-            print(f"{secret_name:<{name_width}}  {ssm_path:<50}  EXTRA")
-
-        print()
-        print(f"Required: {len(required_secrets)} secret(s)")
-        print(f"Present: {len(present)}, Missing: {len(missing)}, Extra: {len(extra)}")
-    else:
+    if not required_secrets and not extra:
         print("No SSM secrets defined in deploy.toml and none found in SSM.")
         return 0
 
+    _print_secret_table(present, missing, extra)
+
     if missing:
-        print("\nTo set missing secrets, run:")
-        for _env_var, ssm_path in missing:
-            secret_name = ssm_path.split("/")[-1]
-            print(f"  uv run python bin/ssm-secrets.py put {environment} {secret_name}")
+        print()
+        print(
+            advice_block(
+                "To set missing secrets, run:",
+                ssm_put_commands(environment, missing),
+                bullet="  ",
+            )
+        )
 
     if extra:
-        print("\nExtra secrets not referenced in deploy.toml:")
-        for secret_name, _ssm_path in extra:
-            print(f"  uv run python bin/ssm-secrets.py delete {environment} {secret_name}")
+        print()
+        print(
+            advice_block(
+                "Extra secrets not referenced in deploy.toml:",
+                (
+                    f"uv run python bin/ssm-secrets.py delete {environment} {secret_name}"
+                    for secret_name, _ssm_path in extra
+                ),
+                bullet="  ",
+            )
+        )
 
-    if missing or extra:
-        return 1
-
-    return 0
+    return 1 if (missing or extra) else 0
 
 
 def _get_secret_value_interactively(secret_name: str) -> str | None:

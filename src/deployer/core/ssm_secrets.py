@@ -231,6 +231,22 @@ def check_secrets_drift(
     return sorted(unreferenced)
 
 
+def ssm_put_commands(env_name: str, missing: list[tuple[str, str]]) -> list[str]:
+    """Build the "ssm-secrets.py put" invocation that creates each missing secret.
+
+    Args:
+        env_name: Full environment name (e.g., "myapp-staging")
+        missing: List of (env_var_name, ssm_path) tuples for missing secrets
+
+    Returns:
+        One command line per missing secret, unindented.
+    """
+    return [
+        f"uv run python bin/ssm-secrets.py put {env_name} {ssm_path.split('/')[-1]}"
+        for _env_var, ssm_path in missing
+    ]
+
+
 def format_missing_secrets_error(
     missing: list[tuple[str, str]],
     env_name: str,
@@ -244,13 +260,12 @@ def format_missing_secrets_error(
     Returns:
         Formatted error message with remediation commands
     """
-    commands = [
-        f"  uv run python bin/ssm-secrets.py put {env_name} {ssm_path.split('/')[-1]}"
-        for _env_var, ssm_path in missing
-    ]
     return advice_block(
         f"Missing {len(missing)} required SSM secret(s):",
         (f"{env_var}: {ssm_path}" for env_var, ssm_path in missing),
-        ["To create missing secrets, run:", *commands],
+        [
+            "To create missing secrets, run:",
+            *(f"  {c}" for c in ssm_put_commands(env_name, missing)),
+        ],
         bullet="  - ",
     )
