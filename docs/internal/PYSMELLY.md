@@ -30,9 +30,9 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **60** (measured at the Phase 53d-2b commit; was 68 at
-`db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`,
-97 at `8e57264`).
+Standing total: **57** (measured at the Phase 53e-1 commit; was 60 at `805d516`,
+68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
+`a8800cd`, 97 at `8e57264`).
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -669,6 +669,118 @@ Six of the eight print-runs cleared in commit 2 alone (`duplicate-blocks`
 9 → 3). The two that did not are the two whose remaining legs are
 `setup_profiles.py`, which this subphase's scope explicitly excluded.
 
+### 53e-1 — `extensions.py` + `setup_profiles.py` (2026-08-13)
+
+**3 targets** at `805d516` (repo total 60): `extensions.py:18 create_database_extensions` (114L, `long-function`) and **both surviving
+`duplicate-blocks`**, `extensions.py:56` ↔ `setup_profiles.py:109` and
+`init.py:302` ↔ `setup_profiles.py:111`. **All 3 cleared**; repo total
+**60 → 57** (`long-function` 9 → 8, `duplicate-blocks` 3 → 1). Nothing minted:
+the diff against the baseline moves exactly those two category counts and no
+others, and the three new helpers do not trip `single-call-site`.
+
+`extensions.py` now has **no pysmelly findings of any category**.
+
+#### 53e was split before it was run
+
+The plan named 53e as "deploy/ pipeline decomposition". Re-measured at
+`805d516`, that scope was **six files and ~16 findings** — three or four
+sessions, not one. 53d was scoped the same way and had to be split twice
+*mid-arc*. So 53e was split up front, ordered by existing coverage descending
+so the test idiom is established on small well-covered files before it reaches
+the untested heart:
+
+| Slice | Scope                                                          | Coverage at split |
+| ----- | -------------------------------------------------------------- | ----------------- |
+| 53e-1 | `extensions.py` + `setup_profiles.py`                          | 94% / 39%         |
+| 53e-2 | `core/audit.py` — `run_audit` (the odd one out, not `deploy/`) | 66%               |
+| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter`     | 35%               |
+| 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators`     | 16%               |
+| 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`              | 11%               |
+
+`service.py` is 1003 lines at 11% with four targets: a session of
+characterization tests before a line moves.
+
+#### This closed a thread open since 53b
+
+53b found five `log_error → print advice → raise RuntimeError` blocks in
+`create_database_extensions` and called them the file's real duplication. 53c
+landed the vocabulary (`print_with_advice` / `advice_block`). 53d-2b routed the
+two surviving `duplicate-blocks` here. Nobody had done the adoption. 53e-1 did.
+
+#### Both `duplicate-blocks` were shape matches, and the fix was not a helper
+
+Six/five consecutive `print()` calls whose *content* had nothing in common:
+`extensions.py` printed config-fix advice, `setup_profiles.py` "add credentials
+next", `init.py` "tofu init -migrate-state next". No shared print helper was
+possible or wanted. Both cleared as a **side effect** of adopting the existing
+vocabulary — the `print()` statements became string arguments, so the run
+stopped existing. Same reasoning 55a recorded for sword-client's five
+shape-matches.
+
+#### The adoption did not shrink the function — it grew it
+
+Predicted 114L → ~102L. **Measured 114L → 118L.** black puts each
+`print_with_advice(` call and its closing paren on their own line, and that
+costs more than the removed `log_error(...)` / `print()` scaffolding saves.
+Wrong in direction, not in conclusion: commit 3's decomposition is what cleared
+the `long-function`, and the plan had said out loud not to skip it on the
+assumption the adoption covered it. Worth keeping as a caution — "adopt a
+vocabulary" and "shorten a function" are not the same operation.
+
+The decomposition took it 118L → **21L** via three helpers that each own one
+failure mode: `_require_lambda_name` (the config.toml lookup and its raise),
+`_invoke_extensions_lambda` (the boto3 call and all four `except` arms), and
+`_raise_on_function_error` (the Lambda-level error). The two orienting comments
+went with them — the helper names say the same thing.
+
+No `_fail(message, *advice, cause=)` wrapper was written. Each block's
+`log_error` text and its `RuntimeError` text differ on purpose (block 1 tells
+the operator "deploy.toml declares database extensions, but config.toml is
+missing [database] extensions_lambda" and the caller "Missing extensions_lambda
+in config.toml [database] section"); a one-message helper would flatten that.
+The generic `ClientError` arm kept its bare `log_error` — it has no advice
+lines, so `print_with_advice` would add only framing.
+
+#### `advice_block` on a success path: the objection did not survive reading it
+
+Commit 4's draft was judged on the diff, as planned. The objection was real —
+`advice_block`'s four existing callers are all error paths, and all four are
+`raise SomeError(advice_block(...))`, so this would be the first
+`print(advice_block(...))` and the first success use. It was **kept** anyway:
+the helper has no error semantics in its name, signature or docstring, and its
+`bullet` default is `"    "` — four spaces, no bullet character — so
+`bullet="  "` is the default's own shape, not an off-label use. The cost is
+honest: 5 lines became 12.
+
+#### Characterization tests first
+
+`tests/unit/test_extensions.py` already had 11 tests over every error branch,
+but each asserted only on the raised `RuntimeError`. **The advice text — the
+entire point of those blocks — was unpinned.** `cmd_setup_profiles` was
+untested outright.
+
+Following 53d-2b's discipline: advice text and order pinned via a non-blank-lines
+`_lines()` helper, blank-line placement deliberately **not** pinned, because
+`print_with_advice` adds a leading blank line the old code did not. Commit 2
+then *added* blank-line assertions rather than editing any, so "commits 2–5
+leave commit 1's tests passing unchanged" stayed literally true while the output
+did change. Second subphase running that pattern; it works.
+
+Pinned but not endorsed, naming **53i**: `extensions.py`'s bare
+`except Exception` reports any non-`ClientError` failure as "Unexpected error
+invoking Lambda", so a bug inside boto3 reaches the operator as a credentials or
+network problem.
+
+#### Coverage
+
+`deploy/extensions.py` **94% → 100%**, `init/setup_profiles.py` **39% → 100%** —
+both better than the plan's ~100%/~90% prediction. Total 53.51% → **53.91%**;
+floor stays at **53** (53 is still the integer just under). 852 → 872 tests.
+
+#### Side effects and mints
+
+None. Only `long-function` and `duplicate-blocks` moved.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -701,20 +813,22 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-11 of the 60 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2). The other **49** are queued behind claude-meta
-`docs/PLAN.md` Phase 53e–53i:
+11 of the 57 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2). The other **46** are queued behind claude-meta
+`docs/PLAN.md` Phase 53e-2–53i:
 
-`long-function` 9, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
+`long-function` 8, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
 `foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
 `write-only-attributes` 1, `temp-accumulators` 1.
 
 They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
-remaining `long-function` is in `src/deployer/`, four of the nine in
-`deploy/service.py`. `bin/emergency.py` has one finding left (the adjudicated
-`param-clump`) and `bin/init.py` three (two `foo-equals-foo` routed to 53i, one
-adjudicated `duplicate-blocks`).
+remaining `long-function` is in `src/deployer/`, four of the eight in
+`deploy/service.py` — which 53e-5 owns and which is the only file left on the
+convergence-hotspot list. `bin/emergency.py` has one finding left (the
+adjudicated `param-clump`) and `bin/init.py` two (both `foo-equals-foo`, routed
+to 53i).
 
-`duplicate-except-blocks` is empty as a category, and `duplicate-blocks` has no
-open items left — every one of its 9 findings is an adjudicated leave-standing.
+`duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
+to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
+adjudicated as a leave-standing. The category has no open items.

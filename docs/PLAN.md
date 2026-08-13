@@ -98,8 +98,51 @@ fails the same way. The two surviving print-runs are recorded as
 belonging to the `setup_profiles.py` neighbourhood (**53e**), not
 re-deferred as generic leave-standings.
 
-**53d is closed.** Phase 53e (`extensions.py` / `setup_profiles.py`) is
-the next open subphase.
+**53d is closed.**
+
+Phase 53e was **split into five slices before it was run**, on the lesson
+53d paid for by splitting twice mid-arc. Re-measured at `805d516`,
+claude-meta's one-line 53e entry ("`service.py` ×4, `deployer.py` ×2,
+`images.py`, `extensions.py`, `audit.py`") was six files and ~16
+findings — three or four sessions. The slices are ordered by existing
+coverage descending, so the characterization-test idiom is established on
+small well-covered files before it reaches the untested heart:
+
+| Slice | Scope                                                      | Coverage at split | Status |
+| ----- | ---------------------------------------------------------- | ----------------- | ------ |
+| 53e-1 | `extensions.py` + `setup_profiles.py`                      | 94% / 39%         | done   |
+| 53e-2 | `core/audit.py` — `run_audit`                              | 66%               | next   |
+| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | 35%               | open   |
+| 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | 16%               | open   |
+| 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | 11%               | open   |
+
+`service.py` is 1003 lines at 11% coverage with four targets, and is the
+only file left on the convergence-hotspot list — a session of
+characterization tests before a line moves, so 53e-5 is deliberately last.
+`service.py:196`'s `param-clumps` stays with 53g.
+
+Phase 53e-1 (`extensions.py` + `setup_profiles.py`) **shipped
+2026-08-13** — closing a thread open since 53b, which found five
+`log_error → print advice → raise RuntimeError` blocks in
+`create_database_extensions` and called them the file's real duplication;
+53c landed the vocabulary and 53d-2b routed the two surviving
+`duplicate-blocks` here, but nobody had done the adoption. The first
+commit pinned all five advice blocks and `cmd_setup_profiles` end to end,
+and every later commit left those tests passing unchanged. All three
+targets cleared: pysmelly 60 → 57 (`long-function` 9 → 8,
+`duplicate-blocks` 3 → 1), and `extensions.py` now has no findings of any
+category. Coverage: `extensions.py` 94% → 100%, `setup_profiles.py`
+39% → 100%; total 53.51% → 53.91%, floor stays 53. Nothing minted.
+Adjudication record: [docs/internal/PYSMELLY.md](internal/PYSMELLY.md),
+which also records the measurement that contradicted the plan — adopting
+`print_with_advice` **grew** the function 114L → 118L rather than
+shrinking it to ~102L, because black costs more in call framing than the
+removed scaffolding saves. The decomposition into three helpers is what
+took it to 21L. Pinned but not endorsed, routed to **53i**:
+`extensions.py`'s bare `except Exception` reports any non-`ClientError`
+failure as a credentials or network problem.
+
+**Phase 53e-2 (`core/audit.py`) is the next open subphase.**
 
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record
