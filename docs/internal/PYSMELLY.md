@@ -30,8 +30,9 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **68** (measured at the Phase 53d-2a commit; was 71 at
-`26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
+Standing total: **60** (measured at the Phase 53d-2b commit; was 68 at
+`db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`,
+97 at `8e57264`).
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -552,6 +553,122 @@ a subphase that owns the file's RDS half. `cmd_restore_db:539-544` and
 `cmd_revert:638-642` are hand-rolled versions of what `exit_on` covers — routed
 to **53i**, in functions this subphase did not touch.
 
+### 53d-2b — `bin/init.py` and the print-run re-measure (2026-08-13)
+
+**10 targets** at `db8aa78` (repo total 68): `init.py:132 cmd_bootstrap` (131L,
+`long-function`), `init.py:357 cmd_environment` (104L, `long-function`), and the
+**eight `duplicate-blocks` print-runs 53b left standing** with "re-measure after
+53d". **8 cleared, 2 left standing**; the repo total went **68 → 60**, the
+largest single-subphase drop in the arc. `bin/init.py` dropped off the
+convergence-hotspot list, leaving `deploy/service.py` as the only file flagged
+by three checks. Nothing minted.
+
+Re-measuring first was worth it: none of the eight had moved (53d-1 and 53d-2a
+touched none of those functions), but only three sat inside `cmd_bootstrap` and
+**none** inside `cmd_environment`, so the decomposition and the re-measure only
+partly overlapped. The re-measure was owed either way.
+
+#### Characterization tests first
+
+`bin/init.py` was the repo's **last 0%-coverage file** (318 statements) and it
+writes files, chmods scripts and shells out to `tofu apply`. The first commit
+pinned today's behaviour in `tests/unit/test_init_cli.py` — 53 tests over return
+codes, every validation error, the dry-run preview, which files get written,
+`import-existing.sh`'s exec bits, and the text and order of all four next-steps
+lists — and every later commit had to leave them passing **unchanged**. They
+did: the test file only ever gained lines (64, then 20), never edited one.
+
+One pinning decision paid for itself in the very next commit. Blank-line
+placement *between* steps was deliberately **not** pinned, because the four
+lists disagreed about it and unifying them was commit 2's job; step text,
+numbering and order were. Commit 2 then *added* blank-separation assertions
+rather than editing any, so "tests pass unchanged" stayed literally true while
+the output did change.
+
+Pinned but not endorsed, naming **53i**: `cmd_deploy_toml`'s bare
+`except Exception` reports any non-`ValueError` from the generator as a
+compose-parsing failure, misattributing a generator bug to the operator's input.
+
+#### Two families, not one
+
+Reading the cross-file legs settled what 53b could not. The eight findings were
+**two different things sharing an AST shape**:
+
+- **Next-steps runs** — `bin/init.py` ×4 and `setup_profiles.py` ×1, "here is
+  what to do next" after a successful write.
+- **Error advice blocks** — `extensions.py` ×3, which 53c's
+  `print_with_advice` / `advice_block` already covers and **53e** owns adopting.
+
+Four of the five next-steps runs live in `bin/init.py`, which is what made
+`_numbered_steps(heading, *steps)` a **module-local** decision rather than the
+cross-file scope creep 53d-2a's plan worried about. It is not in
+`utils/cli.py`, where 53b/53c/53d-1/53d-2a put genuinely shared helpers; if 53e
+wants it for `extensions.py`, it can be promoted then.
+
+**The win 53b could not see is the counter, not the printing.**
+`_print_next_steps` carried a dynamic `step` variable with six `step += 1`
+sites, purely because the number of steps varies by template — and 53b cited
+exactly that counter as the evidence *against* generalizing. With the helper
+owning the counter, that function became list-building and the bookkeeping
+disappeared.
+
+**One deliberate output change**: three sites gained a blank line between steps,
+matching `_print_next_steps`, so all four lists in the file read the same. No
+step text, numbering or order changed.
+
+The two **unnumbered** runs stayed plain `print` calls — `cmd_bootstrap`'s
+"Next step:" (singular) and its "After successful apply" trailer. The helper is
+for numbered lists; an `unnumbered=` flag is the flag-per-axis shape 53b warned
+about.
+
+#### The decompositions
+
+`cmd_bootstrap` → `_prompt_bootstrap_inputs` (with a frozen `_BootstrapInputs`
+dataclass deriving `env_name` from `env_label`), `_resolve_bootstrap_path`,
+`_write_bootstrap_files`, `_apply_bootstrap`; 131L → 33L reading as collect →
+resolve → generate → dry-run → write → apply.
+
+`cmd_environment` → `_list_available_templates`, `_require_bootstrap`,
+`_resolve_environment_target`, `_write_environment_files`; 104L → 46L. 104 was
+only 4 over the threshold, so the target here was structure, not the number.
+
+Both `# noqa: C901` lines were **removed, not moved** — no extracted function
+needs one.
+
+#### The latent bug, same shape as 53b's `ci_deploy` find
+
+`cmd_environment` wrapped its bootstrap check in `except RuntimeError: pass`
+with the comment *"let the existing error handling below catch it"*. There is no
+handling below — and the `except` was dead anyway, because
+`bootstrap_dir_exists` catches the `RuntimeError` itself and returns `None`. So
+an unset `DEPLOYER_ENVIRONMENTS_DIR` was reported as *"No bootstrap directory
+found. Run bootstrap first"*, sending the operator to a command that fails for
+the same unnamed reason. `_require_bootstrap` now checks the variable first and
+reports it the way `cmd_bootstrap` does, naming the variable and the `.env` fix;
+the message is a module constant shared by both.
+
+(The phase plan predicted a *traceback* from the bare `get_environments_dir()`
+further down. That line is unreachable with the variable unset — the misleading
+message is what actually happens. Recorded because the plan's premise was
+half-wrong and the fix is the same either way.)
+
+#### Coverage
+
+`bin/init.py` **0% → 92%**, and the repo has no 0%-coverage file left. Total
+49.20% → 53.51%; floor 49 → 53.
+
+#### Side effects and mints
+
+| Finding                                                                                    | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `duplicate-blocks` — `init.py:302 _apply_bootstrap` ↔ `setup_profiles.py:111`             | **Belongs to the `setup_profiles.py` neighbourhood (53e), not re-deferred here.** This is the surviving leg of 53b's #8, and both halves are the *unnumbered* runs `_numbered_steps` deliberately does not cover. Whoever adopts `print_with_advice` in `extensions.py` should decide these two at the same time; the other surviving `duplicate-blocks`, `extensions.py:56` ↔ `setup_profiles.py:109`, is the same pairing. |
+| `foo-equals-foo` — `init.py:220 _BootstrapInputs()`                                        | **53i, now measured rather than predicted.** The plan predicted the old `:194` would clear as a side effect of the decomposition. Half right: the `generate_bootstrap` call is now `name=inputs.attr` and is no longer flagged, but the check **re-anchored** onto the `_BootstrapInputs()` constructor with the same three single-use locals. Inlining them puts a tuple unpack, a multi-line `click.prompt` and a list comprehension inside keyword arguments. Net count unchanged at 3.        |
+| `foo-equals-foo` — `init.py:557 generate_environment()` (`listener_priority`)              | **53i, unchanged.** Inlining makes a conditional expression inside a call argument, which is not clearly better. Drafted and left, as the plan scoped it.                                                                                                                                                                                                                                                                                                                                       |
+
+Six of the eight print-runs cleared in commit 2 alone (`duplicate-blocks`
+9 → 3). The two that did not are the two whose remaining legs are
+`setup_profiles.py`, which this subphase's scope explicitly excluded.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -584,17 +701,20 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-17 of the 68 are adjudicated leave-standings (53a 2, 53b 11, 53c 2, 53d-1 1,
-53d-2a 1). The other **51** are queued behind claude-meta `docs/PLAN.md`
-Phase 53d-2b–53i:
+11 of the 60 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2). The other **49** are queued behind claude-meta
+`docs/PLAN.md` Phase 53e–53i:
 
-`long-function` 11, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
+`long-function` 9, `pass-through-params` 9, `param-clumps` 5, `arrow-code` 3,
 `dict-as-dataclass` 5, `inconsistent-error-handling` 4, `law-of-demeter` 4,
 `foo-equals-foo` 3, `single-call-site` 3, `feature-envy` 2,
 `write-only-attributes` 1, `temp-accumulators` 1.
 
-They are concentrated in `bin/init.py` and `src/deployer/`, not in `modules/`.
-`bin/emergency.py` has one finding left, the adjudicated `param-clump`.
+They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. Every
+remaining `long-function` is in `src/deployer/`, four of the nine in
+`deploy/service.py`. `bin/emergency.py` has one finding left (the adjudicated
+`param-clump`) and `bin/init.py` three (two `foo-equals-foo` routed to 53i, one
+adjudicated `duplicate-blocks`).
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` has no
 open items left — every one of its 9 findings is an adjudicated leave-standing.

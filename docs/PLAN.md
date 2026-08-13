@@ -74,17 +74,32 @@ The `(environment, service, yes)` param-clump is left standing there
 **pending operator confirmation**, with the drafted `EmergencyTarget`
 dataclass and the reason it reads worse than the three parameters.
 
-**Phase 53d-2b is the open half**: `init.py` `cmd_bootstrap` (131L) +
-`cmd_environment` (104L), and the re-measure of 53b's eight
-`bin/init.py` print-run leave-standings that this entry's 53b paragraph
-defers to "after 53d". Three of those eight sit inside `cmd_bootstrap`
-and none inside `cmd_environment`, so the two halves of 53d-2b only
-partly overlap. It also carries a design call 53b did not have
-available: a `numbered_steps(heading, steps)` helper owning the counter
-would let `_print_next_steps` drop the dynamic `step` variable that 53b
-cited as the evidence *against* generalizing — but that reaches into
-`extensions.py` (53e) and `setup_profiles.py`, so it is a scope
-decision, not a free win.
+Phase 53d-2b (`bin/init.py` + the print-run re-measure) **shipped
+2026-08-13** — closing 53d. The first commit pinned `cmd_bootstrap` /
+`cmd_bootstrap_migrate` / `cmd_deploy_toml` / `cmd_environment` /
+`_print_next_steps` at their current behaviour, and every later commit
+left those tests passing unchanged. Reading the cross-file legs settled
+the design call 53b could not: the eight print-runs were two families
+sharing an AST shape, and four of the five next-steps runs live in
+`bin/init.py` — so `_numbered_steps` is module-local, and the
+`extensions.py` legs stay with 53e's `print_with_advice` adoption. The
+helper owning the counter let `_print_next_steps` drop the dynamic
+`step` variable 53b cited as the evidence against generalizing. Both
+`long-function` targets cleared and both `# noqa: C901` lines came off;
+six of the eight print-runs cleared (`duplicate-blocks` 9 → 3). pysmelly
+68 → 60, the arc's largest single-subphase drop; coverage floor 49 → 53.
+`bin/init.py` got its first tests ever (0% → 92%) and dropped off the
+convergence-hotspot list, leaving only `deploy/service.py`; the repo has
+no 0%-coverage file left. Adjudication record:
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md). It also fixed a
+latent bug: an unset `DEPLOYER_ENVIRONMENTS_DIR` was reported as a
+missing bootstrap directory, sending the operator to a command that
+fails the same way. The two surviving print-runs are recorded as
+belonging to the `setup_profiles.py` neighbourhood (**53e**), not
+re-deferred as generic leave-standings.
+
+**53d is closed.** Phase 53e (`extensions.py` / `setup_profiles.py`) is
+the next open subphase.
 
 Phase 54 (emergency-subsystem test coverage) **shipped 2026-08-12** in
 `5f6b287` — checkpoint/ecs/rds 0% → 100%, coverage floor 25 → 32; record

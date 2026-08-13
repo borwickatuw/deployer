@@ -80,8 +80,8 @@ branch = true
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
 # require real AWS credentials.
 #
-# The floor is measured, not aspirational: `make test-cov` reports 49.20% at
-# the commit that finished Phase 53d-2a, so 49 is the floor just under it.
+# The floor is measured, not aspirational: `make test-cov` reports 53.51% at
+# the commit that finished Phase 53d-2b, so 53 is the floor just under it.
 # Note that `make test-cov` passes `--cov=src --cov=bin`, which OVERRIDES the
 # `[tool.coverage.run] source` setting above — bare `pytest --cov` measures
 # src/deployer only. The floor is set against the `make test-cov` number
@@ -101,10 +101,14 @@ branch = true
 # emergency.py is the RDS side (snapshot, restore-db, revert), which 53d-2a
 # did not touch.
 #
-# Remaining large gap: bin/init.py (318 statements, 0%) — Click-CLI-shaped and
-# queued behind its decomposition (claude-meta PLAN.md Phase 53d-2b).
+# Phase 53d-2b pinned bin/init.py's file-writing commands before decomposing
+# cmd_bootstrap and cmd_environment: init.py 0% -> 92%. The repo has no
+# 0%-coverage file left.
+#
+# Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
+# repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 49
+fail_under = 53
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
