@@ -7,6 +7,32 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class EnvironmentTarget:
+    """Where a deployment is going.
+
+    The name, the type and the resolved config travelled together as three
+    positional parameters through the preflight checks and the deploy pipeline.
+    """
+
+    name: str  # e.g. "myapp-staging"
+    type: str  # e.g. "staging"
+    config: dict  # resolved config.toml
+
+
+@dataclass(frozen=True)
+class DeployOptions:
+    """The three flags that control how a deploy behaves.
+
+    They arrive together from ``common_deploy_options`` and stay together all
+    the way into Deployer.
+    """
+
+    dry_run: bool = False
+    force: bool = False
+    force_build: bool = False
+
+
+@dataclass(frozen=True)
 class DeploymentContext:
     """Bundles shared parameters passed to ECS deployment functions.
 

@@ -25,6 +25,7 @@ import boto3
 import click
 from botocore.exceptions import ClientError
 
+from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.deployer import common_deploy_options
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.deploy.preflight import PreflightOptions
@@ -255,18 +256,14 @@ def main(  # noqa: C901 — CI deploy orchestration
     sys.exit(
         run_deploy_pipeline(
             deploy_toml_path,
-            env_config,
-            environment,
-            environment_type,
-            options=PreflightOptions(
+            EnvironmentTarget(environment, environment_type, env_config),
+            preflight=PreflightOptions(
                 skip_ecr_check=skip_ecr_check,
                 skip_secrets_check=skip_secrets_check,
                 skip_cluster_check=skip_cluster_check,
                 skip_audit=True,
             ),
-            dry_run=dry_run,
-            force=force,
-            force_build=force_build,
+            options=DeployOptions(dry_run=dry_run, force=force, force_build=force_build),
         )
     )
 

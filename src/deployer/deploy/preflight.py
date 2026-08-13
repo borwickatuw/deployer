@@ -18,6 +18,7 @@ from deployer.core.ssm_secrets import (
     check_secrets_exist,
     format_missing_secrets_error,
 )
+from deployer.deploy.context import EnvironmentTarget
 from deployer.deploy.images import (
     format_missing_ecr_error,
     validate_ecr_repositories,
@@ -121,8 +122,7 @@ def _infrastructure_value(env_config: dict, key: str, check_name: str) -> str | 
 
 def check_ecr_repositories(
     deploy_config: DeployConfig,
-    env_config: dict,
-    environment: str,
+    target: EnvironmentTarget,
 ) -> None:
     """Verify all required ECR repositories exist.
 
@@ -130,7 +130,7 @@ def check_ecr_repositories(
         PreflightError: If ECR repositories are missing.
     """
     log("Checking ECR repositories...")
-    ecr_prefix = _infrastructure_value(env_config, "ecr_prefix", "ECR")
+    ecr_prefix = _infrastructure_value(target.config, "ecr_prefix", "ECR")
     if not ecr_prefix:
         return
 
@@ -139,7 +139,7 @@ def check_ecr_repositories(
     missing_repos = validate_ecr_repositories(boto3.client("ecr"), deploy_config, ecr_prefix)
 
     if missing_repos:
-        raise PreflightError(format_missing_ecr_error(missing_repos, environment))
+        raise PreflightError(format_missing_ecr_error(missing_repos, target.name))
 
     image_count = len([img for img in images.values() if img.push])
     log_success(f"All {image_count} ECR repository(ies) present")
@@ -148,9 +148,7 @@ def check_ecr_repositories(
 
 def check_ssm_secrets(
     deploy_config: DeployConfig,
-    env_config: dict,
-    environment: str,
-    environment_type: str,
+    target: EnvironmentTarget,
 ) -> None:
     """Verify all required SSM secrets exist.
 
@@ -159,18 +157,18 @@ def check_ssm_secrets(
     """
     log("Checking SSM secrets...")
     missing, present = check_secrets_exist(
-        deploy_config.get_raw_dict(), environment_type, environment, env_config
+        deploy_config.get_raw_dict(), target.type, target.name, target.config
     )
 
     if missing:
-        raise PreflightError(format_missing_secrets_error(missing, environment))
+        raise PreflightError(format_missing_secrets_error(missing, target.name))
     elif present:
         log_success(f"All {len(present)} secret(s) present")
     else:
         log("No secrets defined in deploy.toml")
 
     # Check for unreferenced secrets in SSM (warn only)
-    unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), environment_type, env_config)
+    unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), target.type, target.config)
     if unreferenced:
         log_warning(f"{len(unreferenced)} SSM secret(s) not referenced in deploy.toml:")
         for path in unreferenced:
@@ -214,9 +212,7 @@ def check_ecs_cluster(env_config: dict) -> None:
 
 def run_preflight_checks(
     deploy_config: DeployConfig,
-    env_config: dict,
-    environment: str,
-    environment_type: str,
+    target: EnvironmentTarget,
     project_dir: Path,
     options: PreflightOptions,
 ) -> None:
@@ -227,9 +223,7 @@ def run_preflight_checks(
 
     Args:
         deploy_config: Parsed deploy.toml configuration.
-        env_config: Resolved environment configuration dict.
-        environment: Environment name (e.g., "myapp-staging").
-        environment_type: Environment type ("staging" or "production").
+        target: The environment being deployed to.
         project_dir: Path to project directory (for audit check).
         options: Options controlling which checks to run.
 
@@ -237,10 +231,10 @@ def run_preflight_checks(
         PreflightError: If any check fails.
     """
     # Always validate environment config
-    check_environment_config(env_config)
+    check_environment_config(target.config)
 
     # Resource modules (database, cache, storage, cdn, autoscale, etc.)
-    check_modules(deploy_config, env_config)
+    check_modules(deploy_config, target.config)
 
     # Audit (deploy.toml vs docker-compose.yml)
     if not options.skip_audit:
@@ -248,12 +242,12 @@ def run_preflight_checks(
 
     # ECR repositories
     if not options.skip_ecr_check:
-        check_ecr_repositories(deploy_config, env_config, environment)
+        check_ecr_repositories(deploy_config, target)
 
     # SSM secrets
     if not options.skip_secrets_check:
-        check_ssm_secrets(deploy_config, env_config, environment, environment_type)
+        check_ssm_secrets(deploy_config, target)
 
     # ECS cluster
     if not options.skip_cluster_check:
-        check_ecs_cluster(env_config)
+        check_ecs_cluster(target.config)

@@ -6,6 +6,7 @@ import pytest
 
 from deployer.config import parse_deploy_config
 from deployer.core.ssm_secrets import check_secrets_drift
+from deployer.deploy.context import EnvironmentTarget
 from deployer.deploy.preflight import (
     PreflightError,
     PreflightOptions,
@@ -32,6 +33,13 @@ def make_env_config(**overrides):
     }
     config.update(overrides)
     return config
+
+
+def make_target(env_config=None, name="test-staging", env_type="staging"):
+    """Wrap an env config in the EnvironmentTarget the checks now take."""
+    return EnvironmentTarget(
+        name, env_type, make_env_config() if env_config is None else env_config
+    )
 
 
 class TestCheckEnvironmentConfig:
@@ -80,7 +88,7 @@ context = "."
         deploy_config = parse_deploy_config(deploy_toml)
 
         # Should not raise
-        check_ecr_repositories(deploy_config, config, "test-staging")
+        check_ecr_repositories(deploy_config, make_target(config))
 
     @patch("deployer.deploy.preflight.boto3")
     @patch("deployer.deploy.preflight.validate_ecr_repositories")
@@ -99,7 +107,7 @@ context = "."
         deploy_config = parse_deploy_config(deploy_toml)
 
         with pytest.raises(PreflightError):
-            check_ecr_repositories(deploy_config, make_env_config(), "test-staging")
+            check_ecr_repositories(deploy_config, make_target())
 
     @patch("deployer.deploy.preflight.boto3")
     @patch("deployer.deploy.preflight.validate_ecr_repositories")
@@ -118,7 +126,7 @@ context = "."
         deploy_config = parse_deploy_config(deploy_toml)
 
         # Should not raise
-        check_ecr_repositories(deploy_config, make_env_config(), "test-staging")
+        check_ecr_repositories(deploy_config, make_target())
 
 
 class TestCheckEcsCluster:
@@ -185,9 +193,7 @@ class TestRunPreflightChecks:
         with pytest.raises(PreflightError, match="Missing required field"):
             run_preflight_checks(
                 deploy_config=deploy_config,
-                env_config={},  # Missing infrastructure section
-                environment="test-staging",
-                environment_type="staging",
+                target=make_target({}),  # Missing infrastructure section
                 project_dir=tmp_path,
                 options=PreflightOptions(),
             )
@@ -213,9 +219,7 @@ class TestRunPreflightChecks:
 
         run_preflight_checks(
             deploy_config=deploy_config,
-            env_config=make_env_config(),
-            environment="test-staging",
-            environment_type="staging",
+            target=make_target(),
             project_dir=tmp_path,
             options=options,
         )

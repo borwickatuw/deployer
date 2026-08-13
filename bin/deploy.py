@@ -28,6 +28,7 @@ from deployer.core.config import (
     get_environment_type,
     load_environment_config,
 )
+from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.deployer import common_deploy_options
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.deploy.preflight import PreflightOptions
@@ -166,18 +167,14 @@ def deploy(  # noqa: C901 — main deploy orchestration
     sys.exit(
         run_deploy_pipeline(
             config_path,
-            env_config,
-            environment,
-            environment_type,
-            options=PreflightOptions(
+            EnvironmentTarget(environment, environment_type, env_config),
+            preflight=PreflightOptions(
                 skip_ecr_check=skip_ecr_check,
                 skip_secrets_check=skip_secrets_check,
                 skip_cluster_check=skip_cluster_check,
                 skip_audit=ignore_audit,
             ),
-            dry_run=dry_run,
-            force=force,
-            force_build=force_build,
+            options=DeployOptions(dry_run=dry_run, force=force, force_build=force_build),
             timer=timer,
             timing_output=Path(timing_output) if timing_output else None,
             ecr_hint=True,

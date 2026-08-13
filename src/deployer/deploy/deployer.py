@@ -13,7 +13,7 @@ import boto3
 import click
 
 from deployer.config import parse_deploy_config
-from deployer.deploy.context import DeploymentContext
+from deployer.deploy.context import DeploymentContext, DeployOptions
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
 from deployer.deploy.service import (
@@ -43,17 +43,13 @@ class Deployer:
         config_path: str,
         environment: str,
         env_config: dict,
-        dry_run: bool = False,
-        force: bool = False,
-        force_build: bool = False,
+        options: DeployOptions | None = None,
         timer: DeploymentTimer | None = None,
     ):
         self.config_path = Path(config_path).resolve()
         self.environment = environment
         self.env_config = env_config  # Store for module system
-        self.dry_run = dry_run
-        self.force = force
-        self.force_build = force_build
+        self.options = options or DeployOptions()
         self.timer = timer
 
         # Load configuration using typed dataclass
@@ -162,7 +158,7 @@ class Deployer:
             region=self.region,
             account_id=self.account_id,
             env_config=self.env_config,
-            dry_run=self.dry_run,
+            dry_run=self.options.dry_run,
         )
 
     def print_service_config(self) -> None:
@@ -238,7 +234,7 @@ class Deployer:
         print(f"  Account: {self.account_id}")
         print(f"  Region:  {self.region}")
         print(f"  Cluster: {self.cluster_name}")
-        if self.dry_run:
+        if self.options.dry_run:
             print(f"  Mode:    {Colors.YELLOW}DRY RUN{Colors.NC}")
         print()
 
@@ -247,7 +243,7 @@ class Deployer:
         if infra.warnings:
             for warning in infra.warnings:
                 log_warning(warning)
-            if infra.is_critical and not self.force:
+            if infra.is_critical and not self.options.force:
                 print_with_advice(
                     "Cannot deploy: critical infrastructure is unavailable.",
                     "  The database must be running for migrations to succeed.",
@@ -271,9 +267,9 @@ class Deployer:
         # Step 1: ECR login
         if self.timer:
             with self.timer.step("ecr_login"):
-                ecr_login(self.ecr, self.dry_run)
+                ecr_login(self.ecr, self.options.dry_run)
         else:
-            ecr_login(self.ecr, self.dry_run)
+            ecr_login(self.ecr, self.options.dry_run)
         print()
 
         # Step 2: Build and push images
@@ -286,9 +282,9 @@ class Deployer:
                     account_id=self.account_id,
                     region=self.region,
                     environment=self.environment,
-                    dry_run=self.dry_run,
+                    dry_run=self.options.dry_run,
                     ecr_client=self.ecr,
-                    force_build=self.force_build,
+                    force_build=self.options.force_build,
                 )
         else:
             image_uris = build_and_push_images(
@@ -298,9 +294,9 @@ class Deployer:
                 account_id=self.account_id,
                 region=self.region,
                 environment=self.environment,
-                dry_run=self.dry_run,
+                dry_run=self.options.dry_run,
                 ecr_client=self.ecr,
-                force_build=self.force_build,
+                force_build=self.options.force_build,
             )
         print()
 
@@ -311,14 +307,14 @@ class Deployer:
                     config=self.config,
                     env_config=self.env_config,
                     region=self.region,
-                    dry_run=self.dry_run,
+                    dry_run=self.options.dry_run,
                 )
         else:
             create_database_extensions(
                 config=self.config,
                 env_config=self.env_config,
                 region=self.region,
-                dry_run=self.dry_run,
+                dry_run=self.options.dry_run,
             )
 
         # Step 4: Start migrations (non-blocking)

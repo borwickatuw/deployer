@@ -11,6 +11,7 @@ That shared half lives here.
 from pathlib import Path
 
 from deployer.config import parse_deploy_config
+from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.deployer import Deployer, handle_push_error
 from deployer.deploy.preflight import PreflightError, PreflightOptions, run_preflight_checks
 from deployer.timing import DeploymentTimer
@@ -22,14 +23,10 @@ HEALTH_FAILURE_EXIT_CODE = 2
 
 def run_deploy_pipeline(
     deploy_toml_path: Path,
-    env_config: dict,
-    environment: str,
-    environment_type: str,
+    target: EnvironmentTarget,
     *,
-    options: PreflightOptions,
-    dry_run: bool = False,
-    force: bool = False,
-    force_build: bool = False,
+    preflight: PreflightOptions,
+    options: DeployOptions,
     timer: DeploymentTimer | None = None,
     timing_output: Path | None = None,
     ecr_hint: bool = False,
@@ -38,14 +35,10 @@ def run_deploy_pipeline(
 
     Args:
         deploy_toml_path: Path to the application's deploy.toml.
-        env_config: Resolved environment config (from config.toml or a
-            resolved-config JSON).
-        environment: Environment name, e.g. "myapp-staging".
-        environment_type: Environment type, e.g. "staging".
-        options: Which pre-flight checks to skip.
-        dry_run: Show what would happen without changing anything.
-        force: Deploy even when nothing changed.
-        force_build: Rebuild images even when nothing changed.
+        target: The environment being deployed to — name, type and resolved
+            config (from config.toml or a resolved-config JSON).
+        preflight: Which pre-flight checks to skip.
+        options: How the deploy itself behaves (dry run, force, force build).
         timer: Collects per-stage timings; its report is printed when present.
         timing_output: Where to also save the timing report as JSON.
         ecr_hint: Add the "verify ECR repository access" hint to push errors.
@@ -67,11 +60,9 @@ def run_deploy_pipeline(
     try:
         run_preflight_checks(
             deploy_config=deploy_config,
-            env_config=env_config,
-            environment=environment,
-            environment_type=environment_type,
+            target=target,
             project_dir=deploy_toml_path.parent,
-            options=options,
+            options=preflight,
         )
     except PreflightError as e:
         log_error(str(e))
@@ -80,11 +71,9 @@ def run_deploy_pipeline(
     try:
         deployer = Deployer(
             config_path=str(deploy_toml_path),
-            environment=environment_type,
-            env_config=env_config,
-            dry_run=dry_run,
-            force=force,
-            force_build=force_build,
+            environment=target.type,
+            env_config=target.config,
+            options=options,
             timer=timer,
         )
     except ValueError as e:

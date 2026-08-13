@@ -5,11 +5,13 @@ from pathlib import Path
 import pytest
 
 from deployer.deploy import pipeline
+from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.deploy.preflight import PreflightError, PreflightOptions
 from deployer.timing import DeploymentTimer
 
 ENV_CONFIG = {"infrastructure": {"cluster_name": "myapp-staging-cluster"}}
+TARGET = EnvironmentTarget("myapp-staging", "staging", ENV_CONFIG)
 
 
 class StubDeployer:
@@ -49,14 +51,9 @@ def stub_pipeline(monkeypatch, tmp_path):
 
 
 def _run(deploy_toml: Path, **overrides):
-    kwargs = {
-        "options": PreflightOptions(),
-        "dry_run": False,
-        "force": False,
-        "force_build": False,
-    }
+    kwargs = {"preflight": PreflightOptions(), "options": DeployOptions()}
     kwargs.update(overrides)
-    return run_deploy_pipeline(deploy_toml, ENV_CONFIG, "myapp-staging", "staging", **kwargs)
+    return run_deploy_pipeline(deploy_toml, TARGET, **kwargs)
 
 
 class TestSuccessPath:
@@ -70,10 +67,13 @@ class TestSuccessPath:
         assert _run(stub_pipeline) == pipeline.HEALTH_FAILURE_EXIT_CODE == 2
 
     def test_deploy_flags_are_forwarded(self, stub_pipeline):
-        _run(stub_pipeline, dry_run=True, force=True, force_build=True)
-        assert StubDeployer.last_kwargs["dry_run"] is True
-        assert StubDeployer.last_kwargs["force"] is True
-        assert StubDeployer.last_kwargs["force_build"] is True
+        options = DeployOptions(dry_run=True, force=True, force_build=True)
+        _run(stub_pipeline, options=options)
+        assert StubDeployer.last_kwargs["options"] is options
+
+    def test_target_is_unpacked_for_the_deployer(self, stub_pipeline):
+        """Deployer takes the environment *type* and the resolved config."""
+        _run(stub_pipeline)
         assert StubDeployer.last_kwargs["environment"] == "staging"
         assert StubDeployer.last_kwargs["env_config"] is ENV_CONFIG
 
