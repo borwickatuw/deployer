@@ -37,6 +37,7 @@ from .links import (
     unlink_deploy_toml,
 )
 from .logging import (
+    advice_block,
     is_verbose,
     log,
     log_debug,
@@ -49,6 +50,7 @@ from .logging import (
     log_success,
     log_warning,
     log_warning_stderr,
+    print_with_advice,
     set_verbose,
 )
 from .subprocess import run_command
@@ -58,6 +60,7 @@ __all__ = [
     "Colors",
     "EnvironmentConfigError",
     "EnvironmentInfrastructure",
+    "advice_block",
     "configure_aws_for_operation",
     "configure_aws_profile",
     "format_iso",
@@ -88,6 +91,7 @@ __all__ = [
     "log_success",
     "log_warning",
     "log_warning_stderr",
+    "print_with_advice",
     "prompt_or_exit",
     "require_environment",
     "require_validated_environment",

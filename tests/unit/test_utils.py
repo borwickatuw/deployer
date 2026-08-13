@@ -2,6 +2,7 @@
 
 from deployer.utils import (
     Colors,
+    advice_block,
     format_timestamp,
     log,
     log_error,
@@ -11,6 +12,7 @@ from deployer.utils import (
     log_status,
     log_success,
     log_warning,
+    print_with_advice,
     run_command,
 )
 
@@ -92,6 +94,76 @@ class TestLogging:
         captured = capsys.readouterr()
         assert "fyi" in captured.out
         assert "ℹ" in captured.out
+
+
+class TestAdviceBlock:
+    """Tests for advice_block composition."""
+
+    def test_heading_items_and_advice(self):
+        """Items are bulleted and advice follows a blank line."""
+        message = advice_block(
+            "Audit found 2 issue(s):",
+            ["first", "second"],
+            ["To fix: edit deploy.toml", "        or use --ignore-audit"],
+            bullet="  - ",
+        )
+        assert message == (
+            "Audit found 2 issue(s):\n"
+            "  - first\n"
+            "  - second\n"
+            "\n"
+            "To fix: edit deploy.toml\n"
+            "        or use --ignore-audit"
+        )
+
+    def test_default_bullet(self):
+        """The default bullet is a four-space indent."""
+        assert advice_block("Heading:", ["one"]) == "Heading:\n    one"
+
+    def test_no_advice_means_no_blank_line(self):
+        """A block with no advice ends at its last item."""
+        assert advice_block("Heading:", ["one", "two"]) == "Heading:\n    one\n    two"
+
+    def test_heading_only(self):
+        """A heading with neither items nor advice is just the heading."""
+        assert advice_block("Heading:") == "Heading:"
+
+    def test_accepts_generators(self):
+        """Items and advice may be any iterable, consumed once."""
+        message = advice_block(
+            "Heading:",
+            (s for s in ["one"]),
+            (s for s in ["advice"]),
+        )
+        assert message == "Heading:\n    one\n\nadvice"
+
+
+class TestPrintWithAdvice:
+    """Tests for print_with_advice terminal output."""
+
+    def test_message_and_advice(self, capsys):
+        """The message is logged as an error, advice printed verbatim."""
+        print_with_advice("It broke", "  Try again.", "  Then check the network.")
+        captured = capsys.readouterr()
+        assert captured.out == (
+            "\n"
+            f"  {Colors.RED}✗{Colors.NC} It broke\n"
+            "\n"
+            "  Try again.\n"
+            "  Then check the network.\n"
+        )
+
+    def test_empty_advice_line_is_a_separator(self, capsys):
+        """An empty advice string prints a blank separator line."""
+        print_with_advice("It broke", "  first", "", "  second")
+        captured = capsys.readouterr()
+        assert captured.out.endswith("  first\n\n  second\n")
+
+    def test_no_advice(self, capsys):
+        """With no advice, only the framing blank lines are printed."""
+        print_with_advice("It broke")
+        captured = capsys.readouterr()
+        assert captured.out == f"\n  {Colors.RED}✗{Colors.NC} It broke\n\n"
 
 
 class TestRunCommand:

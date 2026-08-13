@@ -5,6 +5,7 @@
 """Logging utilities for formatted console output."""
 
 import sys
+from collections.abc import Iterable
 
 from .colors import Colors
 
@@ -90,3 +91,54 @@ def log_warning_stderr(msg: str) -> None:
 def log_info(msg: str) -> None:
     """Print an info message with cyan indicator."""
     print(f"  {Colors.CYAN}ℹ{Colors.NC} {msg}")
+
+
+# An error worth reporting is an error worth telling the reader how to fix.
+# These two are the repo's vocabulary for "message, then what to do about it":
+# advice_block() composes a string to hand to an exception, print_with_advice()
+# writes to the terminal. Both keep the shape identical across call sites.
+
+
+def advice_block(
+    heading: str,
+    items: Iterable[str] = (),
+    advice: Iterable[str] = (),
+    *,
+    bullet: str = "    ",
+) -> str:
+    """Compose "heading / bulleted items / blank line / advice" as one string.
+
+    Args:
+        heading: First line, e.g. "Audit found 3 issue(s):".
+        items: Detail lines, each prefixed with `bullet`.
+        advice: Remediation lines, emitted verbatim after a blank line.
+            When empty, no blank line is emitted either.
+        bullet: Prefix applied to each item.
+
+    Returns:
+        The composed message, without a trailing newline.
+    """
+    lines = [heading]
+    lines.extend(f"{bullet}{item}" for item in items)
+
+    advice_lines = list(advice)
+    if advice_lines:
+        lines.append("")
+        lines.extend(advice_lines)
+
+    return "\n".join(lines)
+
+
+def print_with_advice(message: str, *advice: str) -> None:
+    """Print a blank line, an error message, a blank line, then advice lines.
+
+    Args:
+        message: The error message, printed via log_error().
+        advice: Remediation lines, printed verbatim (already indented by the
+            caller). An empty string prints a blank separator line.
+    """
+    print()
+    log_error(message)
+    print()
+    for line in advice:
+        print(line)
