@@ -149,20 +149,12 @@ def resolve_service_url(
     Returns:
         Full URL string, or None if service doesn't have a path_pattern.
     """
-    if not domain_name:
-        return None
-
-    service_config = services_config.get(service_name, {})
-    path_pattern = service_config.get("path_pattern")
-
-    if not path_pattern:
+    path_pattern = services_config.get(service_name, {}).get("path_pattern")
+    if not domain_name or not path_pattern:
         return None
 
     # Convert path pattern to URL path: "/api/*" -> "/api"
-    # Remove trailing /* or *
-    path = path_pattern.rstrip("*").rstrip("/")
-
-    return f"https://{domain_name}{path}"
+    return f"https://{domain_name}{path_pattern.rstrip('*').rstrip('/')}"
 
 
 def resolve_internal_service_url(
@@ -186,13 +178,8 @@ def resolve_internal_service_url(
     Returns:
         Full internal URL string, or None if service discovery not configured.
     """
-    if not service_discovery_namespace:
-        return None
-
-    service_config = services_config.get(service_name, {})
-    port = service_config.get("port")
-
-    if not port:
+    port = services_config.get(service_name, {}).get("port")
+    if not service_discovery_namespace or not port:
         return None
 
     return f"http://{service_name}.{service_discovery_namespace}:{port}"

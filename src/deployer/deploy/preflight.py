@@ -96,6 +96,29 @@ def check_audit(
         print()
 
 
+def _infrastructure_value(env_config: dict, key: str, check_name: str) -> str | None:
+    """Read an [infrastructure] key, warning that the check is skipped if absent.
+
+    Args:
+        env_config: Resolved environment configuration dict.
+        key: The [infrastructure] key to read, e.g. "ecr_prefix".
+        check_name: How to name the skipped check in the warning, e.g. "ECR".
+
+    Returns:
+        The configured value, or None if the key is absent — in which case the
+        caller has already been told the check is being skipped.
+    """
+    value = env_config.get("infrastructure", {}).get(key)
+    log_debug(f"{key}: {value}")
+
+    if not value:
+        log_warning(f"{key} not found in config, skipping {check_name} check")
+        print()
+        return None
+
+    return value
+
+
 def check_ecr_repositories(
     deploy_config: DeployConfig,
     env_config: dict,
@@ -107,18 +130,13 @@ def check_ecr_repositories(
         PreflightError: If ECR repositories are missing.
     """
     log("Checking ECR repositories...")
-    ecr_client = boto3.client("ecr")
-    ecr_prefix = env_config.get("infrastructure", {}).get("ecr_prefix")
-    log_debug(f"ECR prefix: {ecr_prefix}")
-
+    ecr_prefix = _infrastructure_value(env_config, "ecr_prefix", "ECR")
     if not ecr_prefix:
-        log_warning("ecr_prefix not found in config, skipping ECR check")
-        print()
         return
 
     images = deploy_config.images
     log_debug(f"Images to check: {list(images.keys())}")
-    missing_repos = validate_ecr_repositories(ecr_client, deploy_config, ecr_prefix)
+    missing_repos = validate_ecr_repositories(boto3.client("ecr"), deploy_config, ecr_prefix)
 
     if missing_repos:
         raise PreflightError(format_missing_ecr_error(missing_repos, environment))
@@ -181,17 +199,12 @@ def check_ecs_cluster(env_config: dict) -> None:
         PreflightError: If the ECS cluster doesn't exist or isn't active.
     """
     log("Checking ECS cluster...")
-    ecs_client = boto3.client("ecs")
-    cluster_name = env_config.get("infrastructure", {}).get("cluster_name")
-    log_debug(f"Cluster name: {cluster_name}")
-
+    cluster_name = _infrastructure_value(env_config, "cluster_name", "cluster")
     if not cluster_name:
-        log_warning("cluster_name not found in config, skipping cluster check")
-        print()
         return
 
     log_debug(f"Calling describe_clusters for: {cluster_name}")
-    exists, error = validate_ecs_cluster(ecs_client, cluster_name)
+    exists, error = validate_ecs_cluster(boto3.client("ecs"), cluster_name)
     if not exists:
         raise PreflightError(error)
 
