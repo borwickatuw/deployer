@@ -35,6 +35,52 @@ class InfraStatus:
     is_critical: bool = False
 
 
+def _build_infra_config(env_config: dict) -> dict:
+    """Assemble the ECS infrastructure config from a resolved environment config.
+
+    Args:
+        env_config: Resolved environment configuration (config.toml).
+
+    Returns:
+        Flat infrastructure/database/scheduler settings consumed by the
+        task-definition and service layers.
+    """
+    infra = env_config.get("infrastructure", {})
+    database = env_config.get("database", {})
+    deployment = env_config.get("deployment", {})
+    scheduler = env_config.get("scheduler", {})
+
+    return {
+        "execution_role_arn": infra.get("execution_role_arn"),
+        "task_role_arn": infra.get("task_role_arn"),
+        "security_group_id": infra.get("security_group_id"),
+        "subnet_ids": infra.get("private_subnet_ids", []),
+        "target_group_arn": infra.get("target_group_arn"),
+        "service_target_groups": infra.get("service_target_groups", {}),
+        "service_discovery_registries": infra.get("service_discovery_registries", {}),
+        # Database config - supports both URL (legacy) and component-based (Secrets Manager)
+        "database_url": database.get("url"),
+        "db_host": database.get("host"),
+        "db_port": database.get("port"),
+        "db_name": database.get("name"),
+        "db_password_secret_arn": database.get("password_secret_arn"),
+        "db_username_secret_arn": database.get("username_secret_arn"),
+        "redis_url": env_config.get("cache", {}).get("url"),
+        "s3_media_bucket": env_config.get("storage", {}).get("media_bucket"),
+        "rds_instance_id": infra.get("rds_instance_id"),
+        "scheduler": {
+            "enabled": scheduler.get("enabled", False),
+            "description": scheduler.get("description"),
+        },
+        "deployment_config": {
+            "minimum_healthy_percent": deployment.get("minimum_healthy_percent", 100),
+            "maximum_percent": deployment.get("maximum_percent", 200),
+            "circuit_breaker_enabled": deployment.get("circuit_breaker_enabled", False),
+            "circuit_breaker_rollback": deployment.get("circuit_breaker_rollback", True),
+        },
+    }
+
+
 class Deployer:
     """Orchestrates the deployment pipeline."""
 
@@ -65,17 +111,14 @@ class Deployer:
         # Get raw dict for backward compatibility with existing code
         self.config = self.deploy_config.get_raw_dict()
 
-        self.app_name = self.deploy_config.application.name
+        application = self.deploy_config.application
+        self.app_name = application.name
         # Resolve source_dir relative to the config file's location
-        source_path = self.deploy_config.application.source
-        self.source_dir = (self.config_path.parent / source_path).resolve()
+        self.source_dir = (self.config_path.parent / application.source).resolve()
 
         # Extract sections from resolved environment config
         infra = env_config.get("infrastructure", {})
         services = env_config.get("services", {})
-        database = env_config.get("database", {})
-        deployment = env_config.get("deployment", {})
-        scheduler = env_config.get("scheduler", {})
 
         # ECR prefix from environment config (required)
         self.ecr_prefix = infra.get("ecr_prefix")
@@ -91,35 +134,7 @@ class Deployer:
         self.scaling_config = services.get("scaling", {})
 
         # Infrastructure config for ECS deployment
-        self.infra_config = {
-            "execution_role_arn": infra.get("execution_role_arn"),
-            "task_role_arn": infra.get("task_role_arn"),
-            "security_group_id": infra.get("security_group_id"),
-            "subnet_ids": infra.get("private_subnet_ids", []),
-            "target_group_arn": infra.get("target_group_arn"),
-            "service_target_groups": infra.get("service_target_groups", {}),
-            "service_discovery_registries": infra.get("service_discovery_registries", {}),
-            # Database config - supports both URL (legacy) and component-based (Secrets Manager)
-            "database_url": database.get("url"),
-            "db_host": database.get("host"),
-            "db_port": database.get("port"),
-            "db_name": database.get("name"),
-            "db_password_secret_arn": database.get("password_secret_arn"),
-            "db_username_secret_arn": database.get("username_secret_arn"),
-            "redis_url": env_config.get("cache", {}).get("url"),
-            "s3_media_bucket": env_config.get("storage", {}).get("media_bucket"),
-            "rds_instance_id": infra.get("rds_instance_id"),
-            "scheduler": {
-                "enabled": scheduler.get("enabled", False),
-                "description": scheduler.get("description"),
-            },
-            "deployment_config": {
-                "minimum_healthy_percent": deployment.get("minimum_healthy_percent", 100),
-                "maximum_percent": deployment.get("maximum_percent", 200),
-                "circuit_breaker_enabled": deployment.get("circuit_breaker_enabled", False),
-                "circuit_breaker_rollback": deployment.get("circuit_breaker_rollback", True),
-            },
-        }
+        self.infra_config = _build_infra_config(env_config)
 
         # AWS clients
         self.ecs = boto3.client("ecs")
