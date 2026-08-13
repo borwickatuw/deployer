@@ -114,7 +114,7 @@ branch = true
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 54
+fail_under = 56
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
