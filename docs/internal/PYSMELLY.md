@@ -30,7 +30,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **52** (measured at the Phase 53e-4 commit `9c95d79`; was 53 at
+Standing total: **47** (measured at the Phase 53e-5 commit `64e3e18`, which
+closes the 53e arc; was 49 at `2b057ae` and `961be51`, 52 at `9c95d79`, 53 at
 `d75d24e` and `57bc874`, 56 at
 `a304fa1`, 57 at `9903e2b`, 60 at `805d516`,
 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
@@ -1190,6 +1191,329 @@ commit. The one mid-draft mint (`foo-equals-foo` on the `ImageBuildSpec`
 constructor) was fixed rather than recorded — see above — as were the four
 categories designed around before the extraction shape was chosen.
 
+### 53e-5 — `deploy/service.py` (2026-08-13)
+
+**5 targets** at `9c95d79` (repo total 52), the scope 53e-1's split table
+reserved and the last slice of the arc: all four remaining `long-function`
+findings — `create_service():235` (107L), `deploy_services():344` (110L),
+`start_migrations():456` (100L), `_wait_for_service_stable():810` (118L) — plus
+`arrow-code:344`. **All 5 cleared, none left standing.** Nothing minted. The
+repo total went **52 → 47**, and `long-function` is now **empty as a category**.
+
+Five commits: `b42be87` + `fb561e3` characterization tests (0 findings cleared),
+`2b057ae` `create_service` + `deploy_services` together (52 → 49), `961be51`
+`start_migrations` (49 → 49), `64e3e18` `_wait_for_service_stable` plus a
+dead-code deletion (49 → 47).
+
+#### 53e-5a — characterization tests first, in two commits (`b42be87`, `fb561e3`)
+
+`service.py` was 1003 lines at **11%** — the least-covered file in the split
+table and the only one that needed the pin split across two commits.
+
+| Commit    | File                              | Pins    | Effect                                        |
+| --------- | --------------------------------- | ------- | --------------------------------------------- |
+| `b42be87` | `tests/unit/test_deploy_service.py`      | **110** | the deploy path; `service.py` 11% → 44%       |
+| `fb561e3` | `tests/unit/test_deploy_service_wait.py` | **154** | the migration + wait path; floor **59 → 65** |
+
+**264 pins total**, and with both files `service.py` reaches **99%** — 375
+statements, **0 missing**, 124 branches, 1 partial. Total coverage 59.45% →
+**65.73%**. 1075 → 1339 tests. pysmelly unchanged at 52 across both commits;
+no production line moved.
+
+Sixth subphase running the pin-first discipline (53d-2a, 53d-2b, 53e-1, 53e-3,
+53e-4, now this).
+
+**Two test-environment findings worth keeping**, both discovered the expensive
+way:
+
+- **moto cannot be used for `ecs.run_task` here.** Its
+  `_calculate_task_resource_requirements` sums the **per-container** `memory`
+  key, which `build_task_definition` never sets — this repo puts CPU and memory
+  at task level only. Every `run_task` against moto fails on a resource
+  calculation that has nothing to do with the code under test.
+- **moto does not echo `deploymentConfiguration`, `capacityProviderStrategy` or
+  `healthCheckGracePeriodSeconds` back from `CreateService`**, and does not model
+  `availabilityZoneRebalancing` at all. Any pin asserting on those parameters has
+  to hold the boto3 client seam, not a moto backend.
+
+#### 53e-5b — `create_service` + `deploy_services`, one commit by necessity (`2b057ae`)
+
+**`create_service` 107L → 64L; `deploy_services` 110L → 73L and nesting depth
+5 → 3.** One extraction cleared two findings at once: `_update_service` took
+`deploy_services` under both the `long-function` and the `arrow-code` bar.
+pysmelly **52 → 49** (`long-function` 4 → 2, `arrow-code` 3 → 2, nothing else).
+
+**This is the arc's one duplication shape; the other three targets were linear.**
+And the duplication was **between** the two functions, not inside either. Three
+shapes, all invisible to `duplicate-blocks` because **each is a single
+multi-line assignment** and so sits below the check's 5-statement bar:
+
+| Shape                        | Sites (pre-commit) | Varies only in       |
+| ---------------------------- | ------------------ | -------------------- |
+| `deploymentConfiguration` base | 272-275 / 414-417 | the dict key (`serviceName` vs `service`) |
+| circuit-breaker injection    | 289-293 / 421-425  | the target variable name |
+| `serviceRegistries` injection | 319-326 / 430-439 | line wrapping        |
+
+That is why the two functions **had to move in one commit**. Splitting them
+across two would have written `_deployment_configuration` and
+`_service_registries` twice — the helpers serve both call paths.
+
+##### The staged measurement, again
+
+| Function          | Stage                      | Lines   | Flagged? |
+| ----------------- | -------------------------- | ------- | -------- |
+| `create_service`  | baseline                   | 107     | yes      |
+|                   | `_require_network_config`  | **101** | **yes**  |
+|                   | `_load_balancer_params`    | 82      | no       |
+|                   | `_service_registries`      | 74      | no       |
+|                   | `_deployment_configuration` | 64     | no       |
+| `deploy_services` | baseline                   | 110     | yes      |
+|                   | `_update_service`          | 73      | no       |
+
+The obvious first extraction left `create_service` at **101** — one line over
+the bar, with the work apparently finished. `_load_balancer_params` is what
+actually cleared it.
+
+#### 53e-5c — `start_migrations` (`961be51`)
+
+**100L → 84L.** `long-function` 2 → 1; pysmelly stays at 49 (the finding it
+cleared is one of the two counted in the 52 → 49 → 47 span; see the per-category
+delta below). Two helpers: `_migration_network_config` (the
+`describe_services` / `networkConfiguration` block, 13L → 3) and
+`_resolve_migration_image` (service → image name → ECR URI lookup, 10L → 4).
+
+The function sat at **exactly 100** — one line over. Recorded because the trap
+is real: reflowing a signature or dropping a comment clears the finding at 99
+and leaves a 99-line function behind. The smallest honest extraction was worth
+16 lines, not 1.
+
+#### 53e-5d — `_wait_for_service_stable`, and a deletion (`64e3e18`)
+
+**118L → 75L**, the last `long-function` in the repo. pysmelly **49 → 47**.
+
+| Stage                     | Lines   | Flagged? |
+| ------------------------- | ------- | -------- |
+| baseline                  | 118     | yes      |
+| `_describe_service_or_raise` | **102** | **yes** |
+| `_raise_task_failure`     | 85      | no       |
+| `_track_no_progress`      | 75      | no       |
+
+`_describe_service_or_raise` also retired the two locals it was the only reader
+of (`ecs_client`, `cluster_name`). And once again the first extraction was not
+enough: **102 is still flagged**, so `_raise_task_failure` was load-bearing, not
+polish.
+
+##### The obvious first extraction was insufficient in all four decompositions
+
+This is the arc's headline result and the reason to record it as a rule rather
+than an anecdote. Across the four functions decomposed in 53e-5 and the prior
+slice, the state after the first extraction was:
+
+| Function                   | After one extraction | Bar | Cleared? |
+| -------------------------- | -------------------- | --- | -------- |
+| `create_service`           | 101                  | 100 | no       |
+| `_wait_for_service_stable` | 102                  | 100 | no       |
+| `build_and_push_images` (53e-4b) | 107            | 100 | no       |
+| `deploy()` (53e-3b)        | 114                  | 100 | no       |
+
+**Four for four. This is the base rate, not an edge case.** A decomposition plan
+that stops at one extraction should be assumed wrong until measured. 53e-1 made
+the same error in the other direction (114L → **118L**, an adoption that grew
+the function). Re-measure at every stage, not at the end.
+
+##### Coverage used as proof, not as a score
+
+5d deleted an inner block inside the failure-threshold arm:
+
+```
+try:
+    _check_for_fatal_errors(events, service_name)
+except DeploymentError:
+    raise
+```
+
+The **coverage report is the evidence**, and it is the cleanest form this arc
+found. Before the commit, those two statements were the file's **only uncovered
+lines** — 264 pins exercising every other statement could not reach them. After
+deletion, `service.py` has **zero uncovered statements**. A test suite that
+cannot reach a line is either an incomplete suite or a dead line, and the
+coverage delta is what distinguishes the two.
+
+A validator independently confirmed unreachability from the code, on four legs:
+the predecessor `_check_for_fatal_errors` call is **unconditional in the same
+loop iteration**; `events` is **bound once and never rebound** between the two
+calls; `_check_for_fatal_errors` is **pure** (no state, no I/O); and
+`FATAL_ERROR_PATTERNS` **has no writer anywhere in the repo**. The second call
+therefore cannot raise if the first did not, and if the first did the arm is
+never reached.
+
+#### The mint defence became a measurement
+
+53e-3c introduced reading pysmelly's source before choosing an extraction shape.
+**53e-5 went one step further and ran the checker's own internals on hypothetical
+code.** Both 5b and 5c/5d imported pysmelly's `_extract_all_signatures`
+(`checks/structure.py:447`), ran it over the repo, **injected the signatures they
+were about to write**, and ran `_find_param_clumps` (`:498`) — **before writing a
+line of production code**. Result both times: **17 raw clumps before, 17 after.**
+
+This is the technique to reuse. It converts "I think this signature is safe" into
+a measurement, and it costs one throwaway script.
+
+#### The `_`-prefix rule is a mint defence, not cosmetics
+
+`build_function_index` (`checks/helpers.py`, the skip at `:103-104` in pysmelly
+**3.2.1.dev15**) drops any function whose name starts with `_` or `test`, plus
+decorated functions and methods. **Eight checks cannot fire on a private
+helper**: the seven that reach the repo through `ctx.function_index` —
+`dead-code`, `single-call-site`, `internal-only`, `constant-args`,
+`return-none-instead-of-raise`, `pass-through-params`,
+`inconsistent-error-handling` — plus `trivial-wrappers`, which carries its own
+`startswith("_")` skip at `checks/patterns.py:634`.
+
+Every helper in 5b, 5c and 5d is `_`-prefixed **by design**. That is what let
+three commits add ten functions to a file under active pysmelly pressure and
+mint nothing.
+
+The two cross-file design checks that **do** still see private functions are
+`param-clumps` (`checks/structure.py:381`) and `dict-as-dataclass`
+(`callers.py:1263`, via `_collect_dict_returning_functions` at `:1210`), so those
+are the two that had to be held inside budget by hand: `_update_service` puts
+`(ctx, service_name, task_def_arn)` into a **second** signature only — a third
+would mint a clump — and no helper returns a dict literal with 4+ string keys.
+
+**Two corrections to the 5b commit message's version of this rule**, both
+re-measured at `64e3e18` against pysmelly 3.2.1.dev15:
+
+- It lists `vestigial-params` among the eight. **`check_vestigial_params`
+  (`callers.py:1149`) walks `ctx.all_trees` with no name filter and *can* fire on
+  a private helper.** Its neighbour `unused-defaults` (`:70`) is the same. A `_`
+  prefix does not buy immunity from either.
+- It omits `dead-code`, which *is* a `ctx.function_index` consumer
+  (`callers.py:174`) and is blocked. The count of eight happens to be right; the
+  membership was not.
+
+#### Independent validation: ACCEPT, no behavioural defect
+
+Over all five commits. Reproduced here at `64e3e18` rather than taken on trust:
+
+- **264/264 pins pass with `git diff tests/` empty** across all three refactor
+  commits. Ten functions were extracted out from under the pins and not one
+  assertion was edited.
+- **Line-level finding diff, `9c95d79` → `64e3e18`: 8 lines vanished, 2
+  appeared.** Seven of the vanished are findings (4 × `long-function`, 1 ×
+  `arrow-code`, and 2 `param-clumps` lines that reappear renumbered); the eighth
+  is the convergence-hotspot summary line for `service.py`. **Both appeared lines
+  are line-number reflows** — `aws/ecs.py:92`'s clump re-anchoring its
+  `service.py` legs to `:121/:175/:1058`, and `service.py:196 → :197` — so
+  **nothing was minted**. Net **−5**, which reconciles 52 → 47 exactly.
+- **`fail_under` monotonic across all five commits**: 59 → 59 → 65 → 65 → 65 →
+  65. Never lowered, at any point, including the three refactor commits.
+- **Convergence-hotspot list independently re-derived as empty**, max **2** checks
+  per file repo-wide.
+
+**Two measurement corrections, recorded rather than silently fixed** — house
+style, since the commit messages are in history and cannot be edited:
+
+| Claim                                       | Commit message | Measured by AST at `64e3e18` |
+| ------------------------------------------- | -------------- | ---------------------------- |
+| `start_migrations` after 5c (`961be51`)     | 85L            | **84L**                      |
+| `_wait_for_service_stable` after 5d (`64e3e18`) | 76L        | **75L**                      |
+
+Both are off by one in the same direction and neither changes an outcome — both
+were already well under the 100-line bar — but the register records the measured
+value.
+
+#### Latent bugs pinned, not fixed
+
+Continuing the section 53e-3 opened. 53e-5a's pins capture all fourteen as
+**current behaviour, not as endorsements**; each is a real defect left for a
+subphase that owns the contract.
+
+**From 5a-1 (`b42be87`), the deploy path — nine:**
+
+| Bug                                                                                                                                                                                                                                                              | Status                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **`service_exists` swallows `ClusterNotFoundException`** and returns `False`, so a **typo in the cluster name takes the CREATE branch** rather than reporting an unknown cluster.                                                                                | Pinned. The highest-severity item here: a wrong answer that routes the deploy down the wrong path instead of stopping it.       |
+| **The `ClientError` swallow makes a partial deploy look successful.** A per-service failure is reported and the loop continues; the run still ends as a success.                                                                                                 | Pinned. Same `except`-shape family recorded under **53i**.                                                                      |
+| **`update_service` carries no network configuration, no load balancer and no launch type**, so a target-group change on an existing service has **no effect** — the parameters are built and never sent on the update path.                                     | Pinned. Silent no-op on the operation an operator would most expect to work.                                                    |
+| **A load-balanced service can be created with no target group** — nothing fails when the lookup yields nothing.                                                                                                                                                  | Pinned. The service comes up and receives no traffic.                                                                           |
+| **`port` is read from the raw table while `load_balanced` comes from merged sizing.** Two keys of one decision sourced from two different config layers.                                                                                                         | Pinned. The kind of split that makes an environment override behave differently from the base.                                  |
+| **`--dry-run` previews an *update* for a service that does not exist**, and prints **none of the parameters it just built**.                                                                                                                                     | Pinned. A preview that is wrong about the branch and silent about the payload.                                                  |
+| **`_ensure_az_rebalancing_disabled` indexes `services[0]` unconditionally.**                                                                                                                                                                                     | Pinned. `IndexError` on an empty describe response.                                                                             |
+| **An empty-string per-service target group falls through to the default.** `""` is falsy, so an explicit "no target group" reads as "unset".                                                                                                                     | Pinned. Config that cannot express what it looks like it expresses.                                                             |
+| **`_get_deployment_config` ignores the dataclass field names and does no range validation.**                                                                                                                                                                     | Pinned. A misspelled key is accepted silently; an out-of-range percentage reaches the ECS API.                                   |
+
+**From 5a-2 (`fb561e3`), the migration + wait path — five:**
+
+| Bug                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`_wait_for_target_group_healthy` can never succeed against an empty target group.** The condition is `healthy > 0 and healthy == total`, which is `False` at **0/0**, so the wait burns the **full 300s** and then reports the wrong diagnosis.                                                  | Pinned. The worst of the five: a five-minute stall that names the wrong cause.                                                                             |
+| **`start_migrations` raises a bare `KeyError` on `networkConfiguration`** — the read sits **outside** the `try`, so a service without one produces an unhandled `KeyError` rather than a diagnosis. Preserved verbatim by 5c's `_migration_network_config`.                                       | Pinned, and explicitly preserved through the 5c extraction.                                                                                                |
+| **`_get_deployment_status` raises a bare `KeyError` from `d["status"]`.**                                                                                                                                                                                                                          | Pinned. Same shape one layer down.                                                                                                                         |
+| **`_wait_for_service_and_targets` catches only `DeploymentError` / `RuntimeError`**, so a `ClientError` **escapes the worker and bypasses `ServiceWaitResult`** entirely — the result-object contract is not actually total.                                                                       | Pinned. The failure mode the result object exists to prevent.                                                                                              |
+| **`wait_for_migrations` uses `.get("exitCode", 1)`** — a container that stopped **without** an exit code is treated as a **failure**.                                                                                                                                                              | **Pinned as load-bearing, not as a defect to fix.** This is the safe default and it is easy to "tidy" into `0`. Recorded so the next reader leaves it alone. |
+
+#### Side effects and mints
+
+Nothing cleared as a side effect and **nothing was minted** — the line-level diff
+above is the evidence, not an assertion. `service.py` is down to a **single**
+finding.
+
+| Finding                                                                                | Disposition                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `param-clumps` — `service.py:197` `(credential_mode, ctx, service_name)` in 3 functions | **Routed to 53g, not a leave-standing.** **Nothing inside `service.py` can clear it**: only one of the three signatures is here (`register_task_definition`); the other two are `task_definition.py:get_environment_variables():140` and `task_definition.py:build_task_definition():383`. |
+
+### 53e arc summary — closeout (2026-08-13)
+
+Five slices, thirteen commits, `805d516` → `64e3e18`.
+
+| Measure                     | 53e-1 start (`805d516`) | 53e-3 start (`a304fa1`) | End (`64e3e18`) |
+| --------------------------- | ----------------------- | ----------------------- | --------------- |
+| pysmelly total              | 60                      | **56**                  | **47**          |
+| `long-function`             | 9                       | **7**                   | **0**           |
+| Files on the hotspot list   | 2                       | 1                       | **0**           |
+| Coverage floor (`fail_under`) | 53                    | **54**                  | **65**          |
+| Tests                       | 852                     | **891**                 | **1339**        |
+
+**`long-function` is empty as a category** and the **convergence-hotspot list is
+empty** — no file in the repo is flagged by three or more checks, and the maximum
+is now 2.
+
+The three files 53e-3 → 53e-5 took on, in coverage order:
+
+| File                 | Coverage at split | Now                                   |
+| -------------------- | ----------------- | ------------------------------------- |
+| `deploy/deployer.py` | 35%               | **100%**                              |
+| `deploy/images.py`   | 16%               | **100%**                              |
+| `deploy/service.py`  | 11%               | **99%** — 0 uncovered statements, 1 partial branch |
+
+**The arc's transferable results**, in the order they are worth reusing:
+
+1. **The obvious first extraction was insufficient in all four decompositions**
+   (101, 102, 107, 114 — all still flagged). Base rate, not edge case. Measure at
+   every stage.
+1. **`long-function` kept turning out to be duplication the checker could not
+   reach** — 53d-1's three-way resolution, 53d-2a's six no-op guards, 53e-2's
+   triplicated audit block, 53e-3b's nine timer conditionals, 53e-5b's three
+   sub-threshold assignments. **53e-4b and 53e-5c/5d broke the pattern**: some
+   long functions really are linear pipelines and only decomposition helps. Read
+   before assuming which kind you have.
+1. **Pin first, in a separate commit.** Six subphases ran it; the pins survived
+   every code motion untouched because they hold seams **outside** the module
+   under refactor (`subprocess`, `builtins.input`, the boto3 client), never a
+   `deployer` binding.
+1. **Run the checker's internals on hypothetical signatures before writing
+   code** (53e-5's `_extract_all_signatures` + `_find_param_clumps` measurement).
+   Cheaper than reacting to a mint.
+1. **`_`-prefix every extraction.** Eight checks cannot fire on a private helper;
+   two design checks still can, and those are the ones to budget by hand.
+1. **Coverage is evidence, not a score.** "These two statements are the file's
+   only uncovered lines" is how 5d proved a dead branch dead.
+
+**Open after the arc**, all routed and none left standing by 53e-5: the
+`dict-as-dataclass` on `deployer.py:38` (53f), the `param-clumps` on
+`service.py:197` (53g), and the `temp-accumulators` on `images.py:301`.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -1222,25 +1546,28 @@ should have listed and does not.
 
 ### Remainder (not yet adjudicated)
 
-**Live per-category counts, re-measured 2026-08-13 at `9c95d79` (52 total).**
+**Live per-category counts, re-measured 2026-08-13 at `64e3e18` (47 total).**
 This table is the authoritative one; scope each subphase from it, not from the
 prose below. Measured with `pysmelly . --more-please` — **the plain
 `make pysmelly` view truncates to the top ten categories and under-reports
 `inconsistent-error-handling` as 3.**
 
 `pass-through-params` 14, `param-clumps` 7, `dict-as-dataclass` 6,
-`long-function` 4, `inconsistent-error-handling` 4, `foo-equals-foo` 3,
-`single-call-site` 3, `arrow-code` 3, `law-of-demeter` 2, `feature-envy` 2,
+`inconsistent-error-handling` 4, `foo-equals-foo` 3, `single-call-site` 3,
+`arrow-code` 2, `law-of-demeter` 2, `feature-envy` 2,
 `return-none-instead-of-raise` 1, `duplicate-blocks` 1,
-`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 52.)
+`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 47.)
 
-53e-4 moved exactly one number: `long-function` 5 → 4. Every other category is
-unchanged from the `57bc874` measurement.
+53e-5 moved exactly two numbers: **`long-function` 4 → 0** (the category is now
+absent from the report entirely) and `arrow-code` 3 → 2. Every other category is
+unchanged from the `9c95d79` measurement — verified by a line-level diff of the
+full finding list, not by comparing totals.
 
-12 of the 52 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2, 53e-3 1 — itemized total is self-consistent). The remainder
-is queued behind claude-meta `docs/PLAN.md` Phase 53e-5–53i, plus the one
-`dict-as-dataclass` 53e-3c minted and routed to 53f.
+12 of the 47 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
+53d-2a 1, 53d-2b 2, 53e-3 1 — itemized total is self-consistent; 53e-4 and
+53e-5 each added none). The remainder is queued behind claude-meta
+`docs/PLAN.md` Phase 53f–53i, plus the one `dict-as-dataclass` 53e-3c minted
+and routed to 53f.
 
 **Correction 2026-08-13 (unattended run W0): the earlier per-category split of
 the remainder was arithmetically broken and is withdrawn rather than
@@ -1260,18 +1587,30 @@ would need. Reconciling that is an adjudication question, so it is left for an
 operator-in-the-loop session. **Each subphase re-measures at HEAD anyway**,
 which is what the live table above is for.
 
-They are concentrated in `src/deployer/`, not in `modules/` or `bin/`. **All
-four remaining `long-function` findings are now in `deploy/service.py`** —
-`create_service():235` (107L), `deploy_services():344` (110L),
-`start_migrations():456` (100L), `_wait_for_service_stable():810` (118L) — which
-53e-5 owns and which is the only file left on the convergence-hotspot list
-(flagged by three checks: `arrow-code`, `long-function`, `param-clumps`). No
-other file in the repo carries a `long-function` finding.
-`deploy/images.py` is down to one finding, the `temp-accumulators` 53e-4b
-relocated into `_cache_tag`. `bin/emergency.py` has one finding left (the
-adjudicated `param-clump`) and `bin/init.py` two (both `foo-equals-foo`, routed
-to 53i). `deploy/deployer.py` is down to two findings, both adjudicated by 53e-3
-(the standing `law-of-demeter` and the `dict-as-dataclass` routed to 53f).
+They are concentrated in `src/deployer/`, not in `modules/` or `bin/`.
+
+**`long-function` is empty as a category** — no file in the repo carries one,
+and the check does not appear in the report. 53e cleared all nine.
+
+**The convergence-hotspot list is empty.** No file is flagged by three or more
+checks; the repo-wide maximum is **2**, held by `init/deploy_toml.py`
+(`single-call-site` + `arrow-code`), `core/ssm_secrets.py` (`pass-through-params`
++ `param-clumps`), `init/template.py` (`inconsistent-error-handling` +
+`law-of-demeter`), `deploy/deployer.py` (`dict-as-dataclass` + `law-of-demeter`)
+and `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
+`param-clumps`). `deploy/service.py` was the last entry and dropped off at
+`2b057ae`.
+
+Per-file remainder in the files this arc touched: **`deploy/service.py` is down
+to one finding**, the `param-clumps` at `:197` routed to **53g** — and nothing
+inside `service.py` can clear it, because two of its three signatures live in
+`task_definition.py`. `deploy/images.py` is down to one finding, the
+`temp-accumulators` 53e-4b relocated into `_cache_tag`. `deploy/deployer.py` is
+down to two findings, both adjudicated by 53e-3 (the standing `law-of-demeter`
+and the `dict-as-dataclass` routed to 53f). `core/audit.py`,
+`deploy/extensions.py` and `init/setup_profiles.py` carry none. `bin/emergency.py`
+has one finding left (the adjudicated `param-clump`) and `bin/init.py` two (both
+`foo-equals-foo`, routed to 53i).
 
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
 to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
