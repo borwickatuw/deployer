@@ -135,10 +135,10 @@ class TestFormatUser:
             "Enabled": True,
         }
         result = format_user(user)
-        assert result["username"] == "alice"
-        assert result["email"] == "alice@example.com"
-        assert result["status"] == "CONFIRMED"
-        assert result["enabled"] is True
+        assert result.username == "alice"
+        assert result.email == "alice@example.com"
+        assert result.status == "CONFIRMED"
+        assert result.enabled is True
 
 
 class TestAuditServices:

@@ -9,27 +9,29 @@ imports the module and exercises the re-exported ``deployer.core.cognito``
 helpers through it, so ``print_users_table`` and ``cmd_list`` -- the two
 functions that actually consume those helpers' output -- had never run.
 
-Why this matters for Phase 53f: ``format_user`` returns a **dict**, and every
-one of its five display keys is read by subscript in this file --
-``u["email"]``, ``u["username"]``, ``u["status"]``, ``u["enabled"]`` and
-``u["created"]``. ``print_users_table`` is the only consumer of that dict in
-the repo, so it is the only thing a ``dict -> dataclass`` conversion of
-``format_user`` can break. The producer side was already pinned by
-``test_bin_scripts.py::TestFormatUser`` and ``test_aws_cognito.py``; the
-consumer side is what these pins add.
+Why this matters for Phase 53f: ``format_user`` returned a **dict**, and every
+one of its five display fields is read in this file -- ``email``,
+``username``, ``status``, ``enabled`` and ``created``. ``print_users_table``
+is the only consumer of that record in the repo, so it is the only thing a
+``dict -> NamedTuple`` conversion of ``format_user`` could break. The producer
+side was already pinned by ``test_bin_scripts.py::TestFormatUser`` and
+``test_aws_cognito.py``; the consumer side is what these pins add. 53f-3 made
+the conversion: ``format_user`` now answers with ``CognitoUser`` and the reads
+are attribute reads. Every assertion below is the one it was before the
+conversion; only the access form moved.
 
 What is pinned here:
 
 * ``print_users_table`` -- the empty case, the column-width calculation, the
   ``email or username`` fallback, the ``Yes``/``NO`` rendering of ``enabled``,
   the ``or 'N/A'`` on ``created``, and the ``indent`` prefix on every line.
-  Also pinned: the table **subscripts** rather than ``.get()``s, so a record
-  missing any display key raises ``KeyError`` out of the middle of a
-  half-printed table. A ``format_user`` record never misses one -- the pin
-  exists so a conversion that changes the missing-key behaviour is visible.
+  Also pinned: a record missing any display field blows up. While the record
+  was a dict the table subscripted rather than ``.get()``-ed, so the failure
+  was a ``KeyError`` out of the middle of a half-printed table; ``CognitoUser``
+  moves the same failure to construction time as a ``TypeError``.
 * A real ``format_user`` record is driven end to end into
   ``print_users_table``, so the two halves of the contract are pinned against
-  each other and not against a hand-written dict.
+  each other and not against a hand-written record.
 * ``cmd_list`` -- pool deduplication across environments, the two header
   arms (named pool vs bare id), the per-environment error lines, the
   ``Total:`` line's ``> 1`` gate, the explicit-environment argument, and every
@@ -60,6 +62,8 @@ from pathlib import Path
 
 import pytest
 
+from deployer.core.cognito import CognitoUser
+
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
 
@@ -87,9 +91,9 @@ def _raw_user(
     return user
 
 
-def _formatted(**overrides) -> dict:
-    """Build a display record shaped exactly like format_user()'s return."""
-    record = {
+def _fields(**overrides) -> dict:
+    """The six fields of a format_user() record, as a mutable mapping."""
+    fields = {
         "username": "alice@example.com",
         "email": "alice@example.com",
         "status": "CONFIRMED",
@@ -97,8 +101,13 @@ def _formatted(**overrides) -> dict:
         "created": "2026-08-13 09:00",
         "last_modified": "2026-08-13 09:00",
     }
-    record.update(overrides)
-    return record
+    fields.update(overrides)
+    return fields
+
+
+def _formatted(**overrides) -> CognitoUser:
+    """Build a display record shaped exactly like format_user()'s return."""
+    return CognitoUser(**_fields(**overrides))
 
 
 def _cognito_config(pool_id: str | None, enabled: bool = True) -> dict:
@@ -152,7 +161,7 @@ def _aws_replies(aws_cli, pool_name: str | None, users: list[dict]) -> None:
 
 
 class TestPrintUsersTable:
-    """print_users_table() -- the sole consumer of format_user()'s dict."""
+    """print_users_table() -- the sole consumer of format_user()'s record."""
 
     def test_an_empty_list_says_so_and_prints_no_table(self, capsys):
         cognito_cli.print_users_table([])
@@ -187,7 +196,7 @@ class TestPrintUsersTable:
         assert "bob" in capsys.readouterr().out.splitlines()[2]
 
     def test_the_width_calculation_uses_the_same_fallback(self, capsys):
-        # The width comes from `u["email"] or u["username"]`, so a blank email
+        # The width comes from `u.email or u.username`, so a blank email
         # with a long username still widens the column.
         cognito_cli.print_users_table(
             [_formatted(email="", username="a-long-username@example.com")]
@@ -224,31 +233,29 @@ class TestPrintUsersTable:
         assert "2026-08-13T09:00:00.000000+00:00" in capsys.readouterr().out
 
     @pytest.mark.parametrize("missing", ["email", "status", "enabled", "created"])
-    def test_a_record_missing_any_always_read_key_raises_key_error(self, missing, capsys):
-        # Pinned, not endorsed: every read is a subscript, not a .get(), so a
-        # record that is not a format_user() record blows up -- for `status`,
-        # `enabled` and `created`, after the header has already been printed.
-        # format_user() always supplies all five, so this never fires in
-        # production; the pin exists so a dict -> dataclass conversion has to
-        # decide this behaviour rather than change it by accident.
-        record = _formatted()
-        del record[missing]
-        with pytest.raises(KeyError, match=missing):
-            cognito_cli.print_users_table([record])
+    def test_a_record_missing_any_always_read_field_cannot_be_built(self, missing):
+        # 53f-3 decided the question this pin was written to force. While the
+        # record was a dict every read was a subscript, not a .get(), so a
+        # record that is not a format_user() record blew up -- for `status`,
+        # `enabled` and `created`, after the header had already been printed.
+        # CognitoUser moves the same failure to construction time, so the
+        # table's reads can no longer raise at all.
+        fields = _fields()
+        del fields[missing]
+        with pytest.raises(TypeError, match=missing):
+            CognitoUser(**fields)
 
-    def test_username_is_only_read_when_the_email_is_blank(self, capsys):
-        # `u["email"] or u["username"]` short-circuits, so `username` is the
-        # one display key a record can omit -- as long as every email is
-        # non-empty. Both halves are pinned: absent-and-unused is fine,
-        # absent-and-needed raises.
-        record = _formatted()
-        del record["username"]
-        cognito_cli.print_users_table([record])
-        assert "alice@example.com" in capsys.readouterr().out
-
-        record["email"] = ""
-        with pytest.raises(KeyError, match="username"):
-            cognito_cli.print_users_table([record])
+    def test_a_record_cannot_omit_the_username_the_fallback_reads(self):
+        # `u.email or u.username` short-circuits, so while the record was a
+        # dict `username` was the one display key it could omit -- as long as
+        # every email was non-empty. Both halves were pinned: absent-and-unused
+        # was fine, absent-and-needed raised. CognitoUser makes the field
+        # unomittable; the short-circuit itself is still pinned, by
+        # test_a_blank_email_falls_back_to_the_username above.
+        fields = _fields()
+        del fields["username"]
+        with pytest.raises(TypeError, match="username"):
+            CognitoUser(**fields)
 
     def test_a_real_format_user_record_prints_without_a_key_error(self, capsys):
         # The two halves of the contract, pinned against each other: whatever

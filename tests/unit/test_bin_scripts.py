@@ -156,10 +156,10 @@ class TestFormatUser:
 
         result = access.format_user(user)
 
-        assert result["username"] == "alice@example.com"
-        assert result["email"] == "alice@example.com"
-        assert result["status"] == "CONFIRMED"
-        assert result["enabled"] is True
+        assert result.username == "alice@example.com"
+        assert result.email == "alice@example.com"
+        assert result.status == "CONFIRMED"
+        assert result.enabled is True
 
     def test_format_user_missing_attributes(self):
         """Test formatting a user with missing attributes."""
@@ -171,10 +171,10 @@ class TestFormatUser:
 
         result = access.format_user(user)
 
-        assert result["username"] == "bob"
-        assert result["email"] == ""
-        assert result["status"] == "UNCONFIRMED"
-        assert result["enabled"] is False
+        assert result.username == "bob"
+        assert result.email == ""
+        assert result.status == "UNCONFIRMED"
+        assert result.enabled is False
 
 
 class TestStagingRunCommand:

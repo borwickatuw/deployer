@@ -35,6 +35,7 @@ import click
 
 from deployer.aws import cognito
 from deployer.core.cognito import (
+    CognitoUser,
     copy_to_clipboard,
     format_user,
     format_welcome_message,
@@ -82,14 +83,14 @@ def get_cognito_environments() -> list[str]:
     return cognito_envs
 
 
-def print_users_table(users: list[dict], indent: str = "") -> None:
+def print_users_table(users: list[CognitoUser], indent: str = "") -> None:
     """Print users in a formatted table."""
     if not users:
         print(f"{indent}No users found.")
         return
 
     # Column widths
-    email_width = max(len(u["email"] or u["username"]) for u in users)
+    email_width = max(len(u.email or u.username) for u in users)
     email_width = max(email_width, len("Email"))
 
     # Header
@@ -98,10 +99,10 @@ def print_users_table(users: list[dict], indent: str = "") -> None:
 
     # Rows
     for user in users:
-        enabled_str = "Yes" if user["enabled"] else "NO"
-        email_display = user["email"] or user["username"]
+        enabled_str = "Yes" if user.enabled else "NO"
+        email_display = user.email or user.username
         print(
-            f"{indent}{email_display:<{email_width}}  {user['status']:<20}  {enabled_str:<8}  {user['created'] or 'N/A':<16}"
+            f"{indent}{email_display:<{email_width}}  {user.status:<20}  {enabled_str:<8}  {user.created or 'N/A':<16}"
         )
 
 

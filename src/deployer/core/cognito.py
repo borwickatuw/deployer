@@ -5,6 +5,23 @@ import secrets
 import string
 import subprocess
 from datetime import datetime
+from typing import NamedTuple
+
+
+class CognitoUser(NamedTuple):
+    """One Cognito user, reduced to the fields the CLI displays.
+
+    A ``NamedTuple`` rather than a dataclass: ``last_modified`` is carried
+    because format_user() computes it, but nothing reads it today, and a
+    dataclass would report it as a write-only attribute.
+    """
+
+    username: str
+    email: str
+    status: str
+    enabled: bool
+    created: str | None
+    last_modified: str | None
 
 
 def generate_temp_password(length: int = 16) -> str:
@@ -115,14 +132,14 @@ def format_welcome_message(
     return "\n".join(lines)
 
 
-def format_user(user: dict) -> dict:
+def format_user(user: dict) -> CognitoUser:
     """Extract relevant fields from a Cognito user record.
 
     Args:
         user: Raw Cognito user record.
 
     Returns:
-        Dictionary with extracted user fields.
+        CognitoUser with the extracted fields.
     """
     attributes = {attr["Name"]: attr["Value"] for attr in user.get("Attributes", [])}
 
@@ -134,11 +151,11 @@ def format_user(user: dict) -> dict:
     if last_modified and isinstance(last_modified, (int, float)):
         last_modified = datetime.fromtimestamp(last_modified).strftime("%Y-%m-%d %H:%M")
 
-    return {
-        "username": user.get("Username", ""),
-        "email": attributes.get("email", ""),
-        "status": user.get("UserStatus", ""),
-        "enabled": user.get("Enabled", True),
-        "created": created,
-        "last_modified": last_modified,
-    }
+    return CognitoUser(
+        username=user.get("Username", ""),
+        email=attributes.get("email", ""),
+        status=user.get("UserStatus", ""),
+        enabled=user.get("Enabled", True),
+        created=created,
+        last_modified=last_modified,
+    )
