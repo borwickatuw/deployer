@@ -124,10 +124,19 @@ branch = true
 # taken to all but one. The floor moves 59 -> 65 against the 65.62% measured
 # with both units in the tree (5a-2 alone measures 63.93%).
 #
+# Phase 53f-1 pinned the *consumers* of the six dict payloads 53f converts to
+# typed objects — the producers were already at 100%, the consumers were the
+# gap. bin/cognito.py 17% -> 53% (print_users_table and cmd_list, which hold
+# every subscript read of format_user's output), bin/emergency.py 57% -> 76%
+# (cmd_restore_db and _print_restore_success, which hold every read of the
+# restore payloads), deploy/task_definition.py 72% -> 86% (_get_legacy_secrets,
+# which had no test at all, and _resolve_legacy_placeholders' numeric arm).
+# The floor moves 65 -> 68 against the 68.47% measured with all three in.
+#
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 65
+fail_under = 68
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

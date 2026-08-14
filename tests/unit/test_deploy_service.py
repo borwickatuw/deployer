@@ -75,6 +75,12 @@ survive code motion inside the package. Concretely:
 ``service.py`` does not import ``..timing`` and this file does not make it start:
 53e-3b's ``NullTimer`` has no ``_current_step``, so a ``get_timer()`` here would
 reproduce the ``AttributeError`` already pinned in ``test_deploy_images.py``.
+
+Phase 53f-1 added ``TestHealthCheckConfigIsNeverProduced`` at the end of the
+file. It is the odd one out here: it drives ``_build_infra_config`` -- the real
+producer, which lives in ``deployer.py`` -- into ``create_service``, to pin that
+the ``health_check_config`` key ``_load_balancer_params`` reads is one no
+production ``infra_config`` has ever contained. See that class's own docstring.
 """
 
 import re
@@ -85,6 +91,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from deployer.deploy.context import DeploymentContext
+from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.service import (
     DeploymentConfig,
     DeploymentError,
@@ -1308,3 +1315,63 @@ class TestDeployServices:
         with pytest.raises(ValueError, match="below minimum"):
             deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
         assert aws.client.operations == []
+
+
+class TestHealthCheckConfigIsNeverProduced:
+    """``infra_config["health_check_config"]`` -- read here, produced nowhere.
+
+    Added by Phase 53f-1 and pinned as-is for 53f-4 to decide.
+    ``_load_balancer_params`` reads ``health_check_config`` off ``infra_config``,
+    but ``_build_infra_config`` -- the *only* thing that assembles the
+    ``infra_config`` a real deploy runs with -- never emits that key. The
+    production path therefore always takes the ``{}`` default and the grace
+    period is always 60. ``TestCreateService.test_grace_period_is_configurable``
+    above is the sole place the key exists at all, and it injects it by hand.
+
+    A dataclass conversion of ``infra_config`` turns this read into a hard
+    error unless the field is declared, so the pin is what forces 53f-4 to
+    choose -- declare the field, or delete the read -- rather than hiding the
+    question behind a passing test that supplies its own input.
+    """
+
+    def test_build_infra_config_never_emits_the_key(self):
+        # Every section _build_infra_config knows about, populated.
+        infra = _build_infra_config(
+            {
+                "infrastructure": {
+                    "execution_role_arn": "arn:role:exec",
+                    "task_role_arn": "arn:role:task",
+                    "security_group_id": "sg-1",
+                    "private_subnet_ids": ["subnet-1"],
+                    "target_group_arn": DEFAULT_TG,
+                    "service_target_groups": {"web": DEFAULT_TG},
+                    "service_discovery_registries": {"web": REGISTRY_ARN},
+                    "rds_instance_id": "myapp-db",
+                    # A health_check_config under [infrastructure] is not read.
+                    "health_check_config": {"grace_period": 300},
+                },
+                "database": {"url": "postgres://db/app"},
+                "cache": {"url": "redis://cache:6379/0"},
+                "storage": {"media_bucket": "media"},
+                "deployment": {"maximum_percent": 150},
+                "scheduler": {"enabled": True},
+                # Nor is a top-level one.
+                "health_check_config": {"grace_period": 300},
+            }
+        )
+        assert "health_check_config" not in infra
+
+    def test_the_production_path_always_gets_the_sixty_second_default(self, aws):
+        arn = _make_service(aws, "seed")
+        infra = _build_infra_config(
+            {
+                "infrastructure": {
+                    "target_group_arn": DEFAULT_TG,
+                    "private_subnet_ids": [aws.subnet_id],
+                    "security_group_id": aws.security_group_id,
+                }
+            }
+        )
+        ctx = _ctx(aws, services={"web": {"load_balanced": True, "port": 8000}}, infra=infra)
+        create_service(ctx, "web", arn)
+        assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 60
