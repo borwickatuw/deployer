@@ -76,21 +76,23 @@ survive code motion inside the package. Concretely:
 53e-3b's ``NullTimer`` has no ``_current_step``, so a ``get_timer()`` here would
 reproduce the ``AttributeError`` already pinned in ``test_deploy_images.py``.
 
-Phase 53f-1 added ``TestHealthCheckConfigIsNeverProduced`` at the end of the
-file. It is the odd one out here: it drives ``_build_infra_config`` -- the real
-producer, which lives in ``deployer.py`` -- into ``create_service``, to pin that
-the ``health_check_config`` key ``_load_balancer_params`` reads is one no
-production ``infra_config`` has ever contained. See that class's own docstring.
+Phase 53f-1 added ``TestHealthCheckConfigSource`` at the end of the file. It is
+the odd one out here: it drives ``_build_infra_config`` -- the real producer,
+which lives in ``deployer.py`` -- into ``create_service``. 53f-1 pinned that the
+``health_check_config`` key ``_load_balancer_params`` reads was one no production
+``infra_config`` had ever contained; 53f-4 wired its documented source. See that
+class's own docstring.
 """
 
 import re
 import subprocess
+from dataclasses import asdict, replace
 
 import boto3
 import pytest
 from botocore.exceptions import ClientError
 
-from deployer.deploy.context import DeploymentContext
+from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.service import (
     DeploymentConfig,
@@ -283,11 +285,10 @@ def _ctx(
     ecs_client=None,
 ) -> DeploymentContext:
     """A DeploymentContext wired to moto, with network config that works."""
-    infra_config = {
-        "subnet_ids": [aws.subnet_id],
-        "security_group_id": aws.security_group_id,
-    }
-    infra_config.update(infra or {})
+    infra_config = replace(
+        InfraConfig(subnet_ids=[aws.subnet_id], security_group_id=aws.security_group_id),
+        **(infra or {}),
+    )
     return DeploymentContext(
         ecs_client=aws.client if ecs_client is None else ecs_client,
         cluster_name=cluster_name,
@@ -338,49 +339,53 @@ class TestGetDeploymentConfig:
     """``_get_deployment_config`` -- the TOML-key to field-name translation."""
 
     def test_missing_section_gives_defaults(self):
-        assert _get_deployment_config({}) == DeploymentConfig(
+        assert _get_deployment_config(InfraConfig()) == DeploymentConfig(
             min_healthy=100, max_percent=200, circuit_breaker=False, circuit_rollback=True
         )
 
     def test_empty_section_gives_defaults(self):
-        assert _get_deployment_config({"deployment_config": {}}) == DeploymentConfig()
+        assert _get_deployment_config(InfraConfig(deployment_config={})) == DeploymentConfig()
 
     def test_all_four_keys_are_translated(self):
         cfg = _get_deployment_config(
-            {
-                "deployment_config": {
+            InfraConfig(
+                deployment_config={
                     "minimum_healthy_percent": 50,
                     "maximum_percent": 100,
                     "circuit_breaker_enabled": True,
                     "circuit_breaker_rollback": False,
                 }
-            }
+            )
         )
         assert cfg == DeploymentConfig(
             min_healthy=50, max_percent=100, circuit_breaker=True, circuit_rollback=False
         )
 
     def test_partial_section_keeps_other_defaults(self):
-        cfg = _get_deployment_config({"deployment_config": {"maximum_percent": 100}})
+        cfg = _get_deployment_config(InfraConfig(deployment_config={"maximum_percent": 100}))
         assert cfg == DeploymentConfig(max_percent=100)
 
     def test_unknown_keys_are_ignored(self):
-        cfg = _get_deployment_config({"deployment_config": {"wait_for_steady_state": True}})
+        cfg = _get_deployment_config(InfraConfig(deployment_config={"wait_for_steady_state": True}))
         assert cfg == DeploymentConfig()
 
     def test_field_names_are_not_accepted_as_keys(self):
         # The dict is keyed on the *TOML* name. Writing the dataclass field name
         # in deploy.toml is silently ignored rather than rejected.
-        cfg = _get_deployment_config({"deployment_config": {"min_healthy": 42}})
+        cfg = _get_deployment_config(InfraConfig(deployment_config={"min_healthy": 42}))
         assert cfg == DeploymentConfig(min_healthy=100)
 
     def test_values_are_not_validated(self):
         # No range check: a nonsense percentage reaches the ECS API unaltered.
-        cfg = _get_deployment_config({"deployment_config": {"minimum_healthy_percent": -5}})
+        cfg = _get_deployment_config(InfraConfig(deployment_config={"minimum_healthy_percent": -5}))
         assert cfg.min_healthy == -5
 
     def test_other_infra_config_keys_are_untouched(self):
-        cfg = _get_deployment_config({"subnet_ids": ["subnet-x"], "maximum_percent": 100})
+        # The `maximum_percent` half of this pin -- a deployment key written
+        # at the top level instead of inside `deployment_config` -- is no
+        # longer constructible: InfraConfig has no such field, so 53f-4 moved
+        # that mistake from silently ignored to a TypeError at build time.
+        cfg = _get_deployment_config(InfraConfig(subnet_ids=["subnet-x"]))
         assert cfg == DeploymentConfig()
 
 
@@ -673,7 +678,7 @@ class TestCreateServiceNetworkGuard:
 
     def test_absent_keys_also_raise(self, aws):
         ctx = _ctx(aws)
-        ctx = DeploymentContext(**{**ctx.__dict__, "infra_config": {}})
+        ctx = replace(ctx, infra_config=InfraConfig())
         with pytest.raises(RuntimeError, match="Missing network configuration"):
             create_service(ctx, "web", "arn:task-def")
 
@@ -1317,24 +1322,33 @@ class TestDeployServices:
         assert aws.client.operations == []
 
 
-class TestHealthCheckConfigIsNeverProduced:
-    """``infra_config["health_check_config"]`` -- read here, produced nowhere.
+class TestHealthCheckConfigSource:
+    """Where ``infra_config.health_check_config`` comes from.
 
-    Added by Phase 53f-1 and pinned as-is for 53f-4 to decide.
-    ``_load_balancer_params`` reads ``health_check_config`` off ``infra_config``,
-    but ``_build_infra_config`` -- the *only* thing that assembles the
-    ``infra_config`` a real deploy runs with -- never emits that key. The
-    production path therefore always takes the ``{}`` default and the grace
-    period is always 60. ``TestCreateService.test_grace_period_is_configurable``
-    above is the sole place the key exists at all, and it injects it by hand.
+    53f-1 pinned this as *read here, produced nowhere*: ``_load_balancer_params``
+    read ``health_check_config`` off ``infra_config``, but ``_build_infra_config``
+    never emitted the key, so the production grace period was always 60 and the
+    sole place the key existed was a test injecting it by hand.
 
-    A dataclass conversion of ``infra_config`` turns this read into a hard
-    error unless the field is declared, so the pin is what forces 53f-4 to
-    choose -- declare the field, or delete the read -- rather than hiding the
-    question behind a passing test that supplies its own input.
+    53f-4 settled it by **wiring the source rather than deleting the read**. The
+    key is not invented: ``modules/app-in-shared-env`` declares
+    ``var.health_check`` with a ``grace_period`` member defaulting to 60, exports
+    it as the ``health_check_config`` output described "for deploy.py", every
+    ``config.toml.example`` sets ``[services] health_check =
+    "${tofu:health_check_config}"``, and CONFIG-REFERENCE documents the mapping.
+    Only the last hop was missing. Deleting the read would have meant deleting a
+    tofu variable, an output, four templates and two doc tables.
+
+    The wiring is behaviour-preserving at the default: the standalone
+    ``var.health_check`` has no ``grace_period`` member at all, and the shared-env
+    one defaults it to 60, so the only deploys that change are those that set it
+    explicitly -- and today those are silently ignored.
+
+    What is still pinned: ``[infrastructure].health_check_config`` and a
+    top-level ``health_check_config`` are *not* the source.
     """
 
-    def test_build_infra_config_never_emits_the_key(self):
+    def test_neither_infrastructure_nor_top_level_is_the_source(self):
         # Every section _build_infra_config knows about, populated.
         infra = _build_infra_config(
             {
@@ -1359,9 +1373,13 @@ class TestHealthCheckConfigIsNeverProduced:
                 "health_check_config": {"grace_period": 300},
             }
         )
-        assert "health_check_config" not in infra
+        assert infra.health_check_config == {}
 
-    def test_the_production_path_always_gets_the_sixty_second_default(self, aws):
+    def test_services_health_check_is_the_source(self):
+        infra = _build_infra_config({"services": {"health_check": {"grace_period": 300}}})
+        assert infra.health_check_config == {"grace_period": 300}
+
+    def test_the_production_path_still_defaults_to_sixty_seconds(self, aws):
         arn = _make_service(aws, "seed")
         infra = _build_infra_config(
             {
@@ -1372,6 +1390,8 @@ class TestHealthCheckConfigIsNeverProduced:
                 }
             }
         )
-        ctx = _ctx(aws, services={"web": {"load_balanced": True, "port": 8000}}, infra=infra)
+        ctx = _ctx(
+            aws, services={"web": {"load_balanced": True, "port": 8000}}, infra=asdict(infra)
+        )
         create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 60

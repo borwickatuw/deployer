@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -33,6 +33,59 @@ class DeployOptions:
 
 
 @dataclass(frozen=True)
+class InfraConfig:
+    """The ECS infrastructure settings a deploy runs against.
+
+    Assembled by ``deployer._build_infra_config`` from the resolved
+    environment ``config.toml`` and read by the task-definition and service
+    layers.
+
+    Ten fields are read by name. The other eight -- ``database_url``,
+    ``db_host``, ``db_port``, ``db_name``, ``db_password_secret_arn``,
+    ``db_username_secret_arn``, ``redis_url`` and ``s3_media_bucket`` -- are
+    never read by name anywhere. They exist because their **names** are a
+    user-facing contract: an application's own ``deploy.toml`` writes
+    ``${database_url}`` and ``secretsmanager:${db_password_secret_arn}``, and
+    ``legacy_placeholders()`` is what turns those names into a substitution
+    table. Renaming one is a breaking change for every downstream app.
+    """
+
+    execution_role_arn: str | None = None
+    task_role_arn: str | None = None
+    security_group_id: str | None = None
+    subnet_ids: list[str] = field(default_factory=list)
+    target_group_arn: str | None = None
+    service_target_groups: dict[str, str] = field(default_factory=dict)
+    service_discovery_registries: dict[str, str] = field(default_factory=dict)
+    # Database config - supports both URL (legacy) and component-based (Secrets Manager)
+    database_url: str | None = None
+    db_host: str | None = None
+    db_port: int | None = None
+    db_name: str | None = None
+    db_password_secret_arn: str | None = None
+    db_username_secret_arn: str | None = None
+    redis_url: str | None = None
+    s3_media_bucket: str | None = None
+    rds_instance_id: str | None = None
+    scheduler: dict = field(default_factory=dict)
+    deployment_config: dict = field(default_factory=dict)
+    health_check_config: dict = field(default_factory=dict)
+
+    def legacy_placeholders(self) -> dict[str, str]:
+        """Return the ``${name}`` substitution table for legacy placeholders.
+
+        Every scalar field is offered under its own name. The list-, dict- and
+        ``None``-valued fields are not placeholder material and are dropped,
+        so a ``${subnet_ids}`` or ``${scheduler}`` reference survives into the
+        container verbatim.
+
+        ``bool`` takes the numeric arm -- it subclasses ``int`` -- and renders
+        Python-style as ``"True"``/``"False"``.
+        """
+        return {k: str(v) for k, v in asdict(self).items() if isinstance(v, (str, int, float))}
+
+
+@dataclass(frozen=True)
 class DeploymentContext:
     """Bundles shared parameters passed to ECS deployment functions.
 
@@ -44,7 +97,7 @@ class DeploymentContext:
     cluster_name: str
     config: dict
     service_config: dict
-    infra_config: dict
+    infra_config: InfraConfig
     app_name: str
     environment: str
     region: str

@@ -1,16 +1,20 @@
-"""Characterization pins for deploy/task_definition.py's two infra_config readers.
+"""Characterization pins for deploy/task_definition.py's two placeholder readers.
 
 These are characterization pins, not endorsements. They record what
 ``_get_legacy_secrets()`` and ``_resolve_legacy_placeholders()`` do **today**;
 where the behaviour looks wrong it is pinned anyway and called out in a
 comment on the test. Nothing here is a fix.
 
-Phase 53f converts ``infra_config`` from a dict to a typed object. These two
-functions are the file's only ``infra_config.items()`` consumers -- the
-conversion has to rewrite both -- and ``_get_legacy_secrets`` had **no test at
-all**: its entire body was uncovered. ``_resolve_legacy_placeholders`` had one
-direct test in ``test_deploy.py`` that passed two string-valued keys and no
-others, so its numeric arm and its ``services.`` skip had never run either.
+Phase 53f-1 wrote these pins while both functions still took the raw
+``infra_config`` dict and each built its own placeholder table from it, in the
+same eight lines, twice. 53f-4 converted ``infra_config`` to
+``InfraConfig`` and moved those eight lines into
+``InfraConfig.legacy_placeholders()``; both functions now take the finished
+``dict[str, str]`` table, which is all they ever needed. The scalar-filter and
+``str()`` pins that used to be duplicated here, once per reader, therefore live
+in ``TestInfraConfigLegacyPlaceholders`` below -- one copy for the one
+implementation. Both readers keep an end-to-end pin driven by the real
+``_build_infra_config``.
 
 What is pinned here:
 
@@ -19,9 +23,12 @@ What is pinned here:
   the ``${...}`` substring substitution it does *before* looking at the
   prefix, the ``names`` skip, the non-string skip, and the fact that a value
   matching neither prefix is **silently dropped**.
-* ``_resolve_legacy_placeholders`` -- the string arm, the ``int``/``float``
-  ``str()`` arm, the ``services.`` passthrough, the unknown-placeholder
-  passthrough, and the whole-value-only matching rule.
+* ``_resolve_legacy_placeholders`` -- the string arm, the ``services.``
+  passthrough, the unknown-placeholder passthrough, and the whole-value-only
+  matching rule.
+* ``InfraConfig.legacy_placeholders`` -- the ``int``/``float``/``bool``
+  ``str()`` arm and the ``None``/list/dict drop, which is the single place
+  those now happen.
 * The two functions' **different** placeholder rules, pinned against each
   other: ``_get_legacy_secrets`` substitutes ``${x}`` anywhere inside a value,
   ``_resolve_legacy_placeholders`` only replaces a value that is entirely one
@@ -32,12 +39,12 @@ What is pinned here:
   answering for those.
 * ``get_secrets``'s routing into the legacy path, so the pin covers the way
   production actually reaches ``_get_legacy_secrets``.
-* **A latent item 53f-4 must decide, pinned as-is:** ``get_environment_variables``
-  guards its legacy-placeholder pass with ``if infra_config:``, but the
-  ``infra_config`` it tests is the ``{**ctx.infra_config, "account_id": ...}``
-  spread built four lines earlier, which is never empty. The guard is
-  permanently true and coverage confirms its false arm never fires. The guard
-  is pinned here, not deleted.
+* **Settled by 53f-4:** ``get_environment_variables`` used to guard its
+  legacy-placeholder pass with ``if infra_config:``, testing a spread that
+  always carried ``account_id`` and so was permanently true. 53f-4 deleted the
+  guard rather than keep a branch whose false arm coverage proved unreachable.
+  The behaviour those pins assert -- the pass runs, and ``${account_id}`` is
+  offered here and only here -- is unchanged.
 
 Nothing is stubbed: both functions are pure over dicts, and
 ``get_environment_variables`` is driven with an empty ``env_config`` so the
@@ -48,7 +55,7 @@ the package.
 
 import pytest
 
-from deployer.deploy.context import DeploymentContext
+from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.task_definition import (
     _get_legacy_secrets,
@@ -73,7 +80,7 @@ def _ctx(**overrides) -> DeploymentContext:
         "cluster_name": "test-cluster",
         "config": {},
         "service_config": {},
-        "infra_config": {},
+        "infra_config": InfraConfig(),
         "app_name": "testapp",
         "environment": ENVIRONMENT,
         "region": REGION,
@@ -85,9 +92,11 @@ def _ctx(**overrides) -> DeploymentContext:
     return DeploymentContext(**defaults)
 
 
-def _legacy(secrets: dict, infra: dict | None = None) -> list[dict[str, str]]:
+def _legacy(secrets: dict, placeholders: dict[str, str] | None = None) -> list[dict[str, str]]:
     """Call _get_legacy_secrets with the boilerplate arguments filled in."""
-    return _get_legacy_secrets({"secrets": secrets}, ENVIRONMENT, REGION, ACCOUNT_ID, infra or {})
+    return _get_legacy_secrets(
+        {"secrets": secrets}, ENVIRONMENT, REGION, ACCOUNT_ID, placeholders or {}
+    )
 
 
 class TestGetLegacySecretsSsmArm:
@@ -108,7 +117,7 @@ class TestGetLegacySecretsSsmArm:
     def test_an_infra_config_placeholder_is_substituted_into_the_path(self):
         (secret,) = _legacy(
             {"DB_PASSWORD": "ssm:${param_prefix}/db-password"},
-            infra={"param_prefix": "/myapp/prod"},
+            placeholders={"param_prefix": "/myapp/prod"},
         )
         assert secret["valueFrom"].endswith("parameter/myapp/prod/db-password")
 
@@ -121,7 +130,7 @@ class TestGetLegacySecretsSsmArm:
 
     def test_the_region_and_account_come_from_the_arguments_not_infra_config(self):
         (secret,) = _legacy(
-            {"SECRET_KEY": "ssm:/k"}, infra={"region": "eu-west-1", "account_id": "999"}
+            {"SECRET_KEY": "ssm:/k"}, placeholders={"region": "eu-west-1", "account_id": "999"}
         )
         assert secret["valueFrom"].startswith(f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:")
 
@@ -139,7 +148,7 @@ class TestGetLegacySecretsSecretsManagerArm:
         arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:db-pw-AbCdEf"
         (secret,) = _legacy(
             {"DB_PASSWORD": "secretsmanager:${db_password_secret_arn}"},
-            infra={"db_password_secret_arn": arn},
+            placeholders={"db_password_secret_arn": arn},
         )
         assert secret["valueFrom"] == arn
 
@@ -184,41 +193,67 @@ class TestGetLegacySecretsSkips:
         assert [s["name"] for s in secrets] == ["A", "B"]
 
 
-class TestGetLegacySecretsPlaceholderTable:
-    """_get_legacy_secrets() -- how it builds placeholders from infra_config."""
+class TestInfraConfigLegacyPlaceholders:
+    """InfraConfig.legacy_placeholders() -- the one scalar filter.
 
-    def test_a_numeric_infra_value_is_stringified(self):
-        (secret,) = _legacy({"K": "ssm:/db/${db_port}"}, infra={"db_port": 5432})
-        assert secret["valueFrom"].endswith("parameter/db/5432")
+    Until 53f-4 this filter was eight lines written twice, once inside
+    ``_get_legacy_secrets`` and once inside ``_resolve_legacy_placeholders``,
+    and 53f-1 pinned it twice to match. There is now one implementation, so
+    there is one set of pins. Both readers still get an end-to-end pin over
+    the real ``_build_infra_config`` output further down.
+    """
 
-    def test_a_float_infra_value_is_stringified(self):
-        (secret,) = _legacy({"K": "ssm:/v/${version}"}, infra={"version": 1.5})
-        assert secret["valueFrom"].endswith("parameter/v/1.5")
+    def test_a_string_field_is_offered_under_its_own_name(self):
+        assert _build_infra_config(
+            {"database": {"url": "postgres://db/app"}}
+        ).legacy_placeholders() == {"database_url": "postgres://db/app"}
 
-    def test_a_bool_infra_value_is_stringified_python_style(self):
-        # Pinned, not endorsed: bool is a subclass of int, so it takes the
-        # numeric arm and renders as "True"/"False", not "true"/"false".
-        (secret,) = _legacy({"K": "ssm:/f/${enabled}"}, infra={"enabled": True})
-        assert secret["valueFrom"].endswith("parameter/f/True")
+    def test_a_numeric_field_is_stringified(self):
+        assert InfraConfig(db_port=5432).legacy_placeholders() == {"db_port": "5432"}
+
+    def test_a_float_field_is_stringified(self):
+        # config.toml is TOML and nothing type-checks `port`, so a float
+        # really can arrive here; the float arm of the filter is not academic.
+        assert _build_infra_config({"database": {"port": 1.5}}).legacy_placeholders() == {
+            "db_port": "1.5"
+        }
+
+    def test_a_bool_field_is_stringified_python_style(self):
+        # Pinned, not endorsed: bool is a subclass of int, so it passes the
+        # numeric filter and renders as "True"/"False", not "true"/"false".
+        assert _build_infra_config({"database": {"port": True}}).legacy_placeholders() == {
+            "db_port": "True"
+        }
 
     @pytest.mark.parametrize(
-        "value", [None, ["subnet-1"], {"enabled": False}], ids=["none", "list", "dict"]
+        "infra_config",
+        [
+            InfraConfig(database_url=None),
+            InfraConfig(subnet_ids=["subnet-1"]),
+            InfraConfig(scheduler={"enabled": False}),
+        ],
+        ids=["none", "list", "dict"],
     )
-    def test_a_non_scalar_infra_value_makes_no_placeholder(self, value):
+    def test_a_non_scalar_field_makes_no_placeholder(self, infra_config):
         # _build_infra_config really produces all three shapes -- `database_url`
         # can be None, `subnet_ids` is a list, `scheduler` is a dict -- so an
         # unresolved `${...}` reaches ECS verbatim.
-        (secret,) = _legacy({"K": "ssm:/${thing}"}, infra={"thing": value})
-        assert secret["valueFrom"].endswith("parameter/${thing}")
+        assert infra_config.legacy_placeholders() == {}
+
+
+class TestGetLegacySecretsPlaceholderTable:
+    """_get_legacy_secrets() -- how it merges the infra placeholder table."""
 
     def test_an_infra_key_named_environment_overrides_the_built_in_one(self):
         # The built-in `environment` is seeded first and then overwritten by
-        # the infra_config loop. _build_infra_config emits no such key today.
-        (secret,) = _legacy({"K": "ssm:/${environment}/x"}, infra={"environment": "shadowed"})
+        # the infra table. InfraConfig has no such field today.
+        (secret,) = _legacy(
+            {"K": "ssm:/${environment}/x"}, placeholders={"environment": "shadowed"}
+        )
         assert secret["valueFrom"].endswith("parameter/shadowed/x")
 
     def test_a_placeholder_is_substituted_anywhere_in_the_value(self):
-        (secret,) = _legacy({"K": "ssm:/${a}/mid/${a}"}, infra={"a": "X"})
+        (secret,) = _legacy({"K": "ssm:/${a}/mid/${a}"}, placeholders={"a": "X"})
         assert secret["valueFrom"].endswith("parameter/X/mid/X")
 
     def test_every_value_of_a_real_build_infra_config_is_survivable(self):
@@ -240,7 +275,7 @@ class TestGetLegacySecretsPlaceholderTable:
                 "PORT_PATH": "ssm:/db/${db_port}",
                 "SUBNETS": "ssm:/net/${subnet_ids}",
             },
-            infra=infra,
+            placeholders=infra.legacy_placeholders(),
         )
         assert secrets[0]["valueFrom"] == "arn:secret"
         assert secrets[1]["valueFrom"].endswith("parameter/db/5432")
@@ -253,7 +288,7 @@ class TestGetSecretsRoutesToTheLegacyPath:
     def test_no_modules_and_no_names_style_uses_the_legacy_reader(self):
         ctx = _ctx(
             config={"secrets": {"SECRET_KEY": "ssm:/app/secret-key"}},
-            infra_config={"unused": "x"},
+            infra_config=InfraConfig(rds_instance_id="unused"),
         )
         assert get_secrets(ctx, "web") == [
             {
@@ -302,34 +337,6 @@ class TestResolveLegacyPlaceholders:
         )
         assert resolved == {"R": "eu-west-1"}
 
-    def test_an_int_infra_value_is_stringified(self):
-        resolved = _resolve_legacy_placeholders(
-            {"DB_PORT": "${db_port}"}, REGION, ENVIRONMENT, {"db_port": 5432}
-        )
-        assert resolved == {"DB_PORT": "5432"}
-
-    def test_a_float_infra_value_is_stringified(self):
-        resolved = _resolve_legacy_placeholders(
-            {"RATIO": "${ratio}"}, REGION, ENVIRONMENT, {"ratio": 0.5}
-        )
-        assert resolved == {"RATIO": "0.5"}
-
-    def test_a_bool_infra_value_is_stringified_python_style(self):
-        # Pinned, not endorsed: same bool-is-an-int arm as _get_legacy_secrets.
-        resolved = _resolve_legacy_placeholders(
-            {"ON": "${enabled}"}, REGION, ENVIRONMENT, {"enabled": False}
-        )
-        assert resolved == {"ON": "False"}
-
-    @pytest.mark.parametrize(
-        "value", [None, ["subnet-1"], {"enabled": False}], ids=["none", "list", "dict"]
-    )
-    def test_a_non_scalar_infra_value_makes_no_placeholder(self, value):
-        resolved = _resolve_legacy_placeholders(
-            {"X": "${thing}"}, REGION, ENVIRONMENT, {"thing": value}
-        )
-        assert resolved == {"X": "${thing}"}
-
     def test_an_unknown_placeholder_is_left_alone(self):
         resolved = _resolve_legacy_placeholders({"X": "${nope}"}, REGION, ENVIRONMENT, {})
         assert resolved == {"X": "${nope}"}
@@ -367,31 +374,29 @@ class TestResolveLegacyPlaceholders:
         assert list(resolved) == ["A", "B", "C"]
 
 
-class TestGetEnvironmentVariablesInfraGuard:
-    """The `if infra_config:` guard at the end of get_environment_variables().
+class TestGetEnvironmentVariablesLegacyPass:
+    """The legacy-placeholder pass at the end of get_environment_variables().
 
-    Pinned as-is for 53f-4 to decide: the guard tests the spread built four
-    lines earlier, which always carries `account_id`, so it is permanently
-    true. Coverage confirms the false arm never fires.
+    53f-1 pinned this as `if infra_config:`, a guard on a spread that always
+    carried `account_id` and so was permanently true; coverage confirmed the
+    false arm never fired. 53f-4 deleted the guard. What these pins assert --
+    the pass always runs, and `${account_id}` is offered here and nowhere
+    else -- is unchanged by that.
+
+    `test_an_explicit_account_id_in_infra_config_loses_to_the_spread` is gone:
+    it pinned which of two `account_id` entries won a collision, and
+    InfraConfig has no `account_id` field, so the collision is no longer
+    constructible. The surviving pin below still fixes the one value that
+    reaches `${account_id}`.
     """
 
     def test_an_empty_ctx_infra_config_still_runs_the_legacy_pass(self):
-        # The guard would be false if it tested ctx.infra_config; it tests the
-        # spread instead, so the pass runs and ${aws_region} resolves.
-        ctx = _ctx(config={"environment": {"REGION": "${aws_region}"}}, infra_config={})
+        ctx = _ctx(config={"environment": {"REGION": "${aws_region}"}}, infra_config=InfraConfig())
         assert get_environment_variables(ctx) == {"REGION": REGION}
 
     def test_account_id_is_injected_as_a_placeholder_by_the_spread(self):
-        # This is the value that makes the guard permanently true, and it is
-        # only reachable through the spread -- get_secrets does not do it.
-        ctx = _ctx(config={"environment": {"ACCOUNT": "${account_id}"}}, infra_config={})
-        assert get_environment_variables(ctx) == {"ACCOUNT": ACCOUNT_ID}
-
-    def test_an_explicit_account_id_in_infra_config_loses_to_the_spread(self):
-        ctx = _ctx(
-            config={"environment": {"ACCOUNT": "${account_id}"}},
-            infra_config={"account_id": "000000000000"},
-        )
+        # Only reachable through this path -- get_secrets does not add it.
+        ctx = _ctx(config={"environment": {"ACCOUNT": "${account_id}"}}, infra_config=InfraConfig())
         assert get_environment_variables(ctx) == {"ACCOUNT": ACCOUNT_ID}
 
     def test_a_real_build_infra_config_resolves_its_scalar_entries(self):

@@ -327,15 +327,15 @@ class TestDeployerInit:
         """The deployment/scheduler sub-dicts are built with hard-coded defaults."""
         infra_config = make_deployer().infra_config
 
-        assert infra_config["scheduler"] == {"enabled": False, "description": None}
-        assert infra_config["deployment_config"] == {
+        assert infra_config.scheduler == {"enabled": False, "description": None}
+        assert infra_config.deployment_config == {
             "minimum_healthy_percent": 100,
             "maximum_percent": 200,
             "circuit_breaker_enabled": False,
             "circuit_breaker_rollback": True,
         }
-        assert infra_config["subnet_ids"] == ["subnet-1", "subnet-2"]
-        assert infra_config["database_url"] is None
+        assert infra_config.subnet_ids == ["subnet-1", "subnet-2"]
+        assert infra_config.database_url is None
 
     def test_infra_config_reads_database_cache_and_storage_sections(self, make_deployer):
         deployer = make_deployer(
@@ -346,11 +346,11 @@ class TestDeployerInit:
             )
         )
 
-        assert deployer.infra_config["db_host"] == "db.example.com"
-        assert deployer.infra_config["db_port"] == 5432
-        assert deployer.infra_config["db_name"] == "app"
-        assert deployer.infra_config["redis_url"] == "redis://cache:6379/0"
-        assert deployer.infra_config["s3_media_bucket"] == "media-bucket"
+        assert deployer.infra_config.db_host == "db.example.com"
+        assert deployer.infra_config.db_port == 5432
+        assert deployer.infra_config.db_name == "app"
+        assert deployer.infra_config.redis_url == "redis://cache:6379/0"
+        assert deployer.infra_config.s3_media_bucket == "media-bucket"
 
     def test_context_is_built_from_the_resolved_attributes(self, make_deployer, aws):
         deployer = make_deployer(options=DeployOptions(dry_run=True))

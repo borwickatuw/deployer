@@ -13,7 +13,7 @@ import boto3
 import click
 
 from deployer.config import parse_deploy_config
-from deployer.deploy.context import DeploymentContext, DeployOptions
+from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
 from deployer.deploy.service import (
@@ -35,14 +35,14 @@ class InfraStatus:
     is_critical: bool = False
 
 
-def _build_infra_config(env_config: dict) -> dict:
+def _build_infra_config(env_config: dict) -> InfraConfig:
     """Assemble the ECS infrastructure config from a resolved environment config.
 
     Args:
         env_config: Resolved environment configuration (config.toml).
 
     Returns:
-        Flat infrastructure/database/scheduler settings consumed by the
+        The infrastructure/database/scheduler settings consumed by the
         task-definition and service layers.
     """
     infra = env_config.get("infrastructure", {})
@@ -50,35 +50,37 @@ def _build_infra_config(env_config: dict) -> dict:
     deployment = env_config.get("deployment", {})
     scheduler = env_config.get("scheduler", {})
 
-    return {
-        "execution_role_arn": infra.get("execution_role_arn"),
-        "task_role_arn": infra.get("task_role_arn"),
-        "security_group_id": infra.get("security_group_id"),
-        "subnet_ids": infra.get("private_subnet_ids", []),
-        "target_group_arn": infra.get("target_group_arn"),
-        "service_target_groups": infra.get("service_target_groups", {}),
-        "service_discovery_registries": infra.get("service_discovery_registries", {}),
-        # Database config - supports both URL (legacy) and component-based (Secrets Manager)
-        "database_url": database.get("url"),
-        "db_host": database.get("host"),
-        "db_port": database.get("port"),
-        "db_name": database.get("name"),
-        "db_password_secret_arn": database.get("password_secret_arn"),
-        "db_username_secret_arn": database.get("username_secret_arn"),
-        "redis_url": env_config.get("cache", {}).get("url"),
-        "s3_media_bucket": env_config.get("storage", {}).get("media_bucket"),
-        "rds_instance_id": infra.get("rds_instance_id"),
-        "scheduler": {
+    return InfraConfig(
+        execution_role_arn=infra.get("execution_role_arn"),
+        task_role_arn=infra.get("task_role_arn"),
+        security_group_id=infra.get("security_group_id"),
+        subnet_ids=infra.get("private_subnet_ids", []),
+        target_group_arn=infra.get("target_group_arn"),
+        service_target_groups=infra.get("service_target_groups", {}),
+        service_discovery_registries=infra.get("service_discovery_registries", {}),
+        database_url=database.get("url"),
+        db_host=database.get("host"),
+        db_port=database.get("port"),
+        db_name=database.get("name"),
+        db_password_secret_arn=database.get("password_secret_arn"),
+        db_username_secret_arn=database.get("username_secret_arn"),
+        redis_url=env_config.get("cache", {}).get("url"),
+        s3_media_bucket=env_config.get("storage", {}).get("media_bucket"),
+        rds_instance_id=infra.get("rds_instance_id"),
+        scheduler={
             "enabled": scheduler.get("enabled", False),
             "description": scheduler.get("description"),
         },
-        "deployment_config": {
+        deployment_config={
             "minimum_healthy_percent": deployment.get("minimum_healthy_percent", 100),
             "maximum_percent": deployment.get("maximum_percent", 200),
             "circuit_breaker_enabled": deployment.get("circuit_breaker_enabled", False),
             "circuit_breaker_rollback": deployment.get("circuit_breaker_rollback", True),
         },
-    }
+        # Tofu's `health_check_config` output, wired into config.toml as
+        # [services].health_check -- see docs/CONFIG-REFERENCE.md.
+        health_check_config=env_config.get("services", {}).get("health_check", {}),
+    )
 
 
 class Deployer:
@@ -208,7 +210,7 @@ class Deployer:
 
     def check_infrastructure_status(self) -> InfraStatus:
         """Check if critical infrastructure is available."""
-        rds_instance_id = self.infra_config.get("rds_instance_id")
+        rds_instance_id = self.infra_config.rds_instance_id
         if not rds_instance_id:
             return InfraStatus()
 
@@ -229,7 +231,7 @@ class Deployer:
             return InfraStatus()
 
         msg = f"RDS instance '{rds_instance_id}' is {status} (not available)."
-        scheduler = self.infra_config.get("scheduler", {})
+        scheduler = self.infra_config.scheduler
         if scheduler.get("enabled") and scheduler.get("description"):
             msg += f"\n         Service hours: {scheduler['description']}"
 

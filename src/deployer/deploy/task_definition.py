@@ -163,7 +163,6 @@ def get_environment_variables(
     environment = ctx.environment
     region = ctx.region
     env_config = ctx.env_config
-    infra_config = {**ctx.infra_config, "account_id": ctx.account_id}
 
     merged = {}
 
@@ -218,9 +217,14 @@ def get_environment_variables(
             service_discovery_namespace,
         )
 
-    # Resolve legacy placeholders for backward compatibility
-    if infra_config:
-        merged = _resolve_legacy_placeholders(merged, region, environment, infra_config)
+    # Resolve legacy placeholders for backward compatibility. account_id is
+    # only offered here -- get_secrets() does not add it.
+    merged = _resolve_legacy_placeholders(
+        merged,
+        region,
+        environment,
+        ctx.infra_config.legacy_placeholders() | {"account_id": ctx.account_id},
+    )
 
     return merged
 
@@ -229,7 +233,7 @@ def _resolve_legacy_placeholders(
     env_vars: dict[str, str],
     region: str,
     environment: str,
-    infra_config: dict,
+    infra_placeholders: dict[str, str],
 ) -> dict[str, str]:
     """Resolve legacy ${placeholder} variables in environment configuration.
 
@@ -240,22 +244,17 @@ def _resolve_legacy_placeholders(
         env_vars: Environment variables with potential placeholders.
         region: AWS region.
         environment: Target environment name.
-        infra_config: Infrastructure configuration.
+        infra_placeholders: Substitution table from
+            ``InfraConfig.legacy_placeholders()``; overrides the built-ins.
 
     Returns:
         Environment variables with placeholders resolved.
     """
-    # Build placeholders from all infra_config values plus built-in ones
     placeholders = {
         "aws_region": region,
         "environment": environment,
+        **infra_placeholders,
     }
-    # Add all infra_config values as available placeholders
-    for key, value in infra_config.items():
-        if isinstance(value, str):
-            placeholders[key] = value
-        elif isinstance(value, (int, float)):
-            placeholders[key] = str(value)
 
     resolved = {}
     for key, value in env_vars.items():
@@ -320,7 +319,11 @@ def get_secrets(
     else:
         # Legacy style: [secrets] with explicit ssm:/path or secretsmanager:arn
         return _get_legacy_secrets(
-            config, ctx.environment, ctx.region, ctx.account_id, ctx.infra_config
+            config,
+            ctx.environment,
+            ctx.region,
+            ctx.account_id,
+            ctx.infra_config.legacy_placeholders(),
         )
 
 
@@ -329,24 +332,21 @@ def _get_legacy_secrets(
     environment: str,
     region: str,
     account_id: str,
-    infra_config: dict,
+    infra_placeholders: dict[str, str],
 ) -> list[dict[str, str]]:
     """Get secrets using legacy explicit path style.
 
     Supports:
         SECRET_KEY = "ssm:/app/${environment}/secret-key"
         DB_PASSWORD = "secretsmanager:${db_password_secret_arn}"
+
+    ``infra_placeholders`` is the substitution table from
+    ``InfraConfig.legacy_placeholders()``; it overrides the built-in
+    ``environment``. Unlike ``get_environment_variables`` this path offers no
+    ``${account_id}``.
     """
     secrets_config = config.get("secrets", {})
-    infra = infra_config
-
-    # Build placeholders
-    placeholders = {"environment": environment}
-    for key, val in infra.items():
-        if isinstance(val, str):
-            placeholders[key] = val
-        elif isinstance(val, (int, float)):
-            placeholders[key] = str(val)
+    placeholders = {"environment": environment, **infra_placeholders}
 
     secrets = []
     for name, value in secrets_config.items():
@@ -449,8 +449,8 @@ def build_task_definition(
         container_def["command"] = service_toml["command"]
 
     # Get execution role and task role ARNs from infra_config
-    execution_role_arn = ctx.infra_config.get("execution_role_arn")
-    task_role_arn = ctx.infra_config.get("task_role_arn")
+    execution_role_arn = ctx.infra_config.execution_role_arn
+    task_role_arn = ctx.infra_config.task_role_arn
 
     task_def = {
         "family": task_family,

@@ -92,7 +92,7 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
-from deployer.deploy.context import DeploymentContext, StabilityConfig
+from deployer.deploy.context import DeploymentContext, InfraConfig, StabilityConfig
 from deployer.deploy.migrations import store_migrations_hash
 from deployer.deploy.service import (
     FATAL_ERROR_PATTERNS,
@@ -265,7 +265,7 @@ def _ctx(ecs_client=None, config: dict | None = None, dry_run: bool = False):
         cluster_name=CLUSTER,
         config={} if config is None else config,
         service_config={},
-        infra_config={},
+        infra_config=InfraConfig(),
         app_name=APP_NAME,
         environment=ENVIRONMENT,
         region=REGION,
@@ -830,7 +830,7 @@ class TestStableFailureThreshold:
             _wait_for_service_stable(_ctx(client), "web", FAST)
         assert exc_info.value.error_type == "task_failures"
         assert str(exc_info.value) == (
-            "web: 3 tasks failed. Latest event: " "task stopped: Essential container in task exited"
+            "web: 3 tasks failed. Latest event: task stopped: Essential container in task exited"
         )
 
     def test_no_events_uses_the_default_error_text(self, sleeps):

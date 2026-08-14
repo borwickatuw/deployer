@@ -15,7 +15,11 @@ from importlib.util import module_from_spec, spec_from_file_location  # noqa: E4
 # Import from the new module structure
 from deployer.config import ImageConfig  # noqa: E402
 from deployer.core.deploy import topological_sort  # noqa: E402
-from deployer.deploy.context import DeploymentContext, DeployOptions  # noqa: E402
+from deployer.deploy.context import (  # noqa: E402
+    DeploymentContext,
+    DeployOptions,
+    InfraConfig,
+)
 from deployer.deploy.deployer import Deployer  # noqa: E402
 from deployer.deploy.task_definition import _resolve_legacy_placeholders  # noqa: E402
 from deployer.deploy.task_definition import (  # noqa: E402
@@ -31,7 +35,7 @@ def _make_ctx(**overrides) -> DeploymentContext:
         "cluster_name": "test-cluster",
         "config": {},
         "service_config": {},
-        "infra_config": {},
+        "infra_config": InfraConfig(),
         "app_name": "testapp",
         "environment": "staging",
         "region": "us-west-2",
@@ -233,7 +237,7 @@ class TestResolveLegacyPlaceholders:
 
     def test_resolve_placeholders(self):
         """Test that ${placeholder} syntax is resolved."""
-        infra_config = {
+        infra_placeholders = {
             "database_url": "postgres://localhost/test",
             "redis_url": "redis://localhost:6379",
         }
@@ -244,7 +248,9 @@ class TestResolveLegacyPlaceholders:
             "STATIC_VALUE": "fixed",
         }
 
-        resolved = _resolve_legacy_placeholders(env_vars, "us-west-2", "staging", infra_config)
+        resolved = _resolve_legacy_placeholders(
+            env_vars, "us-west-2", "staging", infra_placeholders
+        )
 
         assert resolved["DATABASE_URL"] == "postgres://localhost/test"
         assert resolved["REDIS_URL"] == "redis://localhost:6379"

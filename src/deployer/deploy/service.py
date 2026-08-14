@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 
 from ..aws.cloudwatch import get_task_logs
 from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
-from .context import DeploymentContext, StabilityConfig
+from .context import DeploymentContext, InfraConfig, StabilityConfig
 from .migrations import should_skip_migrations, store_migrations_hash
 from .task_definition import build_task_definition, get_service_sizing
 
@@ -56,9 +56,9 @@ _DEPLOYMENT_CONFIG_KEYS = {
 }
 
 
-def _get_deployment_config(infra_config: dict) -> DeploymentConfig:
+def _get_deployment_config(infra_config: InfraConfig) -> DeploymentConfig:
     """Extract deployment configuration from infra_config."""
-    deployment_cfg = infra_config.get("deployment_config", {})
+    deployment_cfg = infra_config.deployment_config
     kwargs = {
         field: deployment_cfg[key]
         for key, field in _DEPLOYMENT_CONFIG_KEYS.items()
@@ -245,8 +245,8 @@ def _require_network_config(ctx) -> tuple[list[str], str]:
     Raises:
         RuntimeError: If either value is missing from infra_config.
     """
-    subnet_ids = ctx.infra_config.get("subnet_ids", [])
-    security_group_id = ctx.infra_config.get("security_group_id", "")
+    subnet_ids = ctx.infra_config.subnet_ids
+    security_group_id = ctx.infra_config.security_group_id
 
     if not subnet_ids or not security_group_id:
         log_error("Missing network configuration in infra_config (subnet_ids, security_group_id).")
@@ -295,16 +295,14 @@ def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_tom
         return {}
 
     # Use per-service target group if available, otherwise default
-    service_target_groups = ctx.infra_config.get("service_target_groups", {})
-    target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.get(
-        "target_group_arn", ""
-    )
+    service_target_groups = ctx.infra_config.service_target_groups
+    target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.target_group_arn
     if not target_group_arn:
         return {}
 
     # Health check grace period gives the container time to start before
     # health checks begin.
-    health_check_cfg = ctx.infra_config.get("health_check_config", {})
+    health_check_cfg = ctx.infra_config.health_check_config
     return {
         "loadBalancers": [
             {
@@ -329,7 +327,7 @@ def _service_registries(ctx, service_name: str) -> list[dict] | None:
     Returns:
         List of serviceRegistries entries, or None when not configured.
     """
-    service_discovery_registries = ctx.infra_config.get("service_discovery_registries", {})
+    service_discovery_registries = ctx.infra_config.service_discovery_registries
     registry_arn = service_discovery_registries.get(service_name)
     if not registry_arn:
         return None
