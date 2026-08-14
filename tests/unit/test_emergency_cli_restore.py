@@ -10,13 +10,17 @@ test. Nothing here is a fix.
 and force-deploy commands; ``test_emergency_rds.py`` pins the RDS *producers*
 against moto. Between those two files nothing executed the restore command,
 which is where every subscript read of the restore payloads lives:
-``result["status"]``, ``result["message"]``, ``result["instance_id"]`` (three
-times) and ``rds_details["latest_restorable_time"]``.
+``result.status``, ``result.message``, ``result.instance_id`` (three times)
+and ``rds_details.latest_restorable_time``.
 
 That is what makes this the Phase 53f gap. ``restore_from_snapshot()`` and
-``restore_from_point_in_time()`` return **dicts**, and ``cmd_restore_db`` is
-their only production consumer. A ``dict -> dataclass`` conversion cannot be
-shown to be behaviour-preserving against the producer pins alone.
+``restore_from_point_in_time()`` returned **dicts**, and ``cmd_restore_db`` is
+their only production consumer. A ``dict -> NamedTuple`` conversion cannot be
+shown to be behaviour-preserving against the producer pins alone. 53f-2 made
+that conversion: both producers now answer with ``RestoreResult`` and
+``get_rds_instance_details`` with ``RdsInstanceDetails``, so the reads above
+are attribute reads. Every assertion below is the one it was before the
+conversion; only the access form moved.
 
 What is pinned here:
 
@@ -27,7 +31,9 @@ What is pinned here:
   verifiable.
 * ``_print_restore_success()``'s whole block, including the fact that it reads
   ``instance_id`` three times and ``message`` once, and that it logs through
-  *two* logger channels (``rds`` and ``success``) before printing.
+  *two* logger channels (``rds`` and ``success``) before printing. The pin that
+  a payload missing either field blows up survives the conversion, moved from
+  a read-time ``KeyError`` to a construction-time ``TypeError``.
 * The ``--time`` arm's ISO parsing, including the ``Z`` -> ``+00:00`` rewrite
   and the ``ValueError`` message.
 * The interactive path: the numbered snapshot menu, the point-in-time
@@ -67,6 +73,8 @@ from pathlib import Path
 import boto3
 import pytest
 from botocore.exceptions import ClientError
+
+from deployer.emergency.rds import RdsInstanceDetails, RestoreResult
 
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
@@ -114,19 +122,37 @@ def _answers(monkeypatch, *replies: str) -> list[str]:
     return prompts
 
 
-def _creating(instance_id: str = TARGET_ID, message: str = "Restore initiated.") -> dict:
+def _creating(instance_id: str = TARGET_ID, message: str = "Restore initiated.") -> RestoreResult:
     """A success payload shaped like restore_from_snapshot()'s return."""
-    return {
-        "instance_id": instance_id,
-        "status": "creating",
-        "source_snapshot": "snap-1",
-        "message": message,
-    }
+    return RestoreResult(
+        instance_id=instance_id,
+        status="creating",
+        source_snapshot="snap-1",
+        message=message,
+    )
 
 
-def _error(message: str = "Instance already exists.") -> dict:
+def _error(message: str = "Instance already exists.") -> RestoreResult:
     """An error payload shaped like _handle_restore_error()'s return."""
-    return {"instance_id": TARGET_ID, "status": "error", "message": message}
+    return RestoreResult(instance_id=TARGET_ID, status="error", message=message)
+
+
+def _details(**overrides) -> RdsInstanceDetails:
+    """An instance record shaped like get_rds_instance_details()'s return."""
+    fields = {
+        "id": RDS_ID,
+        "status": "available",
+        "instance_class": "db.t3.micro",
+        "engine": "postgres",
+        "engine_version": "16.3",
+        "endpoint": f"{RDS_ID}.abc123.{REGION}.rds.amazonaws.com",
+        "port": 5432,
+        "vpc_security_groups": ["sg-123"],
+        "db_subnet_group": SUBNET_GROUP,
+        "latest_restorable_time": None,
+    }
+    fields.update(overrides)
+    return RdsInstanceDetails(**fields)
 
 
 def _snapshot(snapshot_id: str, created_at: str = "2026-08-13T09:00:00+00:00") -> dict:
@@ -151,7 +177,7 @@ def restore(monkeypatch):
             self.snapshot_result: object = _creating()
             self.time_result: object = _creating()
             self.snapshots: list[dict] = []
-            self.details: dict | None = None
+            self.details: RdsInstanceDetails | None = None
 
         def restore_from_snapshot(self, rds_id: str, snapshot_id: str):
             self.from_snapshot.append((rds_id, snapshot_id))
@@ -166,7 +192,7 @@ def restore(monkeypatch):
         def get_rds_snapshots(self, _rds_id: str, **_kw) -> list[dict]:
             return self.snapshots
 
-        def get_rds_instance_details(self, _rds_id: str) -> dict | None:
+        def get_rds_instance_details(self, _rds_id: str) -> RdsInstanceDetails | None:
             return self.details
 
     calls = _Calls()
@@ -207,14 +233,20 @@ class TestPrintRestoreSuccess:
         assert "update your application's DATABASE_URL" in out
 
     @pytest.mark.parametrize("missing", ["instance_id", "message"])
-    def test_a_payload_missing_either_key_raises_key_error(self, missing, capsys):
-        # Pinned, not endorsed: both reads are subscripts. The producers always
-        # supply both keys; the pin exists so a dict -> dataclass conversion
-        # has to decide this rather than change it by accident.
-        payload = _creating()
-        del payload[missing]
-        with pytest.raises(KeyError, match=missing):
-            emergency._print_restore_success(_StubLogger(), payload)
+    def test_a_payload_missing_either_field_cannot_be_built(self, missing):
+        # 53f-2 decided the question this pin was written to force. While the
+        # payload was a dict, both reads were subscripts and a missing key
+        # raised KeyError inside _print_restore_success -- after the header
+        # lines had already been printed. RestoreResult moves the same failure
+        # to construction time, so the reads can no longer raise at all.
+        fields = {
+            "instance_id": TARGET_ID,
+            "status": "creating",
+            "message": "Restore initiated.",
+        }
+        del fields[missing]
+        with pytest.raises(TypeError, match=missing):
+            RestoreResult(**fields)
 
 
 class TestCmdRestoreDbFromSnapshot:
@@ -344,7 +376,7 @@ class TestCmdRestoreDbInteractive:
         self, logger, restore, monkeypatch, capsys
     ):
         restore.snapshots = [_snapshot("snap-1")]
-        restore.details = {"latest_restorable_time": datetime(2026, 8, 13, 11, 0, tzinfo=UTC)}
+        restore.details = _details(latest_restorable_time=datetime(2026, 8, 13, 11, 0, tzinfo=UTC))
         _answers(monkeypatch, "0")
         assert emergency.cmd_restore_db(ENV, snapshot=None, time=None) == 0
         assert (
@@ -365,7 +397,7 @@ class TestCmdRestoreDbInteractive:
         self, logger, restore, monkeypatch, capsys
     ):
         restore.snapshots = [_snapshot("snap-1")]
-        restore.details = {"latest_restorable_time": None}
+        restore.details = _details(latest_restorable_time=None)
         _answers(monkeypatch, "0")
         assert emergency.cmd_restore_db(ENV, snapshot=None, time=None) == 0
         assert "Point-in-time recovery is available" not in capsys.readouterr().out

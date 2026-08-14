@@ -7,12 +7,52 @@ Provides functions for:
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 from botocore.exceptions import ClientError
 
 from ..utils import format_iso
+
+
+class RdsInstanceDetails(NamedTuple):
+    """One RDS instance as described by ``describe_db_instances``.
+
+    A ``NamedTuple`` rather than a dataclass: most of these fields exist to
+    describe the instance to an operator, and only ``instance_class``,
+    ``db_subnet_group``, ``vpc_security_groups`` and ``latest_restorable_time``
+    are read in production. A dataclass would report the rest as
+    write-only attributes; a NamedTuple carries them honestly.
+    """
+
+    id: str
+    status: str
+    instance_class: str
+    engine: str
+    engine_version: str
+    endpoint: str | None
+    port: int | None
+    vpc_security_groups: list[str]
+    db_subnet_group: str | None
+    latest_restorable_time: datetime | None
+
+
+class RestoreResult(NamedTuple):
+    """The outcome of a restore request, success or expected failure.
+
+    Both restore entry points answer with this shape, and so does
+    ``_handle_restore_error``, which already served both. ``status`` is
+    ``"creating"`` for an initiated restore and ``"error"`` for one that was
+    rejected before it started; the two optional fields record which kind of
+    restore was asked for. A ``None`` return -- distinct from an error result
+    -- still means the source instance could not be read at all.
+    """
+
+    instance_id: str
+    status: str
+    message: str
+    source_snapshot: str | None = None
+    restore_time: str | None = None
 
 
 def _get_rds_client() -> Any:
@@ -150,14 +190,14 @@ def get_rds_snapshots(
         return []
 
 
-def get_rds_instance_details(instance_id: str) -> dict | None:
+def get_rds_instance_details(instance_id: str) -> RdsInstanceDetails | None:
     """Get details of an RDS instance.
 
     Args:
         instance_id: RDS instance identifier
 
     Returns:
-        Dict with instance details, or None if not found
+        RdsInstanceDetails, or None if not found
     """
     client = _get_rds_client()
     try:
@@ -169,25 +209,27 @@ def get_rds_instance_details(instance_id: str) -> dict | None:
             return None
 
         inst = instances[0]
-        return {
-            "id": inst.get("DBInstanceIdentifier", ""),
-            "status": inst.get("DBInstanceStatus", ""),
-            "instance_class": inst.get("DBInstanceClass", ""),
-            "engine": inst.get("Engine", ""),
-            "engine_version": inst.get("EngineVersion", ""),
-            "endpoint": inst.get("Endpoint", {}).get("Address"),
-            "port": inst.get("Endpoint", {}).get("Port"),
-            "vpc_security_groups": [
+        return RdsInstanceDetails(
+            id=inst.get("DBInstanceIdentifier", ""),
+            status=inst.get("DBInstanceStatus", ""),
+            instance_class=inst.get("DBInstanceClass", ""),
+            engine=inst.get("Engine", ""),
+            engine_version=inst.get("EngineVersion", ""),
+            endpoint=inst.get("Endpoint", {}).get("Address"),
+            port=inst.get("Endpoint", {}).get("Port"),
+            vpc_security_groups=[
                 sg.get("VpcSecurityGroupId") for sg in inst.get("VpcSecurityGroups", [])
             ],
-            "db_subnet_group": inst.get("DBSubnetGroup", {}).get("DBSubnetGroupName"),
-            "latest_restorable_time": inst.get("LatestRestorableTime"),
-        }
+            db_subnet_group=inst.get("DBSubnetGroup", {}).get("DBSubnetGroupName"),
+            latest_restorable_time=inst.get("LatestRestorableTime"),
+        )
     except ClientError:
         return None
 
 
-def _prepare_restore(source_instance_id: str, target_suffix: str) -> tuple[str, dict] | None:
+def _prepare_restore(
+    source_instance_id: str, target_suffix: str
+) -> tuple[str, RdsInstanceDetails] | None:
     """Common setup for restore operations: get source details and build target ID.
 
     Returns:
@@ -200,23 +242,24 @@ def _prepare_restore(source_instance_id: str, target_suffix: str) -> tuple[str, 
     return target_id, source_details
 
 
-def _handle_restore_error(e: ClientError, target_id: str) -> dict:
+def _handle_restore_error(e: ClientError, target_id: str) -> RestoreResult:
     """Handle ClientError from a restore operation.
 
-    Returns an error dict for DBInstanceAlreadyExists. Re-raises all other
-    ClientErrors so they propagate to the caller instead of being swallowed.
+    Returns an error RestoreResult for DBInstanceAlreadyExists. Re-raises all
+    other ClientErrors so they propagate to the caller instead of being
+    swallowed.
     """
     error_code = e.response.get("Error", {}).get("Code", "")
     if error_code == "DBInstanceAlreadyExists":
-        return {
-            "instance_id": target_id,
-            "status": "error",
-            "message": (
+        return RestoreResult(
+            instance_id=target_id,
+            status="error",
+            message=(
                 f"Instance '{target_id}' already exists. Delete it first with:\n"
                 f"  aws rds delete-db-instance "
                 f"--db-instance-identifier {target_id} --skip-final-snapshot"
             ),
-        }
+        )
     raise e
 
 
@@ -224,7 +267,7 @@ def restore_from_snapshot(
     source_instance_id: str,
     snapshot_id: str,
     target_suffix: str = "-restore",
-) -> dict | None:
+) -> RestoreResult | None:
     """Restore a database from a snapshot to a new instance.
 
     Creates a new RDS instance with a suffix appended to the original name.
@@ -236,12 +279,9 @@ def restore_from_snapshot(
         target_suffix: Suffix for the new instance name
 
     Returns:
-        Dict with new instance info, or None on error:
-        {
-            "instance_id": "myapp-production-db-restore",
-            "status": "creating",
-            "message": "Restore initiated. Instance will be available in 10-30 minutes.",
-        }
+        RestoreResult with status "creating" if the restore was initiated or
+        "error" if the target already exists, or None if the source instance
+        could not be read.
     """
     result = _prepare_restore(source_instance_id, target_suffix)
     if not result:
@@ -252,22 +292,22 @@ def restore_from_snapshot(
         _get_rds_client().restore_db_instance_from_db_snapshot(
             DBInstanceIdentifier=target_id,
             DBSnapshotIdentifier=snapshot_id,
-            DBInstanceClass=source_details["instance_class"],
-            DBSubnetGroupName=source_details["db_subnet_group"],
-            VpcSecurityGroupIds=source_details["vpc_security_groups"],
+            DBInstanceClass=source_details.instance_class,
+            DBSubnetGroupName=source_details.db_subnet_group,
+            VpcSecurityGroupIds=source_details.vpc_security_groups,
             PubliclyAccessible=False,
         )
 
-        return {
-            "instance_id": target_id,
-            "status": "creating",
-            "source_snapshot": snapshot_id,
-            "message": (
+        return RestoreResult(
+            instance_id=target_id,
+            status="creating",
+            source_snapshot=snapshot_id,
+            message=(
                 f"Restore initiated. Instance '{target_id}' will be available "
                 "in 10-30 minutes. Check status with:\n"
                 f"  aws rds describe-db-instances --db-instance-identifier {target_id}"
             ),
-        }
+        )
     except ClientError as e:
         return _handle_restore_error(e, target_id)
 
@@ -276,7 +316,7 @@ def restore_from_point_in_time(
     source_instance_id: str,
     restore_time: datetime,
     target_suffix: str = "-restore",
-) -> dict | None:
+) -> RestoreResult | None:
     """Restore a database to a point in time.
 
     Creates a new RDS instance with a suffix appended to the original name.
@@ -288,7 +328,9 @@ def restore_from_point_in_time(
         target_suffix: Suffix for the new instance name
 
     Returns:
-        Dict with new instance info, or None on error
+        RestoreResult with status "creating" if the restore was initiated or
+        "error" if the requested time is unreachable or the target already
+        exists, or None if the source instance could not be read.
     """
     result = _prepare_restore(source_instance_id, target_suffix)
     if not result:
@@ -296,37 +338,37 @@ def restore_from_point_in_time(
     target_id, source_details = result
 
     # Check if restore time is valid
-    latest_restorable = source_details.get("latest_restorable_time")
+    latest_restorable = source_details.latest_restorable_time
     if latest_restorable and restore_time > latest_restorable:
-        return {
-            "instance_id": target_id,
-            "status": "error",
-            "message": (
+        return RestoreResult(
+            instance_id=target_id,
+            status="error",
+            message=(
                 f"Restore time {restore_time.isoformat()} is after the latest "
                 f"restorable time {latest_restorable.isoformat()}."
             ),
-        }
+        )
 
     try:
         _get_rds_client().restore_db_instance_to_point_in_time(
             SourceDBInstanceIdentifier=source_instance_id,
             TargetDBInstanceIdentifier=target_id,
             RestoreTime=restore_time,
-            DBInstanceClass=source_details["instance_class"],
-            DBSubnetGroupName=source_details["db_subnet_group"],
-            VpcSecurityGroupIds=source_details["vpc_security_groups"],
+            DBInstanceClass=source_details.instance_class,
+            DBSubnetGroupName=source_details.db_subnet_group,
+            VpcSecurityGroupIds=source_details.vpc_security_groups,
             PubliclyAccessible=False,
         )
 
-        return {
-            "instance_id": target_id,
-            "status": "creating",
-            "restore_time": restore_time.isoformat(),
-            "message": (
+        return RestoreResult(
+            instance_id=target_id,
+            status="creating",
+            restore_time=restore_time.isoformat(),
+            message=(
                 f"Point-in-time restore initiated. Instance '{target_id}' will be "
                 "available in 10-30 minutes. Check status with:\n"
                 f"  aws rds describe-db-instances --db-instance-identifier {target_id}"
             ),
-        }
+        )
     except ClientError as e:
         return _handle_restore_error(e, target_id)

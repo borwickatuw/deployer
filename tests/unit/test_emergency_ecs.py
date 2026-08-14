@@ -228,12 +228,12 @@ class TestGetTaskDefinitionDetails:
     def test_returns_details_with_environment(self, ecs_cluster):
         details = get_task_definition_details(ecs_cluster["arns"][2])
 
-        assert details["arn"] == ecs_cluster["arns"][2]
-        assert details["family"] == FAMILY
-        assert details["revision"] == 3
-        assert details["cpu"] == "256"
-        assert details["memory"] == "512"
-        assert details["environment_variables"] == {
+        assert details.arn == ecs_cluster["arns"][2]
+        assert details.family == FAMILY
+        assert details.revision == 3
+        assert details.cpu == "256"
+        assert details.memory == "512"
+        assert details.environment_variables == {
             "app": {"FOO": "baz", "ADDED": "y"},
             "sidecar": {"SIDECAR": "on"},
         }

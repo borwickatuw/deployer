@@ -216,16 +216,16 @@ class TestGetRdsInstanceDetails:
     def test_returns_details(self, rds_instance):
         details = get_rds_instance_details(INSTANCE_ID)
 
-        assert details["id"] == INSTANCE_ID
-        assert details["status"] == "available"
-        assert details["instance_class"] == "db.t3.micro"
-        assert details["engine"] == "postgres"
-        assert details["engine_version"] == "16.3"
-        assert details["endpoint"].endswith(".rds.amazonaws.com")
-        assert details["port"] == 5432
-        assert details["vpc_security_groups"] == [rds_instance["security_group_id"]]
-        assert details["db_subnet_group"] == SUBNET_GROUP
-        assert isinstance(details["latest_restorable_time"], datetime)
+        assert details.id == INSTANCE_ID
+        assert details.status == "available"
+        assert details.instance_class == "db.t3.micro"
+        assert details.engine == "postgres"
+        assert details.engine_version == "16.3"
+        assert details.endpoint.endswith(".rds.amazonaws.com")
+        assert details.port == 5432
+        assert details.vpc_security_groups == [rds_instance["security_group_id"]]
+        assert details.db_subnet_group == SUBNET_GROUP
+        assert isinstance(details.latest_restorable_time, datetime)
 
     def test_missing_instance_returns_none(self, mocked_aws):
         assert get_rds_instance_details("no-such-instance") is None
@@ -244,7 +244,7 @@ class TestPrepareRestore:
         target_id, source_details = _prepare_restore(INSTANCE_ID, "-restore")
 
         assert target_id == f"{INSTANCE_ID}-restore"
-        assert source_details["instance_class"] == "db.t3.micro"
+        assert source_details.instance_class == "db.t3.micro"
 
     def test_missing_source_returns_none(self, mocked_aws):
         assert _prepare_restore("no-such-instance", "-restore") is None
@@ -254,10 +254,10 @@ class TestHandleRestoreError:
     def test_already_exists_returns_error_dict(self):
         result = _handle_restore_error(make_client_error("DBInstanceAlreadyExists"), "db-restore")
 
-        assert result["instance_id"] == "db-restore"
-        assert result["status"] == "error"
-        assert "already exists" in result["message"]
-        assert "aws rds delete-db-instance" in result["message"]
+        assert result.instance_id == "db-restore"
+        assert result.status == "error"
+        assert "already exists" in result.message
+        assert "aws rds delete-db-instance" in result.message
 
     def test_other_errors_reraise(self):
         error = make_client_error("InvalidParameterValue")
@@ -274,10 +274,10 @@ class TestRestoreFromSnapshot:
 
         result = restore_from_snapshot(INSTANCE_ID, snapshot_id)
 
-        assert result["instance_id"] == f"{INSTANCE_ID}-restore"
-        assert result["status"] == "creating"
-        assert result["source_snapshot"] == snapshot_id
-        assert f"{INSTANCE_ID}-restore" in result["message"]
+        assert result.instance_id == f"{INSTANCE_ID}-restore"
+        assert result.status == "creating"
+        assert result.source_snapshot == snapshot_id
+        assert f"{INSTANCE_ID}-restore" in result.message
 
         client = boto3.client("rds", region_name=REGION)
         restored = client.describe_db_instances(DBInstanceIdentifier=f"{INSTANCE_ID}-restore")
@@ -288,7 +288,7 @@ class TestRestoreFromSnapshot:
 
         result = restore_from_snapshot(INSTANCE_ID, snapshot_id, target_suffix="-recovery")
 
-        assert result["instance_id"] == f"{INSTANCE_ID}-recovery"
+        assert result.instance_id == f"{INSTANCE_ID}-recovery"
 
     def test_missing_source_returns_none(self, mocked_aws):
         assert restore_from_snapshot("no-such-instance", "some-snapshot") is None
@@ -327,8 +327,8 @@ class TestRestoreFromSnapshot:
 
         result = restore_from_snapshot(INSTANCE_ID, "some-snapshot")
 
-        assert result["status"] == "error"
-        assert result["instance_id"] == f"{INSTANCE_ID}-restore"
+        assert result.status == "error"
+        assert result.instance_id == f"{INSTANCE_ID}-restore"
 
 
 class TestRestoreFromPointInTime:
@@ -337,9 +337,9 @@ class TestRestoreFromPointInTime:
 
         result = restore_from_point_in_time(INSTANCE_ID, restore_time)
 
-        assert result["instance_id"] == f"{INSTANCE_ID}-restore"
-        assert result["status"] == "creating"
-        assert result["restore_time"] == restore_time.isoformat()
+        assert result.instance_id == f"{INSTANCE_ID}-restore"
+        assert result.status == "creating"
+        assert result.restore_time == restore_time.isoformat()
 
         client = boto3.client("rds", region_name=REGION)
         restored = client.describe_db_instances(DBInstanceIdentifier=f"{INSTANCE_ID}-restore")
@@ -353,8 +353,8 @@ class TestRestoreFromPointInTime:
 
         result = restore_from_point_in_time(INSTANCE_ID, too_late)
 
-        assert result["status"] == "error"
-        assert "after the latest" in result["message"]
+        assert result.status == "error"
+        assert "after the latest" in result.message
 
     def test_target_already_exists_returns_error_dict(self, rds_instance):
         restore_time = datetime.now(UTC) - timedelta(hours=1)
@@ -362,6 +362,6 @@ class TestRestoreFromPointInTime:
 
         result = restore_from_point_in_time(INSTANCE_ID, restore_time)
 
-        assert result["status"] == "error"
-        assert result["instance_id"] == f"{INSTANCE_ID}-restore"
-        assert "already exists" in result["message"]
+        assert result.status == "error"
+        assert result.instance_id == f"{INSTANCE_ID}-restore"
+        assert "already exists" in result.message

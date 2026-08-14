@@ -8,13 +8,31 @@ Provides functions for:
 """
 
 import time
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 from botocore.exceptions import ClientError
 
 from ..utils import format_iso
 from .checkpoint import ServiceState
+
+
+class TaskDefinitionDetails(NamedTuple):
+    """One task definition revision as described by ``describe_task_definition``.
+
+    A ``NamedTuple`` rather than a dataclass: only ``environment_variables``
+    is read in production (by ``compare_task_definitions``); the identifying
+    and sizing fields are carried for operators and future callers, and a
+    dataclass would report them as write-only attributes.
+    """
+
+    arn: str
+    family: str
+    revision: int
+    registered_at: str | None
+    cpu: str
+    memory: str
+    environment_variables: dict[str, dict[str, str]]
 
 
 def _get_ecs_client() -> Any:
@@ -149,14 +167,14 @@ def list_task_definition_revisions(
     return result
 
 
-def get_task_definition_details(task_def_arn: str) -> dict | None:
+def get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails | None:
     """Get details of a task definition.
 
     Args:
         task_def_arn: Task definition ARN
 
     Returns:
-        Dict with task definition details, or None if not found
+        TaskDefinitionDetails, or None if not found
     """
     client = _get_ecs_client()
     try:
@@ -174,15 +192,15 @@ def get_task_definition_details(task_def_arn: str) -> dict | None:
 
         registered_at = format_iso(task_def.get("registeredAt"))
 
-        return {
-            "arn": task_def.get("taskDefinitionArn", ""),
-            "family": task_def.get("family", ""),
-            "revision": task_def.get("revision", 0),
-            "registered_at": registered_at,
-            "cpu": task_def.get("cpu", ""),
-            "memory": task_def.get("memory", ""),
-            "environment_variables": env_vars,
-        }
+        return TaskDefinitionDetails(
+            arn=task_def.get("taskDefinitionArn", ""),
+            family=task_def.get("family", ""),
+            revision=task_def.get("revision", 0),
+            registered_at=registered_at,
+            cpu=task_def.get("cpu", ""),
+            memory=task_def.get("memory", ""),
+            environment_variables=env_vars,
+        )
     except ClientError:
         return None
 
@@ -210,8 +228,8 @@ def compare_task_definitions(arn1: str, arn2: str) -> dict:
     if not details1 or not details2:
         return {}
 
-    env1 = details1.get("environment_variables", {})
-    env2 = details2.get("environment_variables", {})
+    env1 = details1.environment_variables
+    env2 = details2.environment_variables
 
     result = {}
 

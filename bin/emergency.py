@@ -55,6 +55,7 @@ from deployer.emergency.ecs import (
     wait_for_deployment,
 )
 from deployer.emergency.rds import (
+    RestoreResult,
     create_emergency_snapshot,
     get_rds_instance_details,
     get_rds_snapshots,
@@ -144,23 +145,23 @@ def _snapshot_services(services: dict) -> dict[str, ServiceState]:
     }
 
 
-def _print_restore_success(logger: EmergencyLogger, result: dict) -> None:
+def _print_restore_success(logger: EmergencyLogger, result: RestoreResult) -> None:
     """Print success message after a database restore."""
-    logger.rds(f"Restore initiated: {result['instance_id']}")
+    logger.rds(f"Restore initiated: {result.instance_id}")
     logger.success("Restore initiated")
     print()
     log_success("Restore initiated")
     print()
-    print(f"New instance: {result['instance_id']}")
+    print(f"New instance: {result.instance_id}")
     print()
-    print(result["message"])
+    print(result.message)
     print()
     print(f"{Colors.YELLOW}Important:{Colors.NC}")
     print("  - The original database is NOT modified")
     print("  - To use the restored database, update your application's DATABASE_URL")
     print("  - To delete the restored instance if not needed:")
     print(
-        f"    aws rds delete-db-instance --db-instance-identifier {result['instance_id']} --skip-final-snapshot"
+        f"    aws rds delete-db-instance --db-instance-identifier {result.instance_id} --skip-final-snapshot"
     )
 
 
@@ -593,9 +594,9 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
 
         result = restore_from_snapshot(rds_id, snapshot)
         if result:
-            if result["status"] == "error":
-                logger.error(result["message"])
-                log_error(result["message"])
+            if result.status == "error":
+                logger.error(result.message)
+                log_error(result.message)
                 return 1
             else:
                 _print_restore_success(logger, result)
@@ -618,9 +619,9 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
 
         result = restore_from_point_in_time(rds_id, restore_time)
         if result:
-            if result["status"] == "error":
-                logger.error(result["message"])
-                log_error(result["message"])
+            if result.status == "error":
+                logger.error(result.message)
+                log_error(result.message)
                 return 1
             else:
                 _print_restore_success(logger, result)
@@ -646,8 +647,8 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         print()
 
         rds_details = get_rds_instance_details(rds_id)
-        if rds_details and rds_details.get("latest_restorable_time"):
-            latest = format_iso(rds_details["latest_restorable_time"])
+        if rds_details and rds_details.latest_restorable_time:
+            latest = format_iso(rds_details.latest_restorable_time)
             print(f"Point-in-time recovery is available up to: {latest}")
             print()
 
