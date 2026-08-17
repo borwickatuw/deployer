@@ -87,8 +87,7 @@ DATABASE_URL = "${database_url}"   # Resolved from infrastructure
 REDIS_URL = "${redis_url}"
 
 [secrets]
-SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
+names = ["SECRET_KEY"]
 
 [migrations]
 enabled = true

@@ -66,11 +66,12 @@ if not SECRET_KEY:
     )
 ```
 
-In `deploy.toml`, reference an SSM parameter:
+In `deploy.toml`, declare it by name; the environment's `config.toml`
+`path_prefix` supplies the SSM path (`/myapp/staging/secret-key`):
 
 ```toml
 [secrets]
-SECRET_KEY = "ssm:/myapp/${environment}/django-secret-key"
+names = ["SECRET_KEY"]
 ```
 
 ### DEBUG
@@ -328,9 +329,7 @@ DEBUG = "true"
 DEBUG = "false"
 
 [secrets]
-SECRET_KEY = "ssm:/myapp/${environment}/django-secret-key"
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
-REDIS_URL = "ssm:/myapp/${environment}/redis-url"
+names = ["SECRET_KEY"]
 
 [migrations]
 enabled = true

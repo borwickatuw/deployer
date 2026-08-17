@@ -136,6 +136,13 @@ SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
 DB_PASSWORD = "secretsmanager:myapp-db:password"
 ```
 
+> **Syntax superseded 2026-08-17 (Phase 53h-2a).** The decision above still
+> holds — deploy.toml carries references, never values. The *shape* of the
+> reference does not: `[secrets]` now takes `names = [...]` only, and the SSM
+> path comes from the environment's `config.toml` `path_prefix`. The explicit
+> form shown here is rejected at preflight. See
+> [removed-features/explicit-secret-paths.md](removed-features/explicit-secret-paths.md).
+
 **Alternatives considered:**
 
 - Encrypted secrets in deploy.toml

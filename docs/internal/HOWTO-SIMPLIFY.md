@@ -177,19 +177,19 @@ reliably right now: 53f and 53g shipped with no adjudication entry in
 [PYSMELLY.md](PYSMELLY.md), so which of the current 38 are settled is only
 partly recorded. Rebuild it when that gap is filled rather than guessing at it.
 
-| Category                     | Count | Notes                                                                    |
-| ---------------------------- | ----- | -------------------------------------------------------------------------- |
+| Category                     | Count | Notes                                                                       |
+| ---------------------------- | ----- | --------------------------------------------------------------------------- |
 | pass-through-params          | 14    | ssm_secrets/preflight/aws plumbing; 53g declined all 14, skip list recorded |
-| param-clumps                 | 6     | Context-object candidates; `modules/` cleared by 53h-1                     |
-| inconsistent-error-handling  | 4     | Caller-contract policy needed (53i)                                        |
-| foo-equals-foo               | 3     | Single-use locals to inline; init.py's two measured in 53d-2b (53i)        |
-| single-call-site             | 3     | Named helpers that document intent (53i)                                   |
-| arrow-code                   | 2     | Depth-5/6 nesting in `ci_deploy.py` and `init/deploy_toml.py`              |
-| law-of-demeter               | 2     | Chain depth 4 (53e-3 adjudicated one; `template.py` to 53i)                |
-| feature-envy                 | 1     | `DatabaseModule.validate` — 53h-2's call                                   |
-| duplicate-blocks             | 1     | The db-\* Lambda pair, adjudicated in 53a                                  |
-| return-none-instead-of-raise | 1     | aws/cli.run_aws_json — left unsuppressed for 53i to decide                 |
-| temp-accumulators            | 1     | images.py hash_modifiers, relocated into `_cache_tag` by 53e-4b            |
+| param-clumps                 | 6     | Context-object candidates; `modules/` cleared by 53h-1                      |
+| inconsistent-error-handling  | 4     | Caller-contract policy needed (53i)                                         |
+| foo-equals-foo               | 3     | Single-use locals to inline; init.py's two measured in 53d-2b (53i)         |
+| single-call-site             | 3     | Named helpers that document intent (53i)                                    |
+| arrow-code                   | 2     | Depth-5/6 nesting in `ci_deploy.py` and `init/deploy_toml.py`               |
+| law-of-demeter               | 2     | Chain depth 4 (53e-3 adjudicated one; `template.py` to 53i)                 |
+| feature-envy                 | 1     | `DatabaseModule.validate` — 53h-2's call                                    |
+| duplicate-blocks             | 1     | The db-\* Lambda pair, adjudicated in 53a                                   |
+| return-none-instead-of-raise | 1     | aws/cli.run_aws_json — left unsuppressed for 53i to decide                  |
+| temp-accumulators            | 1     | images.py hash_modifiers, relocated into `_cache_tag` by 53e-4b             |
 
 Categories now empty: `long-function` (9 → 0 across 53d–53e),
 `dict-as-dataclass` (6 → 0 in 53f), `write-only-attributes` (1 → 0 in 53h-1),

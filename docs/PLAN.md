@@ -46,10 +46,10 @@ items pysmelly does not flag and one of them changes the subphase's
 shape. Detail in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md) § 53h-1.
 
-| Slice | Scope                                                                    | Status |
-| ----- | ------------------------------------------------------------------------ | ------ |
-| 53h-1 | what `ModuleContext` carries — dead fields, the ARN, `credential_mode`   | done   |
-| 53h-2 | the `collect()`/`validate()` signature, and what a "module" is           | open   |
+| Slice | Scope                                                                  | Status |
+| ----- | ---------------------------------------------------------------------- | ------ |
+| 53h-1 | what `ModuleContext` carries — dead fields, the ARN, `credential_mode` | done   |
+| 53h-2 | the `collect()`/`validate()` signature, and what a "module" is         | open   |
 
 **53h-2 owns three questions, none of them now forced by a finding:**
 

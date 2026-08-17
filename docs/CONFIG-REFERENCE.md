@@ -7,7 +7,7 @@ Complete reference for deployment configuration.
 - [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) — Step-by-step deployment walkthrough
 - [OpenTofu Modules](tofu-modules/README.md) — Infrastructure module reference
 - [Operations](operations/) — Day-to-day commands and "where to make changes"
-- [Resources](resources/README.md) — Resource module system (database, cache, storage, cdn, secrets)
+- [Resources](resources/README.md) — Resource module system (database, cache, storage, secrets)
 - [Scenarios](scenarios/) — Framework-specific guides (Django, Rails) and CI/CD
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and solutions
 
@@ -360,41 +360,47 @@ DEBUG = "false"
 
 ### `[secrets]`
 
-**Optional.** References to secrets in SSM Parameter Store or Secrets Manager.
+**Optional.** The names of the secrets the application needs.
 
-Secrets are injected into containers at runtime. The deploy script never sees secret values.
-
-#### SSM Parameter Store
-
-Format: `ssm:/path/to/parameter`
+Declare names and nothing else. Where a secret actually lives is the environment's
+answer, not the application's — see [Resources › Secrets](resources/secrets.md).
 
 ```toml
 [secrets]
-SECRET_KEY = "ssm:/myapp/staging/secret-key"
-API_KEY = "ssm:/myapp/staging/external-api-key"
+names = ["SECRET_KEY", "SIGNED_URL_SECRET", "DATACITE_PASSWORD"]
 ```
 
-#### Secrets Manager
-
-Format: `secretsmanager:secret-name:json-key`
+The environment's `config.toml` supplies the prefix, which every generated
+environment already has:
 
 ```toml
 [secrets]
-DB_PASSWORD = "secretsmanager:myapp-staging-db:password"
-DB_USERNAME = "secretsmanager:myapp-staging-db:username"
+provider = "ssm"
+path_prefix = "/myapp/staging"
 ```
 
-#### Environment Substitution
+Each name is lowercased and hyphenated to form the parameter name, so
+`SECRET_KEY` resolves to `/myapp/staging/secret-key` and `SIGNED_URL_SECRET` to
+`/myapp/staging/signed-url-secret`. Secrets are injected into containers at
+runtime; the deploy script never sees their values.
 
-Use `${environment}` in paths to share config across environments:
+Create the parameters before the first deployment:
 
-```toml
-[secrets]
-SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
-# Resolves to:
-#   staging:    ssm:/myapp/staging/secret-key
-#   production: ssm:/myapp/production/secret-key
+```bash
+uv run python bin/ssm-secrets.py put myapp-staging secret-key
 ```
+
+Database credentials are **not** declared here. They come from `[database]`,
+which the environment answers with either SSM parameter paths or Secrets
+Manager secret ARNs — see [Resources › Database](resources/database.md).
+
+#### The removed explicit-path form
+
+`SECRET_KEY = "ssm:/myapp/${environment}/secret-key"` and its
+`secretsmanager:` counterpart are **rejected at preflight**. A deploy.toml
+still using them is not deployable; the error names the replacement. See
+[removed-features/explicit-secret-paths.md](internal/removed-features/explicit-secret-paths.md)
+for why.
 
 ### `[commands]`
 
@@ -1004,7 +1010,7 @@ DEBUG = "true"
 DEBUG = "false"
 
 [secrets]
-SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
+names = ["SECRET_KEY"]
 
 [migrations]
 enabled = true

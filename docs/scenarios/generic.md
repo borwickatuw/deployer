@@ -46,9 +46,8 @@ DEBUG = "true"
 DEBUG = "false"
 
 [secrets]
-# References to SSM Parameter Store
-API_KEY = "ssm:/myapp/${environment}/api-key"
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
+# Names only; the environment supplies the SSM prefix
+names = ["API_KEY"]
 
 # Non-interactive commands only (interactive commands can't run via ecs-run.py)
 [commands]
@@ -188,16 +187,16 @@ build
 
 ## Secrets Management
 
-Reference secrets from SSM Parameter Store:
+Declare the names your application needs:
 
 ```toml
 [secrets]
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
-API_KEY = "ssm:/myapp/${environment}/api-key"
-SECRET_KEY = "ssm:/myapp/${environment}/secret-key"
+names = ["API_KEY", "SECRET_KEY"]
 ```
 
-The `${environment}` placeholder resolves to `staging` or `production`.
+The environment's `config.toml` supplies the prefix, so `API_KEY` resolves to
+`/myapp/staging/api-key` in staging and `/myapp/production/api-key` in
+production. deploy.toml never names an environment.
 
 Create secrets with:
 

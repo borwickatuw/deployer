@@ -40,9 +40,7 @@ RAILS_LOG_LEVEL = "debug"
 RAILS_LOG_LEVEL = "info"
 
 [secrets]
-SECRET_KEY_BASE = "ssm:/myapp/${environment}/secret-key-base"
-DATABASE_URL = "ssm:/myapp/${environment}/database-url"
-REDIS_URL = "ssm:/myapp/${environment}/redis-url"
+names = ["SECRET_KEY_BASE"]
 
 # Non-interactive commands only (interactive commands like console can't run via ecs-run.py)
 [commands]

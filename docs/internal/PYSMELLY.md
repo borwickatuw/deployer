@@ -1218,9 +1218,9 @@ dead-code deletion (49 → 47).
 `service.py` was 1003 lines at **11%** — the least-covered file in the split
 table and the only one that needed the pin split across two commits.
 
-| Commit    | File                              | Pins    | Effect                                        |
-| --------- | --------------------------------- | ------- | --------------------------------------------- |
-| `b42be87` | `tests/unit/test_deploy_service.py`      | **110** | the deploy path; `service.py` 11% → 44%       |
+| Commit    | File                                     | Pins    | Effect                                       |
+| --------- | ---------------------------------------- | ------- | -------------------------------------------- |
+| `b42be87` | `tests/unit/test_deploy_service.py`      | **110** | the deploy path; `service.py` 11% → 44%      |
 | `fb561e3` | `tests/unit/test_deploy_service_wait.py` | **154** | the migration + wait path; floor **59 → 65** |
 
 **264 pins total**, and with both files `service.py` reaches **99%** — 375
@@ -1256,11 +1256,11 @@ And the duplication was **between** the two functions, not inside either. Three
 shapes, all invisible to `duplicate-blocks` because **each is a single
 multi-line assignment** and so sits below the check's 5-statement bar:
 
-| Shape                        | Sites (pre-commit) | Varies only in       |
-| ---------------------------- | ------------------ | -------------------- |
-| `deploymentConfiguration` base | 272-275 / 414-417 | the dict key (`serviceName` vs `service`) |
-| circuit-breaker injection    | 289-293 / 421-425  | the target variable name |
-| `serviceRegistries` injection | 319-326 / 430-439 | line wrapping        |
+| Shape                          | Sites (pre-commit) | Varies only in                            |
+| ------------------------------ | ------------------ | ----------------------------------------- |
+| `deploymentConfiguration` base | 272-275 / 414-417  | the dict key (`serviceName` vs `service`) |
+| circuit-breaker injection      | 289-293 / 421-425  | the target variable name                  |
+| `serviceRegistries` injection  | 319-326 / 430-439  | line wrapping                             |
 
 That is why the two functions **had to move in one commit**. Splitting them
 across two would have written `_deployment_configuration` and
@@ -1268,15 +1268,15 @@ across two would have written `_deployment_configuration` and
 
 ##### The staged measurement, again
 
-| Function          | Stage                      | Lines   | Flagged? |
-| ----------------- | -------------------------- | ------- | -------- |
-| `create_service`  | baseline                   | 107     | yes      |
-|                   | `_require_network_config`  | **101** | **yes**  |
-|                   | `_load_balancer_params`    | 82      | no       |
-|                   | `_service_registries`      | 74      | no       |
-|                   | `_deployment_configuration` | 64     | no       |
-| `deploy_services` | baseline                   | 110     | yes      |
-|                   | `_update_service`          | 73      | no       |
+| Function          | Stage                       | Lines   | Flagged? |
+| ----------------- | --------------------------- | ------- | -------- |
+| `create_service`  | baseline                    | 107     | yes      |
+|                   | `_require_network_config`   | **101** | **yes**  |
+|                   | `_load_balancer_params`     | 82      | no       |
+|                   | `_service_registries`       | 74      | no       |
+|                   | `_deployment_configuration` | 64      | no       |
+| `deploy_services` | baseline                    | 110     | yes      |
+|                   | `_update_service`           | 73      | no       |
 
 The obvious first extraction left `create_service` at **101** — one line over
 the bar, with the work apparently finished. `_load_balancer_params` is what
@@ -1299,12 +1299,12 @@ and leaves a 99-line function behind. The smallest honest extraction was worth
 
 **118L → 75L**, the last `long-function` in the repo. pysmelly **49 → 47**.
 
-| Stage                     | Lines   | Flagged? |
-| ------------------------- | ------- | -------- |
-| baseline                  | 118     | yes      |
-| `_describe_service_or_raise` | **102** | **yes** |
-| `_raise_task_failure`     | 85      | no       |
-| `_track_no_progress`      | 75      | no       |
+| Stage                        | Lines   | Flagged? |
+| ---------------------------- | ------- | -------- |
+| baseline                     | 118     | yes      |
+| `_describe_service_or_raise` | **102** | **yes**  |
+| `_raise_task_failure`        | 85      | no       |
+| `_track_no_progress`         | 75      | no       |
 
 `_describe_service_or_raise` also retired the two locals it was the only reader
 of (`ecs_client`, `cluster_name`). And once again the first extraction was not
@@ -1317,12 +1317,12 @@ This is the arc's headline result and the reason to record it as a rule rather
 than an anecdote. Across the four functions decomposed in 53e-5 and the prior
 slice, the state after the first extraction was:
 
-| Function                   | After one extraction | Bar | Cleared? |
-| -------------------------- | -------------------- | --- | -------- |
-| `create_service`           | 101                  | 100 | no       |
-| `_wait_for_service_stable` | 102                  | 100 | no       |
-| `build_and_push_images` (53e-4b) | 107            | 100 | no       |
-| `deploy()` (53e-3b)        | 114                  | 100 | no       |
+| Function                         | After one extraction | Bar | Cleared? |
+| -------------------------------- | -------------------- | --- | -------- |
+| `create_service`                 | 101                  | 100 | no       |
+| `_wait_for_service_stable`       | 102                  | 100 | no       |
+| `build_and_push_images` (53e-4b) | 107                  | 100 | no       |
+| `deploy()` (53e-3b)              | 114                  | 100 | no       |
 
 **Four for four. This is the base rate, not an edge case.** A decomposition plan
 that stops at one extraction should be assumed wrong until measured. 53e-1 made
@@ -1415,17 +1415,17 @@ Over all five commits. Reproduced here at `64e3e18` rather than taken on trust:
   `service.py` legs to `:121/:175/:1058`, and `service.py:196 → :197` — so
   **nothing was minted**. Net **−5**, which reconciles 52 → 47 exactly.
 - **`fail_under` monotonic across all five commits**: 59 → 59 → 65 → 65 → 65 →
-  65. Never lowered, at any point, including the three refactor commits.
+  65\. Never lowered, at any point, including the three refactor commits.
 - **Convergence-hotspot list independently re-derived as empty**, max **2** checks
   per file repo-wide.
 
 **Two measurement corrections, recorded rather than silently fixed** — house
 style, since the commit messages are in history and cannot be edited:
 
-| Claim                                       | Commit message | Measured by AST at `64e3e18` |
-| ------------------------------------------- | -------------- | ---------------------------- |
-| `start_migrations` after 5c (`961be51`)     | 85L            | **84L**                      |
-| `_wait_for_service_stable` after 5d (`64e3e18`) | 76L        | **75L**                      |
+| Claim                                           | Commit message | Measured by AST at `64e3e18` |
+| ----------------------------------------------- | -------------- | ---------------------------- |
+| `start_migrations` after 5c (`961be51`)         | 85L            | **84L**                      |
+| `_wait_for_service_stable` after 5d (`64e3e18`) | 76L            | **75L**                      |
 
 Both are off by one in the same direction and neither changes an outcome — both
 were already well under the 100-line bar — but the register records the measured
@@ -1439,27 +1439,27 @@ subphase that owns the contract.
 
 **From 5a-1 (`b42be87`), the deploy path — nine:**
 
-| Bug                                                                                                                                                                                                                                                              | Status                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **`service_exists` swallows `ClusterNotFoundException`** and returns `False`, so a **typo in the cluster name takes the CREATE branch** rather than reporting an unknown cluster.                                                                                | Pinned. The highest-severity item here: a wrong answer that routes the deploy down the wrong path instead of stopping it.       |
-| **The `ClientError` swallow makes a partial deploy look successful.** A per-service failure is reported and the loop continues; the run still ends as a success.                                                                                                 | Pinned. Same `except`-shape family recorded under **53i**.                                                                      |
-| **`update_service` carries no network configuration, no load balancer and no launch type**, so a target-group change on an existing service has **no effect** — the parameters are built and never sent on the update path.                                     | Pinned. Silent no-op on the operation an operator would most expect to work.                                                    |
-| **A load-balanced service can be created with no target group** — nothing fails when the lookup yields nothing.                                                                                                                                                  | Pinned. The service comes up and receives no traffic.                                                                           |
-| **`port` is read from the raw table while `load_balanced` comes from merged sizing.** Two keys of one decision sourced from two different config layers.                                                                                                         | Pinned. The kind of split that makes an environment override behave differently from the base.                                  |
-| **`--dry-run` previews an *update* for a service that does not exist**, and prints **none of the parameters it just built**.                                                                                                                                     | Pinned. A preview that is wrong about the branch and silent about the payload.                                                  |
-| **`_ensure_az_rebalancing_disabled` indexes `services[0]` unconditionally.**                                                                                                                                                                                     | Pinned. `IndexError` on an empty describe response.                                                                             |
-| **An empty-string per-service target group falls through to the default.** `""` is falsy, so an explicit "no target group" reads as "unset".                                                                                                                     | Pinned. Config that cannot express what it looks like it expresses.                                                             |
-| **`_get_deployment_config` ignores the dataclass field names and does no range validation.**                                                                                                                                                                     | Pinned. A misspelled key is accepted silently; an out-of-range percentage reaches the ECS API.                                   |
+| Bug                                                                                                                                                                                                                         | Status                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **`service_exists` swallows `ClusterNotFoundException`** and returns `False`, so a **typo in the cluster name takes the CREATE branch** rather than reporting an unknown cluster.                                           | Pinned. The highest-severity item here: a wrong answer that routes the deploy down the wrong path instead of stopping it. |
+| **The `ClientError` swallow makes a partial deploy look successful.** A per-service failure is reported and the loop continues; the run still ends as a success.                                                            | Pinned. Same `except`-shape family recorded under **53i**.                                                                |
+| **`update_service` carries no network configuration, no load balancer and no launch type**, so a target-group change on an existing service has **no effect** — the parameters are built and never sent on the update path. | Pinned. Silent no-op on the operation an operator would most expect to work.                                              |
+| **A load-balanced service can be created with no target group** — nothing fails when the lookup yields nothing.                                                                                                             | Pinned. The service comes up and receives no traffic.                                                                     |
+| **`port` is read from the raw table while `load_balanced` comes from merged sizing.** Two keys of one decision sourced from two different config layers.                                                                    | Pinned. The kind of split that makes an environment override behave differently from the base.                            |
+| **`--dry-run` previews an *update* for a service that does not exist**, and prints **none of the parameters it just built**.                                                                                                | Pinned. A preview that is wrong about the branch and silent about the payload.                                            |
+| **`_ensure_az_rebalancing_disabled` indexes `services[0]` unconditionally.**                                                                                                                                                | Pinned. `IndexError` on an empty describe response.                                                                       |
+| **An empty-string per-service target group falls through to the default.** `""` is falsy, so an explicit "no target group" reads as "unset".                                                                                | Pinned. Config that cannot express what it looks like it expresses.                                                       |
+| **`_get_deployment_config` ignores the dataclass field names and does no range validation.**                                                                                                                                | Pinned. A misspelled key is accepted silently; an out-of-range percentage reaches the ECS API.                            |
 
 **From 5a-2 (`fb561e3`), the migration + wait path — five:**
 
-| Bug                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`_wait_for_target_group_healthy` can never succeed against an empty target group.** The condition is `healthy > 0 and healthy == total`, which is `False` at **0/0**, so the wait burns the **full 300s** and then reports the wrong diagnosis.                                                  | Pinned. The worst of the five: a five-minute stall that names the wrong cause.                                                                             |
-| **`start_migrations` raises a bare `KeyError` on `networkConfiguration`** — the read sits **outside** the `try`, so a service without one produces an unhandled `KeyError` rather than a diagnosis. Preserved verbatim by 5c's `_migration_network_config`.                                       | Pinned, and explicitly preserved through the 5c extraction.                                                                                                |
-| **`_get_deployment_status` raises a bare `KeyError` from `d["status"]`.**                                                                                                                                                                                                                          | Pinned. Same shape one layer down.                                                                                                                         |
-| **`_wait_for_service_and_targets` catches only `DeploymentError` / `RuntimeError`**, so a `ClientError` **escapes the worker and bypasses `ServiceWaitResult`** entirely — the result-object contract is not actually total.                                                                       | Pinned. The failure mode the result object exists to prevent.                                                                                              |
-| **`wait_for_migrations` uses `.get("exitCode", 1)`** — a container that stopped **without** an exit code is treated as a **failure**.                                                                                                                                                              | **Pinned as load-bearing, not as a defect to fix.** This is the safe default and it is easy to "tidy" into `0`. Recorded so the next reader leaves it alone. |
+| Bug                                                                                                                                                                                                                                                         | Status                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`_wait_for_target_group_healthy` can never succeed against an empty target group.** The condition is `healthy > 0 and healthy == total`, which is `False` at **0/0**, so the wait burns the **full 300s** and then reports the wrong diagnosis.           | Pinned. The worst of the five: a five-minute stall that names the wrong cause.                                                                               |
+| **`start_migrations` raises a bare `KeyError` on `networkConfiguration`** — the read sits **outside** the `try`, so a service without one produces an unhandled `KeyError` rather than a diagnosis. Preserved verbatim by 5c's `_migration_network_config`. | Pinned, and explicitly preserved through the 5c extraction.                                                                                                  |
+| **`_get_deployment_status` raises a bare `KeyError` from `d["status"]`.**                                                                                                                                                                                   | Pinned. Same shape one layer down.                                                                                                                           |
+| **`_wait_for_service_and_targets` catches only `DeploymentError` / `RuntimeError`**, so a `ClientError` **escapes the worker and bypasses `ServiceWaitResult`** entirely — the result-object contract is not actually total.                                | Pinned. The failure mode the result object exists to prevent.                                                                                                |
+| **`wait_for_migrations` uses `.get("exitCode", 1)`** — a container that stopped **without** an exit code is treated as a **failure**.                                                                                                                       | **Pinned as load-bearing, not as a defect to fix.** This is the safe default and it is easy to "tidy" into `0`. Recorded so the next reader leaves it alone. |
 
 #### Side effects and mints
 
@@ -1467,21 +1467,21 @@ Nothing cleared as a side effect and **nothing was minted** — the line-level d
 above is the evidence, not an assertion. `service.py` is down to a **single**
 finding.
 
-| Finding                                                                                | Disposition                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Finding                                                                                 | Disposition                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `param-clumps` — `service.py:197` `(credential_mode, ctx, service_name)` in 3 functions | **Routed to 53g, not a leave-standing.** **Nothing inside `service.py` can clear it**: only one of the three signatures is here (`register_task_definition`); the other two are `task_definition.py:get_environment_variables():140` and `task_definition.py:build_task_definition():383`. |
 
 ### 53e arc summary — closeout (2026-08-13)
 
 Five slices, thirteen commits, `805d516` → `64e3e18`.
 
-| Measure                     | 53e-1 start (`805d516`) | 53e-3 start (`a304fa1`) | End (`64e3e18`) |
-| --------------------------- | ----------------------- | ----------------------- | --------------- |
-| pysmelly total              | 60                      | **56**                  | **47**          |
-| `long-function`             | 9                       | **7**                   | **0**           |
-| Files on the hotspot list   | 2                       | 1                       | **0**           |
-| Coverage floor (`fail_under`) | 53                    | **54**                  | **65**          |
-| Tests                       | 852                     | **891**                 | **1339**        |
+| Measure                       | 53e-1 start (`805d516`) | 53e-3 start (`a304fa1`) | End (`64e3e18`) |
+| ----------------------------- | ----------------------- | ----------------------- | --------------- |
+| pysmelly total                | 60                      | **56**                  | **47**          |
+| `long-function`               | 9                       | **7**                   | **0**           |
+| Files on the hotspot list     | 2                       | 1                       | **0**           |
+| Coverage floor (`fail_under`) | 53                      | **54**                  | **65**          |
+| Tests                         | 852                     | **891**                 | **1339**        |
 
 **`long-function` is empty as a category** and the **convergence-hotspot list is
 empty** — no file in the repo is flagged by three or more checks, and the maximum
@@ -1489,10 +1489,10 @@ is now 2.
 
 The three files 53e-3 → 53e-5 took on, in coverage order:
 
-| File                 | Coverage at split | Now                                   |
-| -------------------- | ----------------- | ------------------------------------- |
-| `deploy/deployer.py` | 35%               | **100%**                              |
-| `deploy/images.py`   | 16%               | **100%**                              |
+| File                 | Coverage at split | Now                                                |
+| -------------------- | ----------------- | -------------------------------------------------- |
+| `deploy/deployer.py` | 35%               | **100%**                                           |
+| `deploy/images.py`   | 16%               | **100%**                                           |
 | `deploy/service.py`  | 11%               | **99%** — 0 uncovered statements, 1 partial branch |
 
 **The arc's transferable results**, in the order they are worth reusing:
@@ -1603,11 +1603,12 @@ and the check does not appear in the report. 53e cleared all nine.
 **The convergence-hotspot list is empty.** No file is flagged by three or more
 checks; the repo-wide maximum is **2**, held by `init/deploy_toml.py`
 (`single-call-site` + `arrow-code`), `core/ssm_secrets.py` (`pass-through-params`
-+ `param-clumps`), `init/template.py` (`inconsistent-error-handling` +
-`law-of-demeter`), `deploy/deployer.py` (`dict-as-dataclass` + `law-of-demeter`)
-and `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
-`param-clumps`). `deploy/service.py` was the last entry and dropped off at
-`2b057ae`.
+
+- `param-clumps`), `init/template.py` (`inconsistent-error-handling` +
+  `law-of-demeter`), `deploy/deployer.py` (`dict-as-dataclass` + `law-of-demeter`)
+  and `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
+  `param-clumps`). `deploy/service.py` was the last entry and dropped off at
+  `2b057ae`.
 
 Per-file remainder in the files this arc touched: **`deploy/service.py` is down
 to one finding**, the `param-clumps` at `:197` routed to **53g** — and nothing
@@ -1654,25 +1655,25 @@ outermost-boundary rule applied to an interface change: the two things the
 refactor alters are exactly the two things the pins must not name. All 67
 passed unchanged through all three refactor commits.
 
-| File                  | Before | After                                     |
-| --------------------- | ------ | ----------------------------------------- |
-| `modules/database.py` | 54%    | **100%**                                  |
-| `modules/storage.py`  | 78%    | **100%**                                  |
-| `modules/cache.py`    | 83%    | **100%**                                  |
-| `modules/secrets.py`  | 71%    | 97% — one dead guard, see below           |
-| `modules/base.py`     | 82%    | 95% — three `@abstractmethod` `pass` bodies |
-| `deploy/task_definition.py` | 84% | **93%**                                 |
+| File                        | Before | After                                       |
+| --------------------------- | ------ | ------------------------------------------- |
+| `modules/database.py`       | 54%    | **100%**                                    |
+| `modules/storage.py`        | 78%    | **100%**                                    |
+| `modules/cache.py`          | 83%    | **100%**                                    |
+| `modules/secrets.py`        | 71%    | 97% — one dead guard, see below             |
+| `modules/base.py`           | 82%    | 95% — three `@abstractmethod` `pass` bodies |
+| `deploy/task_definition.py` | 84%    | **93%**                                     |
 
 Coverage floor **69 → 70** (70.44% measured), 1477 → 1544 tests.
 
 #### The four findings
 
-| Finding                                              | Disposition                                                                                                                                                                                                            |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `write-only-attributes` — `base.py:140` `domain_name` | **Cleared**, along with three sibling fields the check never saw. See the under-reporting mechanic below.                                                                                                              |
-| `feature-envy` — `database.py:126` `collect()`        | **Cleared.** `ModuleContext.ssm_parameter_arn()` and reading `credential_mode` once take the `context` accesses from 4 to 2, under the check's 3-access threshold.                                                     |
+| Finding                                               | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `write-only-attributes` — `base.py:140` `domain_name` | **Cleared**, along with three sibling fields the check never saw. See the under-reporting mechanic below.                                                                                                                                                                                                                                                                                                                                         |
+| `feature-envy` — `database.py:126` `collect()`        | **Cleared.** `ModuleContext.ssm_parameter_arn()` and reading `credential_mode` once take the `context` accesses from 4 to 2, under the check's 3-access threshold.                                                                                                                                                                                                                                                                                |
 | `feature-envy` — `database.py:47` `validate()`        | **Survives by design; 53h-2's call.** Measured, not assumed: a `DatabaseEnvConfig` dataclass would **not** clear it, because `env_config.host` is still an `ast.Attribute` Load. Only moving the logic onto the config type, or extracting *module-level* `_`-helpers (`check_feature_envy` only walks `ClassDef` bodies), does. Extracting **methods** would *mint* findings — a helper reading `env_config` 4× with `self` 0× fires on its own. |
-| `param-clumps` — `__init__.py:85`                     | **Cleared as a side effect of `@override`, which the plan predicted only bundling could do.** See below — this is the one result worth carrying forward.                                                               |
+| `param-clumps` — `__init__.py:85`                     | **Cleared as a side effect of `@override`, which the plan predicted only bundling could do.** See below — this is the one result worth carrying forward.                                                                                                                                                                                                                                                                                          |
 
 #### `write-only-attributes` under-reports via name collision
 
