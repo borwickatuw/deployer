@@ -103,6 +103,29 @@ class ModuleRegistry:
 
         return output
 
+    @classmethod
+    def injected_names(cls, app_config: dict[str, Any]) -> set[str]:
+        """Every environment variable name the declared modules will inject.
+
+        Answered from deploy.toml alone, so the audit can use it before an
+        environment has been chosen. Each module answers for itself; nothing
+        outside ``modules/`` restates what a module injects.
+
+        Args:
+            app_config: The application's deploy.toml.
+
+        Returns:
+            The union across every module the application declares.
+        """
+        names: set[str] = set()
+
+        for module in cls._modules:
+            module_app_config = app_config.get(module.name, {})
+            if module_app_config:
+                names |= module.injected_names(module_app_config)
+
+        return names
+
 
 # Service URL reference pattern: ${services.name.url}
 SERVICE_URL_PATTERN = re.compile(r"\$\{services\.([^.]+)\.url\}")

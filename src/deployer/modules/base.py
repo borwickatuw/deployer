@@ -132,6 +132,36 @@ class ResourceModule(ABC):
         """
         pass
 
+    @abstractmethod
+    def injected_names(self, app_config: dict[str, Any]) -> set[str]:
+        """The names ``collect()`` will inject, answerable from deploy.toml alone.
+
+        The audit compares docker-compose.yml against deploy.toml, before any
+        environment has been chosen, so it cannot call ``collect()`` -- it has
+        no ``config.toml`` and no ``ModuleContext``. It needs the *names*
+        anyway, to tell a variable the application forgot to declare from one a
+        module will supply.
+
+        Abstract rather than defaulting to the empty set: a module that grows a
+        new injected variable and does not say so here makes the audit report
+        that variable as unprovided, and a module that stops injecting one
+        makes the audit call it satisfied by nothing. 53h-2b found the second
+        of those already shipped -- ``DeployConfig`` claimed
+        ``S3_{NAME}_BUCKET_REGION``, which ``StorageModule`` has never injected.
+
+        Secrets count. From the container's point of view a secret *is* an
+        environment variable, and what the audit is asking is what the
+        container will see.
+
+        Args:
+            app_config: The application's deploy.toml [module_name] section.
+
+        Returns:
+            Environment variable names, empty if the section declares nothing
+            this module acts on.
+        """
+        pass
+
 
 @dataclass
 class ModuleContext:

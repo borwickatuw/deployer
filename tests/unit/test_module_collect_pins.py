@@ -32,18 +32,21 @@ What is pinned:
   (``database.py`` 170-185); it is the arm that builds an ARN by hand.
 * ``database.collect``'s two guards: a ``[database]`` section with no ``type``
   collects nothing, and an unknown ``credential_mode`` raises ``ValueError``.
-* ``secrets.collect`` through both routes into it -- the ``collect_all`` route
-  and ``get_secrets``' separate ``uses_names_style`` route -- plus its
-  ``path_prefix`` normalisation.
+* ``secrets.collect``, plus its ``path_prefix`` normalisation. 53h-1 pinned it
+  through *two* routes -- ``collect_all`` and ``get_secrets``' separate
+  ``uses_names_style`` branch. 53h-2a deleted the second route; there is one.
 * ``cache.collect`` and ``storage.collect``, whose ``context`` parameter is
   unused and whose output must not change when it goes away.
-* The ``_MODULE_SECTIONS``-vs-registry gap. ``_MODULE_SECTIONS`` names ``cdn``
-  and ``autoscale``, which no registered module implements. The consequences
-  are pinned in ``TestModuleSectionsRegistryGap`` and are **not** endorsed:
-  they are the evidence 53h-2 adjudicates.
+* The ``_MODULE_SECTIONS``-vs-registry gap, pinned by 53h-1 as evidence and
+  **adjudicated by 53h-2a**: the tuple is deleted, both readers collect from
+  every declared module, and ``TestModuleSectionsRegistryGap`` records which
+  of its three consequences survived (one, harmlessly).
 * Every error arm of ``database.validate``, which was the other large uncovered
-  region (``database.py`` 76-114) and is the ``feature-envy`` finding 53h-2
-  decides.
+  region (``database.py`` 76-114) and the ``feature-envy`` finding 53h-2b
+  settled. The messages are asserted verbatim, which is what let that split be
+  table-driven without changing a byte of output.
+* ``injected_names()`` against what ``collect()`` actually delivers -- the
+  53h-2b interface that stopped ``DeployConfig`` restating module knowledge.
 
 This takes ``modules/`` to 100% on ``database.py``, ``cache.py``,
 ``storage.py`` and ``__init__.py``. Two things are deliberately left uncovered
@@ -654,3 +657,72 @@ class TestOtherModulesValidate:
         errors = SecretsModule().validate({"names": ["SECRET_KEY"]}, {"provider": "ssm"})
 
         assert errors == ["[secrets] section missing 'path_prefix' in config.toml"]
+
+
+class TestInjectedNamesAgreesWithCollect:
+    """``injected_names()`` must answer for exactly what ``collect()`` injects.
+
+    Added by 53h-2b along with the method. ``DeployConfig`` used to restate
+    what each module injects -- a fourth hand-maintained copy of module
+    knowledge -- and it had already drifted: it claimed
+    ``S3_{NAME}_BUCKET_REGION``, which ``StorageModule`` has never injected, so
+    the audit reported that variable as satisfied by nothing.
+
+    Moving the answer onto the modules only helps if the two stay in step, so
+    these pins check the property directly rather than the literal sets: for
+    each module, what ``collect()`` actually emits under a fully configured
+    environment is what ``injected_names()`` promised from deploy.toml alone.
+    """
+
+    CASES = [
+        (
+            "database-secretsmanager",
+            {"database": {"type": "postgresql"}},
+            {"database": DB_ENV_SECRETSMANAGER},
+        ),
+        ("database-ssm", {"database": {"type": "postgresql"}}, {"database": DB_ENV_SSM}),
+        ("cache", {"cache": {"type": "redis"}}, {"cache": {"url": "redis://cache:6379/0"}}),
+        (
+            "storage",
+            {"storage": {"type": "s3", "buckets": ["media", "originals"]}},
+            {"storage": {"media_bucket": "m", "originals_bucket": "o"}},
+        ),
+        (
+            "secrets",
+            {"secrets": {"names": ["SECRET_KEY", "DATACITE_PASSWORD"]}},
+            {"secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"}},
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ("config", "env_config"),
+        [(c, e) for _id, c, e in CASES],
+        ids=[i for i, _c, _e in CASES],
+    )
+    def test_the_promise_matches_what_the_container_receives(self, config, env_config):
+        ctx = _ctx(config, env_config)
+        delivered = set(get_environment_variables(ctx)) | {
+            s["name"] for s in get_secrets(ctx, None)
+        }
+
+        assert ModuleRegistry.injected_names(config) == delivered
+
+    def test_the_migrate_mode_promises_the_same_names(self):
+        # injected_names() takes no credential mode, and must not need one:
+        # both modes inject DB_USERNAME and DB_PASSWORD, only from different
+        # config keys.
+        config = {"database": {"type": "postgresql"}}
+        ctx = _ctx(config, {"database": DB_ENV_SSM})
+
+        assert {s["name"] for s in get_secrets(ctx, None, "migrate")} <= (
+            ModuleRegistry.injected_names(config)
+        )
+
+    def test_an_undeclared_module_promises_nothing(self):
+        assert ModuleRegistry.injected_names({}) == set()
+
+    def test_a_section_without_a_type_promises_nothing(self):
+        # Matches collect(), which also emits nothing. The old DeployConfig
+        # copy keyed on the section being truthy and so claimed all five DB_*
+        # variables for a `[database]` table that declared no type.
+        assert ModuleRegistry.injected_names({"database": {"extensions": ["postgis"]}}) == set()

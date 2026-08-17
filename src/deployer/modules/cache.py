@@ -61,3 +61,11 @@ class CacheModule(ResourceModule):
                 EnvironmentVariable("REDIS_URL", env_config["url"]),
             ]
         )
+
+    @override
+    def injected_names(self, app_config: dict[str, Any]) -> set[str]:
+        """REDIS_URL, once a cache type is declared."""
+        if not app_config.get("type"):
+            return set()
+
+        return {"REDIS_URL"}

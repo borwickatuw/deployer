@@ -11,6 +11,8 @@ from typing import Any
 
 import dacite
 
+from deployer.modules import ModuleRegistry
+
 _DACITE_CONFIG = dacite.Config(cast=[set])
 
 # Known top-level sections in deploy.toml
@@ -199,45 +201,14 @@ class DeployConfig:
                     # Environment-specific overrides within service
                     env_vars.update(value.keys())
 
-        # Module-injected variables based on declared resources -- including
-        # each name in [secrets], which _get_module_injected_vars adds.
-        env_vars.update(self._get_module_injected_vars())
+        # Module-injected variables -- each module answers for itself. This
+        # used to be a fourth hand-maintained copy of module knowledge, and it
+        # had already gone wrong: it claimed S3_{NAME}_BUCKET_REGION, which
+        # StorageModule has never injected, so the audit reported that variable
+        # as satisfied by nothing.
+        env_vars.update(ModuleRegistry.injected_names(self.get_raw_dict()))
 
         return env_vars
-
-    def _get_module_injected_vars(self) -> set[str]:
-        """Get environment variable names that modules will inject.
-
-        Based on what resource modules are declared in deploy.toml,
-        determine what env vars will be injected at deploy time.
-
-        Returns:
-            Set of environment variable names that modules will inject.
-        """
-        injected: set[str] = set()
-
-        # Database module: DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD
-        if self.database:
-            injected.update({"DB_HOST", "DB_PORT", "DB_NAME", "DB_USERNAME", "DB_PASSWORD"})
-
-        # Cache module: REDIS_URL
-        if self.cache:
-            injected.add("REDIS_URL")
-
-        # Storage module: S3_{NAME}_BUCKET for each declared bucket
-        if self.storage:
-            buckets = self.storage.get("buckets", [])
-            for bucket in buckets:
-                bucket_upper = bucket.upper()
-                injected.add(f"S3_{bucket_upper}_BUCKET")
-                # Also add optional region var
-                injected.add(f"S3_{bucket_upper}_BUCKET_REGION")
-
-        # Secrets module: each secret name in the names list
-        names = self._secrets.get("names", [])
-        injected.update(names)
-
-        return injected
 
     def get_warnings(self) -> list[str]:
         """Get configuration warnings (unknown keys, etc.).

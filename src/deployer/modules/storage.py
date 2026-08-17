@@ -82,3 +82,16 @@ class StorageModule(ResourceModule):
             env_vars.append(EnvironmentVariable(env_var_name, env_config[config_key]))
 
         return ModuleOutput(environment=env_vars)
+
+    @override
+    def injected_names(self, app_config: dict[str, Any]) -> set[str]:
+        """One S3_{NAME}_BUCKET per declared bucket, and nothing else.
+
+        Notably **not** ``S3_{NAME}_BUCKET_REGION``, which ``DeployConfig``
+        claimed on this module's behalf until 53h-2b. Nothing has ever injected
+        it, so the audit counted it as provided by nobody.
+        """
+        if not app_config.get("type"):
+            return set()
+
+        return {f"S3_{bucket.upper()}_BUCKET" for bucket in app_config.get("buckets", [])}

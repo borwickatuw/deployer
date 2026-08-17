@@ -178,3 +178,8 @@ class SecretsModule(ResourceModule):
             secrets.append(SecretReference(name, context.ssm_parameter_arn(param_path)))
 
         return ModuleOutput(secrets=secrets)
+
+    @override
+    def injected_names(self, app_config: dict[str, Any]) -> set[str]:
+        """Exactly the declared names -- each arrives as a container secret."""
+        return set(app_config.get("names", []))

@@ -202,9 +202,12 @@ buckets = ["media", "originals"]
         result = config.get_all_env_var_names()
 
         assert "S3_MEDIA_BUCKET" in result
-        assert "S3_MEDIA_BUCKET_REGION" in result
         assert "S3_ORIGINALS_BUCKET" in result
-        assert "S3_ORIGINALS_BUCKET_REGION" in result
+        # UPDATED (53h-2b): the two _REGION variables used to be asserted here.
+        # StorageModule has never injected them, so claiming them made the
+        # audit report a variable as satisfied by nothing.
+        assert "S3_MEDIA_BUCKET_REGION" not in result
+        assert "S3_ORIGINALS_BUCKET_REGION" not in result
 
     def test_module_injected_secrets_vars(self, tmp_path):
         """Test that secrets module vars are included."""
