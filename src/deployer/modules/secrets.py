@@ -15,7 +15,7 @@ Injects: Each named secret from SSM
 """
 
 import re
-from typing import Any
+from typing import Any, override
 
 from .base import (
     ModuleContext,
@@ -41,9 +41,11 @@ class SecretsModule(ResourceModule):
     """SSM Parameter Store secrets module."""
 
     @property
+    @override
     def name(self) -> str:
         return "secrets"
 
+    @override
     def validate(
         self,
         app_config: dict[str, Any],
@@ -88,6 +90,7 @@ class SecretsModule(ResourceModule):
 
         return errors
 
+    @override
     def collect(
         self,
         app_config: dict[str, Any],

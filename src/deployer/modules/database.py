@@ -26,7 +26,7 @@ Environment provides:
 Injects: DB_HOST, DB_PORT, DB_NAME, DB_USERNAME (secret), DB_PASSWORD (secret)
 """
 
-from typing import Any
+from typing import Any, override
 
 from .base import (
     EnvironmentVariable,
@@ -66,9 +66,11 @@ class DatabaseModule(ResourceModule):
     """PostgreSQL database module."""
 
     @property
+    @override
     def name(self) -> str:
         return "database"
 
+    @override
     def validate(  # noqa: C901 — validates many credential/config combinations
         self,
         app_config: dict[str, Any],
@@ -148,6 +150,7 @@ class DatabaseModule(ResourceModule):
 
         return errors
 
+    @override
     def collect(
         self,
         app_config: dict[str, Any],

@@ -13,7 +13,7 @@ Environment provides:
 Injects: S3_MEDIA_BUCKET, S3_ORIGINALS_BUCKET (if declared)
 """
 
-from typing import Any
+from typing import Any, override
 
 from .base import (
     EnvironmentVariable,
@@ -27,9 +27,11 @@ class StorageModule(ResourceModule):
     """S3 storage module."""
 
     @property
+    @override
     def name(self) -> str:
         return "storage"
 
+    @override
     def validate(
         self,
         app_config: dict[str, Any],
@@ -59,8 +61,7 @@ class StorageModule(ResourceModule):
 
         return errors
 
-    # context is required by the Module interface even when unused here.
-    # pysmelly: ignore vestigial-params  (re-evaluate-by: 2026-11 review)
+    @override
     def collect(
         self,
         app_config: dict[str, Any],

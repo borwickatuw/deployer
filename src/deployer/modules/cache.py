@@ -11,7 +11,7 @@ Environment provides:
 Injects: REDIS_URL
 """
 
-from typing import Any
+from typing import Any, override
 
 from .base import (
     EnvironmentVariable,
@@ -25,9 +25,11 @@ class CacheModule(ResourceModule):
     """Redis cache module."""
 
     @property
+    @override
     def name(self) -> str:
         return "cache"
 
+    @override
     def validate(
         self,
         app_config: dict[str, Any],
@@ -43,8 +45,7 @@ class CacheModule(ResourceModule):
 
         return errors
 
-    # context is required by the Module interface even when unused here.
-    # pysmelly: ignore vestigial-params  (re-evaluate-by: 2026-11 review)
+    @override
     def collect(
         self,
         app_config: dict[str, Any],
