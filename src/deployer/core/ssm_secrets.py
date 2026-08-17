@@ -77,7 +77,7 @@ def get_secrets_from_deploy_toml(
 def get_secrets_from_config(
     config: dict,
     environment: str,
-    env_config: dict,
+    env_config: dict | None,
 ) -> dict[str, str]:
     """Extract SSM secrets from a parsed deploy.toml config.
 
@@ -88,7 +88,11 @@ def get_secrets_from_config(
     Args:
         config: Parsed deploy.toml configuration dictionary
         environment: Environment name (e.g., "staging")
-        env_config: Environment config.toml for module-style secrets
+        env_config: Environment config.toml for module-style secrets, or None
+            when no environment config is available -- which is how
+            `get_secrets_from_deploy_toml`'s own optional parameter arrives
+            here. None resolves no module-style secrets, the same as an
+            env_config carrying no `[secrets] path_prefix`.
 
     Returns:
         Dictionary mapping env var names to SSM parameter paths.
@@ -99,7 +103,7 @@ def get_secrets_from_config(
     # Check for new module-style secrets (names = [...])
     if "names" in secrets_config:
         names = secrets_config.get("names", [])
-        secrets_env_config = env_config.get("secrets", {})
+        secrets_env_config = (env_config or {}).get("secrets", {})
         path_prefix = secrets_env_config.get("path_prefix", "")
 
         if path_prefix and names:

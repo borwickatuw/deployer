@@ -136,7 +136,10 @@ def cmd_check(environment: str, deploy_toml: str | None) -> int:
     # Get required secrets from deploy.toml
     try:
         required_secrets = get_secrets_from_deploy_toml(deploy_toml_path, env)
-    except Exception as e:
+    # parse_deploy_config documents exactly these: FileNotFoundError (OSError),
+    # tomllib.TOMLDecodeError and ValueError (both ValueError). Anything else is
+    # a deployer bug and must not be reported as the operator's parse failure.
+    except (OSError, ValueError) as e:
         print(f"Error parsing deploy.toml: {e}", file=sys.stderr)
         return 1
 
