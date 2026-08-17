@@ -245,7 +245,7 @@ DEBUG = "false"
 API_URL = "https://api.example.com"
 
 [secrets]
-SECRET_KEY = "ssm:/app/secret"
+names = ["SECRET_KEY"]
 """)
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()

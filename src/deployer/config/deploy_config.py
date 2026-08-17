@@ -173,8 +173,8 @@ class DeployConfig:
         - Explicit environment variables from [environment] section
         - Environment-specific overrides (e.g., [environment.staging])
         - Service-specific environment variables (e.g., [services.X.environment])
-        - Secret names
-        - Variables that modules will inject based on declared resources
+        - Variables that modules will inject based on declared resources,
+          which is where [secrets] names arrive from
 
         Returns:
             Set of environment variable names.
@@ -199,12 +199,8 @@ class DeployConfig:
                     # Environment-specific overrides within service
                     env_vars.update(value.keys())
 
-        # Legacy secrets format (SECRET_KEY = "ssm:/path")
-        for key in self._secrets:
-            if key != "names":  # Skip the names list
-                env_vars.add(key)
-
-        # Module-injected variables based on declared resources
+        # Module-injected variables based on declared resources -- including
+        # each name in [secrets], which _get_module_injected_vars adds.
         env_vars.update(self._get_module_injected_vars())
 
         return env_vars

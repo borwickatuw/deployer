@@ -99,7 +99,9 @@ source = "."
 names = ["SECRET_KEY", "SIGNED_URL_SECRET"]
 """
 
-LEGACY_STYLE_TOML = """\
+# The form 53h-2a removed. Kept as a fixture because a deploy.toml already
+# written this way is exactly what has to be rejected by name.
+EXPLICIT_STYLE_TOML = """\
 [application]
 name = "myapp"
 source = "."
@@ -143,12 +145,18 @@ def put_ssm(*names: str) -> None:
 class TestGetSecretsFromDeployToml:
     """Pins the deploy.toml -> {env var: SSM path} mapping on both styles."""
 
-    def test_legacy_inline_form_resolves_the_environment_placeholder(self, tmp_path):
-        path = write_deploy_toml(tmp_path, LEGACY_STYLE_TOML)
+    def test_the_removed_explicit_form_is_rejected(self, tmp_path):
+        """UPDATED PIN: this used to assert the explicit form resolved.
 
-        assert get_secrets_from_deploy_toml(path, "staging") == {
-            "DB_PASSWORD": "/myapp/staging/db-password"
-        }
+        53h-2a removed the ``VAR = "ssm:/path"`` style. Answering ``{}`` for a
+        deploy.toml written in it would be the same failure this file already
+        documents twice: a confident empty required-set, from which every live
+        parameter looks EXTRA and earns delete advice.
+        """
+        path = write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
+
+        with pytest.raises(ValueError, match="DB_PASSWORD"):
+            get_secrets_from_deploy_toml(path, "staging")
 
     def test_no_secrets_section_yields_no_secrets(self, tmp_path):
         path = write_deploy_toml(tmp_path, NO_SECRETS_TOML)
@@ -205,22 +213,31 @@ class TestCheckCommandEndToEnd:
             lambda _environment, deploy_toml, **_kw: Path(deploy_toml),
         )
 
-    def test_legacy_form_reports_present_and_missing(self, tmp_path, capsys):
-        path = write_deploy_toml(tmp_path, LEGACY_STYLE_TOML)
+    def test_the_explicit_form_is_reported_as_a_deploy_toml_error(self, tmp_path, capsys):
+        """UPDATED PIN: `check` used to classify explicit-form secrets.
+
+        It was the only style `check` could ever resolve on its own, because
+        it never loads the environment's config.toml. With the style removed,
+        `check` reports the migration and stops -- and, crucially, does not
+        print a single delete line for the live parameter it can see.
+        """
+        path = write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
         put_ssm("/myapp/staging/db-password")
 
-        assert ssm_cli.cmd_check("myapp-staging", str(path)) == 0
-        out = capsys.readouterr().out
-        assert "DB_PASSWORD" in out
-        assert "Present: 1, Missing: 0, Extra: 0" in out
+        assert ssm_cli.cmd_check("myapp-staging", str(path)) == 1
+        captured = capsys.readouterr()
+        assert "DB_PASSWORD" in captured.err
+        assert 'names = ["DB_PASSWORD"]' in captured.err
+        assert "delete" not in captured.out.lower()
 
-    def test_legacy_form_missing_secret_exits_1_with_put_commands(self, tmp_path, capsys):
-        path = write_deploy_toml(tmp_path, LEGACY_STYLE_TOML)
+    def test_nothing_is_classified_before_the_style_is_rejected(self, tmp_path, capsys):
+        """The rejection fires before SSM is listed at all."""
+        path = write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
 
         assert ssm_cli.cmd_check("myapp-staging", str(path)) == 1
         out = capsys.readouterr().out
-        assert "MISSING" in out
-        assert "  uv run python bin/ssm-secrets.py put myapp-staging db-password" in out
+        assert "MISSING" not in out
+        assert "Present:" not in out
 
     def test_documented_module_style_form_fails_with_actionable_advice(self, tmp_path, capsys):
         """UPDATED PIN -- twice now.
@@ -290,21 +307,28 @@ class TestCheckCommandEndToEnd:
         assert ssm_cli.cmd_check("myapp-staging", str(path)) == 1
         assert "The set of required secrets is unknown, not empty." in capsys.readouterr().err
 
-    def test_legacy_form_still_reports_extra_secrets_with_delete_advice(self, tmp_path, capsys):
-        """The guard leaves legacy inline apps completely alone.
+    def test_no_style_reaches_the_delete_advice_from_check_any_more(self, tmp_path, capsys):
+        """UPDATED PIN, and worth stating plainly.
 
-        Legacy ``ssm:/path`` secrets never read ``env_config`` -- which is why
-        they survived the original crash -- so ``check`` still resolves them,
-        still finds unreferenced parameters, and still advises deleting those.
+        Explicit-form secrets never read ``env_config`` -- which is why they
+        survived the original crash -- so ``check`` used to resolve them, find
+        unreferenced parameters and advise deleting those. That was the only
+        style it could resolve, because ``cmd_check`` never loads the
+        environment's config.toml.
+
+        With the style removed, ``check`` cannot classify anything on its own.
+        Both fleet deploy.tomls already use ``names``, so this was already
+        their reality before 53h-2a; the advice block names the two commands
+        that do work. **Teaching ``check`` to load config.toml is recorded as
+        follow-on work, not done here.**
         """
-        path = write_deploy_toml(tmp_path, LEGACY_STYLE_TOML)
+        path = write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
         put_ssm("/myapp/staging/db-password", "/myapp/staging/retired-secret")
 
         assert ssm_cli.cmd_check("myapp-staging", str(path)) == 1
-        out = capsys.readouterr().out
-        assert "Required: 1 secret(s)" in out
-        assert "Present: 1, Missing: 0, Extra: 1" in out
-        assert "  uv run python bin/ssm-secrets.py delete myapp-staging retired-secret" in out
+        captured = capsys.readouterr()
+        assert "delete myapp-staging retired-secret" not in captured.out
+        assert "Extra" not in captured.out
 
     def test_a_deployer_bug_is_no_longer_reported_as_a_parse_error(self, tmp_path, monkeypatch):
         """The narrowed ``except`` lets programming errors surface as tracebacks.
@@ -337,14 +361,23 @@ class TestCheckSecretsExist:
         assert present == [("SECRET_KEY", "/myapp/staging/secret-key")]
         assert missing == [("SIGNED_URL_SECRET", "/myapp/staging/signed-url-secret")]
 
-    def test_legacy_style_is_checked_too(self, mocked_aws, tmp_path):
-        config = parse_deploy_config(write_deploy_toml(tmp_path, LEGACY_STYLE_TOML)).get_raw_dict()
-        put_ssm("/myapp/staging/db-password")
+    def test_the_explicit_style_refuses_before_touching_ssm(self, monkeypatch, tmp_path):
+        """UPDATED PIN: the explicit style used to be resolved here too.
 
-        missing, present = check_secrets_exist(config, "staging", "myapp-staging", ENV_CONFIG)
+        Same rule as the module-style guard below: preflight's helper must not
+        answer a question it can no longer read.
+        """
+        config = parse_deploy_config(
+            write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
+        ).get_raw_dict()
 
-        assert present == [("DB_PASSWORD", "/myapp/staging/db-password")]
-        assert missing == []
+        def unexpected(_prefix):
+            raise AssertionError("list_parameters must not be called")
+
+        monkeypatch.setattr("deployer.core.ssm_secrets.ssm.list_parameters", unexpected)
+
+        with pytest.raises(ValueError, match="DB_PASSWORD"):
+            check_secrets_exist(config, "staging", "myapp-staging", ENV_CONFIG)
 
     def test_module_style_without_an_env_config_refuses_before_touching_ssm(
         self, monkeypatch, tmp_path

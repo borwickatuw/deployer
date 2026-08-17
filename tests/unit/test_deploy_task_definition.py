@@ -1,44 +1,42 @@
-"""Characterization pins for deploy/task_definition.py's two placeholder readers.
+"""Characterization pins for deploy/task_definition.py's placeholder reader.
 
 These are characterization pins, not endorsements. They record what
-``_get_legacy_secrets()`` and ``_resolve_legacy_placeholders()`` do **today**;
-where the behaviour looks wrong it is pinned anyway and called out in a
-comment on the test. Nothing here is a fix.
+``_resolve_legacy_placeholders()`` does **today**; where the behaviour looks
+wrong it is pinned anyway and called out in a comment on the test. Nothing
+here is a fix.
 
-Phase 53f-1 wrote these pins while both functions still took the raw
-``infra_config`` dict and each built its own placeholder table from it, in the
-same eight lines, twice. 53f-4 converted ``infra_config`` to
-``InfraConfig`` and moved those eight lines into
-``InfraConfig.legacy_placeholders()``; both functions now take the finished
-``dict[str, str]`` table, which is all they ever needed. The scalar-filter and
-``str()`` pins that used to be duplicated here, once per reader, therefore live
-in ``TestInfraConfigLegacyPlaceholders`` below -- one copy for the one
-implementation. Both readers keep an end-to-end pin driven by the real
-``_build_infra_config``.
+Phase 53f-1 wrote these pins while ``_resolve_legacy_placeholders`` and its
+since-deleted sibling ``_get_legacy_secrets`` both took the raw ``infra_config``
+dict and each built its own placeholder table from it, in the same eight lines,
+twice. 53f-4 converted ``infra_config`` to ``InfraConfig`` and moved those eight
+lines into ``InfraConfig.legacy_placeholders()``.
+
+**53h-2a deleted ``_get_legacy_secrets`` and every pin that named it.** The
+explicit ``[secrets]`` form it implemented is gone: it was one of two
+contradictory documented styles, and the one that silently dropped every
+secret whenever the same deploy.toml also declared a module section. Those pins
+went with their code, which is what a characterization pin is for -- they were
+never a reason to keep it.
+
+``InfraConfig.legacy_placeholders()`` **stays**, because
+``_resolve_legacy_placeholders`` is its other consumer: ``${database_url}``-
+style substitution in ``[environment]`` is a separate mechanism that 53h-2a
+does not touch, and these pins are what makes that a checked claim.
 
 What is pinned here:
 
-* ``_get_legacy_secrets`` -- both output arms (``ssm:`` -> a constructed SSM
-  parameter ARN, ``secretsmanager:`` -> the ARN with the prefix sliced off),
-  the ``${...}`` substring substitution it does *before* looking at the
-  prefix, the ``names`` skip, the non-string skip, and the fact that a value
-  matching neither prefix is **silently dropped**.
 * ``_resolve_legacy_placeholders`` -- the string arm, the ``services.``
   passthrough, the unknown-placeholder passthrough, and the whole-value-only
   matching rule.
 * ``InfraConfig.legacy_placeholders`` -- the ``int``/``float``/``bool``
   ``str()`` arm and the ``None``/list/dict drop, which is the single place
   those now happen.
-* The two functions' **different** placeholder rules, pinned against each
-  other: ``_get_legacy_secrets`` substitutes ``${x}`` anywhere inside a value,
-  ``_resolve_legacy_placeholders`` only replaces a value that is entirely one
-  placeholder. The same ``infra_config`` therefore behaves differently
-  depending on which reader sees it.
 * The values ``_build_infra_config`` really produces -- lists, nested dicts and
-  ``None`` -- against both readers, since a typed ``infra_config`` has to keep
+  ``None`` -- driven end to end, since a typed ``infra_config`` has to keep
   answering for those.
-* ``get_secrets``'s routing into the legacy path, so the pin covers the way
-  production actually reaches ``_get_legacy_secrets``.
+* ``get_secrets`` with no environment config, which is the one route left into
+  it and which now yields nothing rather than falling through to a second
+  reader.
 * **Settled by 53f-4:** ``get_environment_variables`` used to guard its
   legacy-placeholder pass with ``if infra_config:``, testing a spread that
   always carried ``account_id`` and so was permanently true. 53f-4 deleted the
@@ -46,7 +44,7 @@ What is pinned here:
   The behaviour those pins assert -- the pass runs, and ``${account_id}`` is
   offered here and only here -- is unchanged.
 
-Nothing is stubbed: both functions are pure over dicts, and
+Nothing is stubbed: the function is pure over dicts, and
 ``get_environment_variables`` is driven with an empty ``env_config`` so the
 module system stays out of it. That is the outermost boundary available --
 53d-2a's recorded rule -- and it means the pins survive any code motion inside
@@ -58,7 +56,6 @@ import pytest
 from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.task_definition import (
-    _get_legacy_secrets,
     _resolve_legacy_placeholders,
     get_environment_variables,
     get_secrets,
@@ -72,8 +69,8 @@ ENVIRONMENT = "staging"
 def _ctx(**overrides) -> DeploymentContext:
     """A DeploymentContext with the module system switched off.
 
-    An empty ``env_config`` keeps ModuleRegistry out of both functions under
-    test, so what runs is the legacy path and nothing else.
+    An empty ``env_config`` keeps ModuleRegistry out, so what runs is the
+    placeholder pass and nothing else.
     """
     defaults = {
         "ecs_client": None,
@@ -92,121 +89,15 @@ def _ctx(**overrides) -> DeploymentContext:
     return DeploymentContext(**defaults)
 
 
-def _legacy(secrets: dict, placeholders: dict[str, str] | None = None) -> list[dict[str, str]]:
-    """Call _get_legacy_secrets with the boilerplate arguments filled in."""
-    return _get_legacy_secrets(
-        {"secrets": secrets}, ENVIRONMENT, REGION, ACCOUNT_ID, placeholders or {}
-    )
-
-
-class TestGetLegacySecretsSsmArm:
-    """_get_legacy_secrets() -- the `ssm:` prefix builds a parameter ARN."""
-
-    def test_a_parameter_path_becomes_a_full_ssm_arn(self):
-        assert _legacy({"SECRET_KEY": "ssm:/app/secret-key"}) == [  # pragma: allowlist secret
-            {
-                "name": "SECRET_KEY",
-                "valueFrom": f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/app/secret-key",
-            }
-        ]
-
-    def test_the_environment_placeholder_is_substituted_into_the_path(self):
-        (secret,) = _legacy({"SECRET_KEY": "ssm:/app/${environment}/secret-key"})
-        assert secret["valueFrom"].endswith(f"parameter/app/{ENVIRONMENT}/secret-key")
-
-    def test_an_infra_config_placeholder_is_substituted_into_the_path(self):
-        (secret,) = _legacy(
-            {"DB_PASSWORD": "ssm:${param_prefix}/db-password"},  # pragma: allowlist secret
-            placeholders={"param_prefix": "/myapp/prod"},
-        )
-        assert secret["valueFrom"].endswith("parameter/myapp/prod/db-password")
-
-    def test_a_leading_slash_is_not_added(self):
-        # Pinned, not endorsed: the ARN is built by string concatenation, so a
-        # path without a leading slash produces `:parameterapp/key`, which SSM
-        # will reject at register-task-definition time rather than here.
-        (secret,) = _legacy({"SECRET_KEY": "ssm:app/key"})
-        assert secret["valueFrom"].endswith(":parameterapp/key")
-
-    def test_the_region_and_account_come_from_the_arguments_not_infra_config(self):
-        (secret,) = _legacy(
-            {"SECRET_KEY": "ssm:/k"},  # pragma: allowlist secret
-            placeholders={"region": "eu-west-1", "account_id": "999"},
-        )
-        assert secret["valueFrom"].startswith(f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:")
-
-
-class TestGetLegacySecretsSecretsManagerArm:
-    """_get_legacy_secrets() -- the `secretsmanager:` prefix is sliced off."""
-
-    def test_the_prefix_is_stripped_and_the_rest_passed_through(self):
-        arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:db-pw-AbCdEf"
-        assert _legacy({"DB_PASSWORD": f"secretsmanager:{arn}"}) == [
-            {"name": "DB_PASSWORD", "valueFrom": arn}
-        ]
-
-    def test_an_infra_config_placeholder_is_substituted_before_the_prefix_check(self):
-        arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:db-pw-AbCdEf"
-        (secret,) = _legacy(
-            {"DB_PASSWORD": "secretsmanager:${db_password_secret_arn}"},  # pragma: allowlist secret
-            placeholders={"db_password_secret_arn": arn},
-        )
-        assert secret["valueFrom"] == arn
-
-    def test_an_unresolved_placeholder_is_carried_into_the_output(self):
-        # Pinned, not endorsed: an infra_config that has not got the key leaves
-        # the literal `${...}` in the valueFrom, which ECS rejects at
-        # register-task-definition time with no hint at where it came from.
-        (secret,) = _legacy({"DB_PASSWORD": "secretsmanager:${db_password_secret_arn}"})
-        assert secret["valueFrom"] == "${db_password_secret_arn}"
-
-
-class TestGetLegacySecretsSkips:
-    """_get_legacy_secrets() -- everything it declines to emit."""
-
-    def test_no_secrets_section_gives_an_empty_list(self):
-        assert _get_legacy_secrets({}, ENVIRONMENT, REGION, ACCOUNT_ID, {}) == []
-
-    def test_the_names_key_is_skipped(self):
-        # `names` belongs to the new declarative style; the legacy reader steps
-        # over it rather than trying to treat the list as a path.
-        assert _legacy({"names": ["SECRET_KEY"], "OTHER": "ssm:/k"}) == [
-            {
-                "name": "OTHER",
-                "valueFrom": f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/k",
-            }
-        ]
-
-    @pytest.mark.parametrize("value", [42, None, ["ssm:/k"], {"path": "ssm:/k"}, True])
-    def test_a_non_string_value_is_skipped(self, value):
-        assert _legacy({"SECRET_KEY": value}) == []
-
-    def test_a_value_with_neither_prefix_is_dropped_silently(self):
-        # Pinned, not endorsed: a typo'd prefix -- or a bare ARN -- makes the
-        # secret vanish from the task definition with no warning at all. The
-        # service then starts without it.
-        assert (
-            _legacy(
-                {"SECRET_KEY": "arn:aws:ssm:us-west-2:1:parameter/k"}  # pragma: allowlist secret
-            )
-            == []
-        )
-        assert _legacy({"SECRET_KEY": "ssm/k"}) == []  # pragma: allowlist secret
-        assert _legacy({"SECRET_KEY": ""}) == []
-
-    def test_secrets_keep_their_declaration_order(self):
-        secrets = _legacy({"A": "ssm:/a", "SKIPPED": "nope", "B": "secretsmanager:arn-b"})
-        assert [s["name"] for s in secrets] == ["A", "B"]
-
-
 class TestInfraConfigLegacyPlaceholders:
     """InfraConfig.legacy_placeholders() -- the one scalar filter.
 
     Until 53f-4 this filter was eight lines written twice, once inside
     ``_get_legacy_secrets`` and once inside ``_resolve_legacy_placeholders``,
-    and 53f-1 pinned it twice to match. There is now one implementation, so
-    there is one set of pins. Both readers still get an end-to-end pin over
-    the real ``_build_infra_config`` output further down.
+    and 53f-1 pinned it twice to match. 53f-4 made it one implementation and
+    53h-2a deleted the first of its two callers, so the table now serves
+    ``[environment]`` substitution alone -- and gets an end-to-end pin over
+    real ``_build_infra_config`` output further down.
     """
 
     def test_a_string_field_is_offered_under_its_own_name(self):
@@ -247,81 +138,29 @@ class TestInfraConfigLegacyPlaceholders:
         assert infra_config.legacy_placeholders() == {}
 
 
-class TestGetLegacySecretsPlaceholderTable:
-    """_get_legacy_secrets() -- how it merges the infra placeholder table."""
+class TestGetSecretsWithoutAnEnvironmentConfig:
+    """**UPDATED PIN.** ``get_secrets`` used to fall through to a second reader.
 
-    def test_an_infra_key_named_environment_overrides_the_built_in_one(self):
-        # The built-in `environment` is seeded first and then overwritten by
-        # the infra table. InfraConfig has no such field today.
-        (secret,) = _legacy(
-            {"K": "ssm:/${environment}/x"}, placeholders={"environment": "shadowed"}
-        )
-        assert secret["valueFrom"].endswith("parameter/shadowed/x")
+    ``TestGetSecretsRoutesToTheLegacyPath`` pinned three routes into
+    ``_get_legacy_secrets``, all of which are gone with it. What is left is the
+    one rule: no environment config means no module has anything to resolve
+    its values from, so nothing is collected.
+    """
 
-    def test_a_placeholder_is_substituted_anywhere_in_the_value(self):
-        (secret,) = _legacy({"K": "ssm:/${a}/mid/${a}"}, placeholders={"a": "X"})
-        assert secret["valueFrom"].endswith("parameter/X/mid/X")
+    def test_an_explicit_secrets_section_yields_nothing_here(self):
+        # It never reaches this point in production -- preflight's
+        # check_secrets_style rejects it by name -- but the reader itself no
+        # longer has any code that would read it.
+        ctx = _ctx(config={"secrets": {"SECRET_KEY": "ssm:/app/k"}})  # pragma: allowlist secret
+        assert get_secrets(ctx, "web") == []
 
-    def test_every_value_of_a_real_build_infra_config_is_survivable(self):
-        # The real producer's output, driven straight through the reader: the
-        # nested and list-valued entries must not raise.
-        infra = _build_infra_config(
-            {
-                "infrastructure": {
-                    "private_subnet_ids": ["subnet-1", "subnet-2"],
-                    "rds_instance_id": "myapp-db",
-                },
-                "database": {
-                    "port": 5432,
-                    "password_secret_arn": "arn:secret",  # pragma: allowlist secret
-                },
-                "scheduler": {"enabled": True},
-            }
-        )
-        secrets = _legacy(
-            {
-                "DB_PASSWORD": (
-                    "secretsmanager:${db_password_secret_arn}"  # pragma: allowlist secret
-                ),
-                "PORT_PATH": "ssm:/db/${db_port}",
-                "SUBNETS": "ssm:/net/${subnet_ids}",
-            },
-            placeholders=infra.legacy_placeholders(),
-        )
-        assert secrets[0]["valueFrom"] == "arn:secret"
-        assert secrets[1]["valueFrom"].endswith("parameter/db/5432")
-        assert secrets[2]["valueFrom"].endswith("parameter/net/${subnet_ids}")
-
-
-class TestGetSecretsRoutesToTheLegacyPath:
-    """get_secrets() -- the branch that reaches _get_legacy_secrets at all."""
-
-    def test_no_modules_and_no_names_style_uses_the_legacy_reader(self):
-        ctx = _ctx(
-            config={"secrets": {"SECRET_KEY": "ssm:/app/secret-key"}},  # pragma: allowlist secret
-            infra_config=InfraConfig(rds_instance_id="unused"),
-        )
-        assert get_secrets(ctx, "web") == [
-            {
-                "name": "SECRET_KEY",
-                "valueFrom": f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/app/secret-key",
-            }
-        ]
-
-    def test_the_names_style_without_an_env_config_falls_through_to_legacy(self):
-        # `uses_names_style and env_config` -- an empty env_config drops a
-        # names-style config into the legacy reader, which skips `names` and
-        # emits nothing.
+    def test_a_names_style_section_without_an_env_config_yields_nothing(self):
         ctx = _ctx(config={"secrets": {"names": ["SECRET_KEY"]}})
         assert get_secrets(ctx, "web") == []
 
-    def test_the_legacy_reader_sees_ctx_infra_config_unspread(self):
-        # Unlike get_environment_variables, get_secrets passes
-        # ctx.infra_config straight through -- account_id is *not* mixed in,
-        # so `${account_id}` is not resolvable here.
-        ctx = _ctx(config={"secrets": {"K": "ssm:/${account_id}"}})
-        (secret,) = get_secrets(ctx, "web")
-        assert secret["valueFrom"].endswith("parameter/${account_id}")
+    def test_a_declared_database_without_an_env_config_yields_nothing(self):
+        ctx = _ctx(config={"database": {"type": "postgresql"}})
+        assert get_secrets(ctx, "web") == []
 
 
 class TestResolveLegacyPlaceholders:

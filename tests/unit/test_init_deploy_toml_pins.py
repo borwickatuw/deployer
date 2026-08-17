@@ -201,55 +201,51 @@ class TestSecretDetection:
 
 
 class TestEmittedSecretsShape:
-    """The concrete ``[secrets]`` value ``generate_deploy_toml`` writes today.
+    """**UPDATED PIN.** ``deployer init`` used to emit explicit SSM paths.
 
-    This is the one thing 53h-2a deliberately moves; every other pin in this
-    file is written to be unaffected by it. Keeping it in its own class makes
-    the refactor's diff to this file exactly this class plus
-    ``TestFormatSecretsSection``.
+    These pins recorded, one commit earlier, exactly what the generator wrote:
+    an ``ssm:/<app>/${environment}/<name>`` path per variable, with the app
+    name and the environment baked into the application's file. That was
+    one of *two* contradictory documented styles -- the primary reference
+    taught it and this generator was its only producer -- and it was the one
+    that silently dropped every secret whenever the same deploy.toml also
+    declared a module section.
 
-    Pinned, **emphatically** not endorsed. ``deployer init`` is the only
-    producer of the explicit ``VAR = "ssm:/path"`` form, and the form it
-    produces is the one that 53h-2a found silently drops every secret when the
-    same deploy.toml also carries a module section.
+    53h-2a made ``names`` the only style, on the architecture's own stated
+    premise (``modules/base.py``): deploy.toml declares *what* the application
+    needs, config.toml says *how* the environment provides it.
+
+    Every other pin in this file was written to be unaffected by the change,
+    and none of them moved -- which is what the split between detection and
+    shape was for.
     """
 
-    def test_each_secret_is_an_ssm_path_keyed_by_its_variable_name(self):
+    def test_each_secret_is_a_name_in_a_sorted_list(self):
         config = _generate({"web": _svc(environment=["SECRET_KEY=x", "API_TOKEN=y"])})
-        assert config["secrets"] == {
-            "API_TOKEN": "ssm:/myapp/${environment}/api-token",  # pragma: allowlist secret
-            "SECRET_KEY": "ssm:/myapp/${environment}/secret-key",  # pragma: allowlist secret
-        }
+        assert config["secrets"] == {"names": ["API_TOKEN", "SECRET_KEY"]}
 
-    def test_the_variable_name_is_lowercased_and_hyphenated_for_the_path(self):
+    def test_no_path_and_no_provider_are_written_down(self):
         config = _generate({"web": _svc(environment=["DATACITE_PASSWORD=x"])})
-        assert config["secrets"]["DATACITE_PASSWORD"].endswith("/datacite-password")
+        assert "ssm:" not in repr(config["secrets"])
 
-    def test_the_app_name_is_baked_into_the_application_s_own_file(self):
-        # Pinned, not endorsed: this is the contradiction 53h-2a resolves. The
-        # architecture's premise (modules/base.py) is that deploy.toml declares
-        # *what* the application needs and config.toml says *how* an
-        # environment provides it -- but the generated path names the app and
-        # the environment, so an environment's SSM layout lives in the app's
-        # checked-in file.
+    def test_the_app_name_no_longer_appears_in_the_declaration(self):
+        # The point of the names form: an environment's SSM layout is the
+        # environment's answer, and deploy.toml says nothing about it.
         config = _generate({"web": _svc(environment=["SECRET_KEY=x"])}, app_name="someapp")
-        assert config["secrets"]["SECRET_KEY"].startswith("ssm:/someapp/${environment}/")
-
-    def test_the_keys_arrive_in_sorted_variable_order(self):
-        config = _generate({"web": _svc(environment=["ZED_KEY=x", "API_TOKEN=y"])})
-        assert list(config["secrets"]) == ["API_TOKEN", "ZED_KEY"]
+        assert "someapp" not in repr(config["secrets"])
 
 
 class TestFormatSecretsSection:
-    """``format_deploy_toml``'s rendering of ``[secrets]`` today."""
+    """**UPDATED PIN.** ``format_deploy_toml``'s rendering of ``[secrets]``.
 
-    def test_the_section_is_rendered_as_one_assignment_per_secret(self):
+    Was one ``VAR = "ssm:/path"`` assignment per secret. The generated file
+    now carries names only; the SSM paths survive as comments, because the
+    operator still has to create the parameters before the first deployment.
+    """
+
+    def test_the_section_is_rendered_as_a_names_list(self):
         config = _generate({"web": _svc(environment=["SECRET_KEY=x", "API_TOKEN=y"])})
-        assert (
-            "[secrets]\n"
-            'API_TOKEN = "ssm:/myapp/${environment}/api-token"\n'  # pragma: allowlist secret
-            'SECRET_KEY = "ssm:/myapp/${environment}/secret-key"'  # pragma: allowlist secret
-        ) in format_deploy_toml(config)
+        assert '[secrets]\nnames = ["API_TOKEN", "SECRET_KEY"]' in format_deploy_toml(config)
 
     def test_the_comment_block_names_the_ssm_parameter_to_create(self):
         config = _generate({"web": _svc(environment=["SECRET_KEY=x"])})
@@ -257,13 +253,17 @@ class TestFormatSecretsSection:
         assert "#   aws ssm put-parameter --name" in text
         assert '"/myapp/staging/secret-key"' in text
 
-    def test_the_comment_hardcodes_staging_while_the_value_uses_a_placeholder(self):
-        # Pinned, not endorsed: the copy-pasteable command creates the staging
-        # parameter only, with no hint that production needs its own.
+    def test_the_comment_points_at_where_the_path_actually_comes_from(self):
         config = _generate({"web": _svc(environment=["SECRET_KEY=x"])})
         text = format_deploy_toml(config)
-        assert "/myapp/staging/secret-key" in text
-        assert "${environment}" in text
+        assert "config.toml [secrets] path_prefix" in text
+
+    def test_the_environment_placeholder_is_gone_from_the_generated_file(self):
+        # It used to appear inside every secret's value. Nothing resolves
+        # ${environment} on the secrets path any more, so writing it would be
+        # a lie about what the file does.
+        config = _generate({"web": _svc(environment=["SECRET_KEY=x"])})
+        assert "${environment}" not in format_deploy_toml(config)
 
     def test_no_secrets_renders_no_section(self):
         config = _generate({"web": _svc(environment=["ALLOWED_HOSTS=*"])})

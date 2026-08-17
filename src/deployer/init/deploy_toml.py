@@ -196,14 +196,19 @@ def _build_services_config(app_services: dict, app_name: str, framework: str) ->
     return deploy_services
 
 
-def _build_environment_config(all_env_vars: set, app_name: str) -> tuple[dict, dict]:
-    """Build environment and secrets sections of deploy.toml config."""
+def _build_environment_config(all_env_vars: set) -> tuple[dict, dict]:
+    """Build environment and secrets sections of deploy.toml config.
+
+    Secrets are declared by name only. Where a named secret actually lives is
+    the environment's answer -- config.toml's ``[secrets] path_prefix`` -- so
+    it has no business in the application's checked-in file.
+    """
     environment = {}
-    secrets = {}
+    secret_names = []
 
     for var_name in sorted(all_env_vars):
         if is_likely_secret(var_name):
-            secrets[var_name] = f"ssm:/{app_name}/${{environment}}/{_var_to_ssm_name(var_name)}"
+            secret_names.append(var_name)
         elif var_name == "DATABASE_URL":
             environment["DATABASE_URL"] = "${database_url}"
         elif var_name in {"REDIS_URL", "CELERY_BROKER_URL"}:
@@ -218,7 +223,7 @@ def _build_environment_config(all_env_vars: set, app_name: str) -> tuple[dict, d
     if "ALLOWED_HOSTS" not in environment:
         environment["ALLOWED_HOSTS"] = "*"
 
-    return environment, secrets
+    return environment, {"names": secret_names} if secret_names else {}
 
 
 def _build_migrations_config(framework: str, deploy_services: dict, app_name: str) -> dict | None:
@@ -288,7 +293,7 @@ def generate_deploy_toml(
     # Build config sections
     images = _build_images_config(app_services, app_name)
     deploy_services = _build_services_config(app_services, app_name, framework)
-    environment, secrets = _build_environment_config(all_env_vars, app_name)
+    environment, secrets = _build_environment_config(all_env_vars)
     migrations = _build_migrations_config(framework, deploy_services, app_name)
 
     # Infrastructure services to ignore in audit
@@ -397,23 +402,30 @@ def _format_environment_section(config: dict) -> list[str]:
 
 
 def _format_secrets_section(config: dict) -> list[str]:
-    """Format the [secrets] section."""
-    if not config.get("secrets"):
+    """Format the [secrets] section.
+
+    The names are all that goes in deploy.toml. The SSM paths appear only as
+    comments -- the environment's config.toml ``path_prefix`` is what actually
+    resolves them, and the commented commands are there so the operator can
+    create the parameters before the first deployment.
+    """
+    names = config.get("secrets", {}).get("names")
+    if not names:
         return []
 
     app_name = config["application"]["name"]
     lines = [
-        "# Secrets from AWS SSM Parameter Store",
-        "# Create these parameters before first deployment:",
+        "# Secrets the application needs. Their SSM paths come from the",
+        "# environment's config.toml [secrets] path_prefix -- see",
+        "# docs/CONFIG-REFERENCE.md. Create the parameters before first deploy:",
     ]
-    for key in config["secrets"]:
+    for name in names:
         lines.append(
-            f'#   aws ssm put-parameter --name "/{app_name}/staging/{_var_to_ssm_name(key)}" '
+            f'#   aws ssm put-parameter --name "/{app_name}/staging/{_var_to_ssm_name(name)}" '
             f'--value "..." --type SecureString'
         )
     lines.append("[secrets]")
-    for key, value in config["secrets"].items():
-        lines.append(f'{key} = "{value}"')
+    lines.append("names = [" + ", ".join(f'"{name}"' for name in names) + "]")
     lines.append("")
     return lines
 

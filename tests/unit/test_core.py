@@ -201,22 +201,23 @@ class TestRunAudit:
 class TestGetSecretsFromConfig:
     """Tests for get_secrets_from_config function."""
 
-    def test_legacy_format_with_environment_placeholder(self):
-        """Test legacy ssm:/path format with ${environment} substitution."""
+    def test_the_removed_explicit_path_form_is_rejected(self):
+        """UPDATED: this used to assert the explicit form resolved normally.
+
+        53h-2a removed it. Rejecting is not fussiness -- returning {} here is
+        how `bin/ssm-secrets.py check` comes to print "Required: 0" and advise
+        deleting every live parameter under the prefix.
+        """
         from deployer.core.ssm_secrets import get_secrets_from_config
 
         config = {
             "secrets": {
-                "SECRET_KEY": "ssm:/myapp/${environment}/secret-key",
-                "API_KEY": "ssm:/shared/api-key",
+                "SECRET_KEY": "ssm:/myapp/${environment}/secret-key",  # pragma: allowlist secret
+                "API_KEY": "ssm:/shared/api-key",  # pragma: allowlist secret
             }
         }
-        result = get_secrets_from_config(config, "staging", {})
-
-        assert result == {
-            "SECRET_KEY": "/myapp/staging/secret-key",
-            "API_KEY": "/shared/api-key",
-        }
+        with pytest.raises(ValueError, match=r"names = \["):
+            get_secrets_from_config(config, "staging", {})
 
     def test_module_format_with_names_list(self):
         """Test new module format with names = [...] and path_prefix."""
@@ -270,23 +271,25 @@ class TestGetSecretsFromConfig:
 
         assert result == {}
 
-    def test_combined_legacy_and_module_format(self):
-        """Test that both legacy and module formats work together."""
+    def test_mixing_the_two_forms_is_rejected_rather_than_merged(self):
+        """UPDATED: the two forms used to be merged into one result.
+
+        Merging here while `get_secrets` in the task definition dropped the
+        explicit half was precisely how the drop stayed invisible: preflight
+        confirmed the SSM parameters existed and passed, and the container
+        started without them.
+        """
         from deployer.core.ssm_secrets import get_secrets_from_config
 
         config = {
             "secrets": {
                 "names": ["SECRET_KEY"],
-                "LEGACY_SECRET": "ssm:/legacy/path",
+                "LEGACY_SECRET": "ssm:/legacy/path",  # pragma: allowlist secret
             }
         }
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
-        result = get_secrets_from_config(config, "staging", env_config)
-
-        assert result == {
-            "SECRET_KEY": "/app/staging/secret-key",
-            "LEGACY_SECRET": "/legacy/path",
-        }
+        with pytest.raises(ValueError, match="LEGACY_SECRET"):
+            get_secrets_from_config(config, "staging", env_config)
 
     def test_no_secrets_section_returns_empty(self):
         """Test that missing secrets section returns empty dict."""

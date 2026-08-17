@@ -25,6 +25,7 @@ from deployer.deploy.images import (
 )
 from deployer.deploy.validation import validate_ecs_cluster
 from deployer.modules import ModuleRegistry
+from deployer.modules.secrets import explicit_path_error, explicit_path_keys
 from deployer.utils import advice_block, log, log_debug, log_success, log_warning
 
 
@@ -176,6 +177,25 @@ def check_ssm_secrets(
     print()
 
 
+def check_secrets_style(deploy_config: DeployConfig) -> None:
+    """Reject a deploy.toml still using the removed explicit-secret-path form.
+
+    Kept separate from ``check_modules`` on purpose. This is not a module
+    validation error to be aggregated with the database's and the cache's --
+    it is a config-migration failure with one fix, and it earns its own
+    message rather than a bullet in someone else's list.
+
+    Raises:
+        PreflightError: If ``[secrets]`` carries anything other than ``names``.
+    """
+    log("Checking secrets style...")
+    explicit = explicit_path_keys(deploy_config.get_raw_dict().get("secrets", {}))
+    if explicit:
+        raise PreflightError(explicit_path_error(explicit))
+    log_success("Secrets declared in the supported style")
+    print()
+
+
 def check_modules(deploy_config: DeployConfig, env_config: dict) -> None:
     """Validate resource module declarations against environment config.
 
@@ -233,7 +253,10 @@ def run_preflight_checks(
     # Always validate environment config
     check_environment_config(target.config)
 
-    # Resource modules (database, cache, storage, cdn, autoscale, etc.)
+    # deploy.toml declares its secrets in the one supported style
+    check_secrets_style(deploy_config)
+
+    # Resource modules (database, cache, storage, secrets)
     check_modules(deploy_config, target.config)
 
     # Audit (deploy.toml vs docker-compose.yml)

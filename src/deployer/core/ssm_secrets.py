@@ -4,6 +4,7 @@ from pathlib import Path
 
 from deployer.aws import ssm
 from deployer.config import parse_deploy_config
+from deployer.modules.secrets import explicit_path_error, explicit_path_keys
 from deployer.utils import EnvironmentConfigError, advice_block
 
 
@@ -87,13 +88,18 @@ def get_secrets_from_config(
 ) -> dict[str, str]:
     """Extract SSM secrets from a parsed deploy.toml config.
 
-    Supports two formats:
-    1. Legacy: `SECRET_KEY = "ssm:/app/${environment}/secret-key"`
-    2. Module: `names = ["SECRET_KEY", ...]` with path_prefix from env_config
+    One format: `[secrets] names = ["SECRET_KEY", ...]`, whose SSM paths come
+    from the environment's `[secrets] path_prefix`. The explicit-path form
+    `SECRET_KEY = "ssm:/app/${environment}/secret-key"` was removed in 53h-2a
+    and is rejected here rather than ignored -- a deploy.toml still using it
+    would otherwise report *no* required secrets, which is how
+    `bin/ssm-secrets.py check` comes to advise deleting live parameters.
 
     Args:
         config: Parsed deploy.toml configuration dictionary
-        environment: Environment name (e.g., "staging")
+        environment: Environment name (e.g., "staging"). Unused; kept because
+            it is part of the shared (config, environment, env_config)
+            signature this module's readers all take.
         env_config: Environment config.toml for module-style secrets, or None
             when no environment config could be loaded -- which is how
             `get_secrets_from_deploy_toml`'s own optional parameter arrives
@@ -112,46 +118,37 @@ def get_secrets_from_config(
             and `env_config` is None. Returning {} there would let a caller
             conclude that nothing is required -- and so that every live SSM
             parameter under the prefix is unreferenced.
+        ValueError: If `config` still uses the removed explicit-path form.
+            Same reasoning: an unreadable declaration must not be reported as
+            an empty one.
     """
+    del environment  # part of this module's shared signature; nothing reads it
     secrets_config = config.get("secrets", {})
-    result = {}
 
-    # Check for new module-style secrets (names = [...])
-    if "names" in secrets_config:
-        names = secrets_config.get("names", [])
-        if names and env_config is None:
-            raise EnvironmentConfigError(
-                "deploy.toml declares module-style secrets ([secrets] names = [...]), "
-                "whose SSM paths come from the environment config.toml's "
-                "[secrets] path_prefix -- and no environment config.toml was loaded. "
-                "The set of required secrets is unknown, not empty."
-            )
-        secrets_env_config = (env_config or {}).get("secrets", {})
-        path_prefix = secrets_env_config.get("path_prefix", "")
+    explicit = explicit_path_keys(secrets_config)
+    if explicit:
+        raise ValueError(explicit_path_error(explicit))
 
-        if path_prefix and names:
-            # Normalize path prefix
-            if not path_prefix.startswith("/"):
-                path_prefix = "/" + path_prefix
-            path_prefix = path_prefix.rstrip("/")
+    names = secrets_config.get("names", [])
+    if names and env_config is None:
+        raise EnvironmentConfigError(
+            "deploy.toml declares module-style secrets ([secrets] names = [...]), "
+            "whose SSM paths come from the environment config.toml's "
+            "[secrets] path_prefix -- and no environment config.toml was loaded. "
+            "The set of required secrets is unknown, not empty."
+        )
 
-            for name in names:
-                # Convert SECRET_KEY -> secret-key
-                param_name = name.replace("_", "-").lower()
-                result[name] = f"{path_prefix}/{param_name}"
+    path_prefix = (env_config or {}).get("secrets", {}).get("path_prefix", "")
+    if not (path_prefix and names):
+        return {}
 
-    # Also check legacy format (ssm:/path)
-    for key, value in secrets_config.items():
-        if key == "names":
-            continue  # Skip the names list
-        if isinstance(value, str):
-            # Resolve ${environment} placeholder
-            resolved = value.replace("${environment}", environment)
-            if resolved.startswith("ssm:"):
-                # Extract path (remove "ssm:" prefix)
-                result[key] = resolved[4:]
+    # Normalize path prefix
+    if not path_prefix.startswith("/"):
+        path_prefix = "/" + path_prefix
+    path_prefix = path_prefix.rstrip("/")
 
-    return result
+    # Convert SECRET_KEY -> secret-key
+    return {name: f"{path_prefix}/{name.replace('_', '-').lower()}" for name in names}
 
 
 def check_secrets_exist(
@@ -208,8 +205,9 @@ def check_secrets_drift(
 ) -> list[str]:
     """Find SSM secrets that exist but aren't referenced in deploy.toml.
 
-    Only works with module-style secrets (names = [...] with path_prefix).
-    Legacy ssm:/path secrets don't have a predictable prefix to scan.
+    Needs `[secrets] names` and a `path_prefix`; without a prefix there is no
+    tree to scan, so the answer is "nothing to report" rather than "everything
+    is unreferenced".
 
     Args:
         config: Parsed deploy.toml configuration dictionary.

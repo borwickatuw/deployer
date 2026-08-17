@@ -148,7 +148,7 @@ DEBUG = "false"
 DEBUG = "true"
 
 [secrets]
-API_KEY = "ssm:/key"
+names = ["API_KEY"]
 """)
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()

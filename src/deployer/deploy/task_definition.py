@@ -4,16 +4,42 @@ from __future__ import annotations
 
 from deployer.modules import (
     ModuleContext,
+    ModuleOutput,
     ModuleRegistry,
     resolve_service_urls,
 )
-from deployer.modules.secrets import SecretsModule
 from deployer.utils import log_debug
 
 from .context import DeploymentContext
 
-# Sections in deploy.toml that indicate the module system is in use
-_MODULE_SECTIONS = ("database", "cache", "storage", "cdn", "autoscale")
+
+def _collect_modules(ctx: DeploymentContext, credential_mode: str) -> ModuleOutput:
+    """Collect every declared module's output, or nothing without a config.toml.
+
+    There is one route into the module system and this is it. Until 53h-2a
+    both readers below chose between three routes by inspecting the shape of
+    deploy.toml, and the choice was wrong: a deploy.toml carrying explicit
+    ``[secrets]`` *and* any module section took the module route, which never
+    read ``[secrets]`` at all, and the container started without its secrets.
+    Collecting unconditionally makes that unreachable by construction rather
+    than by a guard -- ``ModuleRegistry.collect_all`` already skips any module
+    the application did not declare.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        credential_mode: "app" for runtime services, "migrate" for migrations.
+
+    Returns:
+        The merged output, empty when ``ctx.env_config`` is falsy -- no
+        environment config means no environment has answered, and every module
+        resolves its values from the environment's side.
+    """
+    if not ctx.env_config:
+        return ModuleOutput()
+
+    return ModuleRegistry.collect_all(
+        ctx.config, ctx.env_config, _build_module_context(ctx, credential_mode)
+    )
 
 
 def _build_module_context(ctx: DeploymentContext, credential_mode: str) -> ModuleContext:
@@ -144,7 +170,7 @@ def get_environment_variables(
     """Get merged environment variables for a service.
 
     This function merges environment variables from multiple sources:
-    1. Resource modules (database, cache, storage, cdn) - auto-generated
+    1. Resource modules (database, cache, storage) - auto-generated
     2. [environment] section from deploy.toml - app-specific
     3. [environment.{env}] overrides
     4. Service-specific environment variables
@@ -165,18 +191,9 @@ def get_environment_variables(
 
     merged = {}
 
-    # Check if using new module system (deploy.toml has resource declarations)
-    uses_modules = any(config.get(section) for section in (*_MODULE_SECTIONS, "secrets"))
-
-    if uses_modules and env_config:
-        # Collect from modules
-        module_output = ModuleRegistry.collect_all(
-            config, env_config, _build_module_context(ctx, credential_mode)
-        )
-
-        # Add module environment variables
-        for env_var in module_output.environment:
-            merged[env_var.name] = env_var.value
+    # Resource modules first, so deploy.toml's own [environment] can override.
+    for env_var in _collect_modules(ctx, credential_mode).environment:
+        merged[env_var.name] = env_var.value
 
     # Get [environment] section from deploy.toml
     env_section = config.get("environment", {})
@@ -277,106 +294,21 @@ def get_secrets(
 ) -> list[dict[str, str]]:
     """Get secrets configuration for a service.
 
-    This function collects secrets from:
-    1. Resource modules (database credentials, CDN private key, etc.)
-    2. [secrets].names list (new declarative style)
-    3. [secrets] section with explicit paths (legacy style)
+    Every secret comes from a resource module: database credentials from
+    ``[database]``, named application secrets from ``[secrets] names``, and so
+    on. There is no second route -- ``preflight.check_secrets_style`` rejects
+    the removed explicit-path form before a deployment gets this far.
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
-        service_name: Optional service name (unused, for future extension).
+        _service_name: Optional service name (unused, for future extension).
         credential_mode: For database credentials - "app" for runtime services
             (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
         List of secrets in ECS format: [{"name": "X", "valueFrom": "arn:..."}]
     """
-    config = ctx.config
-    env_config = ctx.env_config
-
-    # Check if using new module system
-    uses_modules = any(config.get(section) for section in _MODULE_SECTIONS)
-
-    # Check if using new secrets.names style
-    secrets_section = config.get("secrets", {})
-    uses_names_style = "names" in secrets_section
-
-    if uses_modules and env_config:
-        # Collect from modules (includes secrets module if names are declared)
-        module_output = ModuleRegistry.collect_all(
-            config, env_config, _build_module_context(ctx, credential_mode)
-        )
-        return _secrets_to_ecs_format(module_output.secrets)
-
-    elif uses_names_style and env_config:
-        # Only using new secrets.names style (no other modules)
-        module = SecretsModule()
-        context = _build_module_context(ctx, credential_mode)
-        output = module.collect(secrets_section, env_config.get("secrets", {}), context)
-        return _secrets_to_ecs_format(output.secrets)
-
-    else:
-        # Legacy style: [secrets] with explicit ssm:/path or secretsmanager:arn
-        return _get_legacy_secrets(
-            config,
-            ctx.environment,
-            ctx.region,
-            ctx.account_id,
-            ctx.infra_config.legacy_placeholders(),
-        )
-
-
-def _get_legacy_secrets(
-    config: dict,
-    environment: str,
-    region: str,
-    account_id: str,
-    infra_placeholders: dict[str, str],
-) -> list[dict[str, str]]:
-    """Get secrets using legacy explicit path style.
-
-    Supports:
-        SECRET_KEY = "ssm:/app/${environment}/secret-key"
-        DB_PASSWORD = "secretsmanager:${db_password_secret_arn}"
-
-    ``infra_placeholders`` is the substitution table from
-    ``InfraConfig.legacy_placeholders()``; it overrides the built-in
-    ``environment``. Unlike ``get_environment_variables`` this path offers no
-    ``${account_id}``.
-    """
-    secrets_config = config.get("secrets", {})
-    placeholders = {"environment": environment, **infra_placeholders}
-
-    secrets = []
-    for name, value in secrets_config.items():
-        # Skip the new 'names' key
-        if name == "names":
-            continue
-
-        if not isinstance(value, str):
-            continue
-
-        # Resolve placeholders
-        result = value
-        for ph_name, ph_value in placeholders.items():
-            result = result.replace(f"${{{ph_name}}}", ph_value)
-
-        if result.startswith("ssm:"):
-            # SSM Parameter Store: ssm:/path/to/param
-            param_path = result[4:]  # Remove "ssm:" prefix
-            secrets.append(
-                {
-                    "name": name,
-                    "valueFrom": f"arn:aws:ssm:{region}:{account_id}:parameter{param_path}",
-                }
-            )
-        elif result.startswith("secretsmanager:"):
-            # Secrets Manager: secretsmanager:arn
-            secrets.append(
-                {"name": name, "valueFrom": result[15:]}  # Remove "secretsmanager:" prefix
-            )
-
-    return secrets
+    return _secrets_to_ecs_format(_collect_modules(ctx, credential_mode).secrets)
 
 
 def build_task_definition(

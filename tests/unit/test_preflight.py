@@ -14,6 +14,7 @@ from deployer.deploy.preflight import (
     check_ecs_cluster,
     check_environment_config,
     check_modules,
+    check_secrets_style,
     run_preflight_checks,
 )
 
@@ -229,6 +230,85 @@ class TestRunPreflightChecks:
         mock_ecr.assert_not_called()
         mock_secrets.assert_not_called()
         mock_cluster.assert_not_called()
+
+
+class TestCheckSecretsStyle:
+    """The check that rejects the removed explicit-secret-path form.
+
+    This is what makes 53h-2a's deletion a hard error rather than a silent
+    behaviour change. A deploy.toml written in the old style used to reach the
+    task definition, where every secret was dropped if any module section was
+    also declared -- and nothing caught it: preflight confirmed the SSM
+    parameters existed, and the audit counted the explicit keys as provided.
+    """
+
+    @staticmethod
+    def _config(tmp_path, toml: str):
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}')
+        return parse_deploy_config(deploy_toml)
+
+    def test_the_names_form_passes(self, tmp_path):
+        check_secrets_style(self._config(tmp_path, '[secrets]\nnames = ["SECRET_KEY"]\n'))
+
+    def test_no_secrets_section_passes(self, tmp_path):
+        check_secrets_style(self._config(tmp_path, ""))
+
+    def test_an_empty_secrets_section_passes(self, tmp_path):
+        check_secrets_style(self._config(tmp_path, "[secrets]\n"))
+
+    def test_an_ssm_path_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nSECRET_KEY = "ssm:/app/staging/secret-key"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="explicit-path form"):
+            check_secrets_style(config)
+
+    def test_a_secretsmanager_arn_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nDB_PASSWORD = "secretsmanager:arn:aws:x"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="DB_PASSWORD"):
+            check_secrets_style(config)
+
+    def test_the_message_spells_out_the_replacement(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nSECRET_KEY = "ssm:/a"\nAPI_TOKEN = "ssm:/b"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError) as excinfo:
+            check_secrets_style(config)
+        message = str(excinfo.value)
+        assert 'names = ["API_TOKEN", "SECRET_KEY"]' in message
+        assert "path_prefix" in message
+
+    def test_mixing_the_two_forms_is_rejected_too(self, tmp_path):
+        # The exact shape that silently dropped everything: a `names` list the
+        # module system honours, plus explicit keys it never reads.
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\nOTHER = "ssm:/b"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="OTHER"):
+            check_secrets_style(config)
+
+    def test_it_runs_before_the_module_and_secret_checks(self, tmp_path):
+        # Ordering matters: check_ssm_secrets would otherwise raise the same
+        # rejection from underneath, without the migration heading.
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(
+            '[application]\nname = "test"\n'
+            '[secrets]\nSECRET_KEY = "ssm:/a"\n'  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="explicit-path form"):
+            run_preflight_checks(
+                deploy_config=parse_deploy_config(deploy_toml),
+                target=make_target(),
+                project_dir=tmp_path,
+                options=PreflightOptions(),
+            )
 
 
 class TestCheckModules:

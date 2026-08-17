@@ -45,8 +45,7 @@ DEBUG = "true"
 DEBUG = "false"
 
 [secrets]
-SECRET_KEY = "ssm:/testapp/secret_key"
-API_TOKEN = "secretsmanager:testapp/api_token"
+names = ["SECRET_KEY", "API_TOKEN"]
 
 [migrations]
 enabled = true

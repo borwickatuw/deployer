@@ -399,57 +399,66 @@ class TestCollectAllRouting:
 
 
 class TestModuleSectionsRegistryGap:
-    """`_MODULE_SECTIONS` and the module registry do not agree. Pinned, not endorsed.
+    """**UPDATED PINS.** ``_MODULE_SECTIONS`` is gone; the registry is the only list.
 
-    ``_MODULE_SECTIONS`` names ``cdn`` and ``autoscale``; the registry holds
-    Database, Cache, Storage and Secrets. So a section can flip "the module
-    system is in use" without any module ever validating or collecting it, and
-    ``secrets`` -- which *is* a registered module -- is missing from the tuple
-    and special-cased instead. 53h-2 owns the fix; these pins are the evidence.
+    53h-1 pinned a hand-maintained tuple that named ``cdn`` and ``autoscale``
+    -- deleted at ``bdb5891`` -- and omitted ``secrets``, which *is*
+    registered. Three consequences were pinned as they stood and explicitly
+    not endorsed. They were the evidence 53h-2 adjudicated:
+
+    * ``[cdn]`` was never validated, yet flipped "the module system is in
+      use", which made ``get_secrets`` take a route that never read the
+      explicit ``[secrets]`` block -- so every secret vanished from the task
+      definition, with preflight passing;
+    * dropping ``[cdn]`` from the same deploy.toml changed which secrets the
+      container got;
+    * ``get_environment_variables`` and ``get_secrets`` disagreed about whether
+      ``secrets`` counted as a module section.
+
+    53h-2a deleted the tuple rather than deriving it from the registry: once
+    both readers collect from every declared module unconditionally, there is
+    no second list left to drift. ``ModuleRegistry.collect_all`` already skips
+    a module the application did not declare, so the shape of deploy.toml is
+    no longer consulted to decide which reader runs.
+
+    Only the first pin survives unchanged -- an unimplemented section is still
+    never validated, and it is now inert rather than dangerous.
     """
 
     def test_an_unimplemented_section_is_never_validated(self):
         """[cdn] can say anything at all and validate_all reports nothing."""
         assert ModuleRegistry.validate_all({"cdn": {"type": "not-a-real-type"}}, {}) == []
 
-    def test_an_unimplemented_section_still_switches_on_the_module_path(self):
-        """[cdn] flips uses_modules, so legacy [secrets] are silently dropped.
+    def test_an_unimplemented_section_no_longer_changes_what_is_collected(self):
+        """UPDATED: [cdn] used to flip a routing decision. Now it is inert."""
+        env_config = {
+            "environment": {"domain_name": "app.example.com"},
+            "secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"},
+        }
+        declared = {"secrets": {"names": ["SECRET_KEY"]}}
+        with_cdn = {"cdn": {"enabled": True}, **declared}
 
-        Declaring an unimplemented module changes which secrets a container
-        gets. This is a real trap, pinned as it stands today.
-        """
+        assert _secret_map(get_secrets(_ctx(with_cdn, env_config), None)) == _secret_map(
+            get_secrets(_ctx(declared, env_config), None)
+        )
+
+    def test_the_two_readers_now_agree_on_which_modules_are_in_play(self):
+        """UPDATED: get_environment_variables counted ``secrets`` as a module
+        section and get_secrets did not. Both now collect from all of them."""
         config = {
-            "cdn": {"enabled": True},
-            # Legacy explicit style.
-            "secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"},  # pragma: allowlist secret
+            "secrets": {"names": ["SECRET_KEY"]},
+            "cache": {"type": "redis"},
         }
-        ctx = _ctx(config, {"environment": {"domain_name": "app.example.com"}})
-
-        assert get_secrets(ctx, None) == []
-
-    def test_without_the_cdn_section_the_same_config_uses_the_legacy_path(self):
-        """The contrast: drop [cdn] and the legacy secret resolves normally."""
-        config = {
-            "secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"}  # pragma: allowlist secret
+        env_config = {
+            "secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"},
+            "cache": {"url": "redis://cache:6379/0"},
         }
-        ctx = _ctx(config, {"environment": {"domain_name": "app.example.com"}})
-
-        assert _secret_map(get_secrets(ctx, None)) == {
-            "SECRET_KEY": _ssm_arn("/myapp/staging/secret-key")  # pragma: allowlist secret
-        }
-
-    def test_secrets_alone_switches_env_vars_but_not_secrets_onto_the_module_path(self):
-        """The two readers disagree: get_environment_variables counts
-        ``secrets`` as a module section, get_secrets does not."""
-        config = {"secrets": {"names": ["SECRET_KEY"]}}
-        env_config = {"secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"}}
         ctx = _ctx(config, env_config)
 
-        # Same answer by two different routes -- for now.
         assert _secret_map(get_secrets(ctx, None)) == {
             "SECRET_KEY": _ssm_arn("/myapp/staging/secret-key")  # pragma: allowlist secret
         }
-        assert get_environment_variables(ctx) == {}
+        assert "REDIS_URL" in get_environment_variables(ctx)
 
 
 class TestDatabaseValidate:

@@ -17,12 +17,70 @@ Injects: Each named secret from SSM
 import re
 from typing import Any, override
 
+from deployer.utils import advice_block
+
 from .base import (
     ModuleContext,
     ModuleOutput,
     ResourceModule,
     SecretReference,
 )
+
+
+def explicit_path_keys(app_config: dict[str, Any]) -> list[str]:
+    """The ``[secrets]`` keys using the removed explicit-path form.
+
+    ``names`` is the only key a deploy.toml ``[secrets]`` section may carry.
+    Anything else is a variable name mapped to an ``ssm:`` path or a
+    ``secretsmanager:`` ARN -- the form ``deployer init`` generated until
+    53h-2a, and the one that silently produced no secrets at all whenever the
+    same deploy.toml also declared a module section.
+
+    This is the single place that rule is written down; ``preflight`` and
+    ``core.ssm_secrets`` both ask here rather than each deciding for
+    themselves.
+
+    Args:
+        app_config: The ``[secrets]`` section from deploy.toml.
+
+    Returns:
+        The offending keys, sorted. Empty when the section is well formed.
+    """
+    return sorted(key for key in app_config if key != "names")
+
+
+def explicit_path_error(keys: list[str]) -> str:
+    """The migration message for a deploy.toml still using the explicit form.
+
+    Args:
+        keys: The offending keys, as returned by ``explicit_path_keys``.
+
+    Returns:
+        A formatted message naming the replacement, ready to become whichever
+        exception the caller raises.
+    """
+    return advice_block(
+        "deploy.toml [secrets] uses the explicit-path form, which was removed:",
+        keys,
+        (
+            "Declare what the application needs instead:",
+            "",
+            "  [secrets]",
+            "  names = [" + ", ".join(f'"{key}"' for key in keys) + "]",
+            "",
+            "Where those secrets live is the environment's answer, not the",
+            "application's. Every generated config.toml already carries it:",
+            "",
+            "  [secrets]",
+            '  provider = "ssm"',
+            '  path_prefix = "/myapp/staging"',
+            "",
+            "SECRET_KEY then resolves to /myapp/staging/secret-key. See",
+            "docs/CONFIG-REFERENCE.md and",
+            "docs/internal/removed-features/explicit-secret-paths.md.",
+        ),
+        bullet="  - ",
+    )
 
 
 def normalize_secret_name(name: str) -> str:
