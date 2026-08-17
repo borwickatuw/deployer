@@ -196,5 +196,5 @@ url = "redis://myapp-staging.xxx.0001.usw2.cache.amazonaws.com:6379"
 
 - **Cognito**: If using deployer's shared Cognito pool from bootstrap, add your app to `bootstrap-staging/cognito.auto.tfvars`. The Cognito pool itself is independent of your infrastructure.
 - **resolve-config.py**: Works with `[tofu].dir`, so CI/CD config resolution is supported.
-- **SSM secrets**: `bin/ssm-secrets.py` works independently -- it only needs the `[secrets].path_prefix` from config.toml.
+- **SSM secrets**: `bin/ssm-secrets.py` works independently -- it only needs the `[secrets].path_prefix` from config.toml. Its `check` subcommand is the exception: it reads deploy.toml alone, so for module-style `[secrets] names = [...]` apps it has no `path_prefix` and refuses rather than guessing. Use `ssm-secrets.py list`, or deploy pre-flight, which loads config.toml.
 - **tofu.sh wrapper**: The `bin/tofu.sh` wrapper is designed for deployer-managed environments. Use your own tofu workflow for infrastructure changes.

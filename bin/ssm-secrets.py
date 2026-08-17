@@ -46,6 +46,7 @@ from deployer.core.ssm_secrets import (
     ssm_put_commands,
 )
 from deployer.utils import (
+    EnvironmentConfigError,
     advice_block,
     configure_aws_for_operation,
     resolve_deploy_toml_or_exit,
@@ -119,6 +120,28 @@ def _print_secret_table(
     print(f"Present: {len(present)}, Missing: {len(missing)}, Extra: {len(extra)}")
 
 
+def _module_style_without_env_config_advice(environment: str) -> str:
+    """Say what `check` could not load, and which commands do work instead.
+
+    Args:
+        environment: Full environment name (e.g., "myapp-staging").
+
+    Returns:
+        The advice block, without a trailing newline.
+    """
+    return advice_block(
+        f"`check` reads deploy.toml only; it never loads {environment}'s config.toml.",
+        (),
+        [
+            "To check these secrets, run deploy pre-flight -- it loads config.toml:",
+            f"  uv run python bin/deploy.py deploy {environment} --dry-run",
+            "",
+            "To see what is in SSM today, with no delete advice:",
+            f"  uv run python bin/ssm-secrets.py list {environment}",
+        ],
+    )
+
+
 def cmd_check(environment: str, deploy_toml: str | None) -> int:
     """Check which secrets from deploy.toml are missing in SSM, and which SSM secrets are unused."""
     deploy_toml_path = resolve_deploy_toml_or_exit(
@@ -136,6 +159,14 @@ def cmd_check(environment: str, deploy_toml: str | None) -> int:
     # Get required secrets from deploy.toml
     try:
         required_secrets = get_secrets_from_deploy_toml(deploy_toml_path, env)
+    # `check` reads deploy.toml alone -- it never loads the environment's
+    # config.toml -- so a module-style app's required set is unknowable here.
+    # Refuse before any SSM listing: an empty required set would make every
+    # live parameter look EXTRA and earn delete advice.
+    except EnvironmentConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print(_module_style_without_env_config_advice(environment), file=sys.stderr)
+        return 1
     # parse_deploy_config documents exactly these: FileNotFoundError (OSError),
     # tomllib.TOMLDecodeError and ValueError (both ValueError). Anything else is
     # a deployer bug and must not be reported as the operator's parse failure.

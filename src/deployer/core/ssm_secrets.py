@@ -4,7 +4,7 @@ from pathlib import Path
 
 from deployer.aws import ssm
 from deployer.config import parse_deploy_config
-from deployer.utils import advice_block
+from deployer.utils import EnvironmentConfigError, advice_block
 
 
 def parse_environment(env_name: str) -> tuple[str, str]:
@@ -65,10 +65,16 @@ def get_secrets_from_deploy_toml(
     Args:
         deploy_toml_path: Path to deploy.toml file
         environment: Environment name (e.g., "staging")
-        env_config: Environment config.toml for module-style secrets
+        env_config: Environment config.toml for module-style secrets, or None
+            when the caller has no environment config -- see
+            ``get_secrets_from_config`` for what None means.
 
     Returns:
         Dictionary mapping env var names to SSM parameter paths.
+
+    Raises:
+        EnvironmentConfigError: If deploy.toml declares module-style secrets
+            and ``env_config`` is None.
     """
     config = parse_deploy_config(deploy_toml_path)
     return get_secrets_from_config(config.get_raw_dict(), environment, env_config)
@@ -89,13 +95,23 @@ def get_secrets_from_config(
         config: Parsed deploy.toml configuration dictionary
         environment: Environment name (e.g., "staging")
         env_config: Environment config.toml for module-style secrets, or None
-            when no environment config is available -- which is how
+            when no environment config could be loaded -- which is how
             `get_secrets_from_deploy_toml`'s own optional parameter arrives
-            here. None resolves no module-style secrets, the same as an
-            env_config carrying no `[secrets] path_prefix`.
+            here. Module-style secrets take their SSM paths from the
+            environment's `[secrets] path_prefix`, so None means the required
+            set is *unknown*, not empty, and this raises rather than answering.
+            An env_config that was loaded but carries no `[secrets] path_prefix`
+            is a different case: the environment has answered, so module-style
+            names still resolve to nothing.
 
     Returns:
         Dictionary mapping env var names to SSM parameter paths.
+
+    Raises:
+        EnvironmentConfigError: If `config` declares module-style secret names
+            and `env_config` is None. Returning {} there would let a caller
+            conclude that nothing is required -- and so that every live SSM
+            parameter under the prefix is unreferenced.
     """
     secrets_config = config.get("secrets", {})
     result = {}
@@ -103,6 +119,13 @@ def get_secrets_from_config(
     # Check for new module-style secrets (names = [...])
     if "names" in secrets_config:
         names = secrets_config.get("names", [])
+        if names and env_config is None:
+            raise EnvironmentConfigError(
+                "deploy.toml declares module-style secrets ([secrets] names = [...]), "
+                "whose SSM paths come from the environment config.toml's "
+                "[secrets] path_prefix -- and no environment config.toml was loaded. "
+                "The set of required secrets is unknown, not empty."
+            )
         secrets_env_config = (env_config or {}).get("secrets", {})
         path_prefix = secrets_env_config.get("path_prefix", "")
 
