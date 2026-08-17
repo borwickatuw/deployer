@@ -30,12 +30,20 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **47** (measured at the Phase 53e-5 commit `64e3e18`, which
-closes the 53e arc; was 49 at `2b057ae` and `961be51`, 52 at `9c95d79`, 53 at
+Standing total: **38** (measured at the Phase 53h-1 commit `a8d7369`; was 39 at
+`4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
+49 at `2b057ae` and `961be51`, 52 at `9c95d79`, 53 at
 `d75d24e` and `57bc874`, 56 at
 `a304fa1`, 57 at `9903e2b`, 60 at `805d516`,
 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
 `a8800cd`, 97 at `8e57264`).
+
+**Register gap, recorded rather than papered over:** 53f and 53g shipped in the
+2026-08-13 unattended run without an adjudication entry here. Their outcomes are
+in claude-meta `docs/PLAN.md` Phase 53 (53f: `dict-as-dataclass` 6 → 0 across
+four units; 53g: zero code units by design, with a recorded skip list). 53h-1
+did not fill that in — writing another subphase's adjudication record after the
+fact is not a thing a later session should invent.
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -1615,3 +1623,149 @@ has one finding left (the adjudicated `param-clump`) and `bin/init.py` two (both
 `duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
 to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
 adjudicated as a leave-standing. The category has no open items.
+
+### 53h-1 — what `ModuleContext` carries (2026-08-17)
+
+**Shipped** `bb17c37` → `a8d7369`, four commits. pysmelly **41 → 38**;
+`write-only-attributes` and `param-clumps`-in-`modules/` both to **0**,
+`feature-envy` 2 → 1. Two `# pysmelly: ignore vestigial-params` suppressions
+retired. Nothing minted.
+
+53h was split before it was run — the second time in this arc a subphase was
+split on planning rather than mid-arc (53e was the first). Reading the code
+found **four items pysmelly does not flag**, and one of them changed the
+subphase's shape, so what 53h-1 could decide alone was separated from what
+needs the answer first. 53h-2 is gated on this slice being re-measured.
+
+#### The pin, first and in its own commit
+
+`60cbfc0`, 67 characterization tests in
+`tests/unit/test_module_collect_pins.py`. This was an interface refactor over a
+**54%-covered** implementation whose call sites were themselves uncovered —
+`database.py`'s entire SSM credential arm (170-185), most of `validate`'s error
+arms, `_build_module_context`, and **both** `collect_all` call sites had no
+test at all.
+
+Every pin is driven through a seam 53h-1 does not move:
+`get_environment_variables`/`get_secrets` take a `DeploymentContext` and return
+dicts and lists, and `validate()` takes two dicts. No pin constructs a
+`ModuleContext` or calls `collect()` directly, which is 53d-2a's
+outermost-boundary rule applied to an interface change: the two things the
+refactor alters are exactly the two things the pins must not name. All 67
+passed unchanged through all three refactor commits.
+
+| File                  | Before | After                                     |
+| --------------------- | ------ | ----------------------------------------- |
+| `modules/database.py` | 54%    | **100%**                                  |
+| `modules/storage.py`  | 78%    | **100%**                                  |
+| `modules/cache.py`    | 83%    | **100%**                                  |
+| `modules/secrets.py`  | 71%    | 97% — one dead guard, see below           |
+| `modules/base.py`     | 82%    | 95% — three `@abstractmethod` `pass` bodies |
+| `deploy/task_definition.py` | 84% | **93%**                                 |
+
+Coverage floor **69 → 70** (70.44% measured), 1477 → 1544 tests.
+
+#### The four findings
+
+| Finding                                              | Disposition                                                                                                                                                                                                            |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `write-only-attributes` — `base.py:140` `domain_name` | **Cleared**, along with three sibling fields the check never saw. See the under-reporting mechanic below.                                                                                                              |
+| `feature-envy` — `database.py:126` `collect()`        | **Cleared.** `ModuleContext.ssm_parameter_arn()` and reading `credential_mode` once take the `context` accesses from 4 to 2, under the check's 3-access threshold.                                                     |
+| `feature-envy` — `database.py:47` `validate()`        | **Survives by design; 53h-2's call.** Measured, not assumed: a `DatabaseEnvConfig` dataclass would **not** clear it, because `env_config.host` is still an `ast.Attribute` Load. Only moving the logic onto the config type, or extracting *module-level* `_`-helpers (`check_feature_envy` only walks `ClassDef` bodies), does. Extracting **methods** would *mint* findings — a helper reading `env_config` 4× with `self` 0× fires on its own. |
+| `param-clumps` — `__init__.py:85`                     | **Cleared as a side effect of `@override`, which the plan predicted only bundling could do.** See below — this is the one result worth carrying forward.                                                               |
+
+#### `write-only-attributes` under-reports via name collision
+
+Four of `ModuleContext`'s six fields were read by no module. pysmelly flagged
+**one**. `_collect_all_attr_reads` (`pysmelly/checks/architecture.py:398`)
+builds a **single global set** of attribute names read *anywhere* in the
+codebase, so `environment`, `app_name` and `services` were covered by
+`DeploymentContext.app_name`/`.environment` and
+`DeployConfig.services`/`Checkpoint.services`. `domain_name` had no colliding
+reader, which is the only reason it surfaced.
+
+This is `feedback-verify-pysmelly-caller-counts` running **in reverse**: the
+same bare-name matching that makes cross-file checks *over*-report callers makes
+this one *under*-report dead fields. A `write-only-attributes` finding on a
+common field name is a floor, not a count. Candidate for PYSMELLY-REVIEW; filed
+in claude-meta GUIDE-BACKLOG under source key `53`.
+
+#### The LSP break the tool could not see
+
+`DatabaseModule.collect` widened the ABC with a fifth parameter
+(`credential_mode: str = "app"`) that no other module had, so `collect_all` had
+to dispatch on `if module.name == "database"` — a Liskov violation repaired by
+a string comparison, and invisible to every check. `credential_mode` describes
+the deployment, not one module's parameter list, so it moved onto
+`ModuleContext` and the registry now calls one signature for everything.
+
+Validation moved with it, into `__post_init__`, which makes it strictly
+**earlier**: a bad mode now raises before any module runs, rather than only when
+`[database]` happens to be declared with a `type`.
+
+#### The ARN written three times
+
+`f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{…}"` appeared at
+`database.py:182`, `database.py:188` and `secrets.py:119` — below
+`duplicate-blocks`' consecutive-statement threshold, so unflagged. It is now
+`ModuleContext.ssm_parameter_arn()`, one method on the type that owns both
+halves of the ARN. **Fourth time in this arc** that reading a target found
+duplication the tool could not reach (53d-1, 53d-2a, 53e-2).
+
+`collect()`'s two credential forks became lookups in `_SECRETSMANAGER_KEYS` and
+`_SSM_KEYS`. All eight config keys stay literal in both tables and in
+`validate()`, so each is greppable from either end.
+
+#### `@override`, and why the `param-clump` fell with it
+
+**Deployer is the first fleet repo to use `typing.override`** (only pysmelly
+itself did). Operator-approved 2026-08-17, deployer-first.
+
+`cache.collect` and `storage.collect` do not use their `context` parameter and
+cannot drop it — the ABC dictates the signature. That was two
+`# pysmelly: ignore vestigial-params` comments with `re-evaluate-by: 2026-11`
+tags. Saying it in the type system instead retires them **legitimately** rather
+than silencing them: `_has_interface_decorator` (`checks/callers.py:1133`) skips
+`@abstractmethod` and `@override` precisely because such a signature is a
+contract. `requires-python` is `>=3.12`, so no backport. The `# noqa: ARG002`
+comments stay — ruff has no equivalent skip.
+
+Applied to all **twelve** overriding members (`name`/`validate`/`collect` on each
+of four modules), not only the two carrying suppressions. PEP 698 is
+all-or-nothing per class; half-decorating reads as an accident.
+
+**Then the `param-clump` cleared too**, which the 53h-1 plan explicitly
+predicted only bundling could do. `param-clumps` builds its table from
+`_extract_all_signatures` (`checks/structure.py:543`), which applies the *same*
+interface-decorator skip. The four decorated `collect()` impls stop contributing
+signatures, leaving `collect_all` alone below the 3-function threshold.
+
+Recorded loudly because of what it does to 53h-2: **the
+`(app_config, env_config, context)` bundling decision is no longer forced by a
+finding.** 53h-2 decides it on merit. The gate must not be read as "the tool
+stopped complaining, therefore the signature is fine" — the tool stopped
+complaining because 53h-1 told it the signature is a contract, which is true and
+is a different statement.
+
+#### Pinned, not endorsed — handed to 53h-2
+
+Three behaviours the pins record as-is, in
+`tests/unit/test_module_collect_pins.py`:
+
+1. **`_MODULE_SECTIONS` and the registry disagree.**
+   `task_definition.py:16` names `cdn` and `autoscale`; the registry
+   (`__init__.py:50`) holds Database, Cache, Storage, Secrets. A deploy.toml
+   with `[cdn]` flips `uses_modules` true — **changing which secrets path runs,
+   so a legacy `[secrets]` block is silently dropped** — while `validate_all`
+   skips the section, meaning `[cdn]` is never validated at all. Conversely
+   `secrets` is in the registry but not in `_MODULE_SECTIONS`, and is
+   special-cased at `task_definition.py:311`; `get_environment_variables` counts
+   it as a module section and `get_secrets` does not. Same "what is a module"
+   question as the signature, so it rides with 53h-2.
+1. **`collect()` does not re-check what `validate()` rejects.**
+   `credentials = "vault"` emits the connection env vars with **no credentials
+   at all** — a container that starts and fails to authenticate.
+1. **`secrets.collect`'s `if not app_config` guard is dead.** Unreachable from
+   production: `collect_all` only calls a module whose section is truthy, and
+   `get_secrets`' other route requires a `names` key. Left uncovered rather than
+   reached by calling past the seam.

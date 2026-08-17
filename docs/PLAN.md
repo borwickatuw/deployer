@@ -16,60 +16,70 @@ candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
 ## Phase 53 status
 
-**56 findings** at the 53e-2 commit (from 97 at the start of the arc).
-53a, 53b, 53c, all of 53d, 53e-1 and 53e-2 are **done** — outcomes in
-[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md). Open: **53e-3 through 53e-5, then
-53f–53i.**
+**38 findings** at `a8d7369` (53h-1), from 97 at the start of the arc.
+**53a through 53g and 53h-1 are done.** Open: **53h-2 and 53i** — both
+adjudication rather than code motion, which is why the 2026-08-13
+unattended run stopped short of them.
 
-### 53e — `deploy/` pipeline decomposition
+Outcomes: 53a–53e in [PLAN-ARCHIVE.md](PLAN-ARCHIVE.md) and
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md); 53f and 53g in
+claude-meta `docs/PLAN.md` Phase 53 (**they have no adjudication entry in
+this repo's register** — a gap the 2026-08-13 run left, not something
+53h-1 filled). 53h-1's entry is in the register.
 
-Phase 53e was **split into five slices before it was run**, on the lesson
-53d paid for by splitting twice mid-arc. Re-measured at `805d516`,
-claude-meta's one-line 53e entry ("`service.py` ×4, `deployer.py` ×2,
-`images.py`, `extensions.py`, `audit.py`") was six files and ~16
-findings — three or four sessions. The slices are ordered by existing
-coverage descending, so the characterization-test idiom is established on
-small well-covered files before it reaches the untested heart:
+`long-function` **9 → 0**, `dict-as-dataclass` **6 → 0**,
+`write-only-attributes` **1 → 0**, `duplicate-except-blocks` and
+`boolean-param-explosion` empty as categories, and the
+convergence-hotspot list is empty. Coverage floor **53 → 70**.
 
-| Slice | Scope                                                      | Coverage at split | Status |
-| ----- | ---------------------------------------------------------- | ----------------- | ------ |
-| 53e-1 | `extensions.py` + `setup_profiles.py`                      | 94% / 39%         | done   |
-| 53e-2 | `core/audit.py` — `run_audit`                              | 66%               | done   |
-| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | 35%               | next   |
-| 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | 16%               | open   |
-| 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | 11%               | open   |
+**Carry into what is left**, the arc's most-repeated lesson: four times
+running (53d-1, 53d-2a, 53e-2, 53h-1) the real defect was duplication
+pysmelly could not reach — copies that interleave with other calls are
+not runs of consecutive statements, so `duplicate-blocks` never sees
+them. Read for repetition before planning anything, and re-measure at
+HEAD first; every count here is pinned to a SHA.
 
-`service.py` is 1003 lines at 11% coverage with four targets, and is the
-only file left on the convergence-hotspot list — a session of
-characterization tests before a line moves, so 53e-5 is deliberately last.
-`service.py:196`'s `param-clumps` stays with 53g.
+### 53h — `modules/` collect() interface
 
-**Carry into every remaining slice:** three times running (53d-1, 53d-2a,
-53e-2) a `long-function` target turned out to be duplication pysmelly
-could not reach — copies that interleave with other calls are not runs of
-consecutive statements, so `duplicate-blocks` never sees them. Read for
-repetition before planning a decomposition, and re-measure at HEAD first;
-every count above is pinned to a SHA.
+Split in two when 53h-1 was planned, because reading the code found four
+items pysmelly does not flag and one of them changes the subphase's
+shape. Detail in
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md) § 53h-1.
 
-**Phase 53e-3 (`deploy/deployer.py`) is the next open subphase.**
+| Slice | Scope                                                                    | Status |
+| ----- | ------------------------------------------------------------------------ | ------ |
+| 53h-1 | what `ModuleContext` carries — dead fields, the ARN, `credential_mode`   | done   |
+| 53h-2 | the `collect()`/`validate()` signature, and what a "module" is           | open   |
 
-### 53f–53i
+**53h-2 owns three questions, none of them now forced by a finding:**
 
-Scoped in claude-meta `docs/PLAN.md`; counts re-verified at the 53e-2
-commit and unchanged, since 53e-1 and 53e-2 minted nothing.
+1. Whether `(app_config, env_config, context)` becomes one `ModuleInputs`.
+   53h-1's `@override` decorators cleared the `param-clump` as a side
+   effect — pysmelly treats an interface-conformance signature as a
+   contract rather than a chosen clump — so this is a merit decision, not
+   a finding to close.
+1. `database.validate`'s `feature-envy` (11 `env_config` reads against 1
+   of `self`), which survives 53h-1 by design. A `DatabaseEnvConfig`
+   dataclass would **not** clear it; only moving the logic onto the config
+   type or extracting module-level helpers does.
+1. **`_MODULE_SECTIONS` and the registry do not agree.**
+   `task_definition.py:16` names `cdn` and `autoscale`, which no module
+   implements, so a `[cdn]` section flips "the module system is in use" —
+   changing which secrets path runs — while `validate_all` never validates
+   it. Conversely `secrets` is a registered module missing from the tuple
+   and special-cased instead, and the two readers disagree about it. All
+   of it is pinned in `tests/unit/test_module_collect_pins.py`
+   (`TestModuleSectionsRegistryGap`), pinned-not-endorsed.
 
-| Subphase | Scope                                                                                  | Findings                                                         |
-| -------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 53f      | dict-as-dataclass sweep (`emergency/rds.py` ×3, `emergency/ecs.py`, `core/cognito.py`) | 5                                                                |
-| 53g      | parameter plumbing → context objects                                                   | 14 pass-through + 5 open param-clumps                            |
-| 53h      | `modules/` `collect()` interface redesign                                              | ~6 (param-clump, feature-envy ×2, write-only)                    |
-| 53i      | mechanical residue + the caller-contract policy call                                   | foo-equals-foo ×3, single-call-site ×3, error-handling contracts |
+### 53i — mechanical residue + the caller-contract policy call
 
-53i is the one that needs a written policy rather than code motion. Its
-inputs have accumulated across the arc: Phase 54's pinned
-swallow-`ClientError` tests, 53c's unsuppressed `run_aws_json` and five
-untagged inline suppressions, 53d-1's `capacity-report` exit-code
-conflation, 53d-2a's `emergency.py` decline-vs-failure exit codes, and
-53d-2b + 53e-1's two bare `except Exception` handlers that misattribute an
-internal failure to an operator-facing cause. Each is pinned by a test
-naming 53i, so the tests are the checklist of call sites to change.
+`foo-equals-foo` ×3, `single-call-site` ×3, and the
+`inconsistent-error-handling` contracts. The one that needs a written
+policy rather than code motion. Its inputs have accumulated across the
+arc: Phase 54's pinned swallow-`ClientError` tests, 53c's unsuppressed
+`run_aws_json` and five untagged inline suppressions, 53d-1's
+`capacity-report` exit-code conflation, 53d-2a's `emergency.py`
+decline-vs-failure exit codes, and 53d-2b + 53e-1's two bare
+`except Exception` handlers that misattribute an internal failure to an
+operator-facing cause. Each is pinned by a test naming 53i, so the tests
+are the checklist of call sites to change.

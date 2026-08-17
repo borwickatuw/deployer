@@ -133,10 +133,17 @@ branch = true
 # which had no test at all, and _resolve_legacy_placeholders' numeric arm).
 # The floor moves 65 -> 68 against the 68.47% measured with all three in.
 #
+# Phase 53h-1 pinned the modules/ collect() interface before refactoring it.
+# database.py 54% -> 100% (its whole SSM credential arm and most of validate's
+# error arms had no test), storage.py 78% -> 100%, cache.py 83% -> 100%,
+# secrets.py 71% -> 97%, base.py 82% -> 95%, task_definition.py 84% -> 93%
+# (_build_module_context and both collect_all call sites were uncovered).
+# The floor moves 69 -> 70 against the 70.44% measured with those in.
+#
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 69
+fail_under = 70
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

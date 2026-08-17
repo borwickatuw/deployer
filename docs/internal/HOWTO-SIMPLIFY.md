@@ -165,28 +165,35 @@ last. **53e-3** (`deploy/deployer.py`) is the next open subphase.
 - Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
 - Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-### Remaining findings (57)
+### Remaining findings (38)
 
-Live counts, re-measured after Phase 53e-1. 11 of the 57 are adjudicated
-leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1, 53d-2a 1, 53d-2b 2) rather than
-open work, so **46 are open**.
+Live counts, re-measured at the Phase 53h-1 commit `a8d7369` with
+`uvx pysmelly . --more-please` (`make pysmelly` truncates to the top ten and
+under-reports `inconsistent-error-handling`).
 
-| Category                     | Count | Open | Notes                                                                        |
-| ---------------------------- | ----- | ---- | ---------------------------------------------------------------------------- |
-| pass-through-params          | 14    | 9    | ssm_secrets/preflight/aws plumbing; 5 adjudicated (53b ×3, 53c, 53d-1) (53g) |
-| long-function                | 8     | 8    | Orchestration functions (100–166 lines) (53e-2…53e-5)                        |
-| param-clumps                 | 7     | 5    | Context-object candidates; 2 adjudicated (53a, 53d-2a) (53g–h)               |
-| dict-as-dataclass            | 5     | 5    | emergency/rds, ecs, cognito returns (53f)                                    |
-| inconsistent-error-handling  | 4     | 4    | Caller-contract policy needed (53i)                                          |
-| law-of-demeter               | 4     | 4    | Chain depth 4 (53e-3, 53i)                                                   |
-| arrow-code                   | 3     | 3    | Depth-5/6 nesting (53e-5)                                                    |
-| foo-equals-foo               | 3     | 3    | Single-use locals to inline; init.py's two measured in 53d-2b (53i)          |
-| single-call-site             | 3     | 3    | Named helpers that document intent (53i)                                     |
-| feature-envy                 | 2     | 2    | DatabaseModule methods (53h)                                                 |
-| duplicate-blocks             | 1     | 0    | The db-\* Lambda pair, adjudicated in 53a                                    |
-| return-none-instead-of-raise | 1     | 0    | aws/cli.run_aws_json — left unsuppressed for 53i to decide                   |
-| write-only-attributes        | 1     | 1    | ModuleContext.domain_name (53h)                                              |
-| temp-accumulators            | 1     | 1    | images.py hash_modifiers (53e-4)                                             |
+**The Open column is not carried forward.** It counted adjudicated
+leave-standings against the total, and that tally cannot be re-derived
+reliably right now: 53f and 53g shipped with no adjudication entry in
+[PYSMELLY.md](PYSMELLY.md), so which of the current 38 are settled is only
+partly recorded. Rebuild it when that gap is filled rather than guessing at it.
+
+| Category                     | Count | Notes                                                                    |
+| ---------------------------- | ----- | -------------------------------------------------------------------------- |
+| pass-through-params          | 14    | ssm_secrets/preflight/aws plumbing; 53g declined all 14, skip list recorded |
+| param-clumps                 | 6     | Context-object candidates; `modules/` cleared by 53h-1                     |
+| inconsistent-error-handling  | 4     | Caller-contract policy needed (53i)                                        |
+| foo-equals-foo               | 3     | Single-use locals to inline; init.py's two measured in 53d-2b (53i)        |
+| single-call-site             | 3     | Named helpers that document intent (53i)                                   |
+| arrow-code                   | 2     | Depth-5/6 nesting in `ci_deploy.py` and `init/deploy_toml.py`              |
+| law-of-demeter               | 2     | Chain depth 4 (53e-3 adjudicated one; `template.py` to 53i)                |
+| feature-envy                 | 1     | `DatabaseModule.validate` — 53h-2's call                                   |
+| duplicate-blocks             | 1     | The db-\* Lambda pair, adjudicated in 53a                                  |
+| return-none-instead-of-raise | 1     | aws/cli.run_aws_json — left unsuppressed for 53i to decide                 |
+| temp-accumulators            | 1     | images.py hash_modifiers, relocated into `_cache_tag` by 53e-4b            |
+
+Categories now empty: `long-function` (9 → 0 across 53d–53e),
+`dict-as-dataclass` (6 → 0 in 53f), `write-only-attributes` (1 → 0 in 53h-1),
+`duplicate-except-blocks` and `boolean-param-explosion`.
 
 `long-function` dropped 16 → 12 → 11 → 9 → 8: 53d-1 cleared four `bin/`
 orchestrators, 53d-2a cleared `emergency.py cmd_rollback`, 53d-2b cleared
