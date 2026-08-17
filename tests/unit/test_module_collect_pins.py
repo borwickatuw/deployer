@@ -420,7 +420,8 @@ class TestModuleSectionsRegistryGap:
         """
         config = {
             "cdn": {"enabled": True},
-            "secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"},  # legacy explicit style
+            # Legacy explicit style.
+            "secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"},  # pragma: allowlist secret
         }
         ctx = _ctx(config, {"environment": {"domain_name": "app.example.com"}})
 
@@ -428,7 +429,9 @@ class TestModuleSectionsRegistryGap:
 
     def test_without_the_cdn_section_the_same_config_uses_the_legacy_path(self):
         """The contrast: drop [cdn] and the legacy secret resolves normally."""
-        config = {"secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"}}
+        config = {
+            "secrets": {"SECRET_KEY": "ssm:/myapp/staging/secret-key"}  # pragma: allowlist secret
+        }
         ctx = _ctx(config, {"environment": {"domain_name": "app.example.com"}})
 
         assert _secret_map(get_secrets(ctx, None)) == {
