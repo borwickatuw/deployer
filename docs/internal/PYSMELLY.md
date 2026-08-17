@@ -1770,3 +1770,207 @@ Three behaviours the pins record as-is, in
    production: `collect_all` only calls a module whose section is truthy, and
    `get_secrets`' other route requires a `names` key. Left uncovered rather than
    reached by calling past the seam.
+
+______________________________________________________________________
+
+### 53h-2a — one `[secrets]` style, and the module boundary (2026-08-17)
+
+**38 → 38.** No movement, and none expected: this subphase is correctness, not
+findings. It ships anyway because researching 53h-1's three handed-forward
+questions found that the first was not an adjudication but **a live bug**.
+
+Commits: `4bc2e9e` (pins), `c31f0f3` (crash fix), `6d34179` (the change),
+`36d33d5` (audit-key fix), `62dd547` (docs).
+
+#### The bug
+
+A deploy.toml carrying explicit `[secrets]` **and** any module section silently
+dropped every secret:
+
+```
+{"secrets": {"SECRET_KEY": "ssm:/app/secret-key"}}              -> [SECRET_KEY]
+{"database": {...}, "secrets": {"SECRET_KEY": "ssm:/app/..."}}  -> [DB_USERNAME, DB_PASSWORD]
+```
+
+`get_secrets` picked one of three routes from the shape of `config`; the module
+route returned only module secrets and never read `[secrets]`. **Nothing caught
+it.** Preflight confirmed the SSM parameters existed and passed.
+`DeployConfig.get_all_env_var_names` counted the explicit keys as provided, so
+the audit passed. The container started without its secrets.
+
+53h-1 pinned this as `TestModuleSectionsRegistryGap`'s second case and labelled
+it "a real trap, pinned as it stands today". It is worth being clear that the
+pin was written believing `[cdn]` was the trigger, and `[cdn]` is *not*
+reachable — `get_raw_dict()` rebuilds from typed fields and drops unknown
+sections. `[secrets]` + `[database]` is, because both are typed fields. **The
+pinned example was unreachable and the bug was real anyway**; what saved the
+finding was pinning the mechanism, not the example.
+
+#### Root cause: two contradictory documented styles
+
+| Style                      | Implemented by        | Documented in               | Written by      |
+| -------------------------- | --------------------- | --------------------------- | --------------- |
+| `names = ["SECRET_KEY"]`   | `SecretsModule`       | `docs/resources/secrets.md` | nothing         |
+| `SECRET_KEY = "ssm:/path"` | `_get_legacy_secrets` | `docs/CONFIG-REFERENCE.md`  | `deployer init` |
+
+Neither document mentioned the other. **Calling the explicit form "legacy" in
+the code is what made this hard to see**: it was what the primary reference
+taught and what the tool generated. A comment describing a style as legacy is a
+claim about the world, and this one was false for eight months.
+
+`names` is canonical on the architecture's own premise (`modules/base.py`):
+deploy.toml declares *what the application needs*, config.toml says *how the
+environment provides it*.
+
+#### What shipped
+
+- `_get_legacy_secrets` deleted, with the explicit branch in
+  `get_secrets_from_config` and the now-dead legacy loop in
+  `get_all_env_var_names`.
+- **Routing collapsed.** Both readers collect from every declared module
+  whenever `env_config` is present, full stop. `collect_all` already skips
+  undeclared modules. The drop is unreachable *by construction*, not by a guard
+  — which is the only kind of fix worth making for a bug that four separate
+  guards let through.
+- **`_MODULE_SECTIONS` deleted rather than derived from the registry.** The
+  plan's step 5 said derive; deleting is the stronger form of the same goal.
+  With no reader consulting the shape of deploy.toml there is no second list
+  left to drift. It had named `cdn` and `autoscale`, deleted at `bdb5891`.
+- `preflight.check_secrets_style` rejects the explicit form by name, ahead of
+  `check_modules` — its own check rather than a bullet inside an aggregated
+  list, because it has one fix and deserves to state it.
+- `get_secrets_from_config` **raises** rather than answering `{}`. An
+  unreadable declaration reported as an empty one is exactly how
+  `ssm-secrets.py check` came to advise deleting live parameters (53f/53g).
+- The rule lives once, in `modules.secrets.explicit_path_keys` /
+  `explicit_path_error`; preflight and `core.ssm_secrets` both ask there.
+- `deployer init` emits `names`. Detection is unchanged; only the shape moves.
+
+#### Pin coverage, and what pinning found
+
+`init/deploy_toml.py` was **8% covered** — the lowest of anything the phase
+touched — and `_build_environment_config`, the function being changed, had no
+test at all. Pinned end to end through `generate_deploy_toml`/`format_deploy_toml`:
+**8% → 97%**, floor 70 → 74. `preflight.check_modules` got its first test.
+
+Secret *detection* was pinned separately from the emitted *shape*, read through
+a shape-agnostic helper. That was the whole design of the file, and it worked:
+the refactor's diff to it is exactly the two shape classes.
+
+**Two live bugs fell out of writing the pins**, both fixed in their own commits
+and both the same shape as the one the phase was for — a producer and a consumer
+never run against each other:
+
+1. `_read_dockerfile_content` did `svc.get("dockerfile", "Dockerfile")` on a
+   dict where `get_compose_services` had already set the key to `None`, so the
+   default never fired and `path / None` raised `TypeError`. **Every** ordinary
+   docker-compose.yml hit it, and `bin/init.py`'s bare `except Exception`
+   reported it as "Error parsing docker-compose.yml". Fixed at `c31f0f3` —
+   without it `deployer init` could not be run at all, and the phase's
+   verification required running it.
+1. The generator wrote `[audit] ignore` while `AuditConfig`'s key is
+   `ignore_services`, so the list it derived was warned about and discarded.
+   Fixed at `36d33d5`.
+
+`tests/unit/test_init_deploy_round_trip.py` is new and is the point: it drives
+`deployer init`'s output through all four readers that disagreed. It found
+both.
+
+#### Known consequence, accepted
+
+`bin/ssm-secrets.py check` never loads config.toml, so with the explicit form
+gone it can no longer classify anything on its own. **This is not new** — it was
+already true for both fleet deploy.tomls, which use `names` — and the advice
+block names the two commands that do work. Teaching `check` to load config.toml
+is follow-on work, recorded in `docs/PLAN.md`.
+
+#### Left standing
+
+`get_secrets_from_config`'s `environment` parameter is now unread. Removing it
+ripples through `check_secrets_exist`, `check_secrets_drift`,
+`get_secrets_from_deploy_toml`, `preflight.check_ssm_secrets` and
+`bin/ssm-secrets.py`, and would retire the `param-clumps` finding on
+`ssm_secrets.py:84`. Kept out of a correctness slice deliberately; it is a
+finding-moving change and belongs with the others.
+
+______________________________________________________________________
+
+### 53h-2b — the two signature adjudications (2026-08-17)
+
+**38 → 37.** Commit `aacee1b`; the rejected probe is at `235a215` on
+`probe/module-inputs`, unmerged.
+
+#### `database.validate` feature-envy — cleared
+
+11 reads of `env_config` against 1 of `self`. Split into module-level
+`_connection_errors`, `_extension_errors` and `_credential_errors`, with the
+eight credential-key checks driven off the key table `collect()` already used.
+`_SECRETSMANAGER_KEYS`/`_SSM_KEYS` merged into one `_CREDENTIAL_KEYS` keyed by
+provider then mode, so "which config key holds what" and "which providers
+exist" each have one home. Retires the `# noqa: C901`.
+
+Every 53h-1 pin passes **unchanged** — the messages are byte-identical, which is
+the check that this was a restatement removed and not a behaviour change.
+
+**Recorded as the plan required: it clears partly via a mechanic.**
+`check_feature_envy` only walks `ClassDef` bodies, so moving the reads to module
+level would have cleared the finding with or without the table. Measured and
+rejected beforehand: a `DatabaseEnvConfig` dataclass does *not* clear it
+(`env_config.host` is still an attribute load), and extracting *methods* mints
+new findings. The table is what makes the change worth doing; the clear is a
+side effect.
+
+#### `ModuleInputs` bundle — drafted, measured, rejected
+
+Not forced by any finding (53h-1's `@override` cleared the `param-clump`), so
+per operator-owns-skips it was drafted and measured rather than argued.
+
+**37 → 43.** It clears nothing and mints six findings:
+
+| Check             | Δ   | Why                                                              |
+| ----------------- | --- | ---------------------------------------------------------------- |
+| `feature-envy`    | +4  | every `collect()` reads 4 attributes of `inputs` and 0 of `self` |
+| `shotgun-surgery` | +2  | `inputs.app_config` and `inputs.env_config` each read in 4 files |
+
+It also broke four tests that call `collect()` with three arguments — the calls
+the bundle exists to remove.
+
+The design argument survives the measurement rather than being replaced by it:
+`app_config` and `env_config` are per-module slices while `context` is
+deployment-wide, so bundling boxes three different lifetimes. The tool sees the
+same thing from the other side — **a parameter object that is only ever unpacked
+is a parameter list with extra steps.**
+
+Kept as an unmerged branch, not discarded, so it can be re-measured rather than
+re-argued.
+
+#### `DeployConfig._get_module_injected_vars` — deleted, not fixed
+
+The fourth place hardcoding module knowledge, and **already wrong**: it claimed
+`S3_{NAME}_BUCKET_REGION`, which `StorageModule` has never injected, so the
+audit reported that variable as satisfied by nothing.
+
+Fixing the divergence in place would have left the fourth copy. Instead
+`ResourceModule.injected_names(app_config)` — **abstract**, not defaulting to the
+empty set, because a silent empty is precisely the failure mode above. Each
+module answers for itself from deploy.toml alone, since the audit runs before an
+environment is chosen and so cannot call `collect()`.
+`ModuleRegistry.injected_names` unions them.
+
+New pins check the *property*, not the literal sets: for each module, what
+`collect()` delivers under a full config.toml is what `injected_names()`
+promised. A module that grows or drops an injected variable now fails a test
+instead of misinforming the audit.
+
+Second behaviour change: a `[database]` section with no `type` now promises
+nothing, matching `collect()`. The old copy keyed on the section being truthy.
+
+#### 53h-1's other two handed-forward items
+
+- **`collect()` does not re-check what `validate()` rejects** — unchanged. A
+  `credentials = "vault"` still emits connection env vars with no credentials.
+  Preflight rejects it first; this is a defence-in-depth question, not this
+  arc's.
+- **`secrets.collect`'s dead `if not app_config` guard** — still dead, and more
+  so: 53h-2a deleted the second route into `collect`, so `collect_all` is the
+  only caller and it only calls modules with a truthy section.
