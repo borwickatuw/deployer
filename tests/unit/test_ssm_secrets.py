@@ -22,7 +22,8 @@ What is pinned:
 1. **``get_secrets_from_deploy_toml`` on both documented config styles**, from a
    real ``deploy.toml`` on disk:
 
-   * the legacy inline form, ``SECRET_KEY = "ssm:/app/${environment}/..."``,
+   * the legacy inline form,
+     ``SECRET_KEY = "ssm:/app/${environment}/..."``,  # pragma: allowlist secret
      which works today; and
    * the **module-style** form ``[secrets] names = [...]`` that
      ``docs/resources/secrets.md`` recommends, which used to raise
@@ -104,7 +105,7 @@ name = "myapp"
 source = "."
 
 [secrets]
-DB_PASSWORD = "ssm:/myapp/${environment}/db-password"
+DB_PASSWORD = "ssm:/myapp/${environment}/db-password"  # pragma: allowlist secret
 """
 
 NO_SECRETS_TOML = """\

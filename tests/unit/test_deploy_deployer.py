@@ -416,10 +416,10 @@ name = "testapp"
 source = "."
 
 [environment]
-DATABASE_URL = "postgres://user:pw@host/db"
-SECRET_KEY = "s3cret"
+DATABASE_URL = "postgres://user:pw@host/db"  # pragma: allowlist secret
+SECRET_KEY = "s3cret"  # pragma: allowlist secret
 API_TOKEN = "tok-123"
-ADMIN_PASSWORD = "hunter2"
+ADMIN_PASSWORD = "hunter2"  # pragma: allowlist secret
 CONNECTION_STRING = "host=db"
 BASE_URL = "https://example.com"
 MONKEY_BUSINESS = "bananas"

@@ -103,7 +103,7 @@ class TestGetLegacySecretsSsmArm:
     """_get_legacy_secrets() -- the `ssm:` prefix builds a parameter ARN."""
 
     def test_a_parameter_path_becomes_a_full_ssm_arn(self):
-        assert _legacy({"SECRET_KEY": "ssm:/app/secret-key"}) == [
+        assert _legacy({"SECRET_KEY": "ssm:/app/secret-key"}) == [  # pragma: allowlist secret
             {
                 "name": "SECRET_KEY",
                 "valueFrom": f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/app/secret-key",
@@ -116,7 +116,7 @@ class TestGetLegacySecretsSsmArm:
 
     def test_an_infra_config_placeholder_is_substituted_into_the_path(self):
         (secret,) = _legacy(
-            {"DB_PASSWORD": "ssm:${param_prefix}/db-password"},
+            {"DB_PASSWORD": "ssm:${param_prefix}/db-password"},  # pragma: allowlist secret
             placeholders={"param_prefix": "/myapp/prod"},
         )
         assert secret["valueFrom"].endswith("parameter/myapp/prod/db-password")
@@ -130,7 +130,8 @@ class TestGetLegacySecretsSsmArm:
 
     def test_the_region_and_account_come_from_the_arguments_not_infra_config(self):
         (secret,) = _legacy(
-            {"SECRET_KEY": "ssm:/k"}, placeholders={"region": "eu-west-1", "account_id": "999"}
+            {"SECRET_KEY": "ssm:/k"},  # pragma: allowlist secret
+            placeholders={"region": "eu-west-1", "account_id": "999"},
         )
         assert secret["valueFrom"].startswith(f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:")
 
@@ -147,7 +148,7 @@ class TestGetLegacySecretsSecretsManagerArm:
     def test_an_infra_config_placeholder_is_substituted_before_the_prefix_check(self):
         arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:db-pw-AbCdEf"
         (secret,) = _legacy(
-            {"DB_PASSWORD": "secretsmanager:${db_password_secret_arn}"},
+            {"DB_PASSWORD": "secretsmanager:${db_password_secret_arn}"},  # pragma: allowlist secret
             placeholders={"db_password_secret_arn": arn},
         )
         assert secret["valueFrom"] == arn
@@ -184,8 +185,13 @@ class TestGetLegacySecretsSkips:
         # Pinned, not endorsed: a typo'd prefix -- or a bare ARN -- makes the
         # secret vanish from the task definition with no warning at all. The
         # service then starts without it.
-        assert _legacy({"SECRET_KEY": "arn:aws:ssm:us-west-2:1:parameter/k"}) == []
-        assert _legacy({"SECRET_KEY": "ssm/k"}) == []
+        assert (
+            _legacy(
+                {"SECRET_KEY": "arn:aws:ssm:us-west-2:1:parameter/k"}  # pragma: allowlist secret
+            )
+            == []
+        )
+        assert _legacy({"SECRET_KEY": "ssm/k"}) == []  # pragma: allowlist secret
         assert _legacy({"SECRET_KEY": ""}) == []
 
     def test_secrets_keep_their_declaration_order(self):
@@ -265,13 +271,18 @@ class TestGetLegacySecretsPlaceholderTable:
                     "private_subnet_ids": ["subnet-1", "subnet-2"],
                     "rds_instance_id": "myapp-db",
                 },
-                "database": {"port": 5432, "password_secret_arn": "arn:secret"},
+                "database": {
+                    "port": 5432,
+                    "password_secret_arn": "arn:secret",  # pragma: allowlist secret
+                },
                 "scheduler": {"enabled": True},
             }
         )
         secrets = _legacy(
             {
-                "DB_PASSWORD": "secretsmanager:${db_password_secret_arn}",
+                "DB_PASSWORD": (
+                    "secretsmanager:${db_password_secret_arn}"  # pragma: allowlist secret
+                ),
                 "PORT_PATH": "ssm:/db/${db_port}",
                 "SUBNETS": "ssm:/net/${subnet_ids}",
             },
@@ -287,7 +298,7 @@ class TestGetSecretsRoutesToTheLegacyPath:
 
     def test_no_modules_and_no_names_style_uses_the_legacy_reader(self):
         ctx = _ctx(
-            config={"secrets": {"SECRET_KEY": "ssm:/app/secret-key"}},
+            config={"secrets": {"SECRET_KEY": "ssm:/app/secret-key"}},  # pragma: allowlist secret
             infra_config=InfraConfig(rds_instance_id="unused"),
         )
         assert get_secrets(ctx, "web") == [
