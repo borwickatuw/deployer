@@ -80,16 +80,13 @@ class ModuleRegistry:
         app_config: dict[str, Any],
         env_config: dict[str, Any],
         context: ModuleContext,
-        credential_mode: str = "app",
     ) -> ModuleOutput:
         """Collect environment variables and secrets from all declared modules.
 
         Args:
             app_config: The application's deploy.toml.
             env_config: The environment's config.toml.
-            context: Deployment context.
-            credential_mode: For database module - "app" for runtime services,
-                "migrate" for migrations. Default is "app".
+            context: Deployment context, including the database credential mode.
 
         Returns:
             Combined ModuleOutput from all modules.
@@ -102,17 +99,7 @@ class ModuleRegistry:
 
             # Only collect if the app declares this module
             if module_app_config:
-                # Pass credential_mode to database module
-                if module.name == "database":
-                    module_output = module.collect(
-                        module_app_config,
-                        module_env_config,
-                        context,
-                        credential_mode=credential_mode,
-                    )
-                else:
-                    module_output = module.collect(module_app_config, module_env_config, context)
-                output = output.merge(module_output)
+                output = output.merge(module.collect(module_app_config, module_env_config, context))
 
         return output
 

@@ -36,6 +36,31 @@ from .base import (
     SecretReference,
 )
 
+# Which config.toml key holds each injected credential, per credential mode.
+# validate() names the same eight keys; keeping both literal is what makes a
+# key greppable from either end.
+_SECRETSMANAGER_KEYS = {
+    "app": (
+        ("DB_USERNAME", "app_username_secret"),
+        ("DB_PASSWORD", "app_password_secret"),
+    ),
+    "migrate": (
+        ("DB_USERNAME", "migrate_username_secret"),
+        ("DB_PASSWORD", "migrate_password_secret"),
+    ),
+}
+
+_SSM_KEYS = {
+    "app": (
+        ("DB_USERNAME", "app_username_param"),
+        ("DB_PASSWORD", "app_password_param"),
+    ),
+    "migrate": (
+        ("DB_USERNAME", "migrate_username_param"),
+        ("DB_PASSWORD", "migrate_password_param"),
+    ),
+}
+
 
 class DatabaseModule(ResourceModule):
     """PostgreSQL database module."""
@@ -128,23 +153,19 @@ class DatabaseModule(ResourceModule):
         app_config: dict[str, Any],
         env_config: dict[str, Any],
         context: ModuleContext,
-        credential_mode: str = "app",
     ) -> ModuleOutput:
         """Collect database environment variables and secrets.
+
+        Which credential pair is injected comes from
+        ``context.credential_mode``; see ``ModuleContext``.
 
         Args:
             app_config: Application's [database] section from deploy.toml
             env_config: Environment's [database] section from config.toml
-            context: Module context with region, account_id, etc.
-            credential_mode: Which credentials to use:
-                - "app": DML-only credentials (default, for runtime services)
-                - "migrate": DDL+DML credentials (for migrations)
+            context: Module context with region, account_id and credential mode
         """
         if not app_config or not app_config.get("type"):
             return ModuleOutput()
-
-        if credential_mode not in ("app", "migrate"):
-            raise ValueError(f"credential_mode must be 'app' or 'migrate', got '{credential_mode}'")
 
         env_vars = [
             EnvironmentVariable("DB_HOST", env_config["host"]),
@@ -152,41 +173,22 @@ class DatabaseModule(ResourceModule):
             EnvironmentVariable("DB_NAME", env_config["name"]),
         ]
 
-        secrets = []
+        mode = context.credential_mode
         credentials = env_config.get("credentials")
+        secrets: list[SecretReference] = []
 
         if credentials == "secretsmanager":
-            # Select credentials based on mode
-            if credential_mode == "app":
-                username_secret = env_config["app_username_secret"]
-                password_secret = env_config["app_password_secret"]
-            else:  # migrate
-                username_secret = env_config["migrate_username_secret"]
-                password_secret = env_config["migrate_password_secret"]
-
-            secrets.append(SecretReference("DB_USERNAME", username_secret))
-            secrets.append(SecretReference("DB_PASSWORD", password_secret))
-
+            # Secrets Manager ARNs are configured whole.
+            secrets = [
+                SecretReference(var, env_config[key]) for var, key in _SECRETSMANAGER_KEYS[mode]
+            ]
         elif credentials == "ssm":
-            # Select credentials based on mode
-            if credential_mode == "app":
-                username_param = env_config["app_username_param"]
-                password_param = env_config["app_password_param"]
-            else:  # migrate
-                username_param = env_config["migrate_username_param"]
-                password_param = env_config["migrate_password_param"]
-
-            secrets.append(
-                SecretReference(
-                    "DB_USERNAME",
-                    f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{username_param}",
-                )
-            )
-            secrets.append(
-                SecretReference(
-                    "DB_PASSWORD",
-                    f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{password_param}",
-                )
-            )
+            # SSM configures parameter paths; the ARN is the deployment's.
+            secrets = [
+                SecretReference(var, context.ssm_parameter_arn(env_config[key]))
+                for var, key in _SSM_KEYS[mode]
+            ]
+        # Any other value of `credentials` is rejected by validate(); collect()
+        # does not re-check it, and emits no credentials at all.
 
         return ModuleOutput(environment=env_vars, secrets=secrets)

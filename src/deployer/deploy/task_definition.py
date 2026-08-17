@@ -16,9 +16,15 @@ from .context import DeploymentContext
 _MODULE_SECTIONS = ("database", "cache", "storage", "cdn", "autoscale")
 
 
-def _build_module_context(ctx: DeploymentContext) -> ModuleContext:
-    """Build a ModuleContext from a DeploymentContext."""
-    return ModuleContext(region=ctx.region, account_id=ctx.account_id)
+def _build_module_context(ctx: DeploymentContext, credential_mode: str) -> ModuleContext:
+    """Build a ModuleContext from a DeploymentContext.
+
+    Raises:
+        ValueError: If ``credential_mode`` is neither "app" nor "migrate".
+    """
+    return ModuleContext(
+        region=ctx.region, account_id=ctx.account_id, credential_mode=credential_mode
+    )
 
 
 def _secrets_to_ecs_format(secrets) -> list[dict[str, str]]:
@@ -165,7 +171,7 @@ def get_environment_variables(
     if uses_modules and env_config:
         # Collect from modules
         module_output = ModuleRegistry.collect_all(
-            config, env_config, _build_module_context(ctx), credential_mode=credential_mode
+            config, env_config, _build_module_context(ctx, credential_mode)
         )
 
         # Add module environment variables
@@ -298,14 +304,14 @@ def get_secrets(
     if uses_modules and env_config:
         # Collect from modules (includes secrets module if names are declared)
         module_output = ModuleRegistry.collect_all(
-            config, env_config, _build_module_context(ctx), credential_mode=credential_mode
+            config, env_config, _build_module_context(ctx, credential_mode)
         )
         return _secrets_to_ecs_format(module_output.secrets)
 
     elif uses_names_style and env_config:
         # Only using new secrets.names style (no other modules)
         module = SecretsModule()
-        context = _build_module_context(ctx)
+        context = _build_module_context(ctx, credential_mode)
         output = module.collect(secrets_section, env_config.get("secrets", {}), context)
         return _secrets_to_ecs_format(output.secrets)
 

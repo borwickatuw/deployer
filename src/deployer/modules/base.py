@@ -9,6 +9,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+#: The two database credential modes. "app" is DML-only and used by runtime
+#: services; "migrate" is DDL+DML and used only by migrations.
+CREDENTIAL_MODES = ("app", "migrate")
+
 
 @dataclass
 class EnvironmentVariable:
@@ -131,16 +135,39 @@ class ResourceModule(ABC):
 
 @dataclass
 class ModuleContext:
-    """Where a deployment is, for the modules that build ARNs against it.
+    """What a deployment tells its modules: where it is, and which credentials.
 
-    ``region`` and ``account_id`` are the only two things any module reads,
-    and they are read for one purpose: naming an SSM parameter. Four other
-    fields -- ``environment``, ``app_name``, ``domain_name`` and ``services``
-    -- were carried here and never read by any module. Phase 53h-1 deleted
-    them. ``domain_name`` and ``services`` are read by
-    ``resolve_service_urls``, but that is called by ``task_definition`` with
-    the config values directly and never went through this object.
+    ``region`` and ``account_id`` are read for one purpose -- naming an SSM
+    parameter -- so ``ssm_parameter_arn`` is here rather than repeated in every
+    module that needs one. Four other fields (``environment``, ``app_name``,
+    ``domain_name`` and ``services``) were carried here and never read by any
+    module; Phase 53h-1 deleted them. ``domain_name`` and ``services`` are read
+    by ``resolve_service_urls``, but ``task_definition`` calls that with the
+    config values directly and never routed them through this object.
+
+    ``credential_mode`` used to widen ``DatabaseModule.collect``'s signature
+    past the ABC's, which forced ``collect_all`` to dispatch on
+    ``module.name == "database"``. It belongs to the deployment, not to one
+    module's parameter list, so it lives here and the registry calls one
+    signature for everything.
     """
 
     region: str
     account_id: str
+    #: "app" for runtime services (DML only), "migrate" for migrations (DDL+DML).
+    credential_mode: str = "app"
+
+    def __post_init__(self) -> None:
+        if self.credential_mode not in CREDENTIAL_MODES:
+            raise ValueError(
+                f"credential_mode must be 'app' or 'migrate', got '{self.credential_mode}'"
+            )
+
+    def ssm_parameter_arn(self, path: str) -> str:
+        """Return the ARN of an SSM parameter path in this deployment's account.
+
+        The path is concatenated verbatim -- a path without a leading ``/``
+        produces a malformed ARN, the same as it did when each caller built
+        this string itself.
+        """
+        return f"arn:aws:ssm:{self.region}:{self.account_id}:parameter{path}"

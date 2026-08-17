@@ -114,10 +114,6 @@ class SecretsModule(ResourceModule):
             param_name = normalize_secret_name(name)
             param_path = f"{path_prefix}/{param_name}"
 
-            secrets.append(
-                SecretReference(
-                    name, f"arn:aws:ssm:{context.region}:{context.account_id}:parameter{param_path}"
-                )
-            )
+            secrets.append(SecretReference(name, context.ssm_parameter_arn(param_path)))
 
         return ModuleOutput(secrets=secrets)
