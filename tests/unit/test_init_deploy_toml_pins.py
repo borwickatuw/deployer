@@ -83,9 +83,8 @@ def _svc(**overrides) -> dict:
     return {"build": ".", **overrides}
 
 
-# Every on-disk pin below has to spell `dockerfile:` out, because a compose
-# file that omits it crashes the generator -- see
-# ``TestDockerfileProbeCrashesWithoutAnExplicitDockerfile``.
+# The on-disk pins spell `dockerfile:` out; the pins that deliberately omit it
+# live in ``TestDockerfileProbeWithoutAnExplicitDockerfile``.
 _COMPOSE_WITH_DOCKERFILE = (
     "services:\n  web:\n    build:\n      context: .\n      dockerfile: Dockerfile\n"
 )
@@ -497,24 +496,24 @@ class TestMigrations:
         assert "migrations" not in config
 
 
-class TestDockerfileProbeCrashesWithoutAnExplicitDockerfile:
-    """``generate_deploy_toml`` raises ``TypeError`` on an ordinary compose file.
+class TestDockerfileProbeWithoutAnExplicitDockerfile:
+    """**UPDATED PIN.** These used to assert a ``TypeError``.
 
-    **A live bug, found by these pins, not introduced by them.**
-    ``get_compose_services`` sets ``dockerfile`` to ``None`` unless the compose
-    file spells the key out, so ``svc.get("dockerfile", "Dockerfile")`` in
-    ``_read_dockerfile_content`` returns ``None`` -- the default never fires,
-    because the key is present. ``compose_path.parent / context / None`` then
-    raises before ``.exists()`` is ever reached.
+    A live bug, found by these pins one commit earlier and pinned exactly as it
+    stood: ``get_compose_services`` sets ``dockerfile`` to ``None`` unless the
+    compose file spells the key out, so ``svc.get("dockerfile", "Dockerfile")``
+    in ``_read_dockerfile_content`` returned ``None`` -- the default never
+    fired, because the key was present. ``compose_path.parent / context / None``
+    then raised before ``.exists()`` was ever reached.
 
-    Both ordinary spellings of ``build`` are affected, so essentially every
-    real docker-compose.yml hits it. ``bin/init.py`` catches bare ``Exception``
-    around ``generate_deploy_toml`` and prints "Error parsing
-    docker-compose.yml", so the operator is told their YAML is wrong.
+    Both ordinary spellings of ``build`` were affected, so essentially every
+    real docker-compose.yml hit it, and ``bin/init.py``'s bare
+    ``except Exception`` reported it as "Error parsing docker-compose.yml" --
+    the operator was told their YAML was wrong. The ``or`` defaults fix it.
 
-    Pinned here as it stands; 53h-2a fixes it in its own commit, because
-    ``deployer init`` has to run at all before the round-trip verification the
-    phase requires can be performed.
+    Fixed rather than left standing because 53h-2a's verification requires
+    running ``deployer init`` against a fixture project end to end, which was
+    not possible at all while this stood.
     """
 
     @pytest.mark.parametrize(
@@ -522,16 +521,27 @@ class TestDockerfileProbeCrashesWithoutAnExplicitDockerfile:
         ["    build: .\n", "    build:\n      context: .\n"],
         ids=["string-form", "mapping-without-dockerfile"],
     )
-    def test_a_compose_file_without_an_explicit_dockerfile_raises(self, tmp_path, build_block):
+    def test_a_compose_file_without_an_explicit_dockerfile_is_generated(
+        self, tmp_path, build_block
+    ):
         (tmp_path / "docker-compose.yml").write_text(f"services:\n  web:\n{build_block}")
-        with pytest.raises(TypeError):
-            generate_deploy_toml(
-                compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
-            )
+        config = generate_deploy_toml(
+            compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
+        )
+        assert set(config["services"]) == {"web"}
 
-    def test_the_same_compose_data_passed_in_memory_is_fine(self):
-        # The crash is in the Dockerfile probe, which only runs when a
-        # compose_path was given -- so the in-memory pins above never see it.
+    def test_the_default_dockerfile_is_probed_for_framework_detection(self, tmp_path):
+        (tmp_path / "Dockerfile").write_text("FROM python\nCMD gunicorn myapp.wsgi\n")
+        (tmp_path / "docker-compose.yml").write_text("services:\n  web:\n    build: .\n")
+        config = generate_deploy_toml(
+            compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
+        )
+        assert config["migrations"]["command"] == ["python", "manage.py", "migrate"]
+
+    def test_the_generated_images_section_still_omits_the_dockerfile_key(self):
+        # Unchanged: _build_images_config has the same `.get(key, default)`
+        # shape, but a None there is written as an absent key rather than a
+        # crash, and deployer's own default takes over. Left as it stands.
         assert _generate({"web": {"build": "."}})["images"]["web"]["dockerfile"] is None
 
 

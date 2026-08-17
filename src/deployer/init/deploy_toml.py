@@ -138,8 +138,11 @@ def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
     """Try to read Dockerfile content for framework detection."""
     for svc in services.values():
         if svc.get("has_build"):
-            context = svc.get("build_context", ".")
-            dockerfile = svc.get("dockerfile", "Dockerfile")
+            # get_compose_services always sets both keys, leaving them None
+            # when the compose file did not spell them out -- so the `or`
+            # defaults are load-bearing and a `.get(key, default)` is not.
+            context = svc.get("build_context") or "."
+            dockerfile = svc.get("dockerfile") or "Dockerfile"
             dockerfile_path = compose_path.parent / context / dockerfile
             if dockerfile_path.exists():
                 try:
