@@ -140,10 +140,18 @@ branch = true
 # (_build_module_context and both collect_all call sites were uncovered).
 # The floor moves 69 -> 70 against the 70.44% measured with those in.
 #
+# Phase 53h-2a pinned init/deploy_toml.py before changing what `[secrets]`
+# looks like: deploy_toml.py 8% -> 97%, the largest single jump of the 53
+# arc, driven entirely through generate_deploy_toml/format_deploy_toml.
+# preflight.py's check_modules got its first test at the same time. The pins
+# found a live crash on the way in — `_read_dockerfile_content` raised
+# TypeError for any compose file without an explicit `dockerfile:` key.
+# The floor moves 70 -> 74 against the 74.26% measured with those in.
+#
 # Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
 # repo, and the only bin/ script whose commands are still mostly unpinned.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 70
+fail_under = 74
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

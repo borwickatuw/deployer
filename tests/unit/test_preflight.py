@@ -13,6 +13,7 @@ from deployer.deploy.preflight import (
     check_ecr_repositories,
     check_ecs_cluster,
     check_environment_config,
+    check_modules,
     run_preflight_checks,
 )
 
@@ -228,6 +229,69 @@ class TestRunPreflightChecks:
         mock_ecr.assert_not_called()
         mock_secrets.assert_not_called()
         mock_cluster.assert_not_called()
+
+
+class TestCheckModules:
+    """Characterization pins for check_modules.
+
+    Phase 53h-2a wrote these before adding a second secrets-related check
+    beside this one. ``check_modules`` had **no test at all** despite being one
+    of only two checks ``run_preflight_checks`` always runs, so what it does
+    and does not reject was unrecorded.
+
+    Driven through ``check_modules(deploy_config, env_config)`` -- the outermost
+    boundary -- with a real ``DeployConfig`` parsed from a real deploy.toml, so
+    the pins also cover ``DeployConfig.get_raw_dict()``'s round trip of the
+    module sections.
+    """
+
+    @staticmethod
+    def _config(tmp_path, toml: str):
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}')
+        return parse_deploy_config(deploy_toml)
+
+    def test_a_deploy_toml_declaring_no_modules_passes(self, tmp_path):
+        check_modules(self._config(tmp_path, ""), make_env_config())
+
+    def test_a_valid_module_pair_passes(self, tmp_path):
+        deploy_config = self._config(tmp_path, '[secrets]\nnames = ["SECRET_KEY"]\n')
+        env_config = make_env_config(secrets={"provider": "ssm", "path_prefix": "/myapp/staging"})
+        check_modules(deploy_config, env_config)
+
+    def test_a_module_the_environment_does_not_provide_is_rejected(self, tmp_path):
+        deploy_config = self._config(tmp_path, '[secrets]\nnames = ["SECRET_KEY"]\n')
+        with pytest.raises(PreflightError, match="missing from config.toml"):
+            check_modules(deploy_config, make_env_config())
+
+    def test_the_heading_names_the_failing_stage(self, tmp_path):
+        deploy_config = self._config(tmp_path, '[secrets]\nnames = ["secret_key"]\n')
+        with pytest.raises(PreflightError, match="Resource module validation failed"):
+            check_modules(deploy_config, make_env_config())
+
+    def test_every_module_s_errors_are_reported_together(self, tmp_path):
+        deploy_config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["lowercase"]\n[database]\ntype = "postgresql"\n',
+        )
+        with pytest.raises(PreflightError) as excinfo:
+            check_modules(deploy_config, make_env_config())
+        message = str(excinfo.value)
+        assert "[secrets]" in message
+        assert "[database]" in message
+
+    def test_a_section_the_registry_does_not_implement_is_never_validated(self, tmp_path):
+        # Pinned, not endorsed: [cdn] was deleted at bdb5891 but a deploy.toml
+        # may still carry the section, and nothing here objects to it. It does
+        # not survive DeployConfig.get_raw_dict() either, so it cannot reach
+        # the task definition -- it is simply inert.
+        deploy_config = self._config(tmp_path, '[cdn]\ntype = "not-a-real-type"\n')
+        check_modules(deploy_config, make_env_config())
+
+    def test_an_empty_module_section_is_skipped_rather_than_validated(self, tmp_path):
+        # validate_all only calls a module whose app section is truthy, so an
+        # empty [secrets] table asks nothing of config.toml.
+        check_modules(self._config(tmp_path, "[secrets]\n"), make_env_config())
 
 
 class TestCheckSecretsDrift:
