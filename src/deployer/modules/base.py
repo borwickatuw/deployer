@@ -131,12 +131,16 @@ class ResourceModule(ABC):
 
 @dataclass
 class ModuleContext:
-    """Context available to all modules during collection."""
+    """Where a deployment is, for the modules that build ARNs against it.
+
+    ``region`` and ``account_id`` are the only two things any module reads,
+    and they are read for one purpose: naming an SSM parameter. Four other
+    fields -- ``environment``, ``app_name``, ``domain_name`` and ``services``
+    -- were carried here and never read by any module. Phase 53h-1 deleted
+    them. ``domain_name`` and ``services`` are read by
+    ``resolve_service_urls``, but that is called by ``task_definition`` with
+    the config values directly and never went through this object.
+    """
 
     region: str
     account_id: str
-    environment: str  # "staging" or "production"
-    app_name: str
-    domain_name: str | None = None
-    # Service information for ${services.X.url} resolution
-    services: dict[str, dict[str, Any]] = field(default_factory=dict)

@@ -18,14 +18,7 @@ _MODULE_SECTIONS = ("database", "cache", "storage", "cdn", "autoscale")
 
 def _build_module_context(ctx: DeploymentContext) -> ModuleContext:
     """Build a ModuleContext from a DeploymentContext."""
-    return ModuleContext(
-        region=ctx.region,
-        account_id=ctx.account_id,
-        environment=ctx.environment,
-        app_name=ctx.config.get("application", {}).get("name", ""),
-        domain_name=ctx.env_config.get("environment", {}).get("domain_name"),
-        services=ctx.config.get("services", {}),
-    )
+    return ModuleContext(region=ctx.region, account_id=ctx.account_id)
 
 
 def _secrets_to_ecs_format(secrets) -> list[dict[str, str]]:

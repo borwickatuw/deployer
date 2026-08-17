@@ -20,18 +20,10 @@ class TestModuleContext:
 
     def test_create_context(self):
         """Test creating a module context."""
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-            domain_name="test.example.com",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
+
         assert ctx.region == "us-west-2"
         assert ctx.account_id == "123456789"
-        assert ctx.environment == "staging"
-        assert ctx.app_name == "testapp"
-        assert ctx.domain_name == "test.example.com"
 
 
 class TestModuleOutput:
@@ -175,12 +167,7 @@ class TestDatabaseModule:
             "migrate_username_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-username",  # noqa: E501
             "migrate_password_secret": "arn:aws:secretsmanager:us-west-2:123:secret:migrate-password",  # noqa: E501
         }
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
 
         output = module.collect(app_config, env_config, ctx)
 
@@ -224,12 +211,7 @@ class TestCacheModule:
         module = CacheModule()
         app_config = {"type": "redis"}
         env_config = {"url": "redis://localhost:6379"}
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
 
         output = module.collect(app_config, env_config, ctx)
 
@@ -282,12 +264,7 @@ class TestStorageModule:
             "originals_bucket": "my-originals-bucket",
             "media_bucket": "my-media-bucket",
         }
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
 
         output = module.collect(app_config, env_config, ctx)
 
@@ -336,12 +313,7 @@ class TestSecretsModule:
             "provider": "ssm",
             "path_prefix": "/app/staging",
         }
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
 
         output = module.collect(app_config, env_config, ctx)
 
@@ -410,12 +382,7 @@ class TestModuleRegistry:
             },
             "cache": {"url": "redis://localhost:6379"},
         }
-        ctx = ModuleContext(
-            region="us-west-2",
-            account_id="123456789",
-            environment="staging",
-            app_name="testapp",
-        )
+        ctx = ModuleContext(region="us-west-2", account_id="123456789")
 
         output = ModuleRegistry.collect_all(app_config, env_config, ctx)
 

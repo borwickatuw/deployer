@@ -8,14 +8,7 @@ Example usage:
     from deployer.modules import ModuleRegistry, ModuleContext
 
     # Create context
-    context = ModuleContext(
-        region="us-west-2",
-        account_id="123456789",
-        environment="staging",
-        app_name="myapp",
-        domain_name="myapp-staging.example.com",
-        services=app_config.get("services", {}),
-    )
+    context = ModuleContext(region="us-west-2", account_id="123456789")
 
     # Collect from all modules
     output = ModuleRegistry.collect_all(app_config, env_config, context)
