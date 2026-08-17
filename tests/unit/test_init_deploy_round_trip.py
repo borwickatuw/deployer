@@ -99,12 +99,17 @@ def _ctx(raw_config: dict, env_config: dict) -> DeploymentContext:
 class TestGeneratedConfigRoundTrips:
     """The generated file survives every reader that used to disagree."""
 
-    def test_the_only_warning_left_is_the_audit_key_name(self, generated_deploy_toml):
-        # Pinned, not endorsed, and the second thing this round trip caught:
-        # the generator writes `[audit] ignore` but AuditConfig's key is
-        # `ignore_services`, so the list is warned about and then discarded.
-        # Fixed in the following commit; pinned here as it stands.
-        assert generated_deploy_toml.get_warnings() == ["Unknown key in [audit]: ignore"]
+    def test_it_parses_back_without_warnings(self, generated_deploy_toml):
+        """UPDATED PIN: used to assert "Unknown key in [audit]: ignore".
+
+        The second thing this round trip caught: the generator wrote
+        ``[audit] ignore`` while ``AuditConfig``'s key is ``ignore_services``,
+        so the list it derived was warned about and then discarded.
+        """
+        assert generated_deploy_toml.get_warnings() == []
+
+    def test_the_derived_ignore_list_reaches_the_audit_config(self, generated_deploy_toml):
+        assert generated_deploy_toml.audit.ignore_services == {"postgres"}
 
     def test_the_secrets_survive_the_toml_round_trip(self, generated_deploy_toml):
         raw = generated_deploy_toml.get_raw_dict()

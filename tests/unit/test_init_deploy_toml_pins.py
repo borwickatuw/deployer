@@ -552,11 +552,11 @@ class TestAuditIgnore:
         config = _generate(
             {"web": _svc(), "postgres": {"image": "postgres:16"}, "redis": {"image": "redis:7"}}
         )
-        assert config["audit"] == {"ignore": ["postgres", "redis"]}
+        assert config["audit"] == {"ignore_services": ["postgres", "redis"]}
 
     def test_the_match_is_a_substring_of_the_service_name(self):
         config = _generate({"web": _svc(), "primary-mongodb-replica": {"image": "mongo:7"}})
-        assert config["audit"] == {"ignore": ["primary-mongodb-replica"]}
+        assert config["audit"] == {"ignore_services": ["primary-mongodb-replica"]}
 
     def test_no_infrastructure_means_no_audit_section(self):
         config = _generate({"web": _svc()})

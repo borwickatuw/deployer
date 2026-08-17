@@ -321,7 +321,7 @@ def generate_deploy_toml(
         config["migrations"] = migrations
 
     if infra_services:
-        config["audit"] = {"ignore": infra_services}
+        config["audit"] = {"ignore_services": infra_services}
 
     return config
 
@@ -453,8 +453,8 @@ def _format_audit_section(audit: dict) -> list[str]:
         "# Audit configuration - infrastructure services to ignore",
         "[audit]",
     ]
-    ignore_str = ", ".join(f'"{s}"' for s in audit["ignore"])
-    lines.append(f"ignore = [{ignore_str}]")
+    ignore_str = ", ".join(f'"{s}"' for s in audit["ignore_services"])
+    lines.append(f"ignore_services = [{ignore_str}]")
     lines.append("")
     return lines
 
