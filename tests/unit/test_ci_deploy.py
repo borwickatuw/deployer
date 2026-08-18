@@ -1,9 +1,12 @@
 """Tests for deployer.cli.ci_deploy module."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from click.testing import CliRunner
 
+from deployer.cli import ci_deploy
 from deployer.cli.ci_deploy import (
     load_resolved_config,
 )
@@ -162,3 +165,99 @@ class TestResolveConfig:
         assert "resolved_at" in meta
         assert meta["config_toml_hash"].startswith("sha256:")
         assert meta["tofu_outputs_hash"].startswith("sha256:")
+
+
+class TestConfigStalenessGate:
+    """Characterization pins for ``main()``'s --max-config-age / --strict gate.
+
+    The staleness block is the only place ``--strict`` changes behaviour, and
+    the difference is a warning versus ``sys.exit(1)`` before the pipeline
+    runs. These pin that boundary at the seam -- CLI in, exit code and
+    message out -- so the block can move without the contract moving.
+    """
+
+    @staticmethod
+    def _write_inputs(tmp_path, age_hours=None, resolved_at=None):
+        """Write a deploy.toml and a resolved config aged ``age_hours`` back."""
+        if resolved_at is None:
+            resolved_at = (datetime.now(UTC) - timedelta(hours=age_hours)).isoformat()
+
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text('[application]\nname = "myapp"\n')
+
+        config_file = tmp_path / "resolved.json"
+        config_file.write_text(json.dumps(make_resolved_config(resolved_at=resolved_at)))
+
+        return str(deploy_toml), str(config_file)
+
+    @staticmethod
+    def _invoke(monkeypatch, argv):
+        """Run ``main`` with the deploy pipeline stubbed out to a clean exit."""
+        calls = []
+
+        def fake_pipeline(*args, **kwargs):
+            calls.append((args, kwargs))
+            return 0
+
+        monkeypatch.setattr(ci_deploy, "run_deploy_pipeline", fake_pipeline)
+        result = CliRunner().invoke(ci_deploy.main, argv)
+        return result, calls
+
+    def test_fresh_config_passes_the_gate_silently(self, tmp_path, monkeypatch):
+        """A config inside the limit says nothing and reaches the pipeline."""
+        toml_path, config_path = self._write_inputs(tmp_path, age_hours=1)
+
+        result, calls = self._invoke(
+            monkeypatch, [toml_path, config_path, "--max-config-age", "48"]
+        )
+
+        assert result.exit_code == 0
+        assert "limit:" not in result.output
+        assert len(calls) == 1
+
+    def test_stale_config_warns_and_still_deploys(self, tmp_path, monkeypatch):
+        """Without --strict, staleness is a warning: the pipeline still runs."""
+        toml_path, config_path = self._write_inputs(tmp_path, age_hours=100)
+
+        result, calls = self._invoke(
+            monkeypatch, [toml_path, config_path, "--max-config-age", "48"]
+        )
+
+        assert result.exit_code == 0
+        assert "hours old" in result.output
+        assert "limit: 48.0 hours" in result.output
+        assert len(calls) == 1
+
+    def test_strict_turns_staleness_into_exit_1_before_the_pipeline(self, tmp_path, monkeypatch):
+        """--strict exits 1 and the pipeline is never reached."""
+        toml_path, config_path = self._write_inputs(tmp_path, age_hours=100)
+
+        result, calls = self._invoke(
+            monkeypatch, [toml_path, config_path, "--max-config-age", "48", "--strict"]
+        )
+
+        assert result.exit_code == 1
+        assert "hours old" in result.output
+        assert calls == []
+
+    def test_strict_alone_does_not_gate_anything(self, tmp_path, monkeypatch):
+        """--strict without --max-config-age leaves an ancient config alone."""
+        toml_path, config_path = self._write_inputs(tmp_path, age_hours=100)
+
+        result, calls = self._invoke(monkeypatch, [toml_path, config_path, "--strict"])
+
+        assert result.exit_code == 0
+        assert "limit:" not in result.output
+        assert len(calls) == 1
+
+    def test_unparseable_timestamp_warns_rather_than_failing(self, tmp_path, monkeypatch):
+        """A resolved_at that is not a timestamp warns, even under --strict."""
+        toml_path, config_path = self._write_inputs(tmp_path, resolved_at="not-a-timestamp")
+
+        result, calls = self._invoke(
+            monkeypatch, [toml_path, config_path, "--max-config-age", "48", "--strict"]
+        )
+
+        assert result.exit_code == 0
+        assert "Could not parse resolved_at timestamp" in result.output
+        assert len(calls) == 1
