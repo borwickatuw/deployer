@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from deployer.config.compose import get_compose_services, parse_docker_compose
+from deployer.modules.secrets import normalize_secret_name
 
 from .framework import detect_framework, get_migration_command
 
@@ -122,11 +123,6 @@ def _normalize_service_name(service_name: str, app_name: str) -> str:
         return "celery"
 
     return service_name.replace("-", "_").replace(" ", "_")
-
-
-def _var_to_ssm_name(var_name: str) -> str:
-    """Convert environment variable name to SSM parameter name."""
-    return var_name.lower().replace("_", "-")
 
 
 # ------------------------------------------------------------------------------
@@ -421,7 +417,7 @@ def _format_secrets_section(config: dict) -> list[str]:
     ]
     for name in names:
         lines.append(
-            f'#   aws ssm put-parameter --name "/{app_name}/staging/{_var_to_ssm_name(name)}" '
+            f'#   aws ssm put-parameter --name "/{app_name}/staging/{normalize_secret_name(name)}" '
             f'--value "..." --type SecureString'
         )
     lines.append("[secrets]")

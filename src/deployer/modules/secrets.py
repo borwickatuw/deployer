@@ -86,6 +86,15 @@ def explicit_path_error(keys: list[str]) -> str:
 def normalize_secret_name(name: str) -> str:
     """Convert SECRET_KEY to secret-key format.
 
+    This is the one definition of an SSM parameter's leaf name. Three places
+    need it and they must not disagree: this module resolves a declared secret
+    to its parameter ARN, ``core.ssm_secrets`` builds the paths that
+    ``ssm-secrets.py check`` looks up, and ``init.deploy_toml`` writes the
+    ``aws ssm put-parameter`` hint into a generated deploy.toml. The producer
+    of that hint and the consumer that checks it never run together, so a
+    divergence would surface as ``check`` reporting a parameter the operator
+    was told to create as EXTRA.
+
     Examples:
         SECRET_KEY -> secret-key
         SIGNED_URL_SECRET -> signed-url-secret

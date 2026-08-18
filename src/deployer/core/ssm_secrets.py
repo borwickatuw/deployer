@@ -4,7 +4,11 @@ from pathlib import Path
 
 from deployer.aws import ssm
 from deployer.config import parse_deploy_config
-from deployer.modules.secrets import explicit_path_error, explicit_path_keys
+from deployer.modules.secrets import (
+    explicit_path_error,
+    explicit_path_keys,
+    normalize_secret_name,
+)
 from deployer.utils import EnvironmentConfigError, advice_block
 
 
@@ -141,7 +145,7 @@ def get_secrets_from_config(
     path_prefix = path_prefix.rstrip("/")
 
     # Convert SECRET_KEY -> secret-key
-    return {name: f"{path_prefix}/{name.replace('_', '-').lower()}" for name in names}
+    return {name: f"{path_prefix}/{normalize_secret_name(name)}" for name in names}
 
 
 def check_secrets_exist(

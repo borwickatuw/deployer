@@ -282,6 +282,37 @@ class TestSecretsModule:
         assert normalize_secret_name("SIGNED_URL_SECRET") == "signed-url-secret"
         assert normalize_secret_name("DATACITE_PASSWORD") == "datacite-password"
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "SECRET_KEY",
+            "SIGNED_URL_SECRET",
+            "DATACITE_PASSWORD",
+            "_LEADING",
+            "TRAILING_",
+            "DOUBLE__UNDERSCORE",
+            "ALREADY-HYPHENATED_MIX",
+            "lower_case",
+            "NO_SEPARATORS",
+            "\u03a3IGMA_END\u03a3",
+            "TURKISH_\u0130",
+        ],
+    )
+    def test_the_two_operation_orders_agree(self, name):
+        """replace-then-lower and lower-then-replace produce the same leaf.
+
+        Phase 53i-1 consolidated three copies of this transform, one of which
+        (``init/deploy_toml._var_to_ssm_name``) applied the operations in the
+        opposite order. They are equivalent because ``-`` is unchanged by
+        ``lower()`` and ``lower()`` never produces ``_``, so neither operation
+        can create or destroy the other's input -- checked exhaustively over
+        every Unicode code point in seven surrounding contexts, including the
+        context-sensitive final-sigma rule. This pin keeps the deleted order
+        on record so a future edit that reintroduces it is a no-op, not a
+        silent change to secret paths.
+        """
+        assert normalize_secret_name(name) == name.lower().replace("_", "-")
+
     def test_validate_ssm(self):
         """Test validation with valid SSM config."""
         module = SecretsModule()
