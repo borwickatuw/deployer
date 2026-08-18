@@ -167,6 +167,41 @@ def print_config_age(meta: dict) -> None:
         pass
 
 
+def enforce_max_config_age(meta: dict, max_config_age: float | None, strict: bool) -> None:
+    """Warn -- or under --strict, refuse -- when the resolved config is stale.
+
+    Sibling of print_config_age(): that one reports the age unconditionally,
+    this one enforces a caller-supplied limit against it.
+
+    Args:
+        meta: The resolved config's _meta block.
+        max_config_age: Age limit in hours. Falsy means no limit is enforced.
+        strict: Treat exceeding the limit as an error rather than a warning.
+    """
+    if not max_config_age:
+        return
+
+    resolved_at_str = meta.get("resolved_at")
+    if not resolved_at_str:
+        return
+
+    try:
+        resolved_at = datetime.fromisoformat(resolved_at_str)
+        age_hours = (datetime.now(UTC) - resolved_at).total_seconds() / 3600
+    except (ValueError, TypeError):
+        log_warning("Could not parse resolved_at timestamp for staleness check")
+        return
+
+    if age_hours <= max_config_age:
+        return
+
+    msg = f"Resolved config is {age_hours:.1f} hours old (limit: {max_config_age} hours)"
+    if strict:
+        log_error(msg)
+        sys.exit(1)
+    log_warning(msg)
+
+
 @click.command()
 @click.argument("deploy_toml")
 @click.argument("resolved_config")
@@ -178,7 +213,7 @@ def print_config_age(meta: dict) -> None:
     help="Warn if resolved config is older than this (hours)",
 )
 @click.option("--strict", is_flag=True, help="Treat staleness warnings as errors")
-def main(  # noqa: C901 — CI deploy orchestration
+def main(
     deploy_toml,
     resolved_config,
     dry_run,
@@ -232,25 +267,7 @@ def main(  # noqa: C901 — CI deploy orchestration
     print_config_age(meta)
     print()
 
-    # Check config staleness
-    if max_config_age:
-        resolved_at_str = meta.get("resolved_at")
-        if resolved_at_str:
-            try:
-                resolved_at = datetime.fromisoformat(resolved_at_str)
-                age_hours = (datetime.now(UTC) - resolved_at).total_seconds() / 3600
-                if age_hours > max_config_age:
-                    msg = (
-                        f"Resolved config is {age_hours:.1f} hours old "
-                        f"(limit: {max_config_age} hours)"
-                    )
-                    if strict:
-                        log_error(msg)
-                        sys.exit(1)
-                    else:
-                        log_warning(msg)
-            except (ValueError, TypeError):
-                log_warning("Could not parse resolved_at timestamp for staleness check")
+    enforce_max_config_age(meta, max_config_age, strict)
 
     # Skip the audit by default in CI — there is no docker-compose.yml there.
     sys.exit(
