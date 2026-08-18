@@ -16,22 +16,30 @@ candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
 ## Phase 53 status
 
-**37 findings** at `aacee1b` (53h-2b), from 97 at the start of the arc.
-**53a through 53h are done.** Open: **53i** — adjudication rather than
-code motion, which is why the 2026-08-13 unattended run stopped short of
-it.
+**35 findings** at `722d50b` (the 53f/53g closeout), from 97 at the start
+of the arc. **53a through 53h are done.** Open: **53i** — adjudication
+rather than code motion, which is why the 2026-08-13 unattended run stopped
+short of it.
 
-Outcomes: 53a–53e in [PLAN-ARCHIVE.md](PLAN-ARCHIVE.md) and
-[docs/internal/PYSMELLY.md](internal/PYSMELLY.md); 53f and 53g in
-claude-meta `docs/PLAN.md` Phase 53 (**they have no adjudication entry in
-this repo's register** — a gap the 2026-08-13 run left, and one that 53h-1
-and 53h-2 did not fill either; it is still open). 53h-1, 53h-2a and 53h-2b
-have entries in the register.
+Outcomes: every subphase now has an adjudication entry in
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md), with 53a–53e also in
+[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md). **The 53f/53g register gap is closed**
+(2026-08-18): both shipped in the 2026-08-13 unattended run without an
+entry, 53h-1 and 53h-2 did not fill it, and it blocked 53i — which cannot
+be scoped against a settled/open split that does not exist. §53f and §53g
+are backfilled from their commit messages and the run ledger, and §53g's
+skip list was re-verified at HEAD first, which found three stale verdicts
+and one dead parameter.
+
+**All 35 are attributed** — 20 adjudicated leave-standings, 12 open under
+53i, and **3 owned by no subphase** (`arrow-code` ×2 and
+`temp-accumulators` `images.py:301`), which are a scoping input for 53i.
+See the register's "Remainder — the reconciled adjudication split".
 
 `long-function` **9 → 0**, `dict-as-dataclass` **6 → 0**,
 `write-only-attributes` **1 → 0**, `duplicate-except-blocks` and
 `boolean-param-explosion` empty as categories, and the
-convergence-hotspot list is empty. Coverage floor **53 → 70**.
+convergence-hotspot list is empty. Coverage floor **53 → 74**.
 
 **Carry into what is left**, the arc's most-repeated lesson: five times
 running (53d-1, 53d-2a, 53e-2, 53h-1, 53h-2b) the real defect was
