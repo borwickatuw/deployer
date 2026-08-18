@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from deployer.utils import get_deployer_root
+
 
 def _get_templates_dir() -> Path:
     """Get the path to the templates directory.
@@ -21,10 +23,7 @@ def _get_templates_dir() -> Path:
     Raises:
         FileNotFoundError: If the templates directory doesn't exist.
     """
-    # Navigate from src/deployer/init/ to project root
-    module_dir = Path(__file__).parent
-    project_root = module_dir.parent.parent.parent
-    templates_dir = project_root / "templates"
+    templates_dir = get_deployer_root() / "templates"
 
     if not templates_dir.exists():
         raise FileNotFoundError(

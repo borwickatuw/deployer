@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
+from deployer.init import template as template_module
 from deployer.init.template import (
+    _get_templates_dir,
     build_services_block,
     extract_env_type,
     get_template_dir,
@@ -16,10 +18,25 @@ from deployer.init.template import (
     substitute,
     substitute_optional,
 )
+from deployer.utils import get_deployer_root
 
 # =============================================================================
 # Template discovery
 # =============================================================================
+
+
+class TestTemplatesDir:
+    """Tests for _get_templates_dir()'s anchor on the deployer root."""
+
+    def test_it_resolves_under_the_deployer_root(self):
+        """The templates dir is the repo's own templates/, not a guess."""
+        assert _get_templates_dir() == get_deployer_root() / "templates"
+
+    def test_missing_templates_dir_raises_with_the_path_it_looked_for(self, tmp_path):
+        """The FileNotFoundError arm names the directory and what it means."""
+        with patch.object(template_module, "get_deployer_root", lambda: tmp_path):
+            with pytest.raises(FileNotFoundError, match="Templates directory not found"):
+                _get_templates_dir()
 
 
 class TestListTemplates:
