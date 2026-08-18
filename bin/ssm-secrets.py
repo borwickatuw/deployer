@@ -151,14 +151,17 @@ def cmd_check(environment: str, deploy_toml: str | None) -> int:
         link_benefit=f"check with just: ssm-secrets.py check {environment}",
     )
 
-    _project, env = parse_environment(environment)
+    # Validate the environment name up front. Nothing below needs the split
+    # parts, but `get_path_prefix` would raise ValueError out of core rather
+    # than exiting 1 with the CLI's message.
+    parse_environment(environment)
 
     print(f"Checking secrets for {environment}...")
     print(f"Reading: {deploy_toml_path}\n")
 
     # Get required secrets from deploy.toml
     try:
-        required_secrets = get_secrets_from_deploy_toml(deploy_toml_path, env)
+        required_secrets = get_secrets_from_deploy_toml(deploy_toml_path)
     # `check` reads deploy.toml alone -- it never loads the environment's
     # config.toml -- so a module-style app's required set is unknowable here.
     # Refuse before any SSM listing: an empty required set would make every

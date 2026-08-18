@@ -58,14 +58,12 @@ def get_parameter_path(env_name: str, secret_name: str) -> str:
 
 def get_secrets_from_deploy_toml(
     deploy_toml_path: Path,
-    environment: str,
     env_config: dict | None = None,
 ) -> dict[str, str]:
     """Extract SSM secrets from deploy.toml.
 
     Args:
         deploy_toml_path: Path to deploy.toml file
-        environment: Environment name (e.g., "staging")
         env_config: Environment config.toml for module-style secrets, or None
             when the caller has no environment config -- see
             ``get_secrets_from_config`` for what None means.
@@ -78,12 +76,11 @@ def get_secrets_from_deploy_toml(
             and ``env_config`` is None.
     """
     config = parse_deploy_config(deploy_toml_path)
-    return get_secrets_from_config(config.get_raw_dict(), environment, env_config)
+    return get_secrets_from_config(config.get_raw_dict(), env_config)
 
 
 def get_secrets_from_config(
     config: dict,
-    environment: str,
     env_config: dict | None,
 ) -> dict[str, str]:
     """Extract SSM secrets from a parsed deploy.toml config.
@@ -97,9 +94,6 @@ def get_secrets_from_config(
 
     Args:
         config: Parsed deploy.toml configuration dictionary
-        environment: Environment name (e.g., "staging"). Unused; kept because
-            it is part of the shared (config, environment, env_config)
-            signature this module's readers all take.
         env_config: Environment config.toml for module-style secrets, or None
             when no environment config could be loaded -- which is how
             `get_secrets_from_deploy_toml`'s own optional parameter arrives
@@ -122,7 +116,6 @@ def get_secrets_from_config(
             Same reasoning: an unreadable declaration must not be reported as
             an empty one.
     """
-    del environment  # part of this module's shared signature; nothing reads it
     secrets_config = config.get("secrets", {})
 
     explicit = explicit_path_keys(secrets_config)
@@ -153,7 +146,6 @@ def get_secrets_from_config(
 
 def check_secrets_exist(
     config: dict,
-    environment: str,
     env_name: str,
     env_config: dict,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -161,7 +153,6 @@ def check_secrets_exist(
 
     Args:
         config: Parsed deploy.toml configuration dictionary
-        environment: Environment type (e.g., "staging")
         env_name: Full environment name (e.g., "myapp-staging")
         env_config: Environment config.toml for module-style secrets
 
@@ -170,7 +161,7 @@ def check_secrets_exist(
         Each is a list of (env_var_name, ssm_path) tuples.
     """
     # Get required secrets from config
-    required_secrets = get_secrets_from_config(config, environment, env_config)
+    required_secrets = get_secrets_from_config(config, env_config)
 
     if not required_secrets:
         return [], []
@@ -200,7 +191,6 @@ def check_secrets_exist(
 
 def check_secrets_drift(
     config: dict,
-    environment: str,
     env_config: dict,
 ) -> list[str]:
     """Find SSM secrets that exist but aren't referenced in deploy.toml.
@@ -211,7 +201,6 @@ def check_secrets_drift(
 
     Args:
         config: Parsed deploy.toml configuration dictionary.
-        environment: Environment type (e.g., "staging").
         env_config: Environment config.toml for module-style secrets.
 
     Returns:
@@ -234,7 +223,7 @@ def check_secrets_drift(
     path_prefix = path_prefix.rstrip("/")
 
     # Get declared secrets from deploy.toml
-    declared = get_secrets_from_config(config, environment, env_config)
+    declared = get_secrets_from_config(config, env_config)
     declared_paths = set(declared.values())
 
     # Get existing secrets from SSM

@@ -156,12 +156,12 @@ class TestGetSecretsFromDeployToml:
         path = write_deploy_toml(tmp_path, EXPLICIT_STYLE_TOML)
 
         with pytest.raises(ValueError, match="DB_PASSWORD"):
-            get_secrets_from_deploy_toml(path, "staging")
+            get_secrets_from_deploy_toml(path)
 
     def test_no_secrets_section_yields_no_secrets(self, tmp_path):
         path = write_deploy_toml(tmp_path, NO_SECRETS_TOML)
 
-        assert get_secrets_from_deploy_toml(path, "staging") == {}
+        assert get_secrets_from_deploy_toml(path) == {}
 
     def test_module_style_form_refuses_to_answer_without_an_env_config(self, tmp_path):
         """UPDATED PIN -- twice now.
@@ -180,7 +180,7 @@ class TestGetSecretsFromDeployToml:
         path = write_deploy_toml(tmp_path, MODULE_STYLE_TOML)
 
         with pytest.raises(EnvironmentConfigError, match=r"names = \[\.\.\.\]"):
-            get_secrets_from_deploy_toml(path, "staging")
+            get_secrets_from_deploy_toml(path)
 
     def test_an_empty_names_list_needs_no_env_config(self, tmp_path):
         """The guard is narrow: with no names declared, nothing is unknown.
@@ -190,12 +190,12 @@ class TestGetSecretsFromDeployToml:
         """
         path = write_deploy_toml(tmp_path, EMPTY_NAMES_TOML)
 
-        assert get_secrets_from_deploy_toml(path, "staging") == {}
+        assert get_secrets_from_deploy_toml(path) == {}
 
     def test_module_style_form_works_when_an_env_config_is_passed(self, tmp_path):
         path = write_deploy_toml(tmp_path, MODULE_STYLE_TOML)
 
-        assert get_secrets_from_deploy_toml(path, "staging", ENV_CONFIG) == {
+        assert get_secrets_from_deploy_toml(path, ENV_CONFIG) == {
             "SECRET_KEY": "/myapp/staging/secret-key",
             "SIGNED_URL_SECRET": "/myapp/staging/signed-url-secret",
         }
@@ -356,7 +356,7 @@ class TestCheckSecretsExist:
         config = parse_deploy_config(write_deploy_toml(tmp_path, MODULE_STYLE_TOML)).get_raw_dict()
         put_ssm("/myapp/staging/secret-key")
 
-        missing, present = check_secrets_exist(config, "staging", "myapp-staging", ENV_CONFIG)
+        missing, present = check_secrets_exist(config, "myapp-staging", ENV_CONFIG)
 
         assert present == [("SECRET_KEY", "/myapp/staging/secret-key")]
         assert missing == [("SIGNED_URL_SECRET", "/myapp/staging/signed-url-secret")]
@@ -377,7 +377,7 @@ class TestCheckSecretsExist:
         monkeypatch.setattr("deployer.core.ssm_secrets.ssm.list_parameters", unexpected)
 
         with pytest.raises(ValueError, match="DB_PASSWORD"):
-            check_secrets_exist(config, "staging", "myapp-staging", ENV_CONFIG)
+            check_secrets_exist(config, "myapp-staging", ENV_CONFIG)
 
     def test_module_style_without_an_env_config_refuses_before_touching_ssm(
         self, monkeypatch, tmp_path
@@ -396,7 +396,7 @@ class TestCheckSecretsExist:
         monkeypatch.setattr(ssm_secrets.ssm, "list_parameters", unexpected)
 
         with pytest.raises(EnvironmentConfigError, match="unknown, not empty"):
-            check_secrets_exist(config, "staging", "myapp-staging", None)
+            check_secrets_exist(config, "myapp-staging", None)
 
     def test_no_required_secrets_short_circuits_before_touching_ssm(self, monkeypatch):
         def unexpected(_prefix):
@@ -404,7 +404,7 @@ class TestCheckSecretsExist:
 
         monkeypatch.setattr(ssm_secrets.ssm, "list_parameters", unexpected)
 
-        assert check_secrets_exist({}, "staging", "myapp-staging", ENV_CONFIG) == ([], [])
+        assert check_secrets_exist({}, "myapp-staging", ENV_CONFIG) == ([], [])
 
     def test_ssm_listing_failure_raises_runtimeerror(self, monkeypatch, tmp_path):
         config = parse_deploy_config(write_deploy_toml(tmp_path, MODULE_STYLE_TOML)).get_raw_dict()
@@ -413,7 +413,7 @@ class TestCheckSecretsExist:
         )
 
         with pytest.raises(RuntimeError, match="Failed to list SSM parameters: AccessDenied"):
-            check_secrets_exist(config, "staging", "myapp-staging", ENV_CONFIG)
+            check_secrets_exist(config, "myapp-staging", ENV_CONFIG)
 
 
 class TestPreflightCheckSsmSecrets:

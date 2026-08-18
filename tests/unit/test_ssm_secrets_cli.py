@@ -97,7 +97,7 @@ class TestCmdCheck:
 
     def test_nothing_declared_and_nothing_in_ssm_returns_0(self, monkeypatch, tmp_path, capsys):
         _resolves_to(monkeypatch, tmp_path / "deploy.toml")
-        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p, _e: {})
+        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p: {})
         monkeypatch.setattr(ssm_cli.ssm, "list_parameters", lambda _prefix: ([], None))
 
         assert ssm_cli.cmd_check("myapp-staging", None) == 0
@@ -108,7 +108,7 @@ class TestCmdCheck:
         monkeypatch.setattr(
             ssm_cli,
             "get_secrets_from_deploy_toml",
-            lambda _p, _e: {"SECRET_KEY": "/myapp/staging/SECRET_KEY"},
+            lambda _p: {"SECRET_KEY": "/myapp/staging/SECRET_KEY"},
         )
         monkeypatch.setattr(
             ssm_cli.ssm,
@@ -126,7 +126,7 @@ class TestCmdCheck:
         monkeypatch.setattr(
             ssm_cli,
             "get_secrets_from_deploy_toml",
-            lambda _p, _e: {"SECRET_KEY": "/myapp/staging/SECRET_KEY"},
+            lambda _p: {"SECRET_KEY": "/myapp/staging/SECRET_KEY"},
         )
         monkeypatch.setattr(ssm_cli.ssm, "list_parameters", lambda _prefix: ([], None))
 
@@ -137,7 +137,7 @@ class TestCmdCheck:
 
     def test_extra_secret_returns_1_and_prints_delete_commands(self, monkeypatch, tmp_path, capsys):
         _resolves_to(monkeypatch, tmp_path / "deploy.toml")
-        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p, _e: {})
+        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p: {})
         monkeypatch.setattr(
             ssm_cli.ssm,
             "list_parameters",
@@ -152,7 +152,7 @@ class TestCmdCheck:
     def test_unparseable_deploy_toml_returns_1(self, monkeypatch, tmp_path, capsys):
         _resolves_to(monkeypatch, tmp_path / "deploy.toml")
 
-        def boom(_path, _env):
+        def boom(_path):
             raise ValueError("bad table")
 
         monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", boom)
@@ -162,7 +162,7 @@ class TestCmdCheck:
 
     def test_ssm_list_failure_returns_1(self, monkeypatch, tmp_path, capsys):
         _resolves_to(monkeypatch, tmp_path / "deploy.toml")
-        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p, _e: {})
+        monkeypatch.setattr(ssm_cli, "get_secrets_from_deploy_toml", lambda _p: {})
         monkeypatch.setattr(ssm_cli.ssm, "list_parameters", lambda _prefix: (None, "AccessDenied"))
 
         assert ssm_cli.cmd_check("myapp-staging", None) == 1

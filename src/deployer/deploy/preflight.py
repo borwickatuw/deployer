@@ -157,9 +157,7 @@ def check_ssm_secrets(
         PreflightError: If SSM secrets are missing.
     """
     log("Checking SSM secrets...")
-    missing, present = check_secrets_exist(
-        deploy_config.get_raw_dict(), target.type, target.name, target.config
-    )
+    missing, present = check_secrets_exist(deploy_config.get_raw_dict(), target.name, target.config)
 
     if missing:
         raise PreflightError(format_missing_secrets_error(missing, target.name))
@@ -169,7 +167,7 @@ def check_ssm_secrets(
         log("No secrets defined in deploy.toml")
 
     # Check for unreferenced secrets in SSM (warn only)
-    unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), target.type, target.config)
+    unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), target.config)
     if unreferenced:
         log_warning(f"{len(unreferenced)} SSM secret(s) not referenced in deploy.toml:")
         for path in unreferenced:

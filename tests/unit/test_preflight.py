@@ -392,7 +392,7 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == ["/app/staging/another-old", "/app/staging/old-secret"]
 
     @patch("deployer.core.ssm_secrets.ssm.list_parameters")
@@ -406,7 +406,7 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == []
 
     def test_skips_legacy_format(self):
@@ -414,14 +414,14 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"DB_PASSWORD": "ssm:/app/staging/db-password"}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == []
 
     def test_skips_without_secrets_in_env_config(self):
         """Should skip drift check when env_config has no secrets config."""
         config = {"secrets": {"names": ["SECRET_KEY"]}}
 
-        result = check_secrets_drift(config, "staging", {})
+        result = check_secrets_drift(config, {})
         assert result == []
 
     def test_skips_without_path_prefix(self):
@@ -429,7 +429,7 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"provider": "ssm"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == []
 
     @patch("deployer.core.ssm_secrets.ssm.list_parameters")
@@ -447,7 +447,7 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == ["/app/staging/old-secret"]
         assert "/app/staging/last-migrations-hash" not in result
 
@@ -459,5 +459,5 @@ class TestCheckSecretsDrift:
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, "staging", env_config)
+        result = check_secrets_drift(config, env_config)
         assert result == []
