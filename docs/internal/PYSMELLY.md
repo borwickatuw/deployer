@@ -30,16 +30,19 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **35** (measured at the 53f/53g closeout commit `722d50b`; was
-37 at `aacee1b`, 38 at `a8d7369`, 39 at `4e63c05`, 41 at `bb17c37`/`b5b8465` —
-the 53f/53g state — 47 at `64e3e18`, 49 at `2b057ae` and `961be51`, 52 at
-`9c95d79`, 53 at `d75d24e` and `57bc874`, 56 at `a304fa1`, 57 at `9903e2b`,
-60 at `805d516`, 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at
-`2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
+Standing total: **32** (measured at `a9327ab`, the 53i-1 closeout; was 35 at
+the 53f/53g closeout `722d50b`, 37 at `aacee1b`, 38 at `a8d7369`, 39 at
+`4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
+49 at `2b057ae` and `961be51`, 52 at `9c95d79`, 53 at `d75d24e` and `57bc874`,
+56 at `a304fa1`, 57 at `9903e2b`, 60 at `805d516`, 68 at `db8aa78`, 71 at
+`26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
-**Every live finding is attributed.** See § "Remainder — the reconciled
-adjudication split": 20 adjudicated leave-standings, 12 open under 53i, and 3
-owned by no subphase.
+**Every live finding is attributed, and nothing is unowned.** See § "Remainder
+— the reconciled adjudication split": 20 adjudicated leave-standings, 7
+escalated by 53i-1 with measured diffs and awaiting the operator, and 5 open
+under 53i-2. The 3 findings that 53f/53g's reconciliation found owned by no
+subphase were folded into 53i-1 by operator decision (2026-08-18); one of them
+is cleared and two are among the seven escalations.
 
 **The 53f/53g register gap is closed** (2026-08-18). Both shipped in the
 2026-08-13 unattended run without an adjudication entry here; the gap was
@@ -1843,7 +1846,10 @@ should have listed and does not.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-18)
 
-**Live total: 35, measured at `722d50b`** with `uvx pysmelly . --more-please` —
+**Live total: 32, measured at `a9327ab`** (the 53i-1 closeout; it was 35 at
+`722d50b`, and the line numbers below are re-measured at `a9327ab` — the
+53i-1 fixes drifted `core/ssm_secrets.py` by +4) with
+`uvx pysmelly . --more-please` —
 **the plain `make pysmelly` view truncates to the top ten categories and
 under-reports `inconsistent-error-handling` as 3.** This table is the
 authoritative one; scope each subphase from it.
@@ -1855,39 +1861,61 @@ explicitly left for an operator-in-the-loop session. **This is that session.**
 Every finding below is attributed to either an adjudicated leave-standing
 (naming the subphase) or an open owner. No finding is unattributed.
 
-| Category                     | Live | Settled | Open | Open owner           |
-| ---------------------------- | ---- | ------- | ---- | -------------------- |
-| pass-through-params          | 13   | 13      | 0    | —                    |
-| param-clumps                 | 5    | 5       | 0    | —                    |
-| inconsistent-error-handling  | 4    | 0       | 4    | 53i                  |
-| foo-equals-foo               | 3    | 0       | 3    | 53i                  |
-| single-call-site             | 3    | 0       | 3    | 53i                  |
-| arrow-code                   | 2    | 0       | 2    | **none — see below** |
-| law-of-demeter               | 2    | 1       | 1    | 53i                  |
-| duplicate-blocks             | 1    | 1       | 0    | —                    |
-| return-none-instead-of-raise | 1    | 0       | 1    | 53i                  |
-| temp-accumulators            | 1    | 0       | 1    | **none — see below** |
-| **Total**                    | 35   | **20**  | 15   | 53i 12, unowned 3    |
+| Category                     | Live | Settled | Escalated | Open | Open owner |
+| ---------------------------- | ---- | ------- | --------- | ---- | ---------- |
+| pass-through-params          | 13   | 13      | 0         | 0    | —          |
+| param-clumps                 | 5    | 5       | 0         | 0    | —          |
+| inconsistent-error-handling  | 4    | 0       | 0         | 4    | 53i-2      |
+| foo-equals-foo               | 3    | 0       | 3         | 0    | —          |
+| single-call-site             | 2    | 0       | 2         | 0    | —          |
+| arrow-code                   | 1    | 0       | 1         | 0    | —          |
+| law-of-demeter               | 1    | 1       | 0         | 0    | —          |
+| duplicate-blocks             | 1    | 1       | 0         | 0    | —          |
+| return-none-instead-of-raise | 1    | 0       | 0         | 1    | 53i-2      |
+| temp-accumulators            | 1    | 0       | 1         | 0    | —          |
+| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-2 5    |
+
+**Escalated** means 53i-1 drafted a fix, measured it, and handed the decision to
+the operator rather than recording a self-authored justification; the diffs are
+listed in §53i-1. Nothing is unowned. **Three findings cleared in 53i-1** and
+left this table: `single-call-site` `modules/secrets.py:86` and `law-of-demeter`
+`init/template.py:26` (both were open under 53i), and `arrow-code`
+`cli/ci_deploy.py:181` (one of the three orphans).
 
 #### Settled — 20 adjudicated leave-standings
 
-| Finding                                                   | Adjudicated by      |
-| --------------------------------------------------------- | ------------------- |
-| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                 |
-| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                 |
-| `pass-through-params` `utils/cli.py:208` ×2, `:225`       | 53b (minted), 53g   |
-| `pass-through-params` `aws/cognito.py:46`                 | 53c (minted), 53g   |
-| `pass-through-params` `core/ssm_secrets.py:264`           | 53d-1 (minted), 53g |
-| `param-clumps` `bin/emergency.py:386`                     | 53d-2a, 53g         |
-| `law-of-demeter` `deploy/deployer.py:219`                 | 53e-3               |
-| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                 |
-| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                 |
-| `pass-through-params` `core/ssm_secrets.py:32`, `:45`     | 53g                 |
-| `pass-through-params` `core/ssm_secrets.py:59` ×2         | 53g                 |
-| `pass-through-params` `deploy/preflight.py:46`            | 53g                 |
-| `param-clumps` `aws/ecs.py:92`                            | 53g                 |
-| `param-clumps` `bin/cognito.py:214`                       | 53g                 |
-| `param-clumps` `deploy/service.py:197`                    | 53e-5 routed, 53g   |
+| Finding                                                   | Adjudicated by                                |
+| --------------------------------------------------------- | --------------------------------------------- |
+| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                                           |
+| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                                           |
+| `pass-through-params` `utils/cli.py:208` ×2, `:225`       | 53b (minted), 53g                             |
+| `pass-through-params` `aws/cognito.py:46`                 | 53c (minted), 53g                             |
+| `pass-through-params` `core/ssm_secrets.py:268`           | 53d-1 (minted), 53g, operator-confirmed 53i-1 |
+| `param-clumps` `bin/emergency.py:386`                     | 53d-2a, 53g                                   |
+| `law-of-demeter` `deploy/deployer.py:219`                 | 53e-3                                         |
+| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                                           |
+| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                                           |
+| `pass-through-params` `core/ssm_secrets.py:36`, `:49`     | 53g                                           |
+| `pass-through-params` `core/ssm_secrets.py:63` ×2         | 53g                                           |
+| `pass-through-params` `deploy/preflight.py:46`            | 53g                                           |
+| `param-clumps` `aws/ecs.py:92`                            | 53g                                           |
+| `param-clumps` `bin/cognito.py:214`                       | 53g                                           |
+| `param-clumps` `deploy/service.py:197`                    | 53e-5 routed, 53g                             |
+
+**One rationale corrected, by operator decision (2026-08-18).**
+`format_missing_secrets_error` (`core/ssm_secrets.py:268`) had stood since
+53d-1 on "composes an advice block", which §53g re-read and found to be a
+description rather than a reason. 53g drafted the inlining, measured it at
+37 → 36 with nothing minted, and recommended the finding stand on a corrected
+rationale. **The operator confirmed it**, so the rationale of record is now:
+
+> `env_name` is forwarded to `ssm_put_commands` because
+> `test_ssm_secrets_cli.py:35` pins that preflight's advice and
+> `bin/ssm-secrets.py:208`'s advice emit the *same* commands. The composition
+> is the assertion. Inlining also breaks its symmetric pair,
+> `format_missing_ecr_error` (`images.py:550`), which is unflagged only
+> because it interpolates `environment` into an f-string instead of
+> forwarding it.
 
 #### The 12 claimed by §53a–§53e reconcile to 9 — later subphases cleared three silently
 
@@ -1914,36 +1942,45 @@ The remaining 11 settled findings come from 53g's skip list, re-verified above.
 count-only tally is not maintainable: a leave-standing is not permanent, and a
 later subphase clears one without ever knowing it was adjudicated.
 
-#### Open — 12 owned by 53i
+#### The 12 that were open under 53i, resolved by the 53i split
 
-`single-call-site` ×3 (`emergency/checkpoint.py:105`, `init/deploy_toml.py:76`,
-`modules/secrets.py:86`); `return-none-instead-of-raise` ×1
-(`aws/cli.py:48 run_aws_json`, left unsuppressed by 53c precisely so the
-repo-wide raise-vs-return policy lands in front of the operator);
-`inconsistent-error-handling` ×4 (`core/config.py:205`, `init/template.py:127`,
-`utils/aws_profile.py:85`, `utils/environment.py:17`); `foo-equals-foo` ×3
-(`bin/init.py:220`, `:557`, `config/deploy_config.py:379`);
-`law-of-demeter` ×1 (`init/template.py:26`).
+53i split into 53i-1 (mechanical), 53i-2 (the raise-vs-return policy) and
+53i-3 (applying it). Where each of the twelve went:
 
-**Two corrections to 53i's scope while attributing these.** Its entry names
-`config/deploy_config.py` among the *`inconsistent-error-handling` contracts* —
-that file carries no such finding at HEAD; its live finding is the third
-`foo-equals-foo`, which the entry counts ("×3") but never names. And the entry
-names only `bin/init.py`'s two `foo-equals-foo` explicitly.
+| Finding                                                                                                                          | Outcome                                   |
+| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `single-call-site` `modules/secrets.py:86`                                                                                       | **Cleared** in 53i-1 (`af23287`)          |
+| `law-of-demeter` `init/template.py:26`                                                                                           | **Cleared** in 53i-1 (`78c3a6c`)          |
+| `single-call-site` `emergency/checkpoint.py:105`                                                                                 | 53i-1 — drafted, measured, escalated      |
+| `single-call-site` `init/deploy_toml.py:77`                                                                                      | 53i-1 — drafted, measured, escalated      |
+| `foo-equals-foo` `bin/init.py:220`, `:557`, `config/deploy_config.py:379`                                                        | 53i-1 — drafted, measured, escalated      |
+| `return-none-instead-of-raise` `aws/cli.py:48` `run_aws_json`                                                                    | **53i-2** — the policy, not a code motion |
+| `inconsistent-error-handling` `core/config.py:205`, `init/template.py:126`, `utils/aws_profile.py:85`, `utils/environment.py:17` | **53i-2**                                 |
 
-#### Open — 3 owned by no subphase
+`run_aws_json` was left unsuppressed by 53c precisely so the repo-wide
+raise-vs-return policy lands in front of the operator; it belongs with 53i-2's
+corpus of 50 "pinned, not endorsed" markers, not with code motion.
 
-Surfaced by this reconciliation. They appear in no skip list and in no
-subphase's scope:
+**Two corrections to 53i's scope, made while attributing these.** Its entry
+named `config/deploy_config.py` among the *`inconsistent-error-handling`
+contracts* — that file carries no such finding; its live finding is the third
+`foo-equals-foo`, which the entry counted ("×3") but never named. And the entry
+named only `bin/init.py`'s two `foo-equals-foo` explicitly.
 
-| Finding                                          | Note                                                                                                                       |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `arrow-code` `cli/ci_deploy.py:181` (depth 5)    | Never in any subphase's scope.                                                                                             |
-| `arrow-code` `init/deploy_toml.py:199` (depth 6) | `_build_environment_config`, the function 53h-2a edited without ever owning this finding.                                  |
-| `temp-accumulators` `deploy/images.py:301`       | 53e-5's closeout listed it as "open after the arc, routed" — and named no destination, unlike its two siblings (53f, 53g). |
+#### The 3 owned by no subphase — folded into 53i-1
 
-**They need a home: 53i, or an explicit leave-standing.** Recorded here rather
-than folded into a total.
+Surfaced by this reconciliation; they appeared in no skip list and in no
+subphase's scope. **The operator folded all three into 53i-1 (2026-08-18)**
+rather than leave them unowned:
+
+| Finding                                          | Note                                                                                                                       | Outcome                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `arrow-code` `cli/ci_deploy.py:181` (depth 5)    | Never in any subphase's scope.                                                                                             | **Cleared** in 53i-1 (`a9327ab`)                          |
+| `arrow-code` `init/deploy_toml.py:195` (depth 6) | `_build_environment_config`, the function 53h-2a edited without ever owning this finding.                                  | 53i-1 — escalated; `elif` artifact, feature request filed |
+| `temp-accumulators` `deploy/images.py:301`       | 53e-5's closeout listed it as "open after the arc, routed" — and named no destination, unlike its two siblings (53f, 53g). | 53i-1 — drafted, measured, escalated                      |
+
+**No finding is now unowned.** That was the condition 53i was blocked on, and
+it is the reason the three were folded rather than tallied.
 
 #### Category notes
 
@@ -1953,13 +1990,12 @@ than folded into a total.
 `boolean-param-explosion` (cleared by 53c's `DeployOptions`).
 
 **The convergence-hotspot list is empty.** No file is flagged by three or more
-checks. The repo-wide maximum is **2**, now held by `core/ssm_secrets.py`
-(`pass-through-params` + `param-clumps`) losing its clump at `722d50b`,
-`init/deploy_toml.py` (`single-call-site` + `arrow-code`), `init/template.py`
-(`inconsistent-error-handling` + `law-of-demeter`) and
+checks. Re-derived at `a9327ab`, the repo-wide maximum is **2**, and only two
+files hold it: `init/deploy_toml.py` (`single-call-site` + `arrow-code`) and
 `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
-`param-clumps`). `deploy/deployer.py` dropped to one when 53f cleared its
-`dict-as-dataclass`.
+`param-clumps`). `init/template.py` dropped to one when 53i-1 cleared its
+`law-of-demeter`, `core/ssm_secrets.py` when `722d50b` took its clump, and
+`deploy/deployer.py` when 53f cleared its `dict-as-dataclass`.
 
 **`duplicate-blocks` has no open items** — the single remaining finding is
 53a's adjudicated Lambda pair. `duplicate-except-blocks` is empty.
@@ -2313,3 +2349,170 @@ nothing, matching `collect()`. The old copy keyed on the section being truthy.
 - **`secrets.collect`'s dead `if not app_config` guard** — still dead, and more
   so: 53h-2a deleted the second route into `collect`, so `collect_all` is the
   only caller and it only calls modules with a truthy section.
+
+### 53i-1 — the mechanical residue (2026-08-18)
+
+53i split at planning time into three units — the arc's fourth planning-time
+split, after 53d (twice), 53e (up front) and 53h (twice):
+
+| Unit      | Scope                                                      | Status              |
+| --------- | ---------------------------------------------------------- | ------------------- |
+| **53i-1** | 10 mechanical findings — code motion and adjudication      | **this entry**      |
+| 53i-2     | The raise-vs-return policy, written from the pinned corpus | scoped, not planned |
+| 53i-3     | Apply that policy across the call sites 53i-2 names        | blocked on 53i-2    |
+
+The split is not about size. 53i-2's corpus is **31** "pinned, not endorsed"
+markers across 6 test files, plus 4 `inconsistent-error-handling` findings,
+`aws/cli.run_aws_json`, and the 5 inline suppressions carrying neither a
+rationale nor a `re-evaluate-by:` tag. None of 53i-1's ten findings touches any
+of it.
+
+**Corrected while transcribing**: the 53i-1 plan entry said "50 markers across
+6 test files" and then listed the per-file counts, which sum to 31
+(`test_emergency_ecs.py` 11, `test_emergency_cli.py` 7, `test_emergency_rds.py`
+5, `test_extensions.py` 3, `test_init_cli.py` 3,
+`test_emergency_cli_restore.py` 2). Re-measured at `a9327ab` — `grep -c 53i` —
+the per-file list is exactly right and the total is 31. The 5 untagged
+suppressions re-verified at the same SHA and still stand at 5, three of them
+`return-none-instead-of-raise`, which is why they belong to 53i-2 rather than
+53i-1.
+
+**35 → 32 across three code commits.** Three findings cleared, seven drafted
+and measured and escalated. Every draft diff is kept in the session scratchpad.
+
+#### Two findings were not what their category said
+
+Both were read before being scoped, and in both cases the *category* was
+misleading — the arc's standing lesson, twice more.
+
+**`single-call-site` `modules/secrets.py:86` is the opposite of an inlining
+candidate.** `normalize_secret_name` was 1 of 3 copies of the same
+SSM-parameter-leaf-name transform, and the third had its operations reversed:
+
+| Site                                                   | Form                                |
+| ------------------------------------------------------ | ----------------------------------- |
+| `modules/secrets.py:95`                                | `name.replace("_","-").lower()`     |
+| `core/ssm_secrets.py:144` (inline, in a comprehension) | `name.replace('_','-').lower()`     |
+| `init/deploy_toml.py:127` `_var_to_ssm_name`           | `var_name.lower().replace("_","-")` |
+
+The third fed the `aws ssm put-parameter --name` hint `deployer init` writes
+into a generated deploy.toml; its consumer, `ssm-secrets.py check`, never runs
+alongside it. A divergence would have surfaced as init telling the operator to
+create a parameter at a path `check` never looks for, then `check` reporting it
+EXTRA and advising deletion — the same producer-and-consumer-never-run-together
+shape 53h-2a hit three times, and the **sixth** instance of "the real defect is
+duplication pysmelly could not reach".
+
+**`arrow-code` `init/deploy_toml.py:199` is an `elif` artifact.** Traced
+through the AST rather than eyeballed. At HEAD the depth-6 path is
+`L205 For > L206 If > L208 If > L210 If > L214 If > L216 If`, and 208/210/214/216
+are all `elif` — one flat five-arm chain. `check_arrow_code` counts each `elif`
+as a nesting level, so the chain *alone* accounts for depth 6. The only genuine
+nesting is the `CELERY_BROKER_URL` arm at depth 5, of which three levels are the
+chain; a reader perceives depth 3. **Feature request filed** in claude-meta
+`docs/GUIDE-BACKLOG.md`, source key `53` — the **fourth** "the check's mechanic,
+not the code" find in this arc, after 53f's "accessed from N files", 53g's
+`aws/ssm.py` bare-name collision and 53h-1's `write-only-attributes`
+under-report.
+
+`cli/ci_deploy.py:181` is the opposite and was real: `if max_config_age` →
+`if resolved_at_str` → `try` → `if age_hours >` → `if strict / else`.
+
+#### The pin, first and in its own commit (`d0330c2`)
+
+`cli/ci_deploy.py` was the one file 53i-1 touches that sat below the bar — 34%,
+with uncovered range `203-256` containing exactly the block to be extracted.
+Everything else was 92–100%.
+
+Five pins on the `--max-config-age`/`--strict` gate, driven through the
+outermost boundary (`CliRunner` → argv in, exit code and message out), with
+`run_deploy_pipeline` stubbed so "did it reach the pipeline" is observable:
+fresh config silent; stale warns and still deploys; `--strict` exits 1 *before*
+the pipeline; `--strict` alone gates nothing; an unparseable `resolved_at` warns
+even under `--strict`.
+
+**Verified they pin**, not merely pass: neutering `if strict:` fails the third.
+`ci_deploy.py` 34% → 72%, total 74.23% → 74.91% — headroom bought before
+anything moved, against a 0.23-point margin over the floor of 74.
+
+#### The three cleared
+
+**`af23287` — one SSM leaf-name transform, not three (35 → 34).**
+`modules/secrets.normalize_secret_name` made canonical; `core/ssm_secrets.py`
+calls it inside the comprehension, `init/deploy_toml._var_to_ssm_name` deleted
+in favour of a direct call. `init/` → `modules/` is a new import edge but not a
+new direction — `core/ssm_secrets.py:7` and `deploy/preflight.py:28` already
+import this very module for `explicit_path_keys`.
+
+The order difference was **settled, not normalised away**: `-` is unchanged by
+`lower()` and `lower()` never produces `_`, so neither operation can create or
+destroy the other's input. Checked exhaustively over all 0x110000 code points in
+seven surrounding contexts, including the context-sensitive final-sigma rule —
+zero divergences — and pinned as eleven parametrized cases in `test_modules.py`
+*against the deleted order*, so reintroducing it would be a no-op rather than a
+silent change to secret paths. Hand-verified end to end: `format_deploy_toml`'s
+four hint paths are identical to `get_secrets_from_config`'s four lookup paths.
+
+**`78c3a6c` — `template.py` asks for the deployer root (34 → 33).**
+`module_dir.parent.parent.parent` hardcoded the distance from
+`src/deployer/init/` to the project root. The repo already had the named anchor,
+`utils.get_deployer_root()`, used by five call sites; `template.py` was
+hand-rolling a sixth. Asking for it *removes* the chain rather than shortening
+it. `template.py:30`'s `FileNotFoundError` arm was uncovered and is now pinned —
+patching `get_deployer_root` to an empty `tmp_path` is possible **because** of
+the refactor, so the fix is what made the arm testable. 94% → 95%.
+
+**`a9327ab` — lift ci_deploy's staleness gate out of `main()` (33 → 32).**
+`enforce_max_config_age` is the other half of the pair `print_config_age`
+already established two lines above: one reports the age, one enforces a limit
+against it. Guard clauses replace the pyramid, leaving the strict/warn choice at
+depth 1. Narrowing the `try` changes nothing — `sys.exit` raises `SystemExit`,
+never caught by `except (ValueError, TypeError)`. The five pins passed unchanged
+across the move, which is what they were for.
+
+**Dropped `# noqa: C901` from `main()`** — the extraction took its complexity
+under the threshold, so the suppression was stale. Verified by re-running ruff
+with `--select C901` and the suppression gone.
+
+#### Seven drafted, measured, escalated — pending operator
+
+Per the arc's rule: a fix is drafted for every finding, and a skip is escalated
+with its measured diff rather than a rewritten rationale. All seven diffs are
+kept; none is applied.
+
+| Finding                                                                         | Draft result                                        | Measured cost of applying it                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `single-call-site` `init/deploy_toml.py:76` `is_likely_secret`                  | **clears**, 32 → 31, tests pass, −9/+4              | The name *is* the policy statement over `SECRET_PATTERNS`/`NON_SECRET_ENV_VARS`; inlining buries it as a 3-line boolean inside a loop, and widens the head of the `elif` chain above.                                                                                                                                                                                                                                                                           |
+| `single-call-site` `emergency/checkpoint.py:105` `generate_checkpoint_filename` | **clears**, 32 → 31, tests pass, −22/+1             | Deletes two direct pins. `FILENAME_PATTERN` survives at `test_emergency_checkpoint.py:190` via `create_checkpoint`, but `test_filename_uses_current_utc_date` — the only assertion that the stamp is UTC, not local — has nowhere left to live.                                                                                                                                                                                                                 |
+| `foo-equals-foo` `bin/init.py:557` `generate_environment`                       | **clears**, 32 → 31, tests pass, −6/+4              | Byte-for-byte the shape the register already adjudicated for 53b's `deploy.py:167` `timer` ("built conditionally two statements earlier"). **And it widens a `try`**: `get_next_listener_priority` → `get_environments_dir().iterdir()` raises `FileNotFoundError`, which the enclosing `except (ValueError, FileNotFoundError)` would then swallow. Confirmed by running it against a missing directory. A cosmetic finding silently changing error behaviour. |
+| `foo-equals-foo` `bin/init.py:220` `_BootstrapInputs`                           | **does not clear** — 32 → 32, and **10 tests fail** | The three locals are `click.prompt` results. Keyword arguments evaluate at the call, which is the last statement, so inlining moves two prompts *after* the Cognito prompts — it does not hide the interaction order, it changes it. The finding only mutates (7 args/3 locals → 5 args/1 local), because `region` arrives from a tuple unpack that cannot be inlined at all.                                                                                   |
+| `foo-equals-foo` `config/deploy_config.py:379` `cls()`                          | **clears**, 32 → 31, tests pass, −6/+3              | Moves three `dacite.from_dict(...)` calls into an argument list, splitting each parse from the unknown-key warnings loop that immediately precedes it. The section-by-section "validate keys, then parse" pairing is the readable part.                                                                                                                                                                                                                         |
+| `arrow-code` `init/deploy_toml.py:199`                                          | **clears**, 32 → 31, tests pass, +17/−10            | Converts a flat five-arm dispatch a reader sees as depth 3 into a second function plus a `.update()` indirection, and forces reordering `CELERY_BROKER_URL` ahead of `REDIS_URL` to preserve behaviour. Paid entirely to satisfy a check that counts `elif` as nesting.                                                                                                                                                                                         |
+| `temp-accumulators` `deploy/images.py:301`                                      | **clears**, 32 → 31, tests pass, +9/−6              | 53e-4b *deliberately* relocated this accumulator into `_cache_tag` and recorded that it did not clear. The comprehension form must evaluate both modifier strings eagerly and filter a tuple of pairs. pysmelly's own message reads "accumulator may be appropriate here". File is at 100%.                                                                                                                                                                     |
+
+#### Side effects and mints
+
+**None.** Each of the three cleared findings was measured against the previous
+unit's finding set, not against the run total: 35 → 34 → 33 → 32, with every
+other line differing only by line-number drift. No new finding appeared in any
+category — notable because extractions have minted `pass-through-params` before,
+and `enforce_max_config_age` was the kind of extraction that does it. It takes
+three parameters, none of them a pure forward, and its body is well above the
+size at which `single-call-site` fires (`print_config_age`, 1 param and 1 call
+site, has never been flagged for the same reason).
+
+`.secrets.baseline` drifted once — `ssm_secrets.py` line 90 → 94, same
+`hashed_secret`, from the four-line import expansion. Verified as drift before
+staging. `make security` was run **after** staging each unit, since
+`security-secrets` scans `git ls-files` and silently skips untracked files.
+
+#### Coverage
+
+74.23% → **74.94%**, floor 74. The arc has hit an arithmetic coverage *drop*
+three times from extraction shrinking denominators; here the pin-first commit
+bought 0.68 points before any production code moved, and no unit gave any back.
+Re-measured after each unit, not once at the end.
+
+Both CLI entry points were exercised **by hand** as well as through pins:
+`ci-deploy` with stale/fresh/unparseable configs × `--strict`, confirming that
+under `--strict` the pipeline is never reached and without it the pipeline runs.

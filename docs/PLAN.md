@@ -16,10 +16,11 @@ candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
 ## Phase 53 status
 
-**35 findings** at `722d50b` (the 53f/53g closeout), from 97 at the start
-of the arc. **53a through 53h are done.** Open: **53i** — adjudication
-rather than code motion, which is why the 2026-08-13 unattended run stopped
-short of it.
+**32 findings** at `a9327ab` (the 53i-1 closeout), from 97 at the start of
+the arc. **53a through 53h and 53i-1 are done.** Open: **53i-2** (the
+raise-vs-return policy) and **53i-3** (applying it) — adjudication rather
+than code motion, which is why the 2026-08-13 unattended run stopped short
+of the 53i work.
 
 Outcomes: every subphase now has an adjudication entry in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md), with 53a–53e also in
@@ -31,10 +32,12 @@ are backfilled from their commit messages and the run ledger, and §53g's
 skip list was re-verified at HEAD first, which found three stale verdicts
 and one dead parameter.
 
-**All 35 are attributed** — 20 adjudicated leave-standings, 12 open under
-53i, and **3 owned by no subphase** (`arrow-code` ×2 and
-`temp-accumulators` `images.py:301`), which are a scoping input for 53i.
-See the register's "Remainder — the reconciled adjudication split".
+**All 32 are attributed and nothing is unowned** — 20 adjudicated
+leave-standings, **7 escalated by 53i-1** with measured diffs and awaiting
+the operator, and 5 open under 53i-2. The 3 findings the closeout found
+owned by no subphase were folded into 53i-1 by operator decision
+(2026-08-18); one is cleared, two are among the seven. See the register's
+"Remainder — the reconciled adjudication split".
 
 `long-function` **9 → 0**, `dict-as-dataclass` **6 → 0**,
 `write-only-attributes` **1 → 0**, `duplicate-except-blocks` and
@@ -99,15 +102,65 @@ Detail in [docs/internal/PYSMELLY.md](internal/PYSMELLY.md) §§ 53h-1,
    `dockerfile` key rather than crashing, and deployer's own default takes
    over, so it was pinned as-is rather than changed.
 
-### 53i — mechanical residue + the caller-contract policy call
+### 53i — split into three (2026-08-18)
 
-`foo-equals-foo` ×3, `single-call-site` ×3, and the
-`inconsistent-error-handling` contracts. The one that needs a written
-policy rather than code motion. Its inputs have accumulated across the
-arc: Phase 54's pinned swallow-`ClientError` tests, 53c's unsuppressed
-`run_aws_json` and five untagged inline suppressions, 53d-1's
-`capacity-report` exit-code conflation, 53d-2a's `emergency.py`
-decline-vs-failure exit codes, and 53d-2b + 53e-1's two bare
+Reading 53i's contents found **two unrelated kinds of work**, so it split
+at planning time — the arc's fourth planning-time split, after 53d (twice),
+53e (up front) and 53h (twice).
+
+| Unit      | Scope                                                      | Status              |
+| --------- | ---------------------------------------------------------- | ------------------- |
+| **53i-1** | 10 mechanical findings — code motion and adjudication      | **done** (35 → 32)  |
+| 53i-2     | The raise-vs-return policy, written from the pinned corpus | scoped, not planned |
+| 53i-3     | Apply that policy across the call sites 53i-2 names        | blocked on 53i-2    |
+
+#### 53i-1 — mechanical residue — **done** (2026-08-18)
+
+Three findings cleared in three commits, each measured against the previous
+unit rather than the run total:
+
+| Commit    | Change                                                      | Count   |
+| --------- | ----------------------------------------------------------- | ------- |
+| `d0330c2` | Pin-first: 5 pins on `--max-config-age`/`--strict`, no code | —       |
+| `af23287` | One SSM leaf-name transform, not three                      | 35 → 34 |
+| `78c3a6c` | `template.py` asks for the deployer root, not `.parent` ×3  | 34 → 33 |
+| `a9327ab` | Lift ci_deploy's staleness gate out of `main()`             | 33 → 32 |
+
+Seven findings were drafted, measured and **escalated to the operator**
+rather than recorded as self-authored leave-standings. Two of the drafts
+carry evidence that changes the question: `bin/init.py:557`'s inlining
+silently widens a `try` to swallow a `FileNotFoundError` from the listener
+-priority scan, and `bin/init.py:220`'s **does not clear the finding and
+breaks 10 tests**, because inlining `click.prompt` results into a
+constructor call reorders the prompts. Diffs and costs are in the
+register's §53i-1.
+
+Two findings were not what their category said, both found by reading:
+`modules/secrets.py:86` was 1 of 3 copies of one transform (a sixth
+producer-and-consumer-never-run-together instance), and
+`init/deploy_toml.py:195`'s depth-6 `arrow-code` is one flat five-arm
+`elif` chain the check counts as nesting — the fourth "the check's
+mechanic, not the code" find in this arc, filed as a pysmelly feature
+request in claude-meta `docs/GUIDE-BACKLOG.md`.
+
+Coverage 74.23% → **74.94%** against a floor of 74; the pin-first commit
+bought 0.68 points before any production code moved.
+
+#### 53i-2 — the raise-vs-return policy
+
+The one that needs a written policy rather than code motion. Its corpus is
+**31 "pinned, not endorsed" markers across 6 test files** (re-measured at
+`a9327ab`; the 53i-1 plan entry said 50, but its own per-file list sums to 31
+and the list is what verifies)
+(`test_emergency_ecs.py` 11, `test_emergency_cli.py` 7,
+`test_emergency_rds.py` 5, `test_extensions.py` 3, `test_init_cli.py` 3,
+`test_emergency_cli_restore.py` 2), plus the 4
+`inconsistent-error-handling` findings, `aws/cli.run_aws_json`, and the 5
+inline suppressions carrying neither a rationale nor a `re-evaluate-by:`
+tag. Its inputs have accumulated across the arc: Phase 54's pinned
+swallow-`ClientError` tests, 53c's unsuppressed `run_aws_json` and those
+five suppressions, 53d-1's `capacity-report` exit-code conflation, 53d-2a's
+`emergency.py` decline-vs-failure exit codes, and 53d-2b + 53e-1's two bare
 `except Exception` handlers that misattribute an internal failure to an
 operator-facing cause. Each is pinned by a test naming 53i, so the tests
-are the checklist of call sites to change.
+are the checklist of call sites 53i-3 changes.
