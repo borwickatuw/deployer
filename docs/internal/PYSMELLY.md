@@ -1824,25 +1824,49 @@ Suppressions adjudicated by an entry above:
 | `modules/db-on-shared-rds/lambda/index.py` `handler`               | vestigial-params  | same                                                  |
 | `modules/db-on-shared-rds/lambda/index.py` `handle_setup_database` | dict-as-dataclass | Lambda return must be a dict for JSON serialization   |
 
-**Noticed during 53c, not fixed here.** 22 `# pysmelly: ignore` lines stand
-repo-wide, not the three above, and the blanket claim that all of them carry a
-rationale and a `re-evaluate-by:` tag is **not true**. Five carry neither:
+`modules/staging-scheduler/lambda/handler.py` `handler` is a fourth Lambda
+`vestigial-params` suppression the table above should have listed and does not.
 
-| Location                                                | Check                        |
-| ------------------------------------------------------- | ---------------------------- |
-| `init/bootstrap.py` `bootstrap_dir_exists`              | return-none-instead-of-raise |
-| `core/config.py` `get_cognito_user_pool_id_from_config` | return-none-instead-of-raise |
-| `core/config.py` `get_commands_from_deploy_toml`        | isinstance-chain             |
-| `config/compose.py` `get_compose_services`              | isinstance-chain             |
-| `utils/links.py` `get_linked_deploy_toml`               | return-none-instead-of-raise |
+#### The corpus, classified by where the rationale sits (re-measured 2026-08-18)
 
-(`aws/rds.py get_status` and `emergency/checkpoint.py` do carry both, on the line
-above the suppression rather than on it.) Three of the five are
-`return-none-instead-of-raise`, which is exactly the policy **53i** owns — the
-right place to write their rationales or delete them, alongside the unsuppressed
-`run_aws_json` instance 53c minted. `modules/staging-scheduler/lambda/handler.py`
-`handler` is a fourth Lambda `vestigial-params` suppression the table above
-should have listed and does not.
+**The paragraph that stood here from 53c until §53i-2a was wrong in three ways.**
+It claimed 22 tracked `# pysmelly: ignore` lines, of which five carried
+**neither** a rationale nor a `re-evaluate-by:` tag, and it excused
+`aws/rds.py get_status` as correct-but-offset. Re-measured over
+`git ls-files '*.py'` by classifying every directive on where its rationale sits:
+
+| Placement                                                | Before §53i-2a | After |
+| -------------------------------------------------------- | -------------- | ----- |
+| Rationale on the directive line                          | 13             | 13    |
+| Rationale on the line(s) directly above, no blank line   | 1              | **7** |
+| Rationale detached from the directive by two blank lines | **6**          | **0** |
+| No rationale at all                                      | 0              | 0     |
+| **Total tracked suppressions**                           | **20**         | 20    |
+
+So: **20**, not 22; **six** detached, not five; every one of them carries
+**both** a rationale and a `re-evaluate-by: 2026-11 review` tag; and
+`aws/rds.py get_status` was not a different case — it was the sixth instance of
+the same defect.
+
+**The cause is exact.** `5074069` wrote all six correctly as a single line:
+
+```python
+# pysmelly: ignore return-none-instead-of-raise — existence check, None means "not found"
+```
+
+`df01cdb` (2026-08-07, _"Tag pysmelly acceptances with re-evaluate-by"_) split
+that line in two and pushed the rationale up, leaving a grammatical fragment
+orphaned from the thing it explains — and, because black stabilises two blank
+lines before a top-level `def`, nothing ever flagged the result. A commit meant
+to improve the record damaged it in six places, and this section then recorded
+the damage as absence.
+
+**The suppressions never stopped working.** The directive stayed immediately
+above the `def`, inside pysmelly's window, so all four suppressed
+`return-none-instead-of-raise` instances were absent from the live count
+throughout. This was a documentation defect with **zero effect on the count** —
+which is what made it a mechanical unit (§53i-2a) rather than part of 53i-2's
+adjudication.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-18)
 
@@ -2367,6 +2391,11 @@ markers across 6 test files, plus 4 `inconsistent-error-handling` findings,
 rationale nor a `re-evaluate-by:` tag. None of 53i-1's ten findings touches any
 of it.
 
+**The suppression half of that corpus was wrong**, in the way §"Standing inline
+suppressions" now records: there are six, not five, and they carry both a
+rationale and a tag — detached from the directive rather than missing. §53i-2a
+repaired them, which removed them from 53i-2's corpus entirely.
+
 **Corrected while transcribing**: the 53i-1 plan entry said "50 markers across
 6 test files" and then listed the per-file counts, which sum to 31
 (`test_emergency_ecs.py` 11, `test_emergency_cli.py` 7, `test_emergency_rds.py`
@@ -2516,3 +2545,71 @@ Re-measured after each unit, not once at the end.
 Both CLI entry points were exercised **by hand** as well as through pins:
 `ci-deploy` with stale/fresh/unparseable configs × `--strict`, confirming that
 under `--strict` the pipeline is never reached and without it the pipeline runs.
+
+### 53i-2a — the six detached rationales (2026-08-18)
+
+**Zero code units, zero count movement, by design** — the same shape as 53g.
+53i-2 was scoped as adjudication; this unit is the mechanical repair that had to
+come out of it first, by operator decision.
+
+Reading the corpus before planning 53i-2 found that its stated "5 inline
+suppressions carrying neither a rationale nor a `re-evaluate-by:` tag" was wrong
+in three ways. The measurement and its cause are recorded in §"Standing inline
+suppressions"; this entry records the repair.
+
+#### The repair
+
+Six files, one edit each — the two blank lines between rationale and directive
+deleted, so the comment block sits contiguously above the `def`:
+
+| Location                                                    | Check                        |
+| ----------------------------------------------------------- | ---------------------------- |
+| `init/bootstrap.py:187` `bootstrap_dir_exists`              | return-none-instead-of-raise |
+| `core/config.py:293` `get_cognito_user_pool_id_from_config` | return-none-instead-of-raise |
+| `core/config.py:355` `get_commands_from_deploy_toml`        | isinstance-chain             |
+| `config/compose.py:65` `get_compose_services`               | isinstance-chain             |
+| `utils/links.py:31` `get_linked_deploy_toml`                | return-none-instead-of-raise |
+| `aws/rds.py:11` `get_status`                                | return-none-instead-of-raise |
+
+#### The single-line form does not fit, and that is a config fact, not a taste call
+
+The plan's first choice was the single-line form the 13 correct suppressions
+use. **All six exceed 100 characters in that form**, and `E501` is ignored only
+under `bin/*` — `src/deployer/*` is held to `line-length = 100` by both ruff and
+black. The budget is arithmetic:
+
+| Check                          | Prefix + tag | Rationale budget | Shortest actual rationale |
+| ------------------------------ | ------------ | ---------------- | ------------------------- |
+| `return-none-instead-of-raise` | 84 chars     | **16**           | 31 (`utils/links.py`)     |
+| `isinstance-chain`             | 72 chars     | **28**           | 37 (`config/compose.py`)  |
+
+So all six took the repo's **second sanctioned placement** — the
+`emergency/checkpoint.py:38` shape, rationale on the line directly above with no
+blank line — which is why the "adjacent" bucket went 1 → 7 rather than the
+"inline" bucket going 13 → 19. The three `bin/` suppressions that do use the
+single-line form at ~125 characters are legal only because of that per-file
+ignore; they are not a precedent `src/` can follow.
+
+`aws/rds.py` needed a second edit black asked for: with the rationale no longer
+separated, the two blank lines that had sat between rationale and directive were
+the ones satisfying black's rule for a top-level `def`, and one had to move
+above the comment block.
+
+#### Verification
+
+- `uvx pysmelly . --more-please` read **32** before and after, diffed as a
+  finding set rather than as a total — identical, line for line.
+- The placement classifier over `git ls-files '*.py'` read 13/1/6/0 before and
+  13/7/0/0 after. The detached bucket is empty and asserted so.
+- `make check` (lint + black + 1668 tests), `make format-docs-check`, and
+  `make security` after staging.
+
+#### What this leaves for 53i-2
+
+Nothing. These six were listed in 53i-2's corpus on the strength of a claim that
+did not survive re-measurement; the corpus that remains is the 4
+`inconsistent-error-handling` contracts, `aws/cli.run_aws_json`, the 31
+"pinned, not endorsed" markers across 6 test files, and the `emergency/` sentinel
+family. The four suppressed `return-none-instead-of-raise` instances are
+adjudicated leave-standings with tags that fall due at the 2026-11 review, not
+open policy questions.

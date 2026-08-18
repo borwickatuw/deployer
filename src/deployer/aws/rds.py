@@ -5,9 +5,8 @@ from collections.abc import Callable
 
 from .cli import run_aws, run_aws_json
 
+
 # query function, None means "not found"  (re-evaluate-by: 2026-11 review)
-
-
 # pysmelly: ignore return-none-instead-of-raise
 def get_status(instance_id: str) -> dict | None:
     """Get RDS instance status.

@@ -60,8 +60,6 @@ def _env_file_var_names(config: dict[str, Any], base_dir: Path) -> list[str]:
 
 
 # YAML values can be str, list, or dict  (re-evaluate-by: 2026-11 review)
-
-
 # pysmelly: ignore isinstance-chain
 def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) -> dict[str, dict]:
     """Extract services from docker-compose.yml with their properties.

@@ -26,8 +26,6 @@ def get_links_file() -> Path:
 
 
 # lookup function, None means "not linked"  (re-evaluate-by: 2026-11 review)
-
-
 # pysmelly: ignore return-none-instead-of-raise
 def get_linked_deploy_toml(environment: str) -> Path | None:
     """Look up the deploy.toml path for an environment.
