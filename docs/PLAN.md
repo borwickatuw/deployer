@@ -16,11 +16,15 @@ candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
 ## Phase 53 status
 
-**32 findings** at `a9327ab` (the 53i-1 closeout), from 97 at the start of
-the arc. **53a through 53h and 53i-1 are done.** Open: **53i-2** (the
-raise-vs-return policy) and **53i-3** (applying it) — adjudication rather
-than code motion, which is why the 2026-08-13 unattended run stopped short
-of the 53i work.
+**32 findings** at `4678c1e` (the 53i-2a closeout), from 97 at the start of
+the arc. **53a through 53h, 53i-1 and 53i-2 are done.** Open: **53i-3**
+(applying the policy), blocked on nothing but operator sign-off of the two
+escalated items in the 53i-2c ADR.
+
+**53i-2 moved the count by zero, by design** — 53g's precedent. 53i-2a moved
+prose inside comments, 53i-2b wrote two claude-meta guides, and 53i-2c is an
+ADR. The count was verified at 32 before and after 53i-2a, diffed as a finding
+set rather than as a total.
 
 Outcomes: every subphase now has an adjudication entry in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md), with 53a–53e also in
@@ -34,7 +38,7 @@ and one dead parameter.
 
 **All 32 are attributed and nothing is unowned** — 20 adjudicated
 leave-standings, **7 escalated by 53i-1** with measured diffs and awaiting
-the operator, and 5 open under 53i-2. The 3 findings the closeout found
+the operator, and 5 now **adjudicated by 53i-2c's ADR** and awaiting 53i-3. The 3 findings the closeout found
 owned by no subphase were folded into 53i-1 by operator decision
 (2026-08-18); one is cleared, two are among the seven. See the register's
 "Remainder — the reconciled adjudication split".
@@ -108,11 +112,11 @@ Reading 53i's contents found **two unrelated kinds of work**, so it split
 at planning time — the arc's fourth planning-time split, after 53d (twice),
 53e (up front) and 53h (twice).
 
-| Unit      | Scope                                                      | Status              |
-| --------- | ---------------------------------------------------------- | ------------------- |
-| **53i-1** | 10 mechanical findings — code motion and adjudication      | **done** (35 → 32)  |
-| 53i-2     | The raise-vs-return policy, written from the pinned corpus | scoped, not planned |
-| 53i-3     | Apply that policy across the call sites 53i-2 names        | blocked on 53i-2    |
+| Unit      | Scope                                                  | Status              |
+| --------- | ------------------------------------------------------ | ------------------- |
+| **53i-1** | 10 mechanical findings — code motion and adjudication  | **done** (35 → 32)  |
+| **53i-2** | The raise-vs-return policy — split again into 2a/2b/2c | **done** (32 → 32)  |
+| 53i-3     | Apply that policy across the call sites 53i-2c names   | blocked on sign-off |
 
 #### 53i-1 — mechanical residue — **done** (2026-08-18)
 
@@ -146,9 +150,30 @@ request in claude-meta `docs/GUIDE-BACKLOG.md`.
 Coverage 74.23% → **74.94%** against a floor of 74; the pin-first commit
 bought 0.68 points before any production code moved.
 
-#### 53i-2 — the raise-vs-return policy
+#### 53i-2 — the raise-vs-return policy — **done** (2026-08-18)
 
-The one that needs a written policy rather than code motion. Its corpus is
+Split again at planning time into **53i-2a** (reattach six detached suppression
+rationales — `4678c1e`, 32 → 32), **53i-2b** (the policy written **fleet-wide**
+in claude-meta's `best-practices/PYTHON.md` #19 and `PYSMELLY-REVIEW.md`, by
+operator decision, from a 13-repo measurement in which storage-scripts and
+claude-meta each carry more of this corpus than deployer), and **53i-2c** (the
+ADR below). Two of the corpus items dissolved on re-measurement: the "5 inline
+suppressions carrying neither a rationale nor a tag" were **six**, carrying
+**both**, detached from their directive by `df01cdb` — a documentation defect
+with zero effect on the count, repaired as 53i-2a.
+
+**The ADR is [DECISIONS.md](internal/DECISIONS.md) "2026-08-18: Error Contracts",
+and it is 53i-3's checklist** — every call site named, across three layers:
+`emergency/`'s eleven sentinel-from-`except` functions plus `run_aws_json`
+(producer); the four `inconsistent-error-handling` contracts, classified
+one false-positive / one document-only / two real-caller-bugs with the exact
+unhandled sites listed (consumer); and the emergency CLI exit codes, where a
+**third** swallow (`cmd_revert`) turned up that none of the eleven pins covers
+(boundary). **Two items are escalated, not decided** — `emergency/` queries
+raising, and exit code `2` for "declined" — and 53i-3 must not apply either
+until the operator confirms.
+
+Its corpus was
 **31 "pinned, not endorsed" markers across 6 test files** (re-measured at
 `a9327ab`; the 53i-1 plan entry said 50, but its own per-file list sums to 31
 and the list is what verifies)

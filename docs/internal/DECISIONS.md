@@ -548,6 +548,164 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
+## 2026-08-18: Error Contracts — Raise, Absence Sentinel, or Failure Sentinel (Phase 53i-2c)
+
+**Status: two items pending operator sign-off** — the rest follows from
+PYTHON.md #19 and needs no separate call. The two that change behaviour an
+operator depends on, and so are escalated rather than assumed: **(a)** the
+`emergency/` queries raising instead of returning a sentinel, and **(b)** exit
+code `2` for "operator declined". Both are marked below. 53i-3 should not apply
+either until they are confirmed.
+
+**Decision:** Every function in this repo has exactly one of three error
+contracts, stated in its docstring, and **one sentinel never means both
+"nothing is there" and "I could not look"**:
+
+| Contract                       | Shape                | Used for                                                    |
+| ------------------------------ | -------------------- | ----------------------------------------------------------- |
+| **Raises**                     | value, or exception  | The caller cannot proceed without the value                 |
+| **Sentinel meaning _absence_** | `None` / `[]` / `{}` | "Not found" / "not applicable" is a normal, expected answer |
+| **Sentinel meaning _failure_** | documented as such   | The caller must distinguish outcomes and keep going         |
+
+The fleet-wide form of this rule is claude-meta `best-practices/PYTHON.md`
+Practice 19, written in the same session (53i-2b) from a 13-repo measurement.
+This entry decides the three questions that guide **cannot** answer for us,
+because only this repo has the shape: what `emergency/` does, what the four
+`inconsistent-error-handling` contracts are, and what the emergency CLI's exit
+codes mean.
+
+**Alternatives considered:**
+
+- **Leave it undecided and suppress the findings.** Rejected: four
+  `return-none-instead-of-raise` suppressions already stand, and 53c
+  deliberately left `run_aws_json` unsuppressed so the decision would land in
+  front of the operator rather than be hidden by a fifth.
+- **Make everything raise.** Rejected: it churns every call site that guards a
+  legitimately-absent answer. Measured fleet-wide, every real call site already
+  guards — the `None`-means-absence contract works where it is used honestly.
+- **Write the policy in deployer only.** Rejected by operator decision
+  (2026-08-18): storage-scripts (5+7) and claude-meta (4+3) each carry more of
+  this corpus than deployer (1+4), so a deployer-only guide would have been
+  drawn from the third-largest sample.
+
+**Reasoning:** `return-none-instead-of-raise` and `inconsistent-error-handling`
+are the only two checks in this arc with no mechanical fix, because both are
+symptoms of the same omission — a function that never said what it does when
+things go wrong, so each caller guessed. The count is not the deliverable; a
+decidable contract is.
+
+### Layer 1 — Producer: `emergency/` reports failure as absence
+
+**This is the decision that matters.** Eleven functions return a sentinel from
+inside `except ClientError`, so an AWS permissions failure or a network timeout
+is reported to the operator, **during an incident**, as "nothing is there."
+
+| Function                                 | Returns from `except ClientError` | Reads to the operator as  |
+| ---------------------------------------- | --------------------------------- | ------------------------- |
+| `ecs.get_service_state:43`               | `None` (line 70)                  | no such service           |
+| `ecs.get_all_services_state:73`          | `pass` (line 105)                 | service silently omitted  |
+| `ecs.list_task_definition_revisions:110` | `pass` (line 165)                 | no revisions to roll back |
+| `ecs.get_task_definition_details:170`    | `None` (line 205)                 | no such task definition   |
+| `rds.get_rds_snapshots:115`              | `[]` (line 190)                   | no snapshots exist        |
+| `rds.get_rds_instance_details:193`       | `None` (line 227)                 | no such instance          |
+| `ecs.update_service_task_definition:261` | `False` (line 285)                | the update failed         |
+| `ecs.scale_service:341`                  | `False` (line 365)                | the scale failed          |
+| `ecs.force_new_deployment:368`           | `False` (line 393)                | the deploy failed         |
+| `rds.create_emergency_snapshot:76`       | `None` (line 112)                 | no snapshot was made      |
+| `ecs.wait_for_deployment:288`            | `pass` (line 334)                 | **keeps polling**         |
+
+**The six queries and `wait_for_deployment` are the dangerous half.** The four
+mutators returning `False` are at least honest — `False` already means
+"failed", and the caller acts on it. A query returning `[]` is not: "you may not
+read this" and "this isn't there" become the same answer, and the rollback
+command then reports that there is nothing to roll back.
+
+`wait_for_deployment` is the worst of the eleven: its `except ClientError: pass`
+sits inside the poll loop, so a call that fails every time polls a service it
+cannot see for the **entire** timeout and then returns `False` — indistinguishable
+from a deployment that genuinely did not stabilise.
+
+**Decision (a) — pending operator sign-off:** the six queries and
+`wait_for_deployment` adopt contract 1 — **raise**. `ClientError` is a failure, not an absence; genuine absence
+(`describe-services` succeeding with an empty list) keeps the existing `None`/`[]`
+and its docstring says so. The four mutators keep `False` with `Raises:`
+documented, since their callers already branch on it. `bin/emergency.py` and
+`bin/ops.py` are the **only** two consumers, both CLI entry points, so the blast
+radius is bounded.
+
+Also at this layer: **`aws/cli.run_aws_json:48`** — the arc's one live
+`return-none-instead-of-raise`, left unsuppressed by 53c on purpose. Its `None`
+means failure only (a successful `describe-*` always parses), which is contract
+3 — but `aws/rds.get_status:12` then translates that failure-`None` into its own
+documented "or None if not found". **The two meanings collapse one layer down.**
+That translation is the defect, not the check.
+
+### Layer 2 — Consumer: the four `inconsistent-error-handling` contracts
+
+Each call site classified by whether it sits inside a `try` (measured at
+`4678c1e`, so the counts reconcile to pysmelly's):
+
+| Contract                                                                    | Verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `utils/aws_profile.py:85 configure_aws_profile_for_environment` (3 callers) | **False positive — no change.** It raises `RuntimeError` only inside `if validate:` (line 141). `utils/cli.py:219` passes `validate=True` and catches; `:233` and `:254` pass the default `False` and *cannot* raise it. The check does not model the flag.                                                                                                                                                                                                                                                 |
+| `init/template.py:126 substitute` (4 callers)                               | **Callers legitimately differ — document only.** `init/environment.py:163`'s `except KeyError` is not error handling but a **fallback dispatch** to `substitute_optional`. `init/bootstrap.py:170/175/179` want the `KeyError`: a missing bootstrap placeholder must not write a half-rendered `main.tf`. (Using an exception as a mode selector is a separate smell; noted, not scheduled.)                                                                                                                |
+| `core/config.py:205 load_environment_config` (14 callers)                   | **A caller has a real bug — fix.** Nine `bin/` sites wrap it in `except (FileNotFoundError, RuntimeError)`; **four do not** — `bin/ops.py:504`, `:615`, `:686` and `bin/resolve-config.py:109` — so a missing `config.toml` is a traceback in three `ops` subcommands and in the CI config resolver. Two more catch **broad `Exception`** (`bin/deploy.py:74`, `bin/ops.py:871`), swallowing errors the contract never promised.                                                                            |
+| `utils/environment.py:17 get_environments_dir` (17 callers)                 | **A caller has a real bug — fix.** It raises `RuntimeError` carrying actionable text ("Set it in your .env file"). **Six `bin/` entry points let it become a traceback**: `capacity-report.py:224`, `cognito.py:72`, `deploy.py:67`, `environment.py:67`, `init.py:501`, `init.py:520` — while `init.py:239/347/457` already catch it. The four library-level sites (`init/environment.py:42/129/254`, `init/verify.py:141`) and the two internal ones (`utils/environment.py:47/113`) correctly propagate. |
+
+**The fix at both "real bug" rows is the boundary rule, not a per-caller
+`try`**: wrap the single failing call in `utils/cli.py:127 exit_on`, which
+already exists for exactly this and whose docstring already says "wrap the
+single call that can fail — not a whole command body."
+
+### Layer 3 — Boundary: the emergency CLI's exit codes
+
+Eleven assertions in `tests/unit/test_emergency_cli.py` and
+`test_emergency_cli_restore.py` pin today's behaviour as "pinned, not endorsed."
+What they pin:
+
+| Behaviour                                                       | Today | Decision                                            |
+| --------------------------------------------------------------- | ----- | --------------------------------------------------- |
+| Operator declines the confirmation (`cmd_rollback`)             | `1`   | **`2`** — declined is not a failure *(pending (b))* |
+| The update fails (`cmd_rollback`)                               | `1`   | `1` — unchanged                                     |
+| A service fails to scale (`cmd_scale`, line 538)                | `0`   | **`1`** — a reported failure must not exit 0        |
+| A service fails to force-deploy (`cmd_force_deploy`, line 800)  | `0`   | **`1`** — same swallow                              |
+| A service fails to restore (`cmd_revert`, lines 742/747)        | `0`   | **`1`** — **not pinned by any test; found here**    |
+| The deployment times out (`cmd_rollback` → `_await_deployment`) | `0`   | `0` with a **warning** exit — see below             |
+
+A failure printed to the terminal but exiting `0` is invisible to CI and to any
+wrapper script; the terminal is not the interface a non-interactive caller
+reads. `cmd_scale` and `cmd_force_deploy` both log `Failed to scale…` /
+`Failed to force deploy…` and then `return 0` — the two clearest instances.
+
+**`cmd_revert` is a third instance the eleven pins missed**, and the worst of
+the three: a failed `update_service_task_definition` or a failed `scale_service`
+logs, `continue`s to the next service, and the command still prints
+`Revert completed` and returns `0`. That is the checkpoint-restore path — the
+one an operator reaches for when a rollback has already gone wrong. 53i-3 needs
+a characterization test here **before** changing it, since unlike the other two
+there is nothing pinning today's behaviour.
+
+A deployment timeout is genuinely a third thing: the rollback *was* applied and
+the wait was inconclusive. It gets the **succeeded-with-warnings** status rather
+than being folded into either neighbour. The three-way split is:
+
+- **`0`** — succeeded (warnings printed, work completed)
+- **`1`** — failed
+- **`2`** — declined by the operator; nothing was attempted
+
+**53i-3 flips the eleven pins from "pinned, not endorsed" to asserted
+behaviour** — that is what they were written for.
+
+### Scope note
+
+This entry is the **checklist 53i-3 executes**; it changes no code itself.
+53i-2a (`4678c1e`) repaired six detached suppression rationales and moved the
+count by zero, and 53i-2b wrote the fleet guide. The register entry is
+deployer `docs/internal/PYSMELLY.md` §53i-2a; the phase record is claude-meta
+`docs/PLAN.md` Phase 53.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown

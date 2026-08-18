@@ -102,8 +102,9 @@ docstrings against 81 lines removed from `run_audit`'s body.
 2026-08 comprehensive review; 97 before Phase 53a, 91 before 53b, 82 before
 53c, 74 before 53d-1, 71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1,
 57 before 53e-2, 47 before 53f, 41 before 53h-1, 37 before the 53f/53g
-closeout, 35 before 53i-1). The live per-category split is in "Remaining
-findings" below.
+closeout, 35 before 53i-1; **unchanged by 53i-2, which shipped documents and
+comment prose only**). The live per-category split is in "Remaining findings"
+below.
 Suppressions, measured at the 53e-2 commit across tracked files:
 **22 `# pysmelly: ignore` lines and 7 `# noqa: C901`**. 53d-1 removed four
 `# noqa: C901`, 53d-2a a fifth (`cmd_rollback`), 53d-2b two more
@@ -132,8 +133,9 @@ decomposition. 53a (db-\* Lambda twins), 53b (CLI boilerplate), 53c
 53d-2a (`emergency.py` + `ops.py`), 53d-2b (`init.py` + the print-run
 re-measure), 53e-1 (`extensions.py` + `setup_profiles.py`) and 53e-2
 (`core/audit.py`), the 53e-3/4/5 slices, 53f (`dict-as-dataclass`),
-53g (parameter plumbing, zero code units), 53h-1/2a/2b and **53i-1** are done,
-as is the 2026-08-18 53f/53g closeout. **53i-2 and 53i-3 are the only open
+53g (parameter plumbing, zero code units), 53h-1/2a/2b, **53i-1** and
+**53i-2** (a/b/c — zero code units, count unchanged at 32, by design) are
+done, as is the 2026-08-18 53f/53g closeout. **53i-3 is the only open
 subphases.** Per-finding dispositions are in `docs/internal/PYSMELLY.md`.
 
 53d was split twice — first when re-measuring at HEAD showed the plan entry
@@ -173,7 +175,8 @@ went 11% → 99% and left the convergence-hotspot list, which is now empty.
 
 ### Remaining findings (32)
 
-Live counts, re-measured at the 53i-1 closeout commit `a9327ab` with
+Live counts, re-verified at the 53i-2a closeout commit `4678c1e` — identical
+to `a9327ab` as a finding set, not merely as a total — with
 `uvx pysmelly . --more-please` (`make pysmelly` truncates to the top ten and
 under-reports `inconsistent-error-handling`).
 
@@ -187,19 +190,19 @@ that file under "Remainder — the reconciled adjudication split".
 measured and the decision handed to the operator — not that the finding is
 settled, and not that it is still open work. Open = live − settled − escalated.
 
-| Category                     | Live | Settled | Escalated | Open | Notes                                                                                 |
-| ---------------------------- | ---- | ------- | --------- | ---- | ------------------------------------------------------------------------------------- |
-| pass-through-params          | 13   | 13      | 0         | 0    | All re-verified 2026-08-18; 53g's skip list plus 53b/53c/53d-1 leave-standings        |
-| param-clumps                 | 5    | 5       | 0         | 0    | 53a, 53d-2a and 53g; `modules/` cleared by 53h-1, `ssm_secrets` by the closeout       |
-| inconsistent-error-handling  | 4    | 0       | 0         | 4    | Caller-contract policy needed (53i-2)                                                 |
-| foo-equals-foo               | 3    | 0       | 3         | 0    | 53i-1 drafted all three; `bin/init.py:220`'s draft breaks 10 tests and does not clear |
-| single-call-site             | 2    | 0       | 2         | 0    | Named helpers that document intent; `modules/secrets.py:86` cleared by 53i-1          |
-| arrow-code                   | 1    | 0       | 1         | 0    | `init/deploy_toml.py:195` — an `elif` artifact; `ci_deploy.py:181` cleared by 53i-1   |
-| law-of-demeter               | 1    | 1       | 0         | 0    | 53e-3 adjudicated `deployer.py:219`; `template.py:26` cleared by 53i-1                |
-| duplicate-blocks             | 1    | 1       | 0         | 0    | The db-\* Lambda pair, adjudicated in 53a                                             |
-| return-none-instead-of-raise | 1    | 0       | 0         | 1    | `aws/cli.run_aws_json` — left unsuppressed for 53i-2's policy to decide               |
-| temp-accumulators            | 1    | 0       | 1         | 0    | `images.py:301`, relocated into `_cache_tag` by 53e-4b; folded into 53i-1             |
-| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-2 owns all 5; **nothing is unowned**                                              |
+| Category                     | Live | Settled | Escalated | Open | Notes                                                                                                        |
+| ---------------------------- | ---- | ------- | --------- | ---- | ------------------------------------------------------------------------------------------------------------ |
+| pass-through-params          | 13   | 13      | 0         | 0    | All re-verified 2026-08-18; 53g's skip list plus 53b/53c/53d-1 leave-standings                               |
+| param-clumps                 | 5    | 5       | 0         | 0    | 53a, 53d-2a and 53g; `modules/` cleared by 53h-1, `ssm_secrets` by the closeout                              |
+| inconsistent-error-handling  | 4    | 0       | 0         | 4    | Adjudicated by 53i-2c's ADR (1 FP, 1 document-only, 2 real caller bugs); 53i-3 applies                       |
+| foo-equals-foo               | 3    | 0       | 3         | 0    | 53i-1 drafted all three; `bin/init.py:220`'s draft breaks 10 tests and does not clear                        |
+| single-call-site             | 2    | 0       | 2         | 0    | Named helpers that document intent; `modules/secrets.py:86` cleared by 53i-1                                 |
+| arrow-code                   | 1    | 0       | 1         | 0    | `init/deploy_toml.py:195` — an `elif` artifact; `ci_deploy.py:181` cleared by 53i-1                          |
+| law-of-demeter               | 1    | 1       | 0         | 0    | 53e-3 adjudicated `deployer.py:219`; `template.py:26` cleared by 53i-1                                       |
+| duplicate-blocks             | 1    | 1       | 0         | 0    | The db-\* Lambda pair, adjudicated in 53a                                                                    |
+| return-none-instead-of-raise | 1    | 0       | 0         | 1    | `aws/cli.run_aws_json` — 53i-2c decided it: failure-`None`, and `rds.get_status` mistranslates it as absence |
+| temp-accumulators            | 1    | 0       | 1         | 0    | `images.py:301`, relocated into `_cache_tag` by 53e-4b; folded into 53i-1                                    |
+| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-2 owns all 5; **nothing is unowned**                                                                     |
 
 **The three unowned findings now have a home.** The 2026-08-18 reconciliation
 surfaced them; the operator folded all three into 53i-1 the same day. One

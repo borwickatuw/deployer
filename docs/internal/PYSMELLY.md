@@ -1889,15 +1889,15 @@ Every finding below is attributed to either an adjudicated leave-standing
 | ---------------------------- | ---- | ------- | --------- | ---- | ---------- |
 | pass-through-params          | 13   | 13      | 0         | 0    | —          |
 | param-clumps                 | 5    | 5       | 0         | 0    | —          |
-| inconsistent-error-handling  | 4    | 0       | 0         | 4    | 53i-2      |
+| inconsistent-error-handling  | 4    | 0       | 0         | 4    | 53i-3      |
 | foo-equals-foo               | 3    | 0       | 3         | 0    | —          |
 | single-call-site             | 2    | 0       | 2         | 0    | —          |
 | arrow-code                   | 1    | 0       | 1         | 0    | —          |
 | law-of-demeter               | 1    | 1       | 0         | 0    | —          |
 | duplicate-blocks             | 1    | 1       | 0         | 0    | —          |
-| return-none-instead-of-raise | 1    | 0       | 0         | 1    | 53i-2      |
+| return-none-instead-of-raise | 1    | 0       | 0         | 1    | 53i-3      |
 | temp-accumulators            | 1    | 0       | 1         | 0    | —          |
-| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-2 5    |
+| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-3 5    |
 
 **Escalated** means 53i-1 drafted a fix, measured it, and handed the decision to
 the operator rather than recording a self-authored justification; the diffs are
@@ -2613,3 +2613,73 @@ did not survive re-measurement; the corpus that remains is the 4
 family. The four suppressed `return-none-instead-of-raise` instances are
 adjudicated leave-standings with tags that fall due at the 2026-11 review, not
 open policy questions.
+
+### 53i-2b/2c — the policy, and what it decided (2026-08-18)
+
+**Zero code units.** 53i-2b wrote the policy **fleet-wide** in claude-meta's
+`best-practices/PYTHON.md` (new Practice 19) and `best-practices/PYSMELLY-REVIEW.md`,
+by operator decision; 53i-2c wrote deployer's own ADR,
+[DECISIONS.md](DECISIONS.md) "2026-08-18: Error Contracts". Neither touches
+code, and the count stayed at 32.
+
+**Why fleet-wide rather than here.** Measured across all 13 repos:
+`return-none-instead-of-raise` fires **13** times and
+`inconsistent-error-handling` **23**, and **storage-scripts (5+7) and
+claude-meta (4+3) each carry more than deployer (1+4)**. A policy written from
+this repo's evidence alone would have been drawn from the third-largest sample
+and labelled fleet-wide. No repo skips either guide, so the guide applies
+everywhere by default.
+
+#### The 5 open findings, now adjudicated
+
+The ADR classifies each, and names the call sites so 53i-3 executes a list
+rather than re-deriving one:
+
+| Finding                                                     | Verdict                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `return-none-instead-of-raise` `aws/cli.py:48 run_aws_json` | Its `None` means **failure only** — contract 3, correct. The defect is one layer down: `aws/rds.py:12 get_status` translates that failure-`None` into its own documented "or None if **not found**".                                                          |
+| `inconsistent-error-handling` `utils/aws_profile.py:85`     | **False positive, no change.** It raises `RuntimeError` only inside `if validate:`; the two unhandled callers pass the default `validate=False` and cannot reach it. The check does not model the flag.                                                       |
+| `inconsistent-error-handling` `init/template.py:126`        | **Callers legitimately differ — document only.** `init/environment.py:163`'s `except KeyError` is a fallback *dispatch* to `substitute_optional`, not error handling; `init/bootstrap.py:170/175/179` want the `KeyError`.                                    |
+| `inconsistent-error-handling` `core/config.py:205`          | **A caller has a real bug.** Four sites unhandled (`bin/ops.py:504`, `:615`, `:686`, `bin/resolve-config.py:109`) where nine others catch the documented pair; two more catch broad `Exception`.                                                              |
+| `inconsistent-error-handling` `utils/environment.py:17`     | **A caller has a real bug.** Six `bin/` entry points turn an actionable `RuntimeError` into a traceback (`capacity-report.py:224`, `cognito.py:72`, `deploy.py:67`, `environment.py:67`, `init.py:501`, `:520`) while `init.py:239/347/457` already catch it. |
+
+Both "real bug" rows take the boundary fix — `utils/cli.py:127 exit_on` around
+the single failing call — not a per-caller `try`.
+
+#### Two things the corpus did not contain, found by measuring it
+
+**`emergency/` has eleven sentinel-from-`except` functions, not the twelve the
+plan carried.** Enumerated by AST rather than by grep: six queries, four
+mutators, and `wait_for_deployment`. The six queries and `wait_for_deployment`
+are the dangerous half — a `ClientError` becomes "nothing is there" during an
+incident — while the four mutators returning `False` are at least honest.
+
+**`cmd_revert` is a third exit-code swallow that none of the eleven pins
+covers.** `bin/emergency.py:742/747`: a failed task-definition update or a
+failed scale logs, `continue`s, and the command still prints `Revert completed`
+and returns `0`. It is the checkpoint-restore path, so 53i-3 needs a
+characterization test there **before** changing it — unlike `cmd_scale` and
+`cmd_force_deploy`, nothing pins today's behaviour.
+
+#### The discriminator the plan proposed did not survive verification
+
+53i-2b was to be built on pysmelly's printed `N of M caller(s) guard` ratio as a
+triage rule: all callers guard → the `None` contract works; a gap → latent
+`AttributeError`s. Checked call site by call site across the fleet, **all four
+findings with a gap were measurement artifacts** — every real call site guards.
+Four different causes: a compound guard (`if x is None or …`) not credited; a
+**docstring** mentioning the function counted as a caller (that one is this
+repo's, `aws/cli.py:39`, printed as 3 of 4 when it is 3 of 3); expression-form
+guards not credited; and a bare-name collision. The guide ships the ratio as a
+work list of call sites to open, never a verdict. This is the **fifth** "the
+check's mechanic, not the code" find in this arc, after 53f's "accessed from N
+files", 53g's `aws/ssm.py` bare-name collision, 53h-1's `write-only-attributes`
+under-report and 53i-1's `elif`-as-nesting.
+
+#### Escalated, not decided
+
+Two items in the ADR change behaviour an operator depends on and are marked
+pending sign-off rather than assumed: **(a)** the `emergency/` queries raising
+instead of returning a sentinel, and **(b)** exit code `2` for "operator
+declined". 53i-3 applies neither until they are confirmed. Everything else in
+the ADR follows from PYTHON.md #19 and needs no separate call.
