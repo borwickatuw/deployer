@@ -98,9 +98,11 @@ docstrings against 81 lines removed from `run_audit`'s body.
 
 ## Pysmelly Status
 
-56 findings (from 147 original; 106 at the start of the 2026-08 comprehensive
-review; 97 before Phase 53a, 91 before 53b, 82 before 53c, 74 before 53d-1,
-71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1, 57 before 53e-2).
+**35 findings** at `722d50b` (from 147 original; 106 at the start of the
+2026-08 comprehensive review; 97 before Phase 53a, 91 before 53b, 82 before
+53c, 74 before 53d-1, 71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1,
+57 before 53e-2, 47 before 53f, 41 before 53h-1, 37 before the 53f/53g
+closeout). The live per-category split is in "Remaining findings" below.
 Suppressions, measured at the 53e-2 commit across tracked files:
 **22 `# pysmelly: ignore` lines and 7 `# noqa: C901`**. 53d-1 removed four
 `# noqa: C901`, 53d-2a a fifth (`cmd_rollback`), 53d-2b two more
@@ -126,8 +128,10 @@ decomposition. 53a (db-\* Lambda twins), 53b (CLI boilerplate), 53c
 (`src/deployer` dedup), 53d-1 (the `bin/` deploy.toml-resolution family) and
 53d-2a (`emergency.py` + `ops.py`), 53d-2b (`init.py` + the print-run
 re-measure), 53e-1 (`extensions.py` + `setup_profiles.py`) and 53e-2
-(`core/audit.py`) are done; per-finding dispositions are in
-`docs/internal/PYSMELLY.md`.
+(`core/audit.py`), the 53e-3/4/5 slices, 53f (`dict-as-dataclass`),
+53g (parameter plumbing, zero code units) and 53h-1/2a/2b are done, as is the
+2026-08-18 53f/53g closeout. **53i is the only open subphase.** Per-finding
+dispositions are in `docs/internal/PYSMELLY.md`.
 
 53d was split twice — first when re-measuring at HEAD showed the plan entry
 undercounted it (7 `bin/` long-function findings, not 6), and again when 53d-2
@@ -146,13 +150,12 @@ files before it reaches the untested heart:
 | ----- | ---------------------------------------------------------- | ------ |
 | 53e-1 | `extensions.py` + `setup_profiles.py`                      | done   |
 | 53e-2 | `core/audit.py` — `run_audit`                              | done   |
-| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | next   |
-| 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | open   |
-| 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | open   |
+| 53e-3 | `deployer.py` — `__init__`, `deploy`, 3 × `law-of-demeter` | done   |
+| 53e-4 | `images.py` — `build_and_push_images`, `temp-accumulators` | done   |
+| 53e-5 | `service.py` — 4 × `long-function` + `arrow-code`          | done   |
 
-`deploy/service.py` (1003 lines, 11% coverage, four `long-function` targets) is
-the only file left on the convergence-hotspot list, and 53e-5 is deliberately
-last. **53e-3** (`deploy/deployer.py`) is the next open subphase.
+**53e closed at `64e3e18`**: `long-function` went to 0, `deploy/service.py`
+went 11% → 99% and left the convergence-hotspot list, which is now empty.
 
 ### Code improvements made (Phases 42 + 42-2)
 
@@ -165,31 +168,37 @@ last. **53e-3** (`deploy/deployer.py`) is the next open subphase.
 - Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
 - Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-### Remaining findings (38)
+### Remaining findings (35)
 
-Live counts, re-measured at the Phase 53h-1 commit `a8d7369` with
+Live counts, re-measured at the 53f/53g closeout commit `722d50b` with
 `uvx pysmelly . --more-please` (`make pysmelly` truncates to the top ten and
 under-reports `inconsistent-error-handling`).
 
-**The Open column is not carried forward.** It counted adjudicated
-leave-standings against the total, and that tally cannot be re-derived
-reliably right now: 53f and 53g shipped with no adjudication entry in
-[PYSMELLY.md](PYSMELLY.md), so which of the current 38 are settled is only
-partly recorded. Rebuild it when that gap is filled rather than guessing at it.
+**The Open column is back.** It was dropped at 38 because 53f and 53g had
+shipped with no adjudication entry in [PYSMELLY.md](PYSMELLY.md), so which
+findings were settled was only partly recorded. **That gap was filled on
+2026-08-18** — every live finding is now attributed to an adjudicated
+leave-standing or an open owner, and the derivation is in that file under
+"Remainder — the reconciled adjudication split". Open = live − settled.
 
-| Category                     | Count | Notes                                                                       |
-| ---------------------------- | ----- | --------------------------------------------------------------------------- |
-| pass-through-params          | 14    | ssm_secrets/preflight/aws plumbing; 53g declined all 14, skip list recorded |
-| param-clumps                 | 6     | Context-object candidates; `modules/` cleared by 53h-1                      |
-| inconsistent-error-handling  | 4     | Caller-contract policy needed (53i)                                         |
-| foo-equals-foo               | 3     | Single-use locals to inline; init.py's two measured in 53d-2b (53i)         |
-| single-call-site             | 3     | Named helpers that document intent (53i)                                    |
-| arrow-code                   | 2     | Depth-5/6 nesting in `ci_deploy.py` and `init/deploy_toml.py`               |
-| law-of-demeter               | 2     | Chain depth 4 (53e-3 adjudicated one; `template.py` to 53i)                 |
-| feature-envy                 | 1     | `DatabaseModule.validate` — 53h-2's call                                    |
-| duplicate-blocks             | 1     | The db-\* Lambda pair, adjudicated in 53a                                   |
-| return-none-instead-of-raise | 1     | aws/cli.run_aws_json — left unsuppressed for 53i to decide                  |
-| temp-accumulators            | 1     | images.py hash_modifiers, relocated into `_cache_tag` by 53e-4b             |
+| Category                     | Live | Settled | Open | Notes                                                                             |
+| ---------------------------- | ---- | ------- | ---- | --------------------------------------------------------------------------------- |
+| pass-through-params          | 13   | 13      | 0    | All re-verified 2026-08-18; 53g's skip list plus 53b/53c/53d-1 leave-standings    |
+| param-clumps                 | 5    | 5       | 0    | 53a, 53d-2a and 53g; `modules/` cleared by 53h-1, `ssm_secrets` by the closeout   |
+| inconsistent-error-handling  | 4    | 0       | 4    | Caller-contract policy needed (53i)                                               |
+| foo-equals-foo               | 3    | 0       | 3    | 53i; `init.py`'s two measured in 53d-2b, `deploy_config.py:379` is the third      |
+| single-call-site             | 3    | 0       | 3    | Named helpers that document intent (53i)                                          |
+| arrow-code                   | 2    | 0       | 2    | **Owned by no subphase** — `ci_deploy.py:181`, `init/deploy_toml.py:199`          |
+| law-of-demeter               | 2    | 1       | 1    | 53e-3 adjudicated `deployer.py:219`; `template.py:26` to 53i                      |
+| duplicate-blocks             | 1    | 1       | 0    | The db-\* Lambda pair, adjudicated in 53a                                         |
+| return-none-instead-of-raise | 1    | 0       | 1    | `aws/cli.run_aws_json` — left unsuppressed for 53i to decide                      |
+| temp-accumulators            | 1    | 0       | 1    | **Owned by no subphase** — `images.py:301`, relocated into `_cache_tag` by 53e-4b |
+| **Total**                    | 35   | **20**  | 15   | 53i owns 12; **3 need a home**                                                    |
+
+**Three findings are owned by no subphase** — surfaced by the 2026-08-18
+reconciliation, not by a re-measure. They appear in no skip list and in no
+subphase's scope, and need either 53i or an explicit leave-standing. That is a
+scoping input for 53i, which this closeout unblocks.
 
 Categories now empty: `long-function` (9 → 0 across 53d–53e),
 `dict-as-dataclass` (6 → 0 in 53f), `write-only-attributes` (1 → 0 in 53h-1),
@@ -215,4 +224,4 @@ runs of `print()` statements into arguments. The category has **no open items**:
 the single remaining finding is 53a's adjudicated Lambda pair.
 `boolean-param-explosion` is empty, cleared by 53c's `DeployOptions`.
 
-*Last updated: 2026-08-13 (Phase 53e-1)*
+*Last updated: 2026-08-18 (Phase 53f/53g closeout)*

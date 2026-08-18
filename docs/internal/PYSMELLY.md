@@ -30,20 +30,26 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **38** (measured at the Phase 53h-1 commit `a8d7369`; was 39 at
-`4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
-49 at `2b057ae` and `961be51`, 52 at `9c95d79`, 53 at
-`d75d24e` and `57bc874`, 56 at
-`a304fa1`, 57 at `9903e2b`, 60 at `805d516`,
-68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at
-`a8800cd`, 97 at `8e57264`).
+Standing total: **35** (measured at the 53f/53g closeout commit `722d50b`; was
+37 at `aacee1b`, 38 at `a8d7369`, 39 at `4e63c05`, 41 at `bb17c37`/`b5b8465` —
+the 53f/53g state — 47 at `64e3e18`, 49 at `2b057ae` and `961be51`, 52 at
+`9c95d79`, 53 at `d75d24e` and `57bc874`, 56 at `a304fa1`, 57 at `9903e2b`,
+60 at `805d516`, 68 at `db8aa78`, 71 at `26d9290`, 74 at `07d65d6`, 82 at
+`2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
-**Register gap, recorded rather than papered over:** 53f and 53g shipped in the
-2026-08-13 unattended run without an adjudication entry here. Their outcomes are
-in claude-meta `docs/PLAN.md` Phase 53 (53f: `dict-as-dataclass` 6 → 0 across
-four units; 53g: zero code units by design, with a recorded skip list). 53h-1
-did not fill that in — writing another subphase's adjudication record after the
-fact is not a thing a later session should invent.
+**Every live finding is attributed.** See § "Remainder — the reconciled
+adjudication split": 20 adjudicated leave-standings, 12 open under 53i, and 3
+owned by no subphase.
+
+**The 53f/53g register gap is closed** (2026-08-18). Both shipped in the
+2026-08-13 unattended run without an adjudication entry here; the gap was
+carried forward three times and blocked 53i, which cannot be scoped against a
+settled/open split that does not exist. §53f and §53g below are **backfilled
+from their commit messages and the run ledger, not re-derived** — and §53g's
+skip list was **re-verified at HEAD before transcription**, which found three
+stale verdicts and one dead parameter. Writing another subphase's record after
+the fact is still not something a session should invent; transcribing a
+recorded one, and re-running its escalations first, is a different act.
 
 ### 53a — db-\* Lambda twin consolidation (2026-08-12)
 
@@ -1522,6 +1528,289 @@ The three files 53e-3 → 53e-5 took on, in coverage order:
 `dict-as-dataclass` on `deployer.py:38` (53f), the `param-clumps` on
 `service.py:197` (53g), and the `temp-accumulators` on `images.py:301`.
 
+### 53f — `dict-as-dataclass` sweep (2026-08-13, backfilled 2026-08-18)
+
+**Backfilled.** 53f shipped in the 2026-08-13 unattended run without an entry
+here; this is transcribed from its four commit messages (`b337424`, `942f2d1`,
+`995e022`, `b5b8465`) and claude-meta `docs/PLAN-ARCHIVE.md` § 53f, not
+re-derived. The commits are near-register-quality and are the primary source.
+
+**Shipped** `64e3e18` → `b5b8465`, four commits. pysmelly **47 → 41**;
+**`dict-as-dataclass` 6 → 0, the category is empty.** Nothing minted; every
+other per-category count byte-identical at every step. Coverage 65.73% →
+68.58%, floor ratcheted **65 → 68**; tests 1339 → 1456.
+
+| Unit  | Scope                                        | Commit    | Total   | Category |
+| ----- | -------------------------------------------- | --------- | ------- | -------- |
+| 53f-1 | pin the consumers — no production code moves | `b337424` | 47 → 47 | 6 → 6    |
+| 53f-2 | `emergency/` payloads                        | `942f2d1` | 47 → 43 | 6 → 2    |
+| 53f-3 | `format_user`'s record                       | `995e022` | 43 → 42 | 2 → 1    |
+| 53f-4 | `infra_config` → `InfraConfig`               | `b5b8465` | 42 → 41 | 1 → 0    |
+
+#### Pin the *consumers*, not the producers
+
+53f-1 is the pin-first commit, and it inverted the usual target. The producers
+were already at 100% behind moto, so botocore validated the real request
+shapes. **The consumers were the gap — and a dict → object conversion breaks
+consumers, not producers.** Three named gaps closed: `bin/emergency.py`
+57% → 76% (`cmd_restore_db` and `_print_restore_success` were entirely
+uncovered and hold every subscript read of the restore payloads),
+`bin/cognito.py` 17% → 53% (`print_users_table` / `cmd_list` hold all five
+subscript reads of `format_user`'s output), `deploy/task_definition.py`
+72% → 86% (`_get_legacy_secrets` had no test at all).
+
+#### "Accessed from N files" is not a consumer count — the third instance of the bare-name lesson
+
+The finding on `get_rds_instance_details` said **"accessed from 15 files"**.
+The check matches **bare key names**, and that payload's keys are `id`,
+`status`, `engine`, `port` — names that appear all over the tree in unrelated
+dicts. The real production consumers were **two**, reading **four of ten**
+fields. `get_task_definition_details`: "6 files" → **one** consumer, one
+field. `format_user`: "10 files" → **one** consumer, five fields.
+
+Same mechanic as 53h-1's `write-only-attributes` under-report and 53g's
+`aws/ssm.py:131` false positive, in a **third** check. Grep the real consumers
+before sizing the work.
+
+#### NamedTuple vs `@dataclass` is a finding-count decision, not a style one
+
+53f-2 and 53f-3 used `NamedTuple` throughout. Most fields on
+`RdsInstanceDetails` and `TaskDefinitionDetails` are genuinely unread in
+production — they describe a resource to an operator — so as dataclasses they
+would have minted **roughly a dozen `write-only-attributes`**, that check
+requiring a dataclass decorator. NamedTuple is structurally immune and gives
+`_asdict()` for free.
+
+**Returning the object is what clears the finding.** Returning
+`asdict(Thing(...))` would not: `dict-as-dataclass` only suppresses a dict
+literal that projects `self` or a dataclass-annotated parameter, so a
+re-serialized record still reads as a bare dict literal — the finding would
+stand while the code got worse.
+
+53f-4 needed `@dataclass` because `legacy_placeholders()` calls `asdict()`, so
+`write-only-attributes` was live. It did not fire: pysmelly's
+`_class_serializes_self` exempts a class that calls `asdict(self)` in its own
+body. **Verified by experiment rather than assumed** — replacing `asdict(self)`
+with an equivalent pysmelly cannot see mints **7** `write-only-attributes` on
+`InfraConfig`; restoring it clears all 7. `legacy_placeholders()` is
+load-bearing for the finding count as well as for the design.
+
+#### The 18-key dict: eight of the keys are a user-facing contract
+
+`_build_infra_config`'s 18 keys split 10/8. Ten are read by name, all through
+`.get()` with a default, so all eleven production reads became attribute reads.
+The other eight — `database_url`, `db_host`, `db_port`, `db_name`,
+`db_password_secret_arn`, `db_username_secret_arn`, `redis_url`,
+`s3_media_bucket` — are read by name **nowhere** in `src/` or `bin/`; they
+reach code only through two `.items()` loops.
+
+They are fields under exactly their existing names anyway, because an
+application's own deploy.toml writes `DATABASE_URL = "${database_url}"`.
+**The contract was verified programmatically, not by eye:** all 8 placeholder
+names are fields, all 8 are emitted by `legacy_placeholders()`, and every
+`${…}` in `CONFIG-REFERENCE.md`, `sample_deploy.toml` and `README.md` resolves
+to a field or a built-in.
+
+`legacy_placeholders()` is the design fix, not a shim: the placeholder table
+was previously computed ad hoc in the same eight lines **twice**, and both
+`.items()` loops are now deleted. A mapping-surface dataclass
+(`__getitem__`/`keys()`/`.items()`) was rejected on 53e-3c's grounds — **a
+class whose entire purpose is to be indistinguishable from a dict is
+suppression by shape.**
+
+#### Both 53f-1 blockers settled in the open, and one refuted the framing
+
+1. **`health_check_config` — settled by wiring the source, not deleting the
+   read.** `service.py` read a key `_build_infra_config` never produced, so
+   production always took the `{}` default and the grace period was always 60.
+   The key is not invented: `modules/app-in-shared-env/variables.tf` declares
+   `var.health_check` with a `grace_period` member defaulting to 60,
+   `outputs.tf` exports it, all four `config.toml.example` templates set it,
+   and CONFIG-REFERENCE documents the mapping. **Only the last hop was
+   missing.** Deleting the read would have meant deleting a tofu variable, an
+   output, four templates and two doc tables.
+1. **`if infra_config:` — deleted, not re-expressed.** It tested the
+   `{**ctx.infra_config, "account_id": …}` spread built four lines above, never
+   `ctx.infra_config`, so it was permanently true (coverage's `222→225` partial
+   branch confirmed the false arm never fired). **A dataclass instance is
+   always truthy, so keeping it would only have relocated the dead branch** —
+   which refutes the framing that the conversion had to preserve it.
+
+#### Tests went 1456 from 1461, net −5, every decision recorded
+
+Not absorbed: **−12/+7** because 53f-1's twelve scalar-filter pins existed in
+two copies **since they pinned code duplicated in two copies** — now one
+implementation, one class of 7, including a new pin that each field is offered
+under its own name. Nothing goes unpinned. **−1 inexpressible**: a pin on which
+of two competing `account_id` entries won is no longer constructible.
+**Half a pin shifted**: a top-level deployment key is now a build-time
+`TypeError` rather than silently ignored; case kept, shift commented. **+1**:
+`TestHealthCheckConfigIsNeverProduced` → `TestHealthCheckConfigSource`.
+
+The recurring shape across all three units: a missing-key failure moves from a
+**read-time `KeyError`** in the middle of half-printed output to a
+**construction-time `TypeError`**, which is where a NamedTuple puts it. That
+happened three times and each time the pin was kept and its shift commented,
+never relaxed.
+
+#### Coverage dropped arithmetically, for the third time in the run
+
+`task_definition.py` reads 84% against 86% with **the same 18 missed
+statements** — the conversion deleted 13 covered statements and 14 branches
+(both filter loops plus the dead guard), shrinking the denominator. Repo total
+68.58%, identical.
+
+#### Latent bugs pinned, not fixed
+
+Called out in 53f-1's comments and left alone: `cmd_restore_db`'s `idx < 0`
+guard is unreachable because `str.isdigit()` already rejects a leading minus; a
+non-`DBInstanceAlreadyExists` `ClientError` propagates out of `restore-db` as a
+traceback; `_get_legacy_secrets` silently drops a secret whose value matches
+neither prefix; and both placeholder readers stringify bools Python-style.
+
+#### Side effects and mints
+
+None. `param-clumps` stayed at 7 across all four units, **all pre-existing and
+byte-identical** — `legacy_placeholders()` takes no parameters and no
+hand-written helper gained one. 53g's `(credential_mode, ctx, service_name)`
+clump was untouched, which is what let 53g re-measure against an unmoved
+baseline.
+
+### 53g — parameter plumbing: zero code units, by design (2026-08-13, backfilled and re-verified 2026-08-18)
+
+**Backfilled.** 53g shipped in the 2026-08-13 unattended run without an entry
+here; its skip list lived only in claude-meta
+`docs/investigations/2026-08-13-unattended-run-ledger.md` § "Skipped findings".
+Transcribed from that list plus `3fcfe6c`, `83c8890`, `8f4d238`, `bb17c37` and
+claude-meta `docs/PLAN-ARCHIVE.md` § 53g — and **re-verified against HEAD**,
+which is where the transcription stopped being paperwork (below).
+
+**Shipped zero code units, and that is the correct outcome, not
+underperformance.** 0 of 14 `pass-through-params` and 0 of 5 open
+`param-clumps` were clearly better fixed. pysmelly **41 → 41**. 53f moved
+nothing here — it changed `infra_config`'s *type*, not any signature; the only
+effect was a one-line anchor drift.
+
+#### Four corrections 53g made to its own plan entry
+
+1. **PLAN's "nine recommended leave-standing" was INVERTED**, and 53g's own
+   brief repeated the inversion. **Five** were recorded with drafted fixes (the
+   ones 53b/53c/53d-1 minted, in this file). The **nine were the pre-existing
+   ones that had never been individually examined** — so the nine were exactly
+   what needed verdicts. 53g greped all nine rather than inheriting a
+   recommendation that did not exist.
+1. **`preflight.py`'s clump was listed but 53c had already cleared it** with
+   `EnvironmentTarget`. The plan entry said so two sentences later and still
+   listed it.
+1. **Two open clumps were unnamed by the entry** — `modules/__init__.py:85` and
+   `bin/cognito.py:214`. In scope by arithmetic, never looked at.
+1. **`aws/ssm.py:131` is a false positive, not a design question.** See below.
+
+#### The skip list, as recorded and as re-verified
+
+19 findings in 13 lines (the ledger's prose says "eighteen lines", counting the
+whole block including two non-53g entries; the finding count is what matters
+and it is **19**). Re-verified 2026-08-18 at `c283f5e`/`722d50b`, per the
+standing rule that an escalation from an earlier subphase is re-run before it
+is acted on. **Three verdicts had gone stale** — marked ⚠ below.
+
+| Finding (53g anchor)                                                   | 53g's rationale                                        | Re-verified at `722d50b`                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pass-through-params` `aws/cloudwatch.py:50` ×2 (`log_group`, `limit`) | encodes the ECS log-stream naming convention           | **Holds.** `get_task_logs` exists to build `f"{prefix}/{container}/{task_id}"` and has **two** callers (`deploy/service.py:718`, `bin/ecs-run.py:72`). Inlining duplicates the convention.                                                                                                                                                                                                                                                                                          |
+| `pass-through-params` `aws/cognito.py:46` (`user_pool_id`)             | extracts a nested response field                       | **Verdict holds; rationale corrected.** It does extract `data["UserPool"]["Name"]`, but that is not what makes the skip right. One caller (`bin/cognito.py:190`), two-line body — inlining puts a raw `run_aws_json("cognito-idp", …)` back into `bin/`, crossing the boundary 53c established. **The layering is the reason.**                                                                                                                                                     |
+| `pass-through-params` `aws/ssm.py:131` (`name`)                        | **false positive**, boto3 method-name collision        | **Holds, confirmed by reading.** The `get_parameter()` it "forwards to" is `client.get_parameter(Name=name)`; `_get_call_target_name` returns `.attr` for an `ast.Attribute`, which bare-name-collides with the module's own `def get_parameter`.                                                                                                                                                                                                                                   |
+| `pass-through-params` `core/ssm_secrets.py:31, :44` (now `:32`, `:45`) | encode the SSM path convention                         | **Holds.** `get_path_prefix` has 5 call sites and `get_parameter_path` 3; both wrap `parse_environment` in an f-string that *is* the convention.                                                                                                                                                                                                                                                                                                                                    |
+| `pass-through-params` `core/ssm_secrets.py:58` ×3 (now `:59`)          | file-loading adapter, one caller                       | ⚠ **One of the three was stale.** `'environment'` forwarded a parameter nothing read — see below. **Fixed, not re-argued.** The other two (`deploy_toml_path`, `env_config`) hold: one caller, and the adapter's job is parse-then-delegate.                                                                                                                                                                                                                                        |
+| `pass-through-params` `core/ssm_secrets.py:250` (now `:264`)           | composes an advice block                               | **Verdict holds; rationale corrected, and this one was drafted and measured** — see below.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `pass-through-params` `deploy/preflight.py:45` (now `:46`)             | converts a list into a typed error                     | **Holds.** One caller (`preflight.py:254`); the body turns `validate_environment_config`'s error list into a `PreflightError` carrying a six-line advice block.                                                                                                                                                                                                                                                                                                                     |
+| `pass-through-params` `utils/cli.py:208` ×2, `:225`                    | the try/except and the branch are the value            | **Holds.** Two production callers each (`bin/deploy.py` + `bin/resolve-config.py`; `bin/ssm-secrets.py` + `bin/cognito.py`). Also 53b leave-standings.                                                                                                                                                                                                                                                                                                                              |
+| `param-clumps` `aws/ecs.py:92`                                         | converting does not clear it; layering forbids the fix | **Holds.** Still 6 functions, 3 in `ecs.py` and 3 in `service.py`. Converting the three `service.py` signatures leaves `ecs.py`'s three firing at `min_occurrences=3`, and `aws/` cannot import `deploy/context` without a layering inversion.                                                                                                                                                                                                                                      |
+| `param-clumps` `modules/__init__.py:85`                                | ABC plugin-protocol overrides                          | ⚠ **Already cleared — the entry describes a finding that no longer fires.** 53h-1's `@override` retired it. `:85` is now `collect_all`, a classmethod.                                                                                                                                                                                                                                                                                                                              |
+| `param-clumps` `bin/cognito.py:214`                                    | Click parameters, 53d-2a precedent                     | **Holds, with a refinement.** `cmd_create`/`cmd_reset_password` are Click-invoked via wrappers at `:399`/`:438`. Unlike `ecs.py:92`, bundling **would** clear it — the third member (`core/cognito.py:format_welcome_message:97`) alone drops below `min_occurrences=3`. It is still rejected: Click parameters unpacked immediately at the wrapper is the flag-shuffling shape 53c's register rejected and 53d-2a re-rejected. **Rejected on design, not on "it does not clear".** |
+| `param-clumps` `core/ssm_secrets.py:77` (now `:84`)                    | fix needs a layering decision                          | ⚠ **Invalidated by 53h-2a.** There is no layering decision: `environment` was a dead parameter. **Fixed** — see below.                                                                                                                                                                                                                                                                                                                                                              |
+| `param-clumps` `deploy/service.py:197`                                 | `ctx` already is the extracted dataclass               | **Holds.** Two of the three signatures live in `task_definition.py`; `ctx` is already `DeploymentContext`, so the "extract a dataclass" advice is asking for a second one.                                                                                                                                                                                                                                                                                                          |
+
+#### One finding worth sending upstream
+
+`modules/__init__.py:85` was the `ResourceModule` ABC plugin protocol — the four
+`collect()` are overrides, and `cache.py:47` already carried
+`# noqa: ARG002 — required by Module interface`. pysmelly deliberately excludes
+protocol dunders and Click callbacks from `param-clumps`; **it just does not
+detect ABC overrides.** Filed as a pysmelly feature request. 53h-1's `@override`
+sweep retired the finding by a different route, which is why it no longer fires.
+
+#### One measurement worth keeping
+
+The `(cluster_name, ecs_client, service_name)` clump *looks* like the textbook
+context-object fix, and the context object **already exists**. The clump
+pre-check showed converting the three `service.py` signatures leaves `ecs.py`'s
+three still firing. Net: churn ~36 freshly-written characterization call sites,
+each forced to build an 11-field `DeploymentContext` to test one
+`describe_services` call, for **zero finding reduction**. **Measured before
+drafting, not after.**
+
+#### The re-verification was not paperwork: three stale verdicts, one code fix
+
+53h-2a deleted the explicit `[secrets]` form, the one that gave each name its
+own `ssm:`-prefixed path inline. That left
+`get_secrets_from_config`'s `environment` parameter unread — it carried a
+`del environment` line saying so — and the deadness propagated up through
+`check_secrets_exist`, `check_secrets_drift` and `get_secrets_from_deploy_toml`,
+each of which only passed it on. **A 53g finding whose skip verdict a later
+subphase invalidated**, which is exactly what the re-run rule exists to catch.
+
+Fixed at `722d50b`: the parameter deleted from all four signatures and its three
+call sites. **Measured, not assumed** — 37 → **35**, retiring
+`param-clumps ssm_secrets.py:84` (the shared set drops to `(config, env_config)`,
+below the 3-parameter threshold) and one of the three `pass-through-params` at
+`:59`. Nothing minted; line-by-line diff against the `c283f5e` baseline.
+
+**One trap, found by reading rather than mid-edit.** `bin/ssm-secrets.py:154`
+was `_project, env = parse_environment(environment)`, whose only purpose was
+producing `env` for the call at `:161`. That `parse_environment` is the **CLI
+wrapper at `:56`**, which `sys.exit(1)`s on a malformed name — pinned by
+`TestParseEnvironment::test_invalid_name_exits_1`. The call is **kept as an
+explicit up-front validation** even though nothing consumes its result now;
+dropping it would have let `get_path_prefix` raise `ValueError` out of core
+instead of exiting cleanly. Verified by hand:
+`check nodashes --deploy-toml <path>` still exits 1 with "Invalid environment
+name", not a traceback.
+
+#### `format_missing_secrets_error` — drafted, measured, and still recommended standing
+
+The one rationale that did not survive re-reading on its own terms. 53d-1 and
+53g both recorded it as "composes an advice block", which is a description, not
+a reason. One caller (`preflight.py:165`); `ssm_put_commands` is separately
+shared with `bin/ssm-secrets.py:208`, so the composition might not be earning
+its keep.
+
+**Drafted and measured** (diff kept at
+`scratchpad/draft-fmse.diff`): inlining the body into `check_ssm_secrets` and
+deleting the function gives **37 → 36**, clearing exactly this finding and
+minting nothing. The cost, also measured:
+
+- `check_ssm_secrets` gains an 11-line message literal inside a `raise`.
+- It **breaks a symmetric pair.** `format_missing_ecr_error` (`images.py:550`)
+  has the same one caller, at the adjacent call position `preflight.py:143`,
+  and the same role. It is unflagged only because it interpolates `environment`
+  into an f-string instead of forwarding it to a helper. Inlining one and not
+  the other splits a deliberate pair on a tool artifact.
+- It destroys `test_format_missing_secrets_error_uses_the_same_commands`
+  (`test_ssm_secrets_cli.py:35`), which pins that preflight's advice and
+  `bin/ssm-secrets.py:208`'s advice emit **the same** commands. That
+  cross-surface pin is *why* `ssm_put_commands` was split out. Confirmed: the
+  draft fails collection with `ImportError`.
+
+**Recommended leave-standing with a corrected rationale**, escalated with the
+measured diff rather than a rewritten sentence: *`env_name` is forwarded to
+`ssm_put_commands` because a test pins that this message and the CLI's own
+advice share those commands; the composition is the assertion.*
+
+#### Side effects and mints
+
+None — zero code units. The one code change recorded above belongs to the
+2026-08-18 closeout, not to 53g, and is dated as such.
+
 ### Standing inline suppressions
 
 Suppressions adjudicated by an entry above:
@@ -1552,78 +1841,128 @@ right place to write their rationales or delete them, alongside the unsuppressed
 `handler` is a fourth Lambda `vestigial-params` suppression the table above
 should have listed and does not.
 
-### Remainder (not yet adjudicated)
+### Remainder — the reconciled adjudication split (rebuilt 2026-08-18)
 
-**Live per-category counts, re-measured 2026-08-13 at `64e3e18` (47 total).**
-This table is the authoritative one; scope each subphase from it, not from the
-prose below. Measured with `pysmelly . --more-please` — **the plain
-`make pysmelly` view truncates to the top ten categories and under-reports
-`inconsistent-error-handling` as 3.**
+**Live total: 35, measured at `722d50b`** with `uvx pysmelly . --more-please` —
+**the plain `make pysmelly` view truncates to the top ten categories and
+under-reports `inconsistent-error-handling` as 3.** This table is the
+authoritative one; scope each subphase from it.
 
-`pass-through-params` 14, `param-clumps` 7, `dict-as-dataclass` 6,
-`inconsistent-error-handling` 4, `foo-equals-foo` 3, `single-call-site` 3,
-`arrow-code` 2, `law-of-demeter` 2, `feature-envy` 2,
-`return-none-instead-of-raise` 1, `duplicate-blocks` 1,
-`write-only-attributes` 1, `temp-accumulators` 1. (Sums to 47.)
+This replaces a table pinned to `64e3e18` at 47 findings — three subphases out
+of date — whose per-category adjudication split was withdrawn on 2026-08-13 as
+arithmetically broken (11 + 45 claimed as 56; the list summed to 47) and
+explicitly left for an operator-in-the-loop session. **This is that session.**
+Every finding below is attributed to either an adjudicated leave-standing
+(naming the subphase) or an open owner. No finding is unattributed.
 
-53e-5 moved exactly two numbers: **`long-function` 4 → 0** (the category is now
-absent from the report entirely) and `arrow-code` 3 → 2. Every other category is
-unchanged from the `9c95d79` measurement — verified by a line-level diff of the
-full finding list, not by comparing totals.
+| Category                     | Live | Settled | Open | Open owner           |
+| ---------------------------- | ---- | ------- | ---- | -------------------- |
+| pass-through-params          | 13   | 13      | 0    | —                    |
+| param-clumps                 | 5    | 5       | 0    | —                    |
+| inconsistent-error-handling  | 4    | 0       | 4    | 53i                  |
+| foo-equals-foo               | 3    | 0       | 3    | 53i                  |
+| single-call-site             | 3    | 0       | 3    | 53i                  |
+| arrow-code                   | 2    | 0       | 2    | **none — see below** |
+| law-of-demeter               | 2    | 1       | 1    | 53i                  |
+| duplicate-blocks             | 1    | 1       | 0    | —                    |
+| return-none-instead-of-raise | 1    | 0       | 1    | 53i                  |
+| temp-accumulators            | 1    | 0       | 1    | **none — see below** |
+| **Total**                    | 35   | **20**  | 15   | 53i 12, unowned 3    |
 
-12 of the 47 are adjudicated leave-standings (53a 2, 53b 3, 53c 2, 53d-1 1,
-53d-2a 1, 53d-2b 2, 53e-3 1 — itemized total is self-consistent; 53e-4 and
-53e-5 each added none). The remainder is queued behind claude-meta
-`docs/PLAN.md` Phase 53f–53i, plus the one `dict-as-dataclass` 53e-3c minted
-and routed to 53f.
+#### Settled — 20 adjudicated leave-standings
 
-**Correction 2026-08-13 (unattended run W0): the earlier per-category split of
-the remainder was arithmetically broken and is withdrawn rather than
-repaired.** It claimed 11 adjudicated + **45** queued = 56, but the queued
-category list it gave summed to **47** (→ 58). The **56 total is correct**;
-the prose figure 45 reconciles and the list did not. Two of its entries were
-also stale against live counts: `pass-through-params` listed 9 / live **14**,
-`param-clumps` listed 5 / live **7**.
+| Finding                                                   | Adjudicated by      |
+| --------------------------------------------------------- | ------------------- |
+| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                 |
+| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                 |
+| `pass-through-params` `utils/cli.py:208` ×2, `:225`       | 53b (minted), 53g   |
+| `pass-through-params` `aws/cognito.py:46`                 | 53c (minted), 53g   |
+| `pass-through-params` `core/ssm_secrets.py:264`           | 53d-1 (minted), 53g |
+| `param-clumps` `bin/emergency.py:386`                     | 53d-2a, 53g         |
+| `law-of-demeter` `deploy/deployer.py:219`                 | 53e-3               |
+| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                 |
+| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                 |
+| `pass-through-params` `core/ssm_secrets.py:32`, `:45`     | 53g                 |
+| `pass-through-params` `core/ssm_secrets.py:59` ×2         | 53g                 |
+| `pass-through-params` `deploy/preflight.py:46`            | 53g                 |
+| `param-clumps` `aws/ecs.py:92`                            | 53g                 |
+| `param-clumps` `bin/cognito.py:214`                       | 53g                 |
+| `param-clumps` `deploy/service.py:197`                    | 53e-5 routed, 53g   |
 
-The split is withdrawn, not corrected, because this record never captured a
-reliable per-category attribution for the 11 and the two documents that would
-supply it disagree: claude-meta `docs/PLAN.md` 53g reads all **14**
-`pass-through-params` as open and `param-clumps` as 7 total less 2 adjudicated
-(53a's Lambda one, 53d-2a's `emergency.py` one) = **5 open** — which would put
-only 2 adjudicated in these two categories, not the 9 the arithmetic above
-would need. Reconciling that is an adjudication question, so it is left for an
-operator-in-the-loop session. **Each subphase re-measures at HEAD anyway**,
-which is what the live table above is for.
+#### The 12 claimed by §53a–§53e reconcile to 9 — later subphases cleared three silently
 
-They are concentrated in `src/deployer/`, not in `modules/` or `bin/`.
+The withdrawn split's "12 adjudicated leave-standings (53a 2, 53b 3, 53c 2,
+53d-1 1, 53d-2a 1, 53d-2b 2, 53e-3 1)" was never mapped onto findings that
+still fire. Mapped now:
 
-**`long-function` is empty as a category** — no file in the repo carries one,
-and the check does not appear in the report. 53e cleared all nine.
+| Claim    | Status at `722d50b`                                                                                                                                 |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 53a 2    | Both live.                                                                                                                                          |
+| 53b 3    | All three live (`utils/cli.py`).                                                                                                                    |
+| 53c 2    | Both live — but one is `run_aws_json`, which 53c **routed to 53i** rather than settling. Counted **open** here, so 53c contributes **1**.           |
+| 53d-1 1  | Live (`format_missing_secrets_error`).                                                                                                              |
+| 53d-2a 1 | Live (`bin/emergency.py:386`).                                                                                                                      |
+| 53d-2b 2 | **Both gone.** They were the two print-runs whose remaining leg was `setup_profiles.py`, and **53e-1 cleared both** when it adopted `advice_block`. |
+| 53e-3 1  | Live (`deployer.py:219`).                                                                                                                           |
+
+**9 of the 12 still fire.** A thirteenth, unlisted by the split — 53b's
+`foo-equals-foo` on `deploy.py:167` `run_deploy_pipeline` — also cleared, by
+53c's `DeployOptions`; claude-meta `docs/PLAN.md` already records that one.
+The remaining 11 settled findings come from 53g's skip list, re-verified above.
+
+**This is the drift the withdrawn split could not express**, and the reason a
+count-only tally is not maintainable: a leave-standing is not permanent, and a
+later subphase clears one without ever knowing it was adjudicated.
+
+#### Open — 12 owned by 53i
+
+`single-call-site` ×3 (`emergency/checkpoint.py:105`, `init/deploy_toml.py:76`,
+`modules/secrets.py:86`); `return-none-instead-of-raise` ×1
+(`aws/cli.py:48 run_aws_json`, left unsuppressed by 53c precisely so the
+repo-wide raise-vs-return policy lands in front of the operator);
+`inconsistent-error-handling` ×4 (`core/config.py:205`, `init/template.py:127`,
+`utils/aws_profile.py:85`, `utils/environment.py:17`); `foo-equals-foo` ×3
+(`bin/init.py:220`, `:557`, `config/deploy_config.py:379`);
+`law-of-demeter` ×1 (`init/template.py:26`).
+
+**Two corrections to 53i's scope while attributing these.** Its entry names
+`config/deploy_config.py` among the *`inconsistent-error-handling` contracts* —
+that file carries no such finding at HEAD; its live finding is the third
+`foo-equals-foo`, which the entry counts ("×3") but never names. And the entry
+names only `bin/init.py`'s two `foo-equals-foo` explicitly.
+
+#### Open — 3 owned by no subphase
+
+Surfaced by this reconciliation. They appear in no skip list and in no
+subphase's scope:
+
+| Finding                                          | Note                                                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `arrow-code` `cli/ci_deploy.py:181` (depth 5)    | Never in any subphase's scope.                                                                                             |
+| `arrow-code` `init/deploy_toml.py:199` (depth 6) | `_build_environment_config`, the function 53h-2a edited without ever owning this finding.                                  |
+| `temp-accumulators` `deploy/images.py:301`       | 53e-5's closeout listed it as "open after the arc, routed" — and named no destination, unlike its two siblings (53f, 53g). |
+
+**They need a home: 53i, or an explicit leave-standing.** Recorded here rather
+than folded into a total.
+
+#### Category notes
+
+**Empty categories**: `long-function` (9 → 0 across 53d–53e),
+`dict-as-dataclass` (6 → 0 in 53f), `write-only-attributes` (1 → 0 in 53h-1),
+`duplicate-except-blocks` (cleared by 53a and 53b) and
+`boolean-param-explosion` (cleared by 53c's `DeployOptions`).
 
 **The convergence-hotspot list is empty.** No file is flagged by three or more
-checks; the repo-wide maximum is **2**, held by `init/deploy_toml.py`
-(`single-call-site` + `arrow-code`), `core/ssm_secrets.py` (`pass-through-params`
+checks. The repo-wide maximum is **2**, now held by `core/ssm_secrets.py`
+(`pass-through-params` + `param-clumps`) losing its clump at `722d50b`,
+`init/deploy_toml.py` (`single-call-site` + `arrow-code`), `init/template.py`
+(`inconsistent-error-handling` + `law-of-demeter`) and
+`modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
+`param-clumps`). `deploy/deployer.py` dropped to one when 53f cleared its
+`dict-as-dataclass`.
 
-- `param-clumps`), `init/template.py` (`inconsistent-error-handling` +
-  `law-of-demeter`), `deploy/deployer.py` (`dict-as-dataclass` + `law-of-demeter`)
-  and `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
-  `param-clumps`). `deploy/service.py` was the last entry and dropped off at
-  `2b057ae`.
-
-Per-file remainder in the files this arc touched: **`deploy/service.py` is down
-to one finding**, the `param-clumps` at `:197` routed to **53g** — and nothing
-inside `service.py` can clear it, because two of its three signatures live in
-`task_definition.py`. `deploy/images.py` is down to one finding, the
-`temp-accumulators` 53e-4b relocated into `_cache_tag`. `deploy/deployer.py` is
-down to two findings, both adjudicated by 53e-3 (the standing `law-of-demeter`
-and the `dict-as-dataclass` routed to 53f). `core/audit.py`,
-`deploy/extensions.py` and `init/setup_profiles.py` carry none. `bin/emergency.py`
-has one finding left (the adjudicated `param-clump`) and `bin/init.py` two (both
-`foo-equals-foo`, routed to 53i).
-
-`duplicate-except-blocks` is empty as a category, and `duplicate-blocks` is down
-to a single finding — the `db-on-shared-rds` ↔ `db-users` Lambda pair 53a
-adjudicated as a leave-standing. The category has no open items.
+**`duplicate-blocks` has no open items** — the single remaining finding is
+53a's adjudicated Lambda pair. `duplicate-except-blocks` is empty.
 
 ### 53h-1 — what `ModuleContext` carries (2026-08-17)
 
