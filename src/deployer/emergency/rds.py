@@ -45,7 +45,8 @@ class RestoreResult(NamedTuple):
     ``"creating"`` for an initiated restore and ``"error"`` for one that was
     rejected before it started; the two optional fields record which kind of
     restore was asked for. A ``None`` return -- distinct from an error result
-    -- still means the source instance could not be read at all.
+    -- means the source instance does not exist; one that could not be *read*
+    now raises (Phase 53i-3b).
     """
 
     instance_id: str
@@ -86,7 +87,13 @@ def create_emergency_snapshot(
         timeout: Maximum seconds to wait
 
     Returns:
-        Snapshot identifier if successful, None on error
+        The snapshot identifier if the snapshot was created, or None if AWS
+        rejected the request. This is a *failure* sentinel, not an absence
+        one, and the caller branches on it (PYTHON.md #19, contract 3).
+
+    Raises:
+        BotoCoreError: Connectivity and configuration failures are not caught;
+            only ClientError is.
     """
     client = _get_rds_client()
     snapshot_id = generate_emergency_snapshot_id(instance_id)
@@ -136,6 +143,12 @@ def get_rds_snapshots(
             },
             ...
         ]
+        Empty only when the instance genuinely has no snapshots.
+
+    Raises:
+        RuntimeError: If the snapshots could not be listed. An empty list
+            meaning both "no backups exist" and "I could not check" is the
+            worst possible answer during an incident.
     """
     client = _get_rds_client()
     result = []
@@ -186,8 +199,8 @@ def get_rds_snapshots(
 
         return result[:max_results]
 
-    except ClientError:
-        return []
+    except ClientError as e:
+        raise RuntimeError(f"Could not list snapshots for instance '{instance_id}': {e}") from e
 
 
 def get_rds_instance_details(instance_id: str) -> RdsInstanceDetails | None:
@@ -197,7 +210,15 @@ def get_rds_instance_details(instance_id: str) -> RdsInstanceDetails | None:
         instance_id: RDS instance identifier
 
     Returns:
-        RdsInstanceDetails, or None if not found
+        RdsInstanceDetails, or None if the instance genuinely does not exist.
+        AWS reports that two ways -- an empty DBInstances list, and a
+        DBInstanceNotFoundFault -- and both mean absence.
+
+    Raises:
+        RuntimeError: If the instance exists but could not be read: a
+            permissions gap, a throttle, a network failure. Callers act on the
+            None (restore has no source) and must not act on it for a failure
+            they were never told about.
     """
     client = _get_rds_client()
     try:
@@ -223,8 +244,13 @@ def get_rds_instance_details(instance_id: str) -> RdsInstanceDetails | None:
             db_subnet_group=inst.get("DBSubnetGroup", {}).get("DBSubnetGroupName"),
             latest_restorable_time=inst.get("LatestRestorableTime"),
         )
-    except ClientError:
-        return None
+    except ClientError as e:
+        # The error *code* is "DBInstanceNotFound"; "DBInstanceNotFoundFault"
+        # is the botocore exception class. Matched by code to stay consistent
+        # with _handle_restore_error() below, which keys on the same field.
+        if e.response.get("Error", {}).get("Code", "") == "DBInstanceNotFound":
+            return None
+        raise RuntimeError(f"Could not read RDS instance '{instance_id}': {e}") from e
 
 
 def _prepare_restore(
@@ -233,7 +259,11 @@ def _prepare_restore(
     """Common setup for restore operations: get source details and build target ID.
 
     Returns:
-        Tuple of (target_id, source_details), or None if source instance not found.
+        Tuple of (target_id, source_details), or None if the source instance
+        genuinely does not exist.
+
+    Raises:
+        RuntimeError: If the source instance could not be read.
     """
     target_id = f"{source_instance_id}{target_suffix}"
     source_details = get_rds_instance_details(source_instance_id)
@@ -281,7 +311,11 @@ def restore_from_snapshot(
     Returns:
         RestoreResult with status "creating" if the restore was initiated or
         "error" if the target already exists, or None if the source instance
-        could not be read.
+        does not exist.
+
+    Raises:
+        RuntimeError: If the source instance could not be read.
+        ClientError: Any restore failure other than DBInstanceAlreadyExists.
     """
     result = _prepare_restore(source_instance_id, target_suffix)
     if not result:
@@ -330,7 +364,11 @@ def restore_from_point_in_time(
     Returns:
         RestoreResult with status "creating" if the restore was initiated or
         "error" if the requested time is unreachable or the target already
-        exists, or None if the source instance could not be read.
+        exists, or None if the source instance does not exist.
+
+    Raises:
+        RuntimeError: If the source instance could not be read.
+        ClientError: Any restore failure other than DBInstanceAlreadyExists.
     """
     result = _prepare_restore(source_instance_id, target_suffix)
     if not result:

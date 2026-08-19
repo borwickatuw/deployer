@@ -266,22 +266,41 @@ class TestCmdRollbackExplicit:
         assert "- OLD=2" in out
         assert "~ MODE: a -> b" in out
 
-    def test_an_unreadable_task_definition_renders_as_no_environment_changes(
+    def test_an_unreadable_task_definition_aborts_before_the_confirmation(
         self, monkeypatch, ecs, capsys
     ):
-        # Pinned, not endorsed: this is the render Finding 2 is about — the
-        # diff shown to the operator immediately before a production rollback.
-        # A denied describe-task-definition prints nothing at all, which reads
-        # as "this rollback changes no environment variables" (Phase 53i).
+        """The rollback preview, fixed by the producer raising.
+
+        A denied describe-task-definition used to print nothing at all, which
+        reads as "this rollback changes no environment variables". It now
+        propagates to the CLI boundary, which is correct for a destructive
+        command: the operator is not asked to confirm a change nobody could
+        describe.
+        """
         _context(monkeypatch, _services(web=2))
         _revision_list(monkeypatch, _revisions(7, 6))
         monkeypatch.setattr(emergency, "compare_task_definitions", compare_task_definitions)
         monkeypatch.setattr(ecs_module, "_get_ecs_client", _denied_ecs_client)
 
-        assert emergency.cmd_rollback(ENV, "web", 6, True) == 0
-        out = capsys.readouterr().out
-        assert "Environment variable changes:" not in out
-        assert "About to roll back web:" in out
+        with pytest.raises(RuntimeError, match="Could not read task definition"):
+            emergency.cmd_rollback(ENV, "web", 6, True)
+        assert "About to roll back web:" not in capsys.readouterr().out
+        assert ecs.updates == []
+
+    def test_the_cli_boundary_turns_that_into_a_clean_exit_1(self, monkeypatch, ecs, capsys):
+        """_run_or_exit() is where a raised RuntimeError stops."""
+        _context(monkeypatch, _services(web=2))
+        _revision_list(monkeypatch, _revisions(7, 6))
+        monkeypatch.setattr(emergency, "compare_task_definitions", compare_task_definitions)
+        monkeypatch.setattr(ecs_module, "_get_ecs_client", _denied_ecs_client)
+
+        with pytest.raises(SystemExit) as exit_info:
+            emergency._run_or_exit(lambda: emergency.cmd_rollback(ENV, "web", 6, True))
+
+        assert exit_info.value.code == 1
+        assert (
+            "Emergency command aborted: Could not read task definition" in capsys.readouterr().err
+        )
 
     def test_progress_callback_reports_task_counts(self, monkeypatch, ecs, capsys):
         self._setup(monkeypatch)

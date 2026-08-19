@@ -406,11 +406,18 @@ def _print_recent_task_definitions(environment: str, services: dict) -> None:
     """Print the most recent task definition revisions for each service.
 
     A service with no revisions is skipped rather than shown empty: it means
-    the family was never registered under this environment's name.
+    the family was never registered under this environment's name. A service
+    whose revisions could not be *read* is reported in place instead, so the
+    two stay distinguishable and one unreadable family does not stop the rest
+    of the report.
     """
     print(f"{Colors.BLUE}Recent Task Definitions:{Colors.NC}")
     for name in sorted(services):
-        revisions = list_task_definition_revisions(f"{environment}-{name}", max_results=5)
+        try:
+            revisions = list_task_definition_revisions(f"{environment}-{name}", max_results=5)
+        except RuntimeError as e:
+            print(f"  {name}: unable to list revisions ({e})")
+            continue
         if not revisions:
             continue
         print(f"  {name}:")
@@ -420,7 +427,10 @@ def _print_recent_task_definitions(environment: str, services: dict) -> None:
 
 
 def _print_rds_status(rds_id: str) -> None:
-    """Print the RDS instance's status, instance class and engine."""
+    """Print the RDS instance's status, instance class and engine.
+
+    The in-place failure report every other section in this file now follows.
+    """
     print(f"{Colors.BLUE}RDS Instance: {rds_id}{Colors.NC}")
     rds_status = rds.get_status(rds_id)
     if not rds_status:
@@ -433,8 +443,19 @@ def _print_rds_status(rds_id: str) -> None:
 
 
 def _print_recent_snapshots(rds_id: str) -> None:
-    """Print the most recent RDS snapshots, or nothing at all if there are none."""
-    snapshots = get_rds_snapshots(rds_id, max_results=5)
+    """Print the most recent RDS snapshots, or nothing at all if there are none.
+
+    An unreadable snapshot list prints the heading and says so, following
+    _print_rds_status() above: silently dropping the whole section would tell
+    the operator there are no backups.
+    """
+    try:
+        snapshots = get_rds_snapshots(rds_id, max_results=5)
+    except RuntimeError as e:
+        print(f"{Colors.BLUE}Recent Snapshots:{Colors.NC}")
+        print(f"  Unable to retrieve snapshots ({e})")
+        return
+
     if not snapshots:
         return
 
@@ -455,6 +476,27 @@ def _print_scaling_config(scaling_config: dict) -> None:
         print(f"  {name}: min={min_r}, max={max_r}, cpu_target={target}%")
 
 
+def _print_ecs_sections(environment: str, cluster_name: str) -> None:
+    """Print the service table and the revision list for a cluster.
+
+    An unreadable cluster reports itself and skips both sections rather than
+    aborting the command: the RDS and auto-scaling sections below are still
+    worth printing, and an ECS permissions gap is not a reason to withhold
+    them. Reporting in place is the rule this whole report follows.
+    """
+    try:
+        services = get_all_services_state(cluster_name)
+    except RuntimeError as e:
+        log_warning(f"Unable to read ECS services: {e}")
+        print()
+        return
+
+    _print_service_table(services)
+    print()
+    _print_recent_task_definitions(environment, services)
+    print()
+
+
 def cmd_status(environment: str) -> int:
     """Show current state of environment."""
     infra = load_environment_infrastructure(environment)
@@ -467,11 +509,7 @@ def cmd_status(environment: str) -> int:
     print()
 
     if cluster_name:
-        services = get_all_services_state(cluster_name)
-        _print_service_table(services)
-        print()
-        _print_recent_task_definitions(environment, services)
-        print()
+        _print_ecs_sections(environment, cluster_name)
     else:
         log_warning("Unable to determine ECS cluster name")
         print()
@@ -877,7 +915,13 @@ def cmd_incident_start(environment: str, description: str) -> int:
                     f"- {name}: {state.running_count}/{state.desired_count} running"
                     for name, state in sorted(services.items())
                 )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — see below
+        # Deliberately broad, and deliberately unchanged by Phase 53i-3b. This
+        # is honest degradation, not misattribution: the incident file is
+        # still written, and it records *why* the state is missing rather than
+        # claiming the cluster was empty. Starting an incident must never fail
+        # because the environment it is about is unreachable — that is the
+        # case it exists for.
         initial_state = f"(Could not capture state: {e})"
 
     content = f"""# Incident: {description}

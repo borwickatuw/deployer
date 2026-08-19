@@ -550,12 +550,41 @@ ______________________________________________________________________
 
 ## 2026-08-18: Error Contracts — Raise, Absence Sentinel, or Failure Sentinel (Phase 53i-2c)
 
-**Status: two items pending operator sign-off** — the rest follows from
-PYTHON.md #19 and needs no separate call. The two that change behaviour an
-operator depends on, and so are escalated rather than assumed: **(a)** the
-`emergency/` queries raising instead of returning a sentinel, and **(b)** exit
-code `2` for "operator declined". Both are marked below. 53i-3 should not apply
-either until they are confirmed.
+**Status: decided in full (operator, 2026-08-19); applied by Phase 53i-3.**
+Both escalated items were confirmed, one of them with a correction:
+
+- **(a)** the `emergency/` queries **raise**, and consumers **catch at the
+  render boundary** rather than letting one failed section abort a whole
+  read-only command. `bin/ops.py` reports each failure in place; the
+  destructive `bin/emergency.py` aborts, which is the right answer there.
+- **(b)** "operator declined" exits **`3`, not `2`** — see the correction
+  below. This entry proposed `2`, which would have collided with Click.
+- **A fourth layer** was added: the `except Exception` misattribution family
+  this entry did not decide.
+
+#### Correction (2026-08-19): the proposed exit code collided with Click
+
+`bin/emergency.py` is a Click CLI, and **Click already returns `2` for usage
+errors** (`click.UsageError.exit_code == 2`, verified at HEAD). Under the
+original proposal `emergency rollback --bogus-flag` and `emergency rollback`
+answered "n" would have been indistinguishable to any wrapper script — the
+exact defect PYTHON.md #19 exists to prevent, reintroduced by the fix for it.
+The corrected ladder, which deployer's exit codes now follow:
+
+| Code | Meaning                                      |
+| ---- | -------------------------------------------- |
+| `0`  | succeeded (warnings may have printed)        |
+| `1`  | failed                                       |
+| `2`  | usage error — **Click owns this, untouched** |
+| `3`  | declined by the operator; nothing attempted  |
+
+deployer used no exit code above `1` before this, so `3` was free.
+
+**Fleet note, out of scope here:** storage-scripts uses `2` for FATAL across 11
+sites, and its `docs/DECISIONS.md` records an EventBridge rule and a Step
+Functions `Choice` keying on `ExitCode == 1` vs anything else — so that repo's
+`2` already collides with argparse's usage-error `2`. Filed as a
+claude-meta GUIDE-BACKLOG item.
 
 **Decision:** Every function in this repo has exactly one of three error
 contracts, stated in its docstring, and **one sentinel never means both
@@ -614,6 +643,24 @@ is reported to the operator, **during an incident**, as "nothing is there."
 | `rds.create_emergency_snapshot:76`       | `None` (line 112)                 | no snapshot was made      |
 | `ecs.wait_for_deployment:288`            | `pass` (line 334)                 | **keeps polling**         |
 
+**A twelfth instance was found when 53i-3 read the corpus.**
+`compare_task_definitions` (`emergency/ecs.py:208`) has the same shape without
+an `except` of its own:
+
+```python
+details1 = get_task_definition_details(arn1)
+details2 = get_task_definition_details(arn2)
+if not details1 or not details2:
+    return {}          # "no differences" — or "I could not read one of them"
+```
+
+`bin/emergency.py:322` renders that `{}` as the environment-variable diff shown
+to the operator **before confirming a rollback**, so a failed read displays "no
+changes". It inherits the defect rather than adding one, so it was fixed for
+free once `get_task_definition_details` raised — and once it raised, that
+function had no `None` left to give, so its return type stopped being optional
+and the dead guard went with it.
+
 **The six queries and `wait_for_deployment` are the dangerous half.** The four
 mutators returning `False` are at least honest — `False` already means
 "failed", and the caller acts on it. A query returning `[]` is not: "you may not
@@ -625,13 +672,35 @@ sits inside the poll loop, so a call that fails every time polls a service it
 cannot see for the **entire** timeout and then returns `False` — indistinguishable
 from a deployment that genuinely did not stabilise.
 
-**Decision (a) — pending operator sign-off:** the six queries and
+**Decision (a) — confirmed 2026-08-19:** the six queries and
 `wait_for_deployment` adopt contract 1 — **raise**. `ClientError` is a failure, not an absence; genuine absence
 (`describe-services` succeeding with an empty list) keeps the existing `None`/`[]`
 and its docstring says so. The four mutators keep `False` with `Raises:`
 documented, since their callers already branch on it. `bin/emergency.py` and
 `bin/ops.py` are the **only** two consumers, both CLI entry points, so the blast
 radius is bounded.
+
+**Where each consumer catches (operator decision, 2026-08-19).** The two
+answers differ because the commands differ, not by accident:
+
+| Consumer           | Answer                                                            | Why                                                                                                                                         |
+| ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bin/ops.py`       | catch at each **render boundary** and report the failure in place | Read-only. A CloudWatch permissions gap must not stop the ECS section printing, and a missing section reads as "there is nothing there".    |
+| `bin/emergency.py` | let it propagate to one boundary `exit_on(RuntimeError)`          | Destructive. Aborting with a named reason is correct where rendering partial output is not: nobody should confirm a change nobody can read. |
+
+The render-boundary pattern was **not new** — `bin/ops.py:422 _print_rds_status` already printed `"  Unable to retrieve status"` in place,
+and `test_ops.py` already pinned it. Its neighbour two functions down showed
+the gap: `_print_recent_snapshots` did `if not snapshots: return`, so a
+`ClientError` silently deleted the whole "Recent Snapshots" section from the
+status report — the answer that matters least when it is wrong. 53i-3b applied
+the existing pattern consistently rather than inventing one.
+
+**One `except Exception` is deliberately left alone.**
+`bin/ops.py:880 cmd_incident_start` writes `"(Could not capture state: {e})"`
+into the incident file. That is honest degradation, not misattribution: the
+file is still written and records *why* the state is missing. Starting an
+incident must never fail because the environment it is about is unreachable —
+that is the case it exists for.
 
 Also at this layer: **`aws/cli.run_aws_json:48`** — the arc's one live
 `return-none-instead-of-raise`, left unsuppressed by 53c on purpose. Its `None`
@@ -663,14 +732,14 @@ Eleven assertions in `tests/unit/test_emergency_cli.py` and
 `test_emergency_cli_restore.py` pin today's behaviour as "pinned, not endorsed."
 What they pin:
 
-| Behaviour                                                       | Today | Decision                                            |
-| --------------------------------------------------------------- | ----- | --------------------------------------------------- |
-| Operator declines the confirmation (`cmd_rollback`)             | `1`   | **`2`** — declined is not a failure *(pending (b))* |
-| The update fails (`cmd_rollback`)                               | `1`   | `1` — unchanged                                     |
-| A service fails to scale (`cmd_scale`, line 538)                | `0`   | **`1`** — a reported failure must not exit 0        |
-| A service fails to force-deploy (`cmd_force_deploy`, line 800)  | `0`   | **`1`** — same swallow                              |
-| A service fails to restore (`cmd_revert`, lines 742/747)        | `0`   | **`1`** — **not pinned by any test; found here**    |
-| The deployment times out (`cmd_rollback` → `_await_deployment`) | `0`   | `0` with a **warning** exit — see below             |
+| Behaviour                                                       | Today | Decision                                             |
+| --------------------------------------------------------------- | ----- | ---------------------------------------------------- |
+| Operator declines the confirmation (`cmd_rollback`)             | `1`   | **`3`** — declined is not a failure (see correction) |
+| The update fails (`cmd_rollback`)                               | `1`   | `1` — unchanged                                      |
+| A service fails to scale (`cmd_scale`, line 538)                | `0`   | **`1`** — a reported failure must not exit 0         |
+| A service fails to force-deploy (`cmd_force_deploy`, line 800)  | `0`   | **`1`** — same swallow                               |
+| A service fails to restore (`cmd_revert`, lines 742/747)        | `0`   | **`1`** — **not pinned by any test; found here**     |
+| The deployment times out (`cmd_rollback` → `_await_deployment`) | `0`   | `0` with a **warning** exit — see below              |
 
 A failure printed to the terminal but exiting `0` is invisible to CI and to any
 wrapper script; the terminal is not the interface a non-interactive caller
@@ -691,14 +760,41 @@ than being folded into either neighbour. The three-way split is:
 
 - **`0`** — succeeded (warnings printed, work completed)
 - **`1`** — failed
-- **`2`** — declined by the operator; nothing was attempted
+- **`3`** — declined by the operator; nothing was attempted (`2` is Click's)
 
 **53i-3 flips the eleven pins from "pinned, not endorsed" to asserted
 behaviour** — that is what they were written for.
 
+### Layer 4 — the `except Exception` misattribution family
+
+**Added by operator decision (2026-08-19); this entry as first written had no
+answer for it.** Layers 1-3 are all "an error is reported as absence". This
+layer is the adjacent shape: an error is reported as *a different error*, so
+the operator is sent to fix something that is not broken.
+
+| Site                         | What it reports                                                                                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy/deployer.py:223`     | **A _clean_ `InfraStatus()`** — a credentials failure is indistinguishable from "RDS is healthy", and the deploy proceeds. The one with real blast radius. |
+| `deploy/extensions.py:148`   | Every non-`ClientError` as "check your AWS credentials and network connectivity" — so a bug inside boto3 is blamed on the operator's network.              |
+| `bin/init.py:412`            | Any non-`ValueError` from `generate_deploy_toml` as "Error parsing docker-compose.yml" — a generator bug blamed on the operator's input.                   |
+| `deploy/images.py ecr_login` | A `docker login` failure as a bare `RuntimeError("ECR login failed")` with both streams sent to `DEVNULL`, so there are no diagnostics at all.             |
+| `deploy/service.py:431`      | A per-service `ClientError` logged, the loop continued, and **the run still ends as a success** — a partial deploy that looks complete.                    |
+
+The fix is one shape in every case: **catch what you can actually attribute,
+and re-raise or report the rest as itself.**
+
 ### Scope note
 
 This entry is the **checklist 53i-3 executes**; it changes no code itself.
+The units that executed it are recorded in [PYSMELLY.md](PYSMELLY.md) §53i-3a
+through §53i-3d.
+
+**Named so it is not lost:** the other eleven of 53e-5a's fourteen pinned
+latent bugs are **not** in 53i-3's scope, including
+`deploy/service.py:171/193 service_exists` swallowing `ClusterNotFoundException`
+so a mistyped cluster takes the CREATE branch. Same `except` shape, higher
+severity; it belongs to 53e-5's pin list, and folding it in would have made
+53i-3 unscopeable.
 53i-2a (`4678c1e`) repaired six detached suppression rationales and moved the
 count by zero, and 53i-2b wrote the fleet guide. The register entry is
 deployer `docs/internal/PYSMELLY.md` §53i-2a; the phase record is claude-meta

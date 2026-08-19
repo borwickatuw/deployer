@@ -7,8 +7,11 @@ these functions send are validated by botocore for real.
 Several tests are marked "pinned, not endorsed": the functions under test
 swallow ClientError and return None/[] , which makes "the call failed" and
 "there is nothing there" indistinguishable to callers. That is a real design
-question, tracked as claude-meta Phase 53i (raise-vs-return policy); these
-tests pin today's behavior so 53i's change is visible when it happens.
+question, decided in docs/internal/DECISIONS.md § "2026-08-18: Error
+Contracts": the two *queries* raise RuntimeError
+when a read fails, and keep None/[] only for genuine absence, while
+create_emergency_snapshot -- a mutator -- keeps its None as a documented
+failure sentinel its caller branches on.
 """
 
 import re
@@ -112,8 +115,11 @@ class TestCreateEmergencySnapshot:
         assert [s["DBSnapshotIdentifier"] for s in snapshots] == [snapshot_id]
 
     def test_missing_instance_returns_none(self, mocked_aws):
-        # Pinned, not endorsed: a nonexistent instance is indistinguishable
-        # from any other ClientError. See module docstring (Phase 53i).
+        # create_emergency_snapshot is one of the four mutators: its None is a
+        # documented *failure* sentinel, and cmd_snapshot() branches on it to
+        # print "Failed to create snapshot" and exit 1. A nonexistent instance
+        # and a permissions gap are both failures, so sharing the sentinel is
+        # honest here in a way it was not for the queries.
         assert create_emergency_snapshot("no-such-instance", wait=False) is None
 
     def test_duplicate_snapshot_returns_none(self, rds_instance, mocker):
@@ -125,7 +131,7 @@ class TestCreateEmergencySnapshot:
         )
 
         assert create_emergency_snapshot(INSTANCE_ID, wait=False) == "fixed-snapshot-id"
-        # Pinned, not endorsed: DBSnapshotAlreadyExists is swallowed (Phase 53i).
+        # A colliding id is a failure like any other, and the None says so.
         assert create_emergency_snapshot(INSTANCE_ID, wait=False) is None
 
     def test_wait_uses_snapshot_waiter(self, mocker):
@@ -200,16 +206,22 @@ class TestGetRdsSnapshots:
         """moto answers an unknown instance with an empty snapshot list."""
         assert get_rds_snapshots("no-such-instance") == []
 
-    def test_client_error_returns_empty_list(self, mocker):
+    def test_client_error_raises_and_names_the_instance(self, mocker):
+        """An API failure is not "no snapshots exist".
+
+        This used to return [], so a permissions gap during an
+        incident told the operator there were no backups to restore from.
+        """
         client = MagicMock()
         client.describe_db_snapshots.side_effect = make_client_error(
             "AccessDenied", "DescribeDBSnapshots"
         )
         mocker.patch.object(rds_module, "_get_rds_client", return_value=client)
 
-        # Pinned, not endorsed: an API failure reads as "no snapshots exist",
-        # which is the worst possible answer during an incident (Phase 53i).
-        assert get_rds_snapshots(INSTANCE_ID) == []
+        with pytest.raises(
+            RuntimeError, match=f"Could not list snapshots for instance '{INSTANCE_ID}'"
+        ):
+            get_rds_snapshots(INSTANCE_ID)
 
 
 class TestGetRdsInstanceDetails:
@@ -228,7 +240,26 @@ class TestGetRdsInstanceDetails:
         assert isinstance(details.latest_restorable_time, datetime)
 
     def test_missing_instance_returns_none(self, mocked_aws):
+        """Absence, not failure: AWS says DBInstanceNotFound and None means it.
+
+        This is the one sentinel the error contract deliberately kept.
+        _prepare_restore()
+        and both restore entry points relay it, and cmd_restore_db() turns it
+        into "Failed to initiate restore" — so it has to keep meaning exactly
+        "there is no such source instance".
+        """
         assert get_rds_instance_details("no-such-instance") is None
+
+    def test_a_denied_read_raises_rather_than_reporting_absence(self, mocker):
+        """Any other ClientError is a failure and must not become None."""
+        client = MagicMock()
+        client.describe_db_instances.side_effect = make_client_error(
+            "AccessDenied", "DescribeDBInstances"
+        )
+        mocker.patch.object(rds_module, "_get_rds_client", return_value=client)
+
+        with pytest.raises(RuntimeError, match=f"Could not read RDS instance '{INSTANCE_ID}'"):
+            get_rds_instance_details(INSTANCE_ID)
 
     def test_empty_response_returns_none(self, mocker):
         """AWS can answer with an empty DBInstances list instead of raising."""

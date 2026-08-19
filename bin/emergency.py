@@ -29,6 +29,7 @@ Usage:
 """
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -65,6 +66,7 @@ from deployer.emergency.rds import (
 from deployer.utils import (
     Colors,
     confirm_action,
+    exit_on,
     format_iso,
     format_timestamp,
     get_deployer_root,
@@ -812,6 +814,33 @@ def cmd_force_deploy(environment: str, service: str | None, all_services: bool, 
 # =============================================================================
 
 
+def _run_or_exit(command: Callable[[], int]) -> None:
+    """Run one emergency command and exit with its status.
+
+    The process boundary for every AWS failure in this file. Since Phase
+    53i-3b the emergency/ queries raise RuntimeError rather than reporting a
+    failed read as "nothing is there", and these are destructive commands:
+    aborting with a named reason is correct where rendering partial output
+    would be. bin/ops.py, which only reads, catches at each render site
+    instead.
+
+    exit_on()'s docstring warns against wrapping a whole command body, because
+    an unrelated exception of the same type would be swallowed. That warning
+    is about intermediate frames; here there is no frame above this one, so
+    the alternative is not "the caller handles it" but a traceback.
+
+    Args:
+        command: Thunk returning the command's exit status.
+
+    Raises:
+        SystemExit: Always — with the command's status, or 1 if an AWS request
+            failed.
+    """
+    with exit_on(RuntimeError, prefix="Emergency command aborted: "):
+        status = command()
+    sys.exit(status)
+
+
 @click.group()
 def cli():
     """Emergency operations that modify production state.
@@ -830,7 +859,7 @@ def cli():
 def rollback(environment, service, revision, yes):
     """Roll back to previous task definition."""
     _validate_and_configure(environment)
-    sys.exit(cmd_rollback(environment, service, revision, yes))
+    _run_or_exit(lambda: cmd_rollback(environment, service, revision, yes))
 
 
 @cli.command()
@@ -844,7 +873,9 @@ def rollback(environment, service, revision, yes):
 def scale(environment, service, count, all_services, multiplier, reset, yes):
     """Scale services up/down."""
     _validate_and_configure(environment)
-    sys.exit(cmd_scale(environment, service, count, all_services, multiplier, reset, yes))
+    _run_or_exit(
+        lambda: cmd_scale(environment, service, count, all_services, multiplier, reset, yes)
+    )
 
 
 @cli.command()
@@ -853,7 +884,7 @@ def scale(environment, service, count, all_services, multiplier, reset, yes):
 def snapshot(environment, no_wait):
     """Create RDS snapshot."""
     _validate_and_configure(environment)
-    sys.exit(cmd_snapshot(environment, no_wait))
+    _run_or_exit(lambda: cmd_snapshot(environment, no_wait))
 
 
 @cli.command("restore-db")
@@ -863,7 +894,7 @@ def snapshot(environment, no_wait):
 def restore_db(environment, snapshot, time):
     """Restore database (creates new instance)."""
     _validate_and_configure(environment)
-    sys.exit(cmd_restore_db(environment, snapshot, time))
+    _run_or_exit(lambda: cmd_restore_db(environment, snapshot, time))
 
 
 @cli.command()
@@ -876,7 +907,7 @@ def restore_db(environment, snapshot, time):
 def revert(environment, list_checkpoints_flag, checkpoint, yes):
     """Revert to checkpoint."""
     _validate_and_configure(environment)
-    sys.exit(cmd_revert(environment, list_checkpoints_flag, checkpoint, yes))
+    _run_or_exit(lambda: cmd_revert(environment, list_checkpoints_flag, checkpoint, yes))
 
 
 @cli.command("force-deploy")
@@ -887,7 +918,7 @@ def revert(environment, list_checkpoints_flag, checkpoint, yes):
 def force_deploy(environment, service, all_services, yes):
     """Force new deployment (replace all tasks)."""
     _validate_and_configure(environment)
-    sys.exit(cmd_force_deploy(environment, service, all_services, yes))
+    _run_or_exit(lambda: cmd_force_deploy(environment, service, all_services, yes))
 
 
 if __name__ == "__main__":

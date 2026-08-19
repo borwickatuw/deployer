@@ -2743,3 +2743,77 @@ and the ones the fix must leave alone), `resolve-config.py:109`, and
 `bin/deploy.py:79`'s broad `except Exception` swallowing a `TypeError` from
 inside the resolver as "Failed to load deployment config". The three
 `bin/ops.py` sites are pinned in `test_ops.py` with the rest of that file.
+
+### 53i-3b — the producers raise, the consumers catch where they render (2026-08-19)
+
+**Layer 1 of the ADR, applied.** The six `emergency/` queries and
+`wait_for_deployment` raise `RuntimeError` from `except ClientError`, chained
+with `from e` and naming the resource; the four mutators keep their
+`False`/`None` with `Returns:` now saying it is a **failure** sentinel and
+`Raises:` saying `BotoCoreError` was never caught. Every changed function's
+docstring states which of PYTHON.md #19's three contracts it has.
+
+| Measure            | 53i-3a | 53i-3b |
+| ------------------ | ------ | ------ |
+| pysmelly           | 32     | **33** |
+| Tests              | 1724   | 1727   |
+| Total coverage     | 78.43% | 78.46% |
+| `emergency/ecs.py` | 100%   | 100%   |
+| `emergency/rds.py` | 100%   | 100%   |
+
+#### The count went **up**, and the new finding is the honest kind
+
+`inconsistent-error-handling` gained
+`emergency/ecs.py:81 get_all_services_state` — "3 callers: 1 catch specific
+(RuntimeError), 1 catch broad Exception, 1 unhandled". It fires **because** the
+fix made three different boundaries visible, and the three are right to differ:
+
+| Caller                                | Handling              | Why                                                         |
+| ------------------------------------- | --------------------- | ----------------------------------------------------------- |
+| `ops.py _print_ecs_sections`          | `except RuntimeError` | Read-only report: say so in place, keep printing RDS below. |
+| `ops.py cmd_incident_start`           | `except Exception`    | Must never fail; records the reason in the incident file.   |
+| `emergency.py _load_cluster_services` | unhandled             | Destructive; propagates to the one boundary `exit_on`.      |
+
+**The fix was drafted and is not worth taking.** Silencing the check means all
+three catching `RuntimeError`: `_load_cluster_services` would grow a
+per-caller `try` that does exactly what the boundary already does — the thing
+the ADR explicitly rejected — and `cmd_incident_start` would have to narrow,
+so a non-`RuntimeError` from `load_environment_config` would abort the incident
+start. That is a regression traded for a count. **Left standing, unsuppressed,
+for the operator**; it is the same "callers legitimately differ" shape already
+adjudicated for `init/template.py:126`.
+
+#### Two things the fix taught
+
+**A sentinel that can no longer be produced is dead code, and the type says
+so.** Once `get_task_definition_details` raised, it had no `None` left to
+give — `describe-task-definition` answers with a task definition or a
+`ClientError`, never an empty response. Its return type stopped being
+`| None`, and `compare_task_definitions`'s `if not details1 or not details2: return {}` guard went with it. Coverage caught this before the review did: the
+line went from covered to unreachable, dropping `emergency/ecs.py` from 100% to
+99%.
+
+**AWS distinguishes absence from failure, and using that is the whole point.**
+`get_rds_instance_details` keeps `None` — but only for
+`Error.Code == "DBInstanceNotFound"`, matched by code the way
+`_handle_restore_error` already matched `DBInstanceAlreadyExists`. Everything
+else raises. That single branch is what keeps `_prepare_restore`, both restore
+entry points and `cmd_restore_db`'s "Failed to initiate restore" meaning
+exactly "there is no such source instance". Without it the whole `None` chain
+would have become dead code and the message a lie.
+
+#### `wait_for_deployment` raises on the *first* poll, not at the timeout
+
+The ADR called this the worst of the eleven. The alternative considered was to
+keep polling and raise only if no poll ever succeeded — which tolerates a
+transient throttle. Rejected: **botocore has already retried a throttled
+request** by the time a `ClientError` reaches this code, so the first one is
+real, and making the operator wait out a 300-second timeout during an incident
+to learn they lack a permission is the defect in a different costume.
+
+#### Test-marker hygiene
+
+The flipped pins cite **`DECISIONS.md § "2026-08-18: Error Contracts"`**, not a
+phase number. A phase number is ephemeral and its meaning is gone once the arc
+closes; the ADR is the standing record. This also keeps `grep -c 53i tests/`
+honest as a measure of *pending* markers rather than of prose.

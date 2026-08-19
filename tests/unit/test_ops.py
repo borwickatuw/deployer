@@ -307,24 +307,29 @@ class TestCmdStatus:
         assert ops.cmd_status(ENV) == 0
         assert "Recent Snapshots:" not in capsys.readouterr().out
 
-    def test_an_unreadable_cluster_renders_as_an_empty_cluster(
+    def test_an_unreadable_cluster_is_reported_and_the_rest_still_prints(
         self, status_env, monkeypatch, capsys
     ):
-        # Pinned, not endorsed: a denied describe-services and a genuinely
-        # empty cluster print the same "No services found" (Phase 53i).
+        """Reported in place, not rendered as an empty cluster.
+
+        The two ECS sections are skipped — there is nothing to put in them —
+        but the RDS sections below still print. An ECS permissions gap is not
+        a reason to withhold the rest of the status report.
+        """
         monkeypatch.setattr(ops, "get_all_services_state", ecs.get_all_services_state)
         monkeypatch.setattr(ecs, "_get_ecs_client", _denied_ecs_client)
 
         assert ops.cmd_status(ENV) == 0
         out = capsys.readouterr().out
-        assert "ECS Services:" in out
-        assert "  No services found" in out
+        assert "Unable to read ECS services" in out
+        assert "AccessDeniedException" in out
+        assert "  No services found" not in out
+        assert f"RDS Instance: {RDS_ID}" in out
 
-    def test_unreadable_task_definitions_render_as_a_service_with_no_revisions(
+    def test_unreadable_task_definitions_are_reported_per_service(
         self, status_env, monkeypatch, capsys
     ):
-        # Pinned, not endorsed: a denied list-task-definitions omits the
-        # service from the section rather than saying why (Phase 53i).
+        """Named in place, so one unreadable family does not stop the rest."""
         monkeypatch.setattr(
             ops, "list_task_definition_revisions", ecs.list_task_definition_revisions
         )
@@ -333,21 +338,26 @@ class TestCmdStatus:
         assert ops.cmd_status(ENV) == 0
         out = capsys.readouterr().out
         assert "Recent Task Definitions:" in out
-        assert "revision" not in out.split("Recent Task Definitions:")[1]
+        assert "  web: unable to list revisions" in out
+        assert "AccessDeniedException" in out
 
-    def test_unreadable_snapshots_delete_the_whole_snapshot_section(
+    def test_unreadable_snapshots_keep_the_section_and_say_why(
         self, status_env, monkeypatch, capsys
     ):
-        # Pinned, not endorsed: _print_recent_snapshots() returns early on an
-        # empty list, so a denied describe-db-snapshots removes the heading
-        # too — unlike _print_rds_status(), which reports in place (Phase 53i).
+        """The asymmetry with _print_rds_status(), closed.
+
+        This section used to vanish entirely on a denied describe-db-snapshots,
+        which reads as "there are no backups" — the answer that matters least
+        when it is wrong.
+        """
         monkeypatch.setattr(ops, "get_rds_snapshots", emergency_rds.get_rds_snapshots)
         monkeypatch.setattr(emergency_rds, "_get_rds_client", _denied_rds_client)
 
         assert ops.cmd_status(ENV) == 0
         out = capsys.readouterr().out
         assert f"RDS Instance: {RDS_ID}" in out
-        assert "Recent Snapshots:" not in out
+        assert "Recent Snapshots:" in out
+        assert "  Unable to retrieve snapshots" in out
 
     def test_unparseable_timestamps_are_shown_verbatim(self, status_env, capsys):
         status_env["revisions"] = [{"revision": 7}]
@@ -702,23 +712,29 @@ class TestCmdIncidentStart:
         assert ops.cmd_incident_start(ENV, "web 500s") == 0
         assert "(no services found)" in self._written(incidents_dir)
 
-    def test_an_unreadable_cluster_is_recorded_as_no_services_found(
+    def test_an_unreadable_cluster_is_recorded_with_its_reason(
         self, env_config, incidents_dir, monkeypatch
     ):
-        # Pinned, not endorsed: the real get_all_services_state() swallows
-        # ClientError and answers {}, so "I could not read the cluster" is
-        # written into the incident record as "(no services found)" — the same
-        # text an empty cluster produces above (Phase 53i).
+        """The broad except Exception here is deliberate, and stays.
+
+        It is honest degradation, not misattribution: the incident file is
+        still written, and now that get_all_services_state() raises it records
+        *why* the state is missing instead of claiming the cluster was empty.
+        Starting an incident must never fail because the environment it is
+        about is unreachable.
+        """
         env_config["infrastructure"] = {"cluster_name": CLUSTER}
         monkeypatch.setattr(ops, "get_all_services_state", ecs.get_all_services_state)
         monkeypatch.setattr(ecs, "_get_ecs_client", _denied_ecs_client)
 
         assert ops.cmd_incident_start(ENV, "web 500s") == 0
-        assert "(no services found)" in self._written(incidents_dir)
+        body = self._written(incidents_dir)
+        assert "(Could not capture state: Could not read services in cluster" in body
+        assert "(no services found)" not in body
 
     def test_a_failed_config_read_is_recorded_in_the_incident_file(self, env_config, incidents_dir):
         # This one is honest degradation, not misattribution: the incident file
-        # still gets written and says why the state is missing. 53i keeps it.
+        # still gets written and says why the state is missing.
         env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
 
         assert ops.cmd_incident_start(ENV, "web 500s") == 0

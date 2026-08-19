@@ -48,7 +48,13 @@ def get_service_state(cluster_name: str, service_name: str) -> ServiceState | No
         service_name: Name of the service
 
     Returns:
-        ServiceState or None if service not found
+        ServiceState, or None if the cluster genuinely has no such service --
+        describe-services succeeded and answered with an empty list.
+
+    Raises:
+        RuntimeError: If the service could not be read at all. "You may not
+            look" and "it is not there" are different answers and must not
+            share the None (PYTHON.md #19).
     """
     client = _get_ecs_client()
     try:
@@ -66,8 +72,10 @@ def get_service_state(cluster_name: str, service_name: str) -> ServiceState | No
             desired_count=svc.get("desiredCount", 0),
             running_count=svc.get("runningCount", 0),
         )
-    except ClientError:
-        return None
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not read service '{service_name}' in cluster '{cluster_name}': {e}"
+        ) from e
 
 
 def get_all_services_state(cluster_name: str) -> dict[str, ServiceState]:
@@ -77,7 +85,11 @@ def get_all_services_state(cluster_name: str) -> dict[str, ServiceState]:
         cluster_name: Name of the ECS cluster
 
     Returns:
-        Dict mapping service name to ServiceState
+        Dict mapping service name to ServiceState. Empty only when the cluster
+        genuinely has no services.
+
+    Raises:
+        RuntimeError: If the cluster could not be listed or described.
     """
     client = _get_ecs_client()
     result = {}
@@ -101,8 +113,8 @@ def get_all_services_state(cluster_name: str) -> dict[str, ServiceState]:
                     desired_count=svc.get("desiredCount", 0),
                     running_count=svc.get("runningCount", 0),
                 )
-    except ClientError:
-        pass
+    except ClientError as e:
+        raise RuntimeError(f"Could not read services in cluster '{cluster_name}': {e}") from e
 
     return result
 
@@ -127,6 +139,13 @@ def list_task_definition_revisions(
             },
             ...
         ]
+        Empty only when the family genuinely has no registered revisions. A
+        revision whose *timestamp* could not be read still appears, with
+        "registered_at": None -- that is partial data, not absence, and the
+        caller renders it as "unknown".
+
+    Raises:
+        RuntimeError: If the family could not be listed at all.
     """
     client = _get_ecs_client()
     result = []
@@ -159,22 +178,34 @@ def list_task_definition_revisions(
                 if registered_at:
                     item["registered_at"] = format_iso(registered_at)
             except ClientError:
+                # Per-revision, not per-family: the revision is real and is
+                # still listed; only its timestamp is missing, and the caller
+                # prints "unknown" for it. Degrading one field is honest;
+                # degrading the whole answer to [] is what the raise below
+                # exists to prevent.
                 item["registered_at"] = None
 
-    except ClientError:
-        pass
+    except ClientError as e:
+        raise RuntimeError(f"Could not list task definitions for family '{family}': {e}") from e
 
     return result
 
 
-def get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails | None:
+def get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails:
     """Get details of a task definition.
 
     Args:
         task_def_arn: Task definition ARN
 
     Returns:
-        TaskDefinitionDetails, or None if not found
+        TaskDefinitionDetails. There is no absence answer here:
+        describe-task-definition responds with either a task definition or a
+        ClientError, so this function has no None to give.
+
+    Raises:
+        RuntimeError: If the task definition could not be read. Reporting this
+            as None would make an unreadable revision render as an empty diff
+            in the rollback preview (see compare_task_definitions).
     """
     client = _get_ecs_client()
     try:
@@ -201,8 +232,8 @@ def get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails | No
             memory=task_def.get("memory", ""),
             environment_variables=env_vars,
         )
-    except ClientError:
-        return None
+    except ClientError as e:
+        raise RuntimeError(f"Could not read task definition '{task_def_arn}': {e}") from e
 
 
 def compare_task_definitions(arn1: str, arn2: str) -> dict:
@@ -213,7 +244,8 @@ def compare_task_definitions(arn1: str, arn2: str) -> dict:
         arn2: Second task definition ARN
 
     Returns:
-        Dict with changes per container:
+        Dict with changes per container, empty when the two revisions are
+        identical:
         {
             "container_name": {
                 "added": {"VAR": "value"},
@@ -221,12 +253,16 @@ def compare_task_definitions(arn1: str, arn2: str) -> dict:
                 "changed": {"VAR": {"old": "value1", "new": "value2"}},
             }
         }
+
+    Raises:
+        RuntimeError: If either task definition could not be read. This
+            function has no except of its own; it inherits the contract of
+            get_task_definition_details(), which is the point -- an empty diff
+            must mean "identical", never "I could not look". The rollback
+            preview renders this immediately before the operator confirms.
     """
     details1 = get_task_definition_details(arn1)
     details2 = get_task_definition_details(arn2)
-
-    if not details1 or not details2:
-        return {}
 
     env1 = details1.environment_variables
     env2 = details2.environment_variables
@@ -271,7 +307,13 @@ def update_service_task_definition(
         task_definition_arn: Task definition ARN to roll back to
 
     Returns:
-        True if update was initiated, False on error
+        True if the update was initiated, False if AWS rejected it. This is a
+        *failure* sentinel, not an absence one, and every caller branches on
+        it (PYTHON.md #19, contract 3).
+
+    Raises:
+        BotoCoreError: Connectivity and configuration failures are not caught;
+            only ClientError is.
     """
     client = _get_ecs_client()
     try:
@@ -303,7 +345,16 @@ def wait_for_deployment(
         callback: Callback function called as callback(running, desired) on each poll
 
     Returns:
-        True if deployment stabilized, False on timeout
+        True if the deployment stabilized, False if the timeout elapsed while
+        the service was still readable but not yet stable.
+
+    Raises:
+        RuntimeError: If a poll fails. The old behaviour was to swallow the
+            error and keep polling, so a service the caller could not see was
+            watched for the entire timeout and then reported as "did not
+            stabilize" -- indistinguishable from a deployment that genuinely
+            did not. botocore has already retried a throttled request by the
+            time a ClientError reaches here, so the first one is real.
     """
     client = _get_ecs_client()
     start_time = time.time()
@@ -330,8 +381,11 @@ def wait_for_deployment(
             if len(deployments) == 1 and running == desired:
                 return True
 
-        except ClientError:
-            pass
+        except ClientError as e:
+            raise RuntimeError(
+                f"Could not watch deployment of '{service_name}' "
+                f"in cluster '{cluster_name}': {e}"
+            ) from e
 
         time.sleep(poll_interval)
 
@@ -351,7 +405,12 @@ def scale_service(
         desired_count: Target number of tasks
 
     Returns:
-        True if update was initiated, False on error
+        True if the update was initiated, False if AWS rejected it -- a
+        failure sentinel the caller branches on, not an absence one.
+
+    Raises:
+        BotoCoreError: Connectivity and configuration failures are not caught;
+            only ClientError is.
     """
     client = _get_ecs_client()
     try:
@@ -379,7 +438,12 @@ def force_new_deployment(
         service_name: Name of the service
 
     Returns:
-        True if deployment was initiated, False on error
+        True if the deployment was initiated, False if AWS rejected it -- a
+        failure sentinel the caller branches on, not an absence one.
+
+    Raises:
+        BotoCoreError: Connectivity and configuration failures are not caught;
+            only ClientError is.
     """
     client = _get_ecs_client()
     try:

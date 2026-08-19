@@ -5,11 +5,18 @@ botocore; MagicMock is used only where moto has no equivalent (task
 definition registration timestamps) or where an AWS-side error cannot be
 provoked otherwise.
 
-Several tests are marked "pinned, not endorsed": the mutators swallow
-ClientError and return False, and wait_for_deployment polls a nonexistent
-service for the full timeout. That is a real design question, tracked as
-claude-meta Phase 53i (raise-vs-return policy); these tests pin today's
-behavior so 53i's change is visible when it happens.
+The error contract these tests assert is docs/internal/DECISIONS.md
+§ "2026-08-18: Error Contracts" — raise, absence sentinel, or failure
+sentinel, and one sentinel never means both:
+
+* The four **queries** and ``wait_for_deployment`` raise ``RuntimeError``
+  when a read fails, and keep ``None``/``[]``/``{}`` only for genuine
+  absence — describe-services succeeding with an empty list.
+* The three **mutators** keep ``False``, which is a documented *failure*
+  sentinel their callers already branch on.
+* ``compare_task_definitions`` has no ``except`` of its own and inherits the
+  first rule, which is what stops an unreadable revision rendering as an
+  empty diff in the rollback preview.
 """
 
 from datetime import UTC, datetime
@@ -142,10 +149,14 @@ class TestGetServiceState:
     def test_unknown_service_returns_none(self, ecs_cluster):
         assert get_service_state(CLUSTER, "no-such-service") is None
 
-    def test_unknown_cluster_returns_none(self, mocked_aws):
-        # Pinned, not endorsed: ClusterNotFoundException is swallowed, so a
-        # typo'd cluster looks like a missing service (Phase 53i).
-        assert get_service_state("no-such-cluster", SERVICE) is None
+    def test_unknown_cluster_raises(self, mocked_aws):
+        """A typo'd cluster is a failure, not a missing service."""
+        with pytest.raises(RuntimeError, match="Could not read service 'web'"):
+            get_service_state("no-such-cluster", SERVICE)
+
+    def test_a_cluster_without_the_service_still_returns_none(self, ecs_cluster):
+        """Absence survives: describe-services answers with an empty list."""
+        assert get_service_state(CLUSTER, "no-such-service") is None
 
 
 class TestGetAllServicesState:
@@ -170,9 +181,10 @@ class TestGetAllServicesState:
 
         assert get_all_services_state("empty-cluster") == {}
 
-    def test_unknown_cluster_returns_empty_dict(self, mocked_aws):
-        # Pinned, not endorsed: same swallow as get_service_state (Phase 53i).
-        assert get_all_services_state("no-such-cluster") == {}
+    def test_unknown_cluster_raises(self, mocked_aws):
+        """Same rule as get_service_state: {} means empty, never unreadable."""
+        with pytest.raises(RuntimeError, match="Could not read services in cluster"):
+            get_all_services_state("no-such-cluster")
 
 
 class TestListTaskDefinitionRevisions:
@@ -234,15 +246,18 @@ class TestListTaskDefinitionRevisions:
 
         assert revisions[0]["registered_at"] is None
 
-    def test_list_failure_returns_empty_list(self, mocker):
+    def test_list_failure_raises(self, mocker):
+        """An API failure is not "no revisions to roll back to"."""
         client = MagicMock()
         client.list_task_definitions.side_effect = ClientError(
             {"Error": {"Code": "ClientException", "Message": "boom"}}, "ListTaskDefinitions"
         )
         mocker.patch.object(ecs_module, "_get_ecs_client", return_value=client)
 
-        # Pinned, not endorsed: an API failure reads as "no revisions" (Phase 53i).
-        assert list_task_definition_revisions(FAMILY) == []
+        with pytest.raises(
+            RuntimeError, match=f"Could not list task definitions for family '{FAMILY}'"
+        ):
+            list_task_definition_revisions(FAMILY)
 
 
 class TestGetTaskDefinitionDetails:
@@ -259,8 +274,10 @@ class TestGetTaskDefinitionDetails:
             "sidecar": {"SIDECAR": "on"},
         }
 
-    def test_unknown_task_definition_returns_none(self, ecs_cluster):
-        assert get_task_definition_details("no-such-family:1") is None
+    def test_unknown_task_definition_raises(self, ecs_cluster):
+        """The caller got this ARN from a listing; failing to read it is an error."""
+        with pytest.raises(RuntimeError, match="Could not read task definition"):
+            get_task_definition_details("no-such-family:1")
 
 
 class TestCompareTaskDefinitions:
@@ -285,22 +302,24 @@ class TestCompareTaskDefinitions:
     def test_identical_definitions_produce_no_diff(self, ecs_cluster):
         assert compare_task_definitions(ecs_cluster["arns"][0], ecs_cluster["arns"][0]) == {}
 
-    def test_unknown_definition_produces_no_diff(self, ecs_cluster):
-        # Pinned, not endorsed: "one side could not be read" is reported as
-        # "nothing changed", which is the least safe default (Phase 53i).
-        assert compare_task_definitions(ecs_cluster["arns"][0], "no-such-family:1") == {}
+    def test_unknown_definition_raises(self, ecs_cluster):
+        """An unreadable side is no longer reported as "nothing changed"."""
+        with pytest.raises(RuntimeError, match="Could not read task definition"):
+            compare_task_definitions(ecs_cluster["arns"][0], "no-such-family:1")
 
-    def test_a_denied_read_produces_the_same_empty_diff(self, ecs_cluster, mocker):
-        # Pinned, not endorsed: compare_task_definitions() has no except of its
-        # own — it inherits get_task_definition_details()'s sentinel, so a
-        # permissions gap and "identical revisions" are the same answer. This
-        # is the twelfth instance found in 53i-3's read of the corpus, and it
-        # is the one bin/emergency.py renders to the operator immediately
-        # before a production rollback (Phase 53i).
+    def test_a_denied_read_raises_rather_than_producing_an_empty_diff(self, ecs_cluster, mocker):
+        """Fixed for free by the producer, having no except of its own.
+
+        compare_task_definitions() has no except of its own — it inherited
+        get_task_definition_details()'s sentinel, so a permissions gap and
+        "identical revisions" were the same answer. bin/emergency.py renders
+        this diff to the operator immediately before a production rollback.
+        """
         arns = ecs_cluster["arns"]
         mocker.patch.object(ecs_module, "_get_ecs_client", return_value=_denied_client())
 
-        assert compare_task_definitions(arns[0], arns[1]) == {}
+        with pytest.raises(RuntimeError, match="Could not read task definition"):
+            compare_task_definitions(arns[0], arns[1])
 
 
 class TestUpdateServiceTaskDefinition:
@@ -312,7 +331,8 @@ class TestUpdateServiceTaskDefinition:
         assert get_service_state(CLUSTER, SERVICE).task_definition == target
 
     def test_unknown_cluster_returns_false(self, ecs_cluster):
-        # Pinned, not endorsed (Phase 53i).
+        # A mutator: False is the documented failure sentinel, and cmd_rollback
+        # branches on it to log "Failed to update service" and exit 1.
         assert update_service_task_definition("no-such-cluster", SERVICE, "web:1") is False
 
 
@@ -328,7 +348,7 @@ class TestScaleService:
         assert get_service_state(CLUSTER, SERVICE).desired_count == 0
 
     def test_unknown_cluster_returns_false(self, ecs_cluster):
-        # Pinned, not endorsed (Phase 53i).
+        # A mutator: False is the documented failure sentinel.
         assert scale_service("no-such-cluster", SERVICE, 1) is False
 
 
@@ -337,7 +357,7 @@ class TestForceNewDeployment:
         assert force_new_deployment(CLUSTER, SERVICE) is True
 
     def test_unknown_cluster_returns_false(self, ecs_cluster):
-        # Pinned, not endorsed (Phase 53i).
+        # A mutator: False is the documented failure sentinel.
         assert force_new_deployment("no-such-cluster", SERVICE) is False
 
 
@@ -388,26 +408,36 @@ class TestWaitForDeployment:
             callback=lambda running, desired: polls.append((running, desired)),
         )
 
-        # Pinned, not endorsed: a typo'd service name costs the caller the
-        # whole timeout with no signal that it was never there (Phase 53i).
+        # Left standing deliberately: describe-services *succeeds*
+        # here and answers with an empty list, so this is the absence branch,
+        # not the failure one. A service that has not appeared yet is exactly
+        # what a caller waiting on a new deployment is waiting for.
         assert result is False
         assert polls == []
         assert clock.sleeps == [10, 10, 10]
 
-    def test_client_error_is_retried_until_timeout(self, mocked_aws, mocker):
+    def test_client_error_raises_on_the_first_poll(self, mocked_aws, mocker):
+        """The worst instance of the swallow, and the reason for the rule.
+
+        This used to swallow the error and keep polling, so a service the
+        caller could not see was watched for the entire timeout and then
+        reported as "did not stabilize" — indistinguishable from a deployment
+        that genuinely did not. It now fails on the first poll, and never
+        sleeps: botocore has already retried a throttled request by the time
+        a ClientError reaches here.
+        """
         clock = FakeClock()
         mocker.patch.object(ecs_module, "time", clock)
         polls = []
 
-        result = wait_for_deployment(
-            "no-such-cluster",
-            SERVICE,
-            timeout=20,
-            poll_interval=10,
-            callback=lambda running, desired: polls.append((running, desired)),
-        )
+        with pytest.raises(RuntimeError, match="Could not watch deployment of 'web'"):
+            wait_for_deployment(
+                "no-such-cluster",
+                SERVICE,
+                timeout=20,
+                poll_interval=10,
+                callback=lambda running, desired: polls.append((running, desired)),
+            )
 
-        # Pinned, not endorsed: ClusterNotFoundException is retried (Phase 53i).
-        assert result is False
         assert polls == []
-        assert clock.sleeps == [10, 10]
+        assert clock.sleeps == []

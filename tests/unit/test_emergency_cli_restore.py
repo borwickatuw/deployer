@@ -62,7 +62,10 @@ survive code motion inside the package. Concretely:
   shared helper -- the same choice ``test_emergency_cli.py`` made.
 
 Nothing here re-pins a swallow-or-return contract in ``emergency/rds.py``;
-those belong to ``test_emergency_rds.py`` and Phase 53i.
+those belong to ``test_emergency_rds.py``. One pin below did move with them:
+a ``None`` from ``get_rds_instance_details`` now means only "there is no such
+source instance", so the "generic failure" arm is reached by a genuinely
+missing instance rather than by any read failure.
 """
 
 import sys
@@ -269,9 +272,9 @@ class TestCmdRestoreDbFromSnapshot:
         assert "error: Instance 'x' already exists." in logger.lines
 
     def test_a_none_return_returns_1_with_a_generic_message(self, logger, restore, capsys):
-        # Pinned, not endorsed: the producer answers None both for "the source
-        # instance does not exist" and for a swallowed lookup failure, so the
-        # operator only ever sees "Failed to initiate restore" (Phase 53i).
+        # The producer's None means only "there is no such source
+        # instance" -- a lookup that *failed* now raises and stops at the CLI
+        # boundary -- so "Failed to initiate restore" is an accurate message.
         restore.snapshot_result = None
         assert emergency.cmd_restore_db(ENV, snapshot="snap-1", time=None) == 1
         assert "Failed to initiate restore" in capsys.readouterr().out
