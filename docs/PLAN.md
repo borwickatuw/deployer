@@ -16,10 +16,18 @@ candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
 ## Phase 53 status
 
-**32 findings** at `4678c1e` (the 53i-2a closeout), from 97 at the start of
-the arc. **53a through 53h, 53i-1 and 53i-2 are done.** Open: **53i-3**
-(applying the policy), blocked on nothing but operator sign-off of the two
-escalated items in the 53i-2c ADR.
+**33 findings** at `600c788` (the 53i-3d closeout), from 97 at the start of
+the arc. **53a through 53i are done; the arc has no open unit.**
+
+**53i-3 moved the count up by one, and that was the right outcome.** It added
+`emergency/ecs.py:81` — three callers of `get_all_services_state` handling it
+three ways, which is correct for a read-only report, an incident recorder and
+a destructive command — and removed none, because the two
+`inconsistent-error-handling` rows it set out to fix are fixed in a form the
+check cannot see: `exit_on` is a context manager and the check looks for
+`try`/`except`. Both rows are adjudicated **fixed-but-unseen**. What the unit
+moved instead is coverage, 74.94% → **78.73%**, and eleven places where a tool
+told an operator something untrue.
 
 **53i-2 moved the count by zero, by design** — 53g's precedent. 53i-2a moved
 prose inside comments, 53i-2b wrote two claude-meta guides, and 53i-2c is an
@@ -36,9 +44,11 @@ are backfilled from their commit messages and the run ledger, and §53g's
 skip list was re-verified at HEAD first, which found three stale verdicts
 and one dead parameter.
 
-**All 32 are attributed and nothing is unowned** — 20 adjudicated
+**All 33 are attributed and nothing is unowned** — 20 adjudicated
 leave-standings, **7 escalated by 53i-1** with measured diffs and awaiting
-the operator, and 5 now **adjudicated by 53i-2c's ADR** and awaiting 53i-3. The 3 findings the closeout found
+the operator, 5 adjudicated by 53i-2c's ADR and applied by 53i-3, and **1 new
+one escalated by 53i-3b** with its silencing fix drafted and rejected on
+cost. The 3 findings the closeout found
 owned by no subphase were folded into 53i-1 by operator decision
 (2026-08-18); one is cleared, two are among the seven. See the register's
 "Remainder — the reconciled adjudication split".
@@ -112,11 +122,11 @@ Reading 53i's contents found **two unrelated kinds of work**, so it split
 at planning time — the arc's fourth planning-time split, after 53d (twice),
 53e (up front) and 53h (twice).
 
-| Unit      | Scope                                                  | Status              |
-| --------- | ------------------------------------------------------ | ------------------- |
-| **53i-1** | 10 mechanical findings — code motion and adjudication  | **done** (35 → 32)  |
-| **53i-2** | The raise-vs-return policy — split again into 2a/2b/2c | **done** (32 → 32)  |
-| 53i-3     | Apply that policy across the call sites 53i-2c names   | blocked on sign-off |
+| Unit      | Scope                                                  | Status             |
+| --------- | ------------------------------------------------------ | ------------------ |
+| **53i-1** | 10 mechanical findings — code motion and adjudication  | **done** (35 → 32) |
+| **53i-2** | The raise-vs-return policy — split again into 2a/2b/2c | **done** (32 → 32) |
+| **53i-3** | Apply that policy — split at planning into 3a/3b/3c/3d | **done** (32 → 33) |
 
 #### 53i-1 — mechanical residue — **done** (2026-08-18)
 
@@ -172,6 +182,56 @@ unhandled sites listed (consumer); and the emergency CLI exit codes, where a
 (boundary). **Two items are escalated, not decided** — `emergency/` queries
 raising, and exit code `2` for "declined" — and 53i-3 must not apply either
 until the operator confirms.
+
+#### 53i-3 — applying the policy — **done** (2026-08-19)
+
+Both escalated items were confirmed, **one with a correction**, and a fourth
+layer was added. Split at planning time into four units — the arc's fifth
+planning-time split:
+
+| Unit   | Scope                                                  | Count   |
+| ------ | ------------------------------------------------------ | ------- |
+| **3a** | Pin every consumer 3b/3c/3d change. Tests only.        | 32 → 32 |
+| **3b** | The producers raise; consumers catch where they render | 32 → 33 |
+| **3c** | The boundary rule and the exit-code ladder             | 33 → 33 |
+| **3d** | The `except Exception` misattribution family           | 33 → 33 |
+
+**The ADR proposed an exit code that collided with Click.** `bin/emergency.py`
+is a Click CLI, and `click.UsageError.exit_code` is **2**, so the proposed "2
+means declined" would have made `emergency rollback --bogus-flag` and a
+declined confirmation indistinguishable to any wrapper — the exact defect
+PYTHON.md #19 exists to prevent, reintroduced by the fix for it. Corrected to
+**3**, verified by hand against `havoc-staging`: `0` / `1` / `2` (Click) / `3`.
+
+**Reading the corpus changed the unit's shape again, for the sixth time in
+this arc.** Three things the ADR did not contain:
+
+1. A **twelfth** sentinel-from-`except` instance, `compare_task_definitions`,
+   which has no `except` of its own and renders an unreadable task definition
+   as "this rollback changes nothing" — immediately before the operator
+   confirms a production rollback.
+1. The render-boundary pattern the operator chose **already existed** in
+   `bin/ops.py:422 _print_rds_status`, pinned since 53d-2a. Its neighbour two
+   functions down deleted the whole "Recent Snapshots" section on a
+   `ClientError`. Applying an existing pattern, not inventing one.
+1. One of the ADR's eleven "real bug" sites was **not a defect**:
+   `bin/resolve-config.py:109`'s `cli()` already caught the documented triple.
+   Measured by running it.
+
+**53i-3a is why the rest was verifiable.** Every `bin/` call site the later
+units changed was unexecuted by any test — `cmd_revert` at 0%, and so were
+`cmd_health`, `cmd_maintenance`, `cmd_ecr` and `cmd_incident_start`. The pins
+drive the *real* producers against a client that refuses every call, so they
+would fail if a producer went back to swallowing. `bin/ops.py` 24% → **54%**,
+`bin/emergency.py` 76% → **90%**.
+
+**pysmelly earned its keep mid-unit, twice.** The first version of the
+three-command exit-status fix introduced three `failed = []` accumulators and
+53i-3d's a fourth; the check caught all four, and the
+predicate-plus-comprehension answer that replaced them turned
+`deploy_services`'s 45-line loop into a 5-line one.
+
+Full per-unit detail is in the register's §53i-3a through §53i-3d.
 
 Its corpus was
 **31 "pinned, not endorsed" markers across 6 test files** (re-measured at

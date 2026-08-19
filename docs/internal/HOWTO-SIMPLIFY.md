@@ -98,13 +98,17 @@ docstrings against 81 lines removed from `run_audit`'s body.
 
 ## Pysmelly Status
 
-**32 findings** at `a9327ab` (from 147 original; 106 at the start of the
+**33 findings** at `600c788`, the 53i-3d closeout — **up one, and that is the
+unit's honest result**: 53i-3b added `emergency/ecs.py:81` and nothing was
+removed, because the two `inconsistent-error-handling` rows 53i-3c fixed are
+fixed via `exit_on`, a context manager the check cannot see. Was 32 at
+`a9327ab` (from 147 original; 106 at the start of the
 2026-08 comprehensive review; 97 before Phase 53a, 91 before 53b, 82 before
 53c, 74 before 53d-1, 71 before 53d-2a, 68 before 53d-2b, 60 before 53e-1,
 57 before 53e-2, 47 before 53f, 41 before 53h-1, 37 before the 53f/53g
 closeout, 35 before 53i-1; **unchanged by 53i-2, which shipped documents and
-comment prose only**). The live per-category split is in "Remaining findings"
-below.
+comment prose only**; 32 before 53i-3). The live per-category split is in
+"Remaining findings" below.
 Suppressions, measured at the 53e-2 commit across tracked files:
 **22 `# pysmelly: ignore` lines and 7 `# noqa: C901`**. 53d-1 removed four
 `# noqa: C901`, 53d-2a a fifth (`cmd_rollback`), 53d-2b two more
@@ -135,8 +139,9 @@ re-measure), 53e-1 (`extensions.py` + `setup_profiles.py`) and 53e-2
 (`core/audit.py`), the 53e-3/4/5 slices, 53f (`dict-as-dataclass`),
 53g (parameter plumbing, zero code units), 53h-1/2a/2b, **53i-1** and
 **53i-2** (a/b/c — zero code units, count unchanged at 32, by design) are
-done, as is the 2026-08-18 53f/53g closeout. **53i-3 is the only open
-subphases.** Per-finding dispositions are in `docs/internal/PYSMELLY.md`.
+done, as is the 2026-08-18 53f/53g closeout and **53i-3** (a/b/c/d, 32 → 33).
+**The arc has no open subphase.** Per-finding dispositions are in
+`docs/internal/PYSMELLY.md`.
 
 53d was split twice — first when re-measuring at HEAD showed the plan entry
 undercounted it (7 `bin/` long-function findings, not 6), and again when 53d-2
@@ -173,10 +178,11 @@ went 11% → 99% and left the convergence-hotspot list, which is now empty.
 - Converted `_format_service()` return type to `ServiceInfo` dataclass, removed vestigial `arn` field
 - Flattened arrow-code in 6 functions: `detect_framework()`, `get_next_listener_priority()`, `cmd_start()` (extracted `_ensure_rds_available()`), `list_repositories_for_environment()`, `cmd_put()` (extracted `_get_secret_value_interactively()`), `check_infrastructure_status()`
 
-### Remaining findings (32)
+### Remaining findings (33)
 
-Live counts, re-verified at the 53i-2a closeout commit `4678c1e` — identical
-to `a9327ab` as a finding set, not merely as a total — with
+Live counts, re-verified at the 53i-3d closeout commit `600c788` — diffed as a
+finding set against `4678c1e`, which is how this arc measures, so the one
+addition and the absence of any removal are both visible — with
 `uvx pysmelly . --more-please` (`make pysmelly` truncates to the top ten and
 under-reports `inconsistent-error-handling`).
 
@@ -190,24 +196,32 @@ that file under "Remainder — the reconciled adjudication split".
 measured and the decision handed to the operator — not that the finding is
 settled, and not that it is still open work. Open = live − settled − escalated.
 
-| Category                     | Live | Settled | Escalated | Open | Notes                                                                                                        |
-| ---------------------------- | ---- | ------- | --------- | ---- | ------------------------------------------------------------------------------------------------------------ |
-| pass-through-params          | 13   | 13      | 0         | 0    | All re-verified 2026-08-18; 53g's skip list plus 53b/53c/53d-1 leave-standings                               |
-| param-clumps                 | 5    | 5       | 0         | 0    | 53a, 53d-2a and 53g; `modules/` cleared by 53h-1, `ssm_secrets` by the closeout                              |
-| inconsistent-error-handling  | 4    | 0       | 0         | 4    | Adjudicated by 53i-2c's ADR (1 FP, 1 document-only, 2 real caller bugs); 53i-3 applies                       |
-| foo-equals-foo               | 3    | 0       | 3         | 0    | 53i-1 drafted all three; `bin/init.py:220`'s draft breaks 10 tests and does not clear                        |
-| single-call-site             | 2    | 0       | 2         | 0    | Named helpers that document intent; `modules/secrets.py:86` cleared by 53i-1                                 |
-| arrow-code                   | 1    | 0       | 1         | 0    | `init/deploy_toml.py:195` — an `elif` artifact; `ci_deploy.py:181` cleared by 53i-1                          |
-| law-of-demeter               | 1    | 1       | 0         | 0    | 53e-3 adjudicated `deployer.py:219`; `template.py:26` cleared by 53i-1                                       |
-| duplicate-blocks             | 1    | 1       | 0         | 0    | The db-\* Lambda pair, adjudicated in 53a                                                                    |
-| return-none-instead-of-raise | 1    | 0       | 0         | 1    | `aws/cli.run_aws_json` — 53i-2c decided it: failure-`None`, and `rds.get_status` mistranslates it as absence |
-| temp-accumulators            | 1    | 0       | 1         | 0    | `images.py:301`, relocated into `_cache_tag` by 53e-4b; folded into 53i-1                                    |
-| **Total**                    | 32   | **20**  | **7**     | 5    | 53i-2 owns all 5; **nothing is unowned**                                                                     |
+| Category                     | Live | Settled | Escalated | Open | Notes                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ---- | ------- | --------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pass-through-params          | 13   | 13      | 0         | 0    | All re-verified 2026-08-18; 53g's skip list plus 53b/53c/53d-1 leave-standings                                                                                                                                                                                                   |
+| param-clumps                 | 5    | 5       | 0         | 0    | 53a, 53d-2a and 53g; `modules/` cleared by 53h-1, `ssm_secrets` by the closeout                                                                                                                                                                                                  |
+| inconsistent-error-handling  | 5    | 4       | 1         | 0    | 53i-2c adjudicated 4, 53i-3c applied both "real caller bug" rows — **fixed but unseen**, since `exit_on` is a context manager and the check looks for `try`/`except`. The 5th (`emergency/ecs.py:81`) is 53i-3b's, escalated with its silencing fix drafted and rejected on cost |
+| foo-equals-foo               | 3    | 0       | 3         | 0    | 53i-1 drafted all three; `bin/init.py:220`'s draft breaks 10 tests and does not clear                                                                                                                                                                                            |
+| single-call-site             | 2    | 0       | 2         | 0    | Named helpers that document intent; `modules/secrets.py:86` cleared by 53i-1                                                                                                                                                                                                     |
+| arrow-code                   | 1    | 0       | 1         | 0    | `init/deploy_toml.py:195` — an `elif` artifact; `ci_deploy.py:181` cleared by 53i-1                                                                                                                                                                                              |
+| law-of-demeter               | 1    | 1       | 0         | 0    | 53e-3 adjudicated `deployer.py:219`; `template.py:26` cleared by 53i-1                                                                                                                                                                                                           |
+| duplicate-blocks             | 1    | 1       | 0         | 0    | The db-\* Lambda pair, adjudicated in 53a                                                                                                                                                                                                                                        |
+| return-none-instead-of-raise | 1    | 1       | 0         | 0    | `aws/cli.run_aws_json` — 53i-2c decided it is *correct*: failure-`None`, contract 3. The defect is `rds.get_status` mistranslating it as absence, and it belongs to `aws/`, not `emergency/`                                                                                     |
+| temp-accumulators            | 1    | 0       | 1         | 0    | `images.py:301`, relocated into `_cache_tag` by 53e-4b; folded into 53i-1                                                                                                                                                                                                        |
+| **Total**                    | 33   | **25**  | **8**     | 0    | **Nothing is open and nothing is unowned.** The 8 escalations are 53i-1's 7 plus 53i-3b's 1, each with a measured diff awaiting the operator                                                                                                                                     |
 
 **The three unowned findings now have a home.** The 2026-08-18 reconciliation
 surfaced them; the operator folded all three into 53i-1 the same day. One
-(`arrow-code` `ci_deploy.py:181`) is cleared, and two are among the seven
-escalations. That was the condition 53i was blocked on.
+(`arrow-code` `ci_deploy.py:181`) is cleared, and two are among the escalations.
+That was the condition 53i was blocked on.
+
+**Two rows read "fixed but unseen", which is a fourth state and deliberately
+not a fifth column.** `get_environments_dir` and `core/config.py:205` both had
+their real caller bugs fixed by 53i-3c using `exit_on` — the boundary rule the
+ADR chose over a per-caller `try` — and the check cannot see a context manager.
+Taking a count from them would mean writing a `try` at every site purely to be
+observed. They are counted as **settled**, with the reason on the row, because
+that is what they are: adjudicated, fixed, and not coming back.
 
 Categories now empty: `long-function` (9 → 0 across 53d–53e),
 `dict-as-dataclass` (6 → 0 in 53f), `write-only-attributes` (1 → 0 in 53h-1),
