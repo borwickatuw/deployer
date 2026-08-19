@@ -14,15 +14,16 @@ print_with_advice() emits a leading blank line that today's code does not.
 every non-ClientError failure as "Unexpected error invoking Lambda", so a bug
 raised inside boto3 is presented to the operator as a credentials or network
 problem. Whether it should catch at all is an error-contract question tracked
-as claude-meta Phase 53i; test_unexpected_error_advice() pins today's
-behaviour so 53i's change is visible when it happens.
+decided in docs/internal/DECISIONS.md § "2026-08-18: Error Contracts", layer
+4: the advice block is reserved for BotoCoreError, which is the connectivity
+and configuration family it actually describes.
 """
 
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from deployer.deploy.extensions import create_database_extensions
 from deployer.utils import Colors
@@ -232,7 +233,7 @@ class TestAdviceBlocks:
             ),
             (
                 {"extensions_lambda": EXTENSIONS_LAMBDA},
-                OSError("connection reset"),
+                EndpointConnectionError(endpoint_url="https://lambda.us-west-2.amazonaws.com"),
                 "Failed to invoke extensions Lambda",
             ),
         ],
@@ -357,12 +358,12 @@ class TestAdviceBlocks:
         ]
 
     @patch("deployer.deploy.extensions.boto3")
-    def test_unexpected_error_advice(self, mock_boto3, capsys):
-        """A non-ClientError failure is reported as a credentials/network problem.
-
-        Pinned, not endorsed — see the module docstring on Phase 53i.
-        """
-        mock_boto3.client.return_value.invoke.side_effect = OSError("connection reset")
+    def test_a_connectivity_failure_gets_the_credentials_and_network_advice(
+        self, mock_boto3, capsys
+    ):
+        """BotoCoreError *is* the connectivity family, so the advice fits."""
+        error = EndpointConnectionError(endpoint_url="https://lambda.us-west-2.amazonaws.com")
+        mock_boto3.client.return_value.invoke.side_effect = error
         config = {"database": {"extensions": ["unaccent"]}}
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
@@ -370,9 +371,26 @@ class TestAdviceBlocks:
             create_database_extensions(config, env_config, "us-west-2")
 
         assert _lines(capsys)[1:] == [
-            _error(f"Unexpected error invoking Lambda '{EXTENSIONS_LAMBDA}': connection reset"),
+            _error(f"Could not reach Lambda '{EXTENSIONS_LAMBDA}': {error}"),
             "  Check your AWS credentials and network connectivity.",
         ]
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_an_unattributable_error_is_not_blamed_on_the_network(self, mock_boto3, capsys):
+        """A bug inside boto3, or in this module, is no longer the operator's network.
+
+        The old `except Exception` caught anything at all and printed "Check
+        your AWS credentials and network connectivity", which is advice the
+        operator cannot act on when the fault is in our code.
+        """
+        mock_boto3.client.return_value.invoke.side_effect = TypeError("not JSON serializable")
+        config = {"database": {"extensions": ["unaccent"]}}
+        env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
+
+        with pytest.raises(TypeError, match="not JSON serializable"):
+            create_database_extensions(config, env_config, "us-west-2")
+
+        assert "network connectivity" not in capsys.readouterr().out
 
     @patch("deployer.deploy.extensions.boto3")
     def test_function_error_advice(self, mock_boto3, capsys):

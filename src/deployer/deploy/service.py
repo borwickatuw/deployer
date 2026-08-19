@@ -400,17 +400,22 @@ def create_service(
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
 
-def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig) -> None:
+def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig) -> bool:
     """Force a new deployment of an existing ECS service.
 
-    A ClientError is logged and swallowed so the caller keeps deploying the
-    remaining services -- the deploy as a whole still reports success.
+    A ClientError is logged and reported as False so the caller keeps deploying
+    the remaining services. The caller collects the failures and raises once
+    every service has been attempted: a partial deploy must not report itself
+    as a complete one.
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         service_name: Name of the service.
         task_def_arn: Task definition ARN to deploy.
         dep_cfg: Deployment configuration extracted from infra_config.
+
+    Returns:
+        True if the deployment was started, False if AWS rejected it.
     """
     try:
         update_params = {
@@ -428,8 +433,72 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
 
         ctx.ecs_client.update_service(**update_params)
         log_status(service_name, "deployment started")
+        return True
     except ClientError as e:
         log_error(f"Failed to update service {service_name}: {e}")
+        return False
+
+
+def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: dict) -> bool:
+    """Register one service's task definition and create or update the service.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+        svc_config: The service's entry in deploy.toml's [services].
+        image_uris: Dictionary mapping image names to ECR URIs.
+
+    Returns:
+        True if the service was created or its deployment started; False if it
+        had no built image or AWS rejected the update. Both are failures the
+        caller must report -- a service that was never deployed is not a
+        deployed service.
+    """
+    # Get merged config (deploy.toml + environment sizing)
+    service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
+
+    # Get image URI for this service
+    image_name = svc_config.get("image", service_name)
+    image_uri = image_uris.get(image_name)
+    if not image_uri:
+        log_error(f"No image URI for service {service_name} (image: {image_name})")
+        return False
+
+    task_def_arn = register_task_definition(ctx, service_name, image_uri)
+
+    exists = (
+        service_exists(ctx.ecs_client, ctx.cluster_name, service_name) if not ctx.dry_run else True
+    )
+
+    if not exists:
+        create_service(ctx, service_name, task_def_arn)
+        log_status(service_name, "service created")
+        return True
+
+    dep_cfg = _get_deployment_config(ctx.infra_config)
+
+    # Disable AZ rebalancing if using max_percent <= 100 (AWS doesn't support it)
+    if dep_cfg.max_percent <= 100 and not ctx.dry_run:
+        _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
+
+    if ctx.dry_run:
+        print(
+            f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
+            f"aws ecs update-service --service {service_name} "
+            f"--task-definition {task_def_arn}"
+        )
+        cpu = service_cfg.get("cpu")
+        mem = service_cfg.get("memory")
+        reps = service_cfg.get("replicas")
+        print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
+        print(
+            f"    deployment: minHealthy={dep_cfg.min_healthy}%, "
+            f"maxPercent={dep_cfg.max_percent}%, "
+            f"circuitBreaker={dep_cfg.circuit_breaker}"
+        )
+        return True
+
+    return _update_service(ctx, service_name, task_def_arn, dep_cfg)
 
 
 def deploy_services(
@@ -438,73 +507,31 @@ def deploy_services(
 ) -> None:
     """Register task definitions and deploy all services (create or update).
 
+    Every service is attempted even after one fails -- stopping halfway leaves
+    a worse state than finishing -- but the failures are collected and raised
+    at the end. Logging them and returning normally made a partial deploy
+    indistinguishable from a complete one to everything downstream.
+
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         image_uris: Dictionary mapping image names to ECR URIs.
+
+    Raises:
+        RuntimeError: If any service could not be deployed, naming all of them.
     """
     log("Deploying ECS services...")
 
     services = ctx.config.get("services", {})
     log_debug(f"Services to deploy: {list(services.keys())}")
 
-    for service_name, svc_config in services.items():
-        # Get merged config (deploy.toml + environment sizing)
-        service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
+    failed = [
+        name
+        for name, svc_config in services.items()
+        if not _deploy_one_service(ctx, name, svc_config, image_uris)
+    ]
 
-        # Get image URI for this service
-        image_name = svc_config.get("image", service_name)
-        image_uri = image_uris.get(image_name)
-        if not image_uri:
-            log_error(f"No image URI for service {service_name} (image: {image_name})")
-            continue
-
-        # Register task definition
-        task_def_arn = register_task_definition(
-            ctx,
-            service_name,
-            image_uri,
-        )
-
-        # Check if service exists
-        exists = (
-            service_exists(ctx.ecs_client, ctx.cluster_name, service_name)
-            if not ctx.dry_run
-            else True
-        )
-
-        if exists:
-            # Update existing service
-            dep_cfg = _get_deployment_config(ctx.infra_config)
-
-            # Disable AZ rebalancing if using max_percent <= 100 (AWS doesn't support it)
-            if dep_cfg.max_percent <= 100 and not ctx.dry_run:
-                _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
-
-            if ctx.dry_run:
-                print(
-                    f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
-                    f"aws ecs update-service --service {service_name} "
-                    f"--task-definition {task_def_arn}"
-                )
-                cpu = service_cfg.get("cpu")
-                mem = service_cfg.get("memory")
-                reps = service_cfg.get("replicas")
-                print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
-                print(
-                    f"    deployment: minHealthy={dep_cfg.min_healthy}%, "
-                    f"maxPercent={dep_cfg.max_percent}%, "
-                    f"circuitBreaker={dep_cfg.circuit_breaker}"
-                )
-            else:
-                _update_service(ctx, service_name, task_def_arn, dep_cfg)
-        else:
-            # Create new service
-            create_service(
-                ctx,
-                service_name,
-                task_def_arn,
-            )
-            log_status(service_name, "service created")
+    if failed:
+        raise RuntimeError(f"Failed to deploy service(s): {', '.join(failed)}")
 
 
 def _resolve_migration_image(ctx, migration_service: str, image_uris: dict[str, str]) -> str | None:

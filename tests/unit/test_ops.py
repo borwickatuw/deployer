@@ -4,14 +4,16 @@ The cmd_status() tests are characterization tests: they pin the section
 layout, the ordering and the fallback lines that the command prints today,
 so a decomposition into per-section helpers can be shown to preserve it.
 
-53i-3a added the same for cmd_health(), cmd_maintenance(), cmd_ecr() and
-cmd_incident_start(), which were entirely uncovered, plus three pins on
-cmd_status() that run the *real* emergency/ producers against a client that
-refuses every call. Those three are the ones Phase 53i changes: a denied
-describe-services, list-task-definitions or describe-db-snapshots is rendered
-today as "no services", "no revisions" and a **missing snapshot section** —
-the last of which is the gap next to _print_rds_status(), which reports its
-own failure in place.
+cmd_health(), cmd_maintenance(), cmd_ecr() and cmd_incident_start() have the
+same, and three cmd_status() pins drive the *real* emergency/ producers against
+a client that refuses every call rather than stubbing them to return their
+sentinel — so they would fail if a producer went back to swallowing.
+
+Those three assert the rule in docs/internal/DECISIONS.md
+§ "2026-08-18: Error Contracts": this file is read-only, so it catches at each
+render boundary and reports the failure **in place**, following
+_print_rds_status(). One unreadable section must not delete itself from the
+report, and must not stop the others printing.
 """
 
 import sys
@@ -371,7 +373,7 @@ class TestCmdStatus:
 
 
 # =============================================================================
-# health / maintenance / ecr — the three commands 53i-3b and 53i-3c change
+# health / maintenance / ecr — the three commands with no coverage at all
 # =============================================================================
 
 

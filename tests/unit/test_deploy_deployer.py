@@ -41,6 +41,7 @@ from types import SimpleNamespace
 
 import click
 import pytest
+from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
 from deployer.deploy import deployer as deployer_mod
@@ -537,13 +538,35 @@ class TestCheckInfrastructureStatus:
         )
         assert aws["rds"].calls == [{"DBInstanceIdentifier": RDS_ID}]
 
-    def test_any_other_describe_error_is_swallowed(self, make_deployer, aws):
-        """Pinned not endorsed: a credentials or network failure reads as OK."""
-        aws["rds"].error = RuntimeError("boom")
+    def test_an_unreadable_instance_is_a_non_critical_warning(self, make_deployer, aws):
+        """An unreadable instance is not a healthy one.
+
+        This used to return a clean InfraStatus(), so a credentials failure was
+        indistinguishable from "RDS is available" and the deploy went ahead on
+        that. It stays non-critical -- a pre-flight check that cannot run must
+        not block a deploy by itself -- but the operator is now told.
+        """
+        aws["rds"].error = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "not authorized"}},
+            "DescribeDBInstances",
+        )
 
         status = self._deployer(make_deployer, rds_instance_id=RDS_ID).check_infrastructure_status()
 
-        assert status == InfraStatus(warnings=[], is_critical=False)
+        assert status.is_critical is False
+        assert len(status.warnings) == 1
+        assert f"Could not check RDS instance '{RDS_ID}'" in status.warnings[0]
+        assert "AccessDenied" in status.warnings[0]
+
+    def test_a_non_aws_error_is_no_longer_swallowed(self, make_deployer, aws):
+        """A bug inside the check is a bug, not an infrastructure verdict.
+
+        The old `except Exception` caught this too and answered "healthy".
+        """
+        aws["rds"].error = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            self._deployer(make_deployer, rds_instance_id=RDS_ID).check_infrastructure_status()
 
     def test_an_empty_instance_list_is_a_clean_status(self, make_deployer, aws):
         aws["rds"].response = {"DBInstances": []}

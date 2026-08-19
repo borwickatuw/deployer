@@ -182,6 +182,10 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     Args:
         ecr_client: boto3 ECR client.
         dry_run: If True, only print what would be done.
+
+    Raises:
+        RuntimeError: If ``docker login`` exits non-zero, carrying whatever
+            docker wrote to stderr.
     """
     log("Logging into ECR...")
 
@@ -199,15 +203,20 @@ def ecr_login(ecr_client, dry_run: bool = False) -> None:
     decoded = base64.b64decode(encoded_token).decode()
     _, password = decoded.split(":", 1)
 
-    # Use docker login
+    # Use docker login. stderr is captured rather than discarded: a failed
+    # login used to raise a bare "ECR login failed" with both streams sent to
+    # DEVNULL, leaving the operator nothing to act on. stdout stays discarded
+    # -- it carries only docker's "Login Succeeded" and its credential-store
+    # warning, and echoing it on success would be noise.
     cmd = ["docker", "login", "--username", "AWS", "--password-stdin", registry]
     proc = subprocess.Popen(
-        cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
     )
-    proc.communicate(input=password.encode())
+    _, stderr = proc.communicate(input=password.encode())
 
     if proc.returncode != 0:
-        raise RuntimeError("ECR login failed")
+        detail = (stderr or b"").decode(errors="replace").strip()
+        raise RuntimeError(f"ECR login failed: {detail or 'docker printed nothing'}")
 
     log_success("ECR login")
 

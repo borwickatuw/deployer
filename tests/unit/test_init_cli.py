@@ -19,8 +19,8 @@ Step text, numbering and order are pinned and must not change.
 "pinned, not endorsed": cmd_deploy_toml() catches bare `Exception` around
 generate_deploy_toml() and reports it as a compose-parsing error, so a bug in
 the generator is misattributed to the operator's input. That is an
-error-contract question tracked as claude-meta Phase 53i; this pins today's
-behaviour so 53i's change is visible when it happens.
+error-contract question decided in docs/internal/DECISIONS.md
+§ "2026-08-18: Error Contracts", layer 4.
 """
 
 import stat
@@ -553,21 +553,25 @@ class TestCmdDeployToml:
         assert init_cli.cmd_deploy_toml(str(_compose(tmp_path)), None, None, False) == 1
         assert "Error: no services defined" in capsys.readouterr().err
 
-    def test_other_generator_errors_are_blamed_on_the_compose_file(
+    def test_other_generator_errors_are_no_longer_blamed_on_the_compose_file(
         self, tmp_path, monkeypatch, capsys, compose_stubs
     ):
-        """Test the bare-Exception branch (pinned, not endorsed — 53i).
+        """A generator bug is a generator bug, not the operator's input.
 
-        Any non-ValueError from the generator is reported as a compose-parsing
-        failure, which misattributes a generator bug to the operator's input.
+        The bare-Exception branch reported any non-ValueError as "Error parsing
+        docker-compose.yml", sending the operator to fix a file that was never
+        the problem and discarding the traceback that would have located the
+        real fault.
         """
 
         def boom(**_kw):
             raise KeyError("image")
 
         monkeypatch.setattr(init_cli, "generate_deploy_toml", boom)
-        assert init_cli.cmd_deploy_toml(str(_compose(tmp_path)), None, None, False) == 1
-        assert "Error parsing docker-compose.yml" in capsys.readouterr().err
+
+        with pytest.raises(KeyError, match="image"):
+            init_cli.cmd_deploy_toml(str(_compose(tmp_path)), None, None, False)
+        assert "Error parsing docker-compose.yml" not in capsys.readouterr().err
 
 
 # =============================================================================

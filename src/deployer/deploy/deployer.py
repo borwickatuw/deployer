@@ -11,6 +11,7 @@ from pathlib import Path
 
 import boto3
 import click
+from botocore.exceptions import BotoCoreError, ClientError
 
 from deployer.config import parse_deploy_config
 from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig
@@ -220,8 +221,13 @@ class Deployer:
             return InfraStatus(
                 warnings=[f"RDS instance '{rds_instance_id}' not found"], is_critical=True
             )
-        except Exception:  # noqa: BLE001, S110 — don't fail deploy for infra-check errors
-            return InfraStatus()
+        except (ClientError, BotoCoreError) as e:
+            # An unreadable instance is not a healthy one. Returning a clean
+            # InfraStatus() here made a credentials failure indistinguishable
+            # from "RDS is available", and the deploy went ahead on that.
+            # Still not critical -- a pre-flight check that cannot run must not
+            # block a deploy on its own -- but the operator is told.
+            return InfraStatus(warnings=[f"Could not check RDS instance '{rds_instance_id}': {e}"])
 
         if not response["DBInstances"]:
             return InfraStatus()

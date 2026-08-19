@@ -10,7 +10,7 @@ This module is called early in the deploy pipeline, before migrations run.
 import json
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from ..utils import log, log_error, log_success, log_warning, print_with_advice
 
@@ -145,9 +145,13 @@ def _invoke_extensions_lambda(lambda_name: str, extensions: list[str], region: s
 
         log_error(f"Failed to invoke Lambda '{lambda_name}': {error_code} - {error_message}")
         raise RuntimeError(f"Lambda invocation failed: {error_code} - {error_message}") from e
-    except Exception as e:
+    except BotoCoreError as e:
+        # Narrowed from `except Exception`: BotoCoreError *is* the connectivity
+        # and configuration family, so this advice is now attributable. Under
+        # the old catch a bug inside boto3, or a TypeError in this module, was
+        # blamed on the operator's network.
         print_with_advice(
-            f"Unexpected error invoking Lambda '{lambda_name}': {e}",
+            f"Could not reach Lambda '{lambda_name}': {e}",
             "  Check your AWS credentials and network connectivity.",
         )
         raise RuntimeError(f"Failed to invoke extensions Lambda: {e}") from e

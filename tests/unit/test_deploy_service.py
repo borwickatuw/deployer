@@ -1027,9 +1027,15 @@ class TestDeployServices:
         assert aws.client.operations == []
         assert _lines(capsys.readouterr().out) == ["Deploying ECS services..."]
 
-    def test_missing_image_uri_skips_the_service(self, aws, capsys):
+    def test_missing_image_uri_skips_the_service_and_fails_the_deploy(self, aws, capsys):
+        """A skipped service is a service that was not deployed.
+
+        The skip is right -- there is nothing to deploy -- but the run used to
+        return normally, so a deploy missing a service looked complete.
+        """
         ctx = _ctx(aws)
-        deploy_services(ctx, {})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {})
         assert aws.client.operations == []
         assert _lines(capsys.readouterr().out) == [
             "Deploying ECS services...",
@@ -1037,8 +1043,10 @@ class TestDeployServices:
         ]
 
     def test_missing_image_uri_does_not_stop_the_loop(self, aws):
+        """Every service is still attempted; only the report at the end changes."""
         ctx = _ctx(aws, services={"web": {}, "worker": {}})
-        deploy_services(ctx, {"worker": IMAGE_URI})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"worker": IMAGE_URI})
         assert service_exists(aws.client, CLUSTER, "worker") is True
         assert service_exists(aws.client, CLUSTER, "web") is False
 
@@ -1050,7 +1058,8 @@ class TestDeployServices:
 
     def test_image_alias_miss_names_both_in_the_error(self, aws, capsys):
         ctx = _ctx(aws, services={"web": {"image": "app"}})
-        deploy_services(ctx, {"web": IMAGE_URI})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"web": IMAGE_URI})
         assert "  ✗ No image URI for service web (image: app)" in _lines(capsys.readouterr().out)
 
     # -- must-pin #8: create vs update -----------------------------------
@@ -1181,27 +1190,43 @@ class TestDeployServices:
         deploy_services(_ctx(aws), {"web": IMAGE_URI})
         assert aws.client.operations.count("describe_services") == 1
 
-    # -- must-pin #7: the ClientError swallow -----------------------------
+    # -- must-pin #7: the per-service ClientError -------------------------
 
-    def test_update_client_error_is_logged_and_swallowed(self, aws, capsys):
+    def test_update_client_error_is_logged_and_fails_the_deploy(self, aws, capsys):
+        """The ClientError is still caught per-service, but the run reports it.
+
+        It used to be logged and nothing more, so a deploy in which a service
+        was never updated ended as a success.
+        """
         _make_service(aws)
         aws.client.fail_next("update_service", _client_error("InvalidParameterException"))
         ctx = _ctx(aws)
-        deploy_services(ctx, {"web": IMAGE_URI})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"web": IMAGE_URI})
         out = _lines(capsys.readouterr().out)
         assert any(line.startswith("  ✗ Failed to update service web:") for line in out)
 
     def test_update_client_error_does_not_stop_the_loop(self, aws):
-        # `continue` is the last statement in the loop body, so it is already a
-        # no-op; what matters is that the exception never leaves deploy_services
-        # and the next service still deploys. The overall deploy is then
-        # reported as successful even though one service was never updated.
+        # Catching per-service is still right: stopping halfway leaves a worse
+        # state than finishing. What changed is that the failures are collected
+        # and raised once every service has been attempted.
         _make_service(aws, "web")
         aws.client.fail_next("update_service", _client_error("InvalidParameterException"))
         ctx = _ctx(aws, services={"web": {}, "worker": {}})
-        deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
         assert service_exists(aws.client, CLUSTER, "worker") is True
         assert len(aws.client.all_params("update_service")) == 1
+
+    def test_every_failed_service_is_named_once(self, aws):
+        """The message is a work list, so it must name all of them."""
+        _make_service(aws, "web")
+        _make_service(aws, "worker")
+        aws.client.fail_next("update_service", _client_error("InvalidParameterException"))
+        aws.client.fail_next("update_service", _client_error("InvalidParameterException"))
+        ctx = _ctx(aws, services={"web": {}, "worker": {}})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web, worker"):
+            deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
 
     def test_non_client_error_propagates(self, aws):
         # Only ClientError is swallowed. A BotoCoreError (endpoint failure,

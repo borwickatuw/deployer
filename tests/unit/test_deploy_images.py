@@ -187,7 +187,7 @@ class _FakeProc:
     def communicate(self, input=None):  # noqa: A002 — mirrors Popen.communicate
         self._recorder.stdin_payloads.append(input)
         self.returncode = self._recorder.returncode
-        return (None, None)
+        return (None, self._recorder.stderr)
 
 
 class _PopenRecorder:
@@ -197,6 +197,7 @@ class _PopenRecorder:
         self.calls: list[tuple[list[str], dict]] = []
         self.stdin_payloads: list[bytes | None] = []
         self.returncode = 0
+        self.stderr: bytes | None = None
 
     def __call__(self, cmd, **kwargs):
         self.calls.append((list(cmd), dict(kwargs)))
@@ -750,7 +751,7 @@ class TestEcrLogin:
                 {
                     "stdin": subprocess.PIPE,
                     "stdout": subprocess.DEVNULL,
-                    "stderr": subprocess.DEVNULL,
+                    "stderr": subprocess.PIPE,
                 },
             )
         ]
@@ -782,13 +783,25 @@ class TestEcrLogin:
 
         assert popen.stdin_payloads == [b"pass:with:colons"]
 
-    def test_a_failed_login_raises_and_logs_no_success(self, ecr, popen, capsys):
-        popen.returncode = 1
+    def test_a_failed_login_raises_with_dockers_own_diagnostics(self, ecr, popen, capsys):
+        """The error carries what docker said, rather than discarding it.
 
-        with pytest.raises(RuntimeError, match="ECR login failed"):
+        stderr used to go to DEVNULL, so "ECR login failed" was the whole of
+        what an operator had to work from.
+        """
+        popen.returncode = 1
+        popen.stderr = b"Error response from daemon: login attempt failed\n"
+
+        with pytest.raises(RuntimeError, match="ECR login failed: Error response from daemon"):
             ecr_login(ecr)
 
         assert _lines(capsys.readouterr().out) == ["Logging into ECR..."]
+
+    def test_a_failed_login_that_printed_nothing_still_says_so(self, ecr, popen):
+        popen.returncode = 1
+
+        with pytest.raises(RuntimeError, match="ECR login failed: docker printed nothing"):
+            ecr_login(ecr)
 
 
 class TestBuildAndPushRawDict:

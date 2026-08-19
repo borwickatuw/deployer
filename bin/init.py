@@ -407,10 +407,12 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
             app_name=app_name,
         )
     except ValueError as e:
+        # generate_deploy_toml() raises ValueError for everything it can
+        # attribute to the compose file. Anything else is a bug in the
+        # generator, and the `except Exception` that used to sit here reported
+        # it as "Error parsing docker-compose.yml" -- sending the operator to
+        # fix input that was never the problem, with no traceback to work from.
         print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error parsing docker-compose.yml: {e}", file=sys.stderr)
         return 1
 
     # Format as TOML

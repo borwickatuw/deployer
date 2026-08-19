@@ -2899,3 +2899,85 @@ it. "Force deploy **initiated**" is accurate and "Force deploy completed" would
 not be: tasks are replaced over the following minutes. Three previously
 unasserted success strings are now pinned, because the first version of the
 helper silently changed all three.
+
+### 53i-3d — the `except Exception` misattribution family (2026-08-19)
+
+**Layer 4 — the one the ADR did not decide**, added by operator decision.
+Layers 1-3 are all "an error is reported as absence". This is the adjacent
+shape: an error is reported as *a different error*, so the operator is sent to
+fix something that is not broken.
+
+| Site                         | Was                                                           | Now                                                                        |
+| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `deploy/deployer.py:223`     | `except Exception` → a **clean** `InfraStatus()`              | `ClientError`/`BotoCoreError` → a non-critical warning naming the instance |
+| `deploy/extensions.py:148`   | `except Exception` → "check your credentials and network"     | `BotoCoreError` only — which *is* that family                              |
+| `bin/init.py:412`            | `except Exception` → "Error parsing docker-compose.yml"       | gone; the `ValueError` arm stays and anything else keeps its traceback     |
+| `deploy/images.py ecr_login` | `RuntimeError("ECR login failed")`, both streams to `DEVNULL` | stderr captured and carried in the message                                 |
+| `deploy/service.py:431`      | logged, loop continued, **run ended as a success**            | failures collected per service and raised once, naming all of them         |
+
+#### The one with real blast radius
+
+`check_infrastructure_status` returned `InfraStatus()` — the *healthy* answer —
+for any exception at all, so a credentials failure was indistinguishable from
+"RDS is available" and the deploy proceeded on that reading. It is now a
+warning, and deliberately **not** critical: a pre-flight check that cannot run
+must not block a deploy by itself. The distinction the fix preserves is between
+"I checked and it is fine" and "I could not check" — the same distinction
+layer 1 is about, one subsystem over.
+
+#### Where the family differs from layer 1
+
+Two of these five are **not** "make it raise":
+
+- `deployer.py` still returns a value, because its caller's whole job is to
+  weigh warnings. What changed is that the value stopped lying.
+- `service.py` still catches per-service, because stopping halfway through a
+  deploy leaves a worse state than finishing. What changed is that
+  `deploy_services` now raises **once, at the end, naming every service that
+  failed** — and that the `if not image_uri: continue` skip one branch up,
+  which produced the identical "service silently not deployed", counts as a
+  failure too.
+
+The rule is not "raise more". It is **catch what you can attribute, and
+re-raise or report the rest as itself.**
+
+#### The three-command shape, a third time
+
+Extracting `_deploy_one_service` out of `deploy_services` was not tidying: the
+first version of the fix put a fourth `failed = []` loop-and-append accumulator
+in the codebase and pysmelly caught it, exactly as it caught the three in
+53i-3c. The same predicate-plus-comprehension answer applied, and the function
+went from a 45-line loop to a 5-line one.
+
+#### Closing measurements for the 53i-3 unit
+
+| Measure                      | `4678c1e` | 53i-3d closeout |
+| ---------------------------- | --------- | --------------- |
+| pysmelly                     | 32        | **33**          |
+| Tests                        | 1668      | **1735**        |
+| Total coverage               | 74.94%    | **78.73%**      |
+| `grep -c 53i tests/unit`     | 32 lines  | **1**           |
+| `deploy/deployer.py`         | 100%      | 100%            |
+| `deploy/extensions.py`       | 100%      | 100%            |
+| `deploy/images.py`           | 100%      | 100%            |
+| `deploy/service.py`          | 99%       | 99%             |
+| `emergency/ecs.py`, `rds.py` | 100%      | 100%            |
+
+**The one surviving `53i` marker is `tests/unit/test_modules.py:304`**, and it
+is not a pending marker: it is provenance for 53i-1's completed consolidation
+of three copies of the secret-name transform, naming the subphase whose record
+explains why the deleted operation order was equivalent. Every "pinned, not
+endorsed — 53i" marker is gone; the flipped assertions cite
+`DECISIONS.md § "2026-08-18: Error Contracts"` instead, because a phase number
+stops meaning anything once the arc closes.
+
+#### The net count, honestly
+
+**32 → 33.** One finding was added (`emergency/ecs.py:81`, adjudicated in
+§53i-3b as three boundaries that are right to differ) and none was removed —
+because the two `inconsistent-error-handling` rows this unit set out to fix
+are fixed in a form the check cannot see (§53i-3c). Every other finding in the
+set is byte-identical to `4678c1e`'s apart from line-number drift. **This unit
+was never going to move the count downward**, and the plan said so before it
+started; what it moved is 3.79 points of coverage and eleven places where the
+tool told an operator something untrue.

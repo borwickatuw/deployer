@@ -1,25 +1,27 @@
 """Characterization tests for bin/emergency.py's state-changing commands.
 
-These pin today's behaviour of cmd_rollback(), cmd_scale(), cmd_force_deploy()
-and cmd_revert() — return codes, operator-visible output, and the exact
-arguments handed to each ECS/checkpoint mutator — so that a decomposition of
-those commands can be shown to preserve it. AWS is never reached: the
-collaborators are stubbed at the module boundary, and interactive prompts are
-fed through builtins.input() rather than through prompt_or_exit(), so the
-tests survive the prompt moving into a shared helper.
+These pin cmd_rollback(), cmd_scale(), cmd_force_deploy() and cmd_revert() —
+return codes, operator-visible output, and the exact arguments handed to each
+ECS/checkpoint mutator — so that a decomposition of those commands can be shown
+to preserve it. AWS is never reached: the collaborators are stubbed at the
+module boundary, and interactive prompts are fed through builtins.input()
+rather than through prompt_or_exit(), so the tests survive the prompt moving
+into a shared helper.
 
-Several assertions are marked "pinned, not endorsed": cmd_rollback() returns 1
-both when the operator declines and when the update fails, and cmd_scale() /
-cmd_force_deploy() / cmd_revert() return 0 even when individual services fail.
-That is the same raise-vs-return question tracked as claude-meta Phase 53i;
-these tests pin today's behaviour so 53i's change is visible when it happens.
+The exit-code ladder they assert is docs/internal/DECISIONS.md
+§ "2026-08-18: Error Contracts", layer 3:
 
-cmd_revert() was **entirely uncovered** before 53i-3a, which is what made it
-the third exit-code swallow nobody had counted: a failed
-update_service_task_definition() or scale_service() logs, continues to the
-next service, and the command still prints "Revert completed" and returns 0.
+* ``0`` — succeeded; warnings may have printed and work completed
+* ``1`` — failed
+* ``2`` — usage error, owned by Click and never returned from a cmd_ function
+* ``3`` — declined by the operator; nothing was attempted
+
+cmd_revert() was **entirely uncovered** until it was pinned here, which is what
+made it the third exit-code swallow nobody had counted: a failed
+update_service_task_definition() or scale_service() logged, continued to the
+next service, and the command still printed "Revert completed" and returned 0.
 It is the checkpoint-restore path — the one an operator reaches for when a
-rollback has already gone wrong — so it is pinned before it is changed.
+rollback has already gone wrong.
 """
 
 import sys
@@ -821,7 +823,7 @@ class TestCmdRevertRestore:
     def test_a_failed_task_definition_update_skips_the_scale_and_returns_1(
         self, monkeypatch, ecs, capsys
     ):
-        """The third exit-code swallow, and the one no test caught before 53i-3a.
+        """The third exit-code swallow, and the one no test caught.
 
         A partial restore used to print "Revert completed" and return 0 — on
         the path an operator reaches for when a rollback has already gone
