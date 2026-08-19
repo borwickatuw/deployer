@@ -1,7 +1,7 @@
 """Characterization tests for bin/emergency.py's state-changing commands.
 
-These pin today's behaviour of cmd_rollback(), cmd_scale() and
-cmd_force_deploy() — return codes, operator-visible output, and the exact
+These pin today's behaviour of cmd_rollback(), cmd_scale(), cmd_force_deploy()
+and cmd_revert() — return codes, operator-visible output, and the exact
 arguments handed to each ECS/checkpoint mutator — so that a decomposition of
 those commands can be shown to preserve it. AWS is never reached: the
 collaborators are stubbed at the module boundary, and interactive prompts are
@@ -10,9 +10,16 @@ tests survive the prompt moving into a shared helper.
 
 Several assertions are marked "pinned, not endorsed": cmd_rollback() returns 1
 both when the operator declines and when the update fails, and cmd_scale() /
-cmd_force_deploy() return 0 even when individual services fail. That is the
-same raise-vs-return question tracked as claude-meta Phase 53i; these tests
-pin today's behaviour so 53i's change is visible when it happens.
+cmd_force_deploy() / cmd_revert() return 0 even when individual services fail.
+That is the same raise-vs-return question tracked as claude-meta Phase 53i;
+these tests pin today's behaviour so 53i's change is visible when it happens.
+
+cmd_revert() was **entirely uncovered** before 53i-3a, which is what made it
+the third exit-code swallow nobody had counted: a failed
+update_service_task_definition() or scale_service() logs, continues to the
+next service, and the command still prints "Revert completed" and returns 0.
+It is the checkpoint-restore path — the one an operator reaches for when a
+rollback has already gone wrong — so it is pinned before it is changed.
 """
 
 import sys
@@ -20,8 +27,11 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
+from botocore.exceptions import ClientError
 
+from deployer.emergency import ecs as ecs_module
 from deployer.emergency.checkpoint import Checkpoint, ServiceState
+from deployer.emergency.ecs import compare_task_definitions
 
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
@@ -32,6 +42,22 @@ _spec.loader.exec_module(emergency)
 
 ENV = "myapp-production"
 CLUSTER = "myapp-production-cluster"
+
+
+def _denied_ecs_client():
+    """An ECS client whose every call is refused, as a permissions gap would."""
+
+    class _Denied:
+        def __getattr__(self, _name):
+            def _call(*_args, **_kwargs):
+                raise ClientError(
+                    {"Error": {"Code": "AccessDeniedException", "Message": "not authorized"}},
+                    "DescribeTaskDefinition",
+                )
+
+            return _call
+
+    return _Denied()
 
 
 def _arn(service: str, revision: int) -> str:
@@ -239,6 +265,23 @@ class TestCmdRollbackExplicit:
         assert "+ NEW=1" in out
         assert "- OLD=2" in out
         assert "~ MODE: a -> b" in out
+
+    def test_an_unreadable_task_definition_renders_as_no_environment_changes(
+        self, monkeypatch, ecs, capsys
+    ):
+        # Pinned, not endorsed: this is the render Finding 2 is about — the
+        # diff shown to the operator immediately before a production rollback.
+        # A denied describe-task-definition prints nothing at all, which reads
+        # as "this rollback changes no environment variables" (Phase 53i).
+        _context(monkeypatch, _services(web=2))
+        _revision_list(monkeypatch, _revisions(7, 6))
+        monkeypatch.setattr(emergency, "compare_task_definitions", compare_task_definitions)
+        monkeypatch.setattr(ecs_module, "_get_ecs_client", _denied_ecs_client)
+
+        assert emergency.cmd_rollback(ENV, "web", 6, True) == 0
+        out = capsys.readouterr().out
+        assert "Environment variable changes:" not in out
+        assert "About to roll back web:" in out
 
     def test_progress_callback_reports_task_counts(self, monkeypatch, ecs, capsys):
         self._setup(monkeypatch)
@@ -551,3 +594,224 @@ class TestCmdForceDeploy:
         out = capsys.readouterr().out
         assert "Failed to force deploy web" in out
         assert "Force deploy initiated" in out
+
+
+def _checkpoint(
+    *,
+    environment: str = ENV,
+    action: str = "rollback",
+    reason: str = "Rolling back web from revision 7 to 6",
+    services: dict[str, ServiceState] | None = None,
+    filename: str = "emergency-2026-08-13-090000.json",
+) -> Checkpoint:
+    """Build a saved checkpoint the way load_checkpoint() returns one."""
+    return Checkpoint(
+        timestamp="2026-08-13T09:00:00Z",
+        environment=environment,
+        action=action,
+        reason=reason,
+        services=(
+            services
+            if services is not None
+            else {"web": ServiceState(_arn("web", 6), desired_count=2, running_count=2)}
+        ),
+        filename=filename,
+    )
+
+
+def _revert_context(monkeypatch, saved: Checkpoint | Exception) -> _StubLogger:
+    """Stub the context load and the checkpoint read for cmd_revert().
+
+    Args:
+        monkeypatch: pytest's monkeypatch fixture.
+        saved: The checkpoint load_checkpoint() answers with, or an exception
+            it raises instead.
+
+    Returns:
+        The logger the command writes its audit lines to.
+    """
+    logger = _StubLogger()
+    ctx = emergency.EmergencyContext(config={}, cluster_name=CLUSTER, rds_id=None, logger=logger)
+    monkeypatch.setattr(emergency, "_load_emergency_context", lambda _env, **_kw: ctx)
+
+    def _load(_filename: str) -> Checkpoint:
+        if isinstance(saved, Exception):
+            raise saved
+        return saved
+
+    monkeypatch.setattr(emergency, "load_checkpoint", _load)
+    return logger
+
+
+def _revert(monkeypatch, **overrides) -> int:
+    """Call cmd_revert() with the boilerplate arguments filled in."""
+    kwargs = {
+        "list_checkpoints_flag": False,
+        "checkpoint": "emergency-2026-08-13-090000.json",
+        "yes": True,
+    }
+    kwargs.update(overrides)
+    return emergency.cmd_revert(ENV, **kwargs)
+
+
+class TestCmdRevertList:
+    """cmd_revert --list, which reads checkpoints and changes nothing."""
+
+    def test_no_checkpoints_returns_0(self, monkeypatch, ecs, capsys):
+        monkeypatch.setattr(emergency, "list_checkpoints", lambda _env: [])
+
+        assert _revert(monkeypatch, list_checkpoints_flag=True) == 0
+        assert "No checkpoints found" in capsys.readouterr().out
+        assert ecs.updates == []
+
+    def test_each_checkpoint_is_listed_with_its_action_and_reason(self, monkeypatch, ecs, capsys):
+        monkeypatch.setattr(
+            emergency,
+            "list_checkpoints",
+            lambda _env: [_checkpoint(), _checkpoint(action="scale", reason="Scaling services")],
+        )
+
+        assert _revert(monkeypatch, list_checkpoints_flag=True) == 0
+        out = capsys.readouterr().out
+        assert f"Available checkpoints for {ENV}:" in out
+        assert (
+            f"{'emergency-2026-08-13-090000.json':<45} {'rollback':<12} 2026-08-13 09:00 UTC" in out
+        )
+        assert "    Reason: Rolling back web from revision 7 to 6" in out
+        assert "    Reason: Scaling services" in out
+        assert ecs.updates == []
+
+    def test_list_wins_over_a_named_checkpoint(self, monkeypatch, ecs):
+        monkeypatch.setattr(emergency, "list_checkpoints", lambda _env: [])
+
+        assert _revert(monkeypatch, list_checkpoints_flag=True, checkpoint="anything") == 0
+        assert ecs.updates == []
+
+
+class TestCmdRevertRefusals:
+    """The four ways cmd_revert() refuses before touching a service."""
+
+    def test_neither_list_nor_checkpoint_returns_1(self, monkeypatch, ecs, capsys):
+        assert _revert(monkeypatch, checkpoint=None) == 1
+        assert "Specify --checkpoint <filename> or --list" in capsys.readouterr().out
+        assert ecs.updates == []
+
+    def test_a_missing_checkpoint_file_returns_1(self, monkeypatch, ecs, capsys):
+        _revert_context(monkeypatch, FileNotFoundError("no such file"))
+
+        assert _revert(monkeypatch, checkpoint="gone.json") == 1
+        assert "Checkpoint not found: gone.json" in capsys.readouterr().out
+        assert ecs.updates == []
+
+    def test_a_checkpoint_from_another_environment_returns_1(self, monkeypatch, ecs, capsys):
+        _revert_context(monkeypatch, _checkpoint(environment="myapp-staging"))
+
+        assert _revert(monkeypatch) == 1
+        out = capsys.readouterr().out
+        assert "Checkpoint is for environment 'myapp-staging', not 'myapp-production'" in out
+        assert ecs.updates == []
+
+    def test_declining_the_confirmation_returns_1(self, monkeypatch, ecs):
+        _revert_context(monkeypatch, _checkpoint())
+        _answers(monkeypatch, "n")
+
+        assert _revert(monkeypatch, yes=False) == 1
+        assert ecs.updates == []
+        assert ecs.scales == []
+
+
+class TestCmdRevertRestore:
+    """cmd_revert()'s restore loop — the checkpoint-restore path."""
+
+    def test_every_service_is_restored_to_its_saved_revision_and_count(self, monkeypatch, ecs):
+        _revert_context(
+            monkeypatch,
+            _checkpoint(
+                services={
+                    "web": ServiceState(_arn("web", 6), desired_count=2, running_count=2),
+                    "worker": ServiceState(_arn("worker", 4), desired_count=1, running_count=1),
+                }
+            ),
+        )
+
+        assert _revert(monkeypatch) == 0
+        assert sorted(ecs.updates) == [
+            (CLUSTER, "web", _arn("web", 6)),
+            (CLUSTER, "worker", _arn("worker", 4)),
+        ]
+        assert sorted(ecs.scales) == [(CLUSTER, "web", 2), (CLUSTER, "worker", 1)]
+
+    def test_the_plan_is_shown_before_the_confirmation(self, monkeypatch, ecs, capsys):
+        _revert_context(monkeypatch, _checkpoint())
+
+        assert _revert(monkeypatch) == 0
+        out = capsys.readouterr().out
+        assert "Reverting to checkpoint: emergency-2026-08-13-090000.json" in out
+        assert "  Created: 2026-08-13T09:00:00Z" in out
+        assert "  Action: rollback" in out
+        assert "  Reason: Rolling back web from revision 7 to 6" in out
+        assert "  web: revision 6, count 2" in out
+
+    def test_the_revert_is_written_to_the_audit_log(self, monkeypatch, ecs):
+        logger = _revert_context(monkeypatch, _checkpoint())
+
+        assert _revert(monkeypatch) == 0
+        assert logger.lines == [
+            "action: revert",
+            "ecs: Restoring web to revision 6",
+            "success: Revert completed",
+        ]
+
+    def test_no_checkpoint_is_written_for_the_revert_itself(self, monkeypatch, ecs):
+        # Reverting a revert is not offered: the checkpoint being restored is
+        # already the record of the state being left behind.
+        _revert_context(monkeypatch, _checkpoint())
+
+        assert _revert(monkeypatch) == 0
+        assert ecs.checkpoints == []
+        assert ecs.cleanups == []
+
+    def test_a_failed_task_definition_update_skips_the_scale_but_still_returns_0(
+        self, monkeypatch, ecs, capsys
+    ):
+        # Pinned, not endorsed: the ADR's third exit-code swallow, and the one
+        # no test caught — a failed restore still reports success (Phase 53i).
+        _revert_context(monkeypatch, _checkpoint())
+        ecs.update_ok = False
+
+        assert _revert(monkeypatch) == 0
+        out = capsys.readouterr().out
+        assert "Failed to update task definition for web" in out
+        assert "Revert completed" in out
+        assert ecs.scales == []
+
+    def test_a_failed_scale_still_returns_0(self, monkeypatch, ecs, capsys):
+        # Pinned, not endorsed: same swallow, the second of the two mutators
+        # in the restore loop (Phase 53i).
+        _revert_context(monkeypatch, _checkpoint())
+        ecs.scale_ok = False
+
+        assert _revert(monkeypatch) == 0
+        out = capsys.readouterr().out
+        assert "Failed to scale web" in out
+        assert "Revert completed" in out
+
+    def test_a_failed_service_does_not_stop_the_next_one(self, monkeypatch, ecs):
+        # Pinned, not endorsed: `continue` is right, `return 0` is not — the
+        # remaining services must still be restored (Phase 53i).
+        _revert_context(
+            monkeypatch,
+            _checkpoint(
+                services={
+                    "web": ServiceState(_arn("web", 6), desired_count=2, running_count=2),
+                    "worker": ServiceState(_arn("worker", 4), desired_count=1, running_count=1),
+                }
+            ),
+        )
+        ecs.update_ok = False
+
+        assert _revert(monkeypatch) == 0
+        assert sorted(ecs.updates) == [
+            (CLUSTER, "web", _arn("web", 6)),
+            (CLUSTER, "worker", _arn("worker", 4)),
+        ]

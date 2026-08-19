@@ -2683,3 +2683,63 @@ pending sign-off rather than assumed: **(a)** the `emergency/` queries raising
 instead of returning a sentinel, and **(b)** exit code `2` for "operator
 declined". 53i-3 applies neither until they are confirmed. Everything else in
 the ADR follows from PYTHON.md #19 and needs no separate call.
+
+### 53i-3a — pinning the consumers before changing them (2026-08-19)
+
+**Zero production change; the count stayed at 32, and the finding *set* is
+byte-identical to `4678c1e`'s.** That is the result this unit was written to
+produce: coverage moves, adjudication does not.
+
+| Measure                  | Before | After   |
+| ------------------------ | ------ | ------- |
+| Tests                    | 1668   | 1724    |
+| Total coverage           | 74.94% | 78.43%  |
+| `bin/ops.py`             | 24%    | **53%** |
+| `bin/emergency.py`       | 76%    | **89%** |
+| `bin/resolve-config.py`  | 18%    | 26%     |
+| `bin/capacity-report.py` | 87%    | 88%     |
+| pysmelly                 | 32     | 32      |
+
+**Why tests-only was a prerequisite and not a nicety.** Every call site 53i-3b
+and 53i-3c change in `bin/` was unexecuted by any test. `cmd_revert` — the
+checkpoint-restore path, and the ADR's third exit-code swallow — was at **0%**;
+so were `cmd_health`, `cmd_maintenance`, `cmd_ecr` and `cmd_incident_start`.
+A diff cannot be shown to be behaviour-preserving against code nothing runs.
+
+#### What the pins run, and why it is not a stub
+
+The three `cmd_status()` pins and the `compare_task_definitions` pin drive the
+**real** `emergency/` producer against a boto3 client that refuses every call,
+rather than stubbing the producer to return its sentinel directly. What is
+pinned is therefore the end-to-end "failure reads as absence", not the test's
+own shortcut — which matters because 53i-3b changes the producer, and a stub
+returning `[]` would keep passing after the fix.
+
+#### The asymmetry the ops.py pins expose
+
+`_print_rds_status` reports an unreadable status **in place** ("Unable to
+retrieve status"); `_print_recent_snapshots`, two functions down, does
+`if not snapshots: return`, so a denied `describe-db-snapshots` **deletes the
+whole "Recent Snapshots" heading** from the report. Same file, same section,
+opposite answers. The render-boundary pattern 53i-3b applies is not new — it is
+already in this file, applied once.
+
+#### `compare_task_definitions` — the twelfth instance
+
+`emergency/ecs.py:208` has no `except` of its own; it inherits
+`get_task_definition_details`'s `None` and answers `{}`. `bin/emergency.py:322`
+renders that `{}` as the environment-variable diff shown to the operator
+**immediately before confirming a production rollback**, so an unreadable task
+definition displays as "this rollback changes nothing". Both halves are now
+pinned — the producer in `test_emergency_ecs.py`, the render in
+`test_emergency_cli.py`.
+
+#### New file
+
+`tests/unit/test_bin_error_boundaries.py` pins all eleven layer-2 call sites
+in one place: the six `get_environments_dir` sites that traceback, the three
+`bin/init.py` sites that already catch it correctly (the model 53i-3c follows,
+and the ones the fix must leave alone), `resolve-config.py:109`, and
+`bin/deploy.py:79`'s broad `except Exception` swallowing a `TypeError` from
+inside the resolver as "Failed to load deployment config". The three
+`bin/ops.py` sites are pinned in `test_ops.py` with the rest of that file.

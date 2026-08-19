@@ -91,6 +91,27 @@ def ecs_cluster(mocked_aws) -> dict:
     return {"cluster": CLUSTER, "service": SERVICE, "arns": arns}
 
 
+def _denied_client():
+    """An ECS client whose every call is refused, as a permissions gap would.
+
+    moto answers an unknown family with ClientError already, but a *known*
+    revision the caller may not read is the case that matters here, and moto
+    has no way to express it.
+    """
+
+    class _Denied:
+        def __getattr__(self, _name):
+            def _call(*_args, **_kwargs):
+                raise ClientError(
+                    {"Error": {"Code": "AccessDeniedException", "Message": "not authorized"}},
+                    "DescribeTaskDefinition",
+                )
+
+            return _call
+
+    return _Denied()
+
+
 class FakeClock:
     """Stand-in for the ``time`` module inside wait_for_deployment.
 
@@ -268,6 +289,18 @@ class TestCompareTaskDefinitions:
         # Pinned, not endorsed: "one side could not be read" is reported as
         # "nothing changed", which is the least safe default (Phase 53i).
         assert compare_task_definitions(ecs_cluster["arns"][0], "no-such-family:1") == {}
+
+    def test_a_denied_read_produces_the_same_empty_diff(self, ecs_cluster, mocker):
+        # Pinned, not endorsed: compare_task_definitions() has no except of its
+        # own — it inherits get_task_definition_details()'s sentinel, so a
+        # permissions gap and "identical revisions" are the same answer. This
+        # is the twelfth instance found in 53i-3's read of the corpus, and it
+        # is the one bin/emergency.py renders to the operator immediately
+        # before a production rollback (Phase 53i).
+        arns = ecs_cluster["arns"]
+        mocker.patch.object(ecs_module, "_get_ecs_client", return_value=_denied_client())
+
+        assert compare_task_definitions(arns[0], arns[1]) == {}
 
 
 class TestUpdateServiceTaskDefinition:

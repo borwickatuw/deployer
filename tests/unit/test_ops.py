@@ -3,6 +3,15 @@
 The cmd_status() tests are characterization tests: they pin the section
 layout, the ordering and the fallback lines that the command prints today,
 so a decomposition into per-section helpers can be shown to preserve it.
+
+53i-3a added the same for cmd_health(), cmd_maintenance(), cmd_ecr() and
+cmd_incident_start(), which were entirely uncovered, plus three pins on
+cmd_status() that run the *real* emergency/ producers against a client that
+refuses every call. Those three are the ones Phase 53i changes: a denied
+describe-services, list-task-definitions or describe-db-snapshots is rendered
+today as "no services", "no revisions" and a **missing snapshot section** —
+the last of which is the gap next to _print_rds_status(), which reports its
+own failure in place.
 """
 
 import sys
@@ -11,7 +20,10 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
+from botocore.exceptions import ClientError
 
+from deployer.emergency import ecs
+from deployer.emergency import rds as emergency_rds
 from deployer.emergency.checkpoint import ServiceState
 from deployer.utils import EnvironmentInfrastructure
 
@@ -117,6 +129,35 @@ RDS_ID = "myapp-production-db"
 def _arn(service: str, revision: int) -> str:
     """Build a task definition ARN the way get_all_services_state() reports it."""
     return f"arn:aws:ecs:us-west-2:111111111111:task-definition/{ENV}-{service}:{revision}"
+
+
+class _DeniedClient:
+    """A boto3 client whose every call is refused, as a permissions gap would.
+
+    Lets the swallow-a-ClientError pins run the *real* producer rather than a
+    stub that returns the sentinel directly, so what is pinned is the
+    end-to-end "failure reads as absence" and not the test's own shortcut.
+    """
+
+    def __init__(self, operation: str) -> None:
+        self._operation = operation
+
+    def __getattr__(self, _name: str):
+        def _call(*_args, **_kwargs):
+            raise ClientError(
+                {"Error": {"Code": "AccessDeniedException", "Message": "not authorized"}},
+                self._operation,
+            )
+
+        return _call
+
+
+def _denied_ecs_client():
+    return _DeniedClient("DescribeServices")
+
+
+def _denied_rds_client():
+    return _DeniedClient("DescribeDBSnapshots")
 
 
 @pytest.fixture
@@ -266,6 +307,48 @@ class TestCmdStatus:
         assert ops.cmd_status(ENV) == 0
         assert "Recent Snapshots:" not in capsys.readouterr().out
 
+    def test_an_unreadable_cluster_renders_as_an_empty_cluster(
+        self, status_env, monkeypatch, capsys
+    ):
+        # Pinned, not endorsed: a denied describe-services and a genuinely
+        # empty cluster print the same "No services found" (Phase 53i).
+        monkeypatch.setattr(ops, "get_all_services_state", ecs.get_all_services_state)
+        monkeypatch.setattr(ecs, "_get_ecs_client", _denied_ecs_client)
+
+        assert ops.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert "ECS Services:" in out
+        assert "  No services found" in out
+
+    def test_unreadable_task_definitions_render_as_a_service_with_no_revisions(
+        self, status_env, monkeypatch, capsys
+    ):
+        # Pinned, not endorsed: a denied list-task-definitions omits the
+        # service from the section rather than saying why (Phase 53i).
+        monkeypatch.setattr(
+            ops, "list_task_definition_revisions", ecs.list_task_definition_revisions
+        )
+        monkeypatch.setattr(ecs, "_get_ecs_client", _denied_ecs_client)
+
+        assert ops.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert "Recent Task Definitions:" in out
+        assert "revision" not in out.split("Recent Task Definitions:")[1]
+
+    def test_unreadable_snapshots_delete_the_whole_snapshot_section(
+        self, status_env, monkeypatch, capsys
+    ):
+        # Pinned, not endorsed: _print_recent_snapshots() returns early on an
+        # empty list, so a denied describe-db-snapshots removes the heading
+        # too — unlike _print_rds_status(), which reports in place (Phase 53i).
+        monkeypatch.setattr(ops, "get_rds_snapshots", emergency_rds.get_rds_snapshots)
+        monkeypatch.setattr(emergency_rds, "_get_rds_client", _denied_rds_client)
+
+        assert ops.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert f"RDS Instance: {RDS_ID}" in out
+        assert "Recent Snapshots:" not in out
+
     def test_unparseable_timestamps_are_shown_verbatim(self, status_env, capsys):
         status_env["revisions"] = [{"revision": 7}]
         status_env["snapshots"] = [{"id": "manual-snap"}]
@@ -275,3 +358,370 @@ class TestCmdStatus:
         assert "    revision   7 - unknown" in out
         assert "manual-snap" in out
         assert out.count("unknown") == 2
+
+
+# =============================================================================
+# health / maintenance / ecr — the three commands 53i-3b and 53i-3c change
+# =============================================================================
+
+
+@pytest.fixture
+def env_config(monkeypatch, tmp_path):
+    """Wire the get_environment_path + load_environment_config pair.
+
+    cmd_health(), cmd_maintenance() and cmd_ecr() each read their config
+    through this pair rather than through load_environment_infrastructure(),
+    so status_env does not reach them. Returns the mutable config dict.
+
+    Setting it to an exception makes load_environment_config raise, which is
+    how the "unhandled" half of core/config.py's error contract is pinned.
+    """
+    config: dict = {}
+
+    def _load(_env_path):
+        if isinstance(config.get("_raise"), Exception):
+            raise config["_raise"]
+        return config
+
+    monkeypatch.setattr(ops, "get_environment_path", lambda _e: tmp_path / _e)
+    monkeypatch.setattr(ops, "load_environment_config", _load)
+    return config
+
+
+class TestCmdHealth:
+    """Characterization tests for cmd_health()'s ALB target report."""
+
+    def _targets(self, monkeypatch, targets: list[dict]) -> list[str]:
+        """Stub the ALB lookup; return the list of ARNs it was asked about."""
+        seen: list[str] = []
+        monkeypatch.setattr(ops, "get_target_health", lambda arn: (seen.append(arn), targets)[1])
+        return seen
+
+    def _target(self, state="healthy", reason=None, description=None, target_id="10.0.1.5"):
+        return {
+            "target_id": target_id,
+            "port": 8000,
+            "health_state": state,
+            "reason": reason,
+            "description": description,
+        }
+
+    def test_an_unconfigured_target_group_returns_1(self, env_config, monkeypatch, capsys):
+        self._targets(monkeypatch, [])
+
+        assert ops.cmd_health(ENV) == 1
+        assert "Target group ARN not configured" in capsys.readouterr().out
+
+    def test_no_registered_targets_returns_0(self, env_config, monkeypatch, capsys):
+        env_config["infrastructure"] = {"target_group_arn": "arn:tg"}
+        seen = self._targets(monkeypatch, [])
+
+        assert ops.cmd_health(ENV) == 0
+        assert seen == ["arn:tg"]
+        assert "  No targets registered" in capsys.readouterr().out
+
+    def test_all_healthy_targets_return_0(self, env_config, monkeypatch, capsys):
+        env_config["infrastructure"] = {"target_group_arn": "arn:tg"}
+        self._targets(monkeypatch, [self._target(), self._target(target_id="10.0.2.7")])
+
+        assert ops.cmd_health(ENV) == 0
+        out = capsys.readouterr().out
+        assert "10.0.1.5:8000 - " in out
+        assert "healthy" in out
+        assert "2 healthy" in out
+        assert "0 unhealthy" in out
+
+    def test_an_unhealthy_target_returns_1_with_its_reason_and_details(
+        self, env_config, monkeypatch, capsys
+    ):
+        env_config["infrastructure"] = {"target_group_arn": "arn:tg"}
+        self._targets(
+            monkeypatch,
+            [self._target(state="unhealthy", reason="Target.Timeout", description="timed out")],
+        )
+
+        assert ops.cmd_health(ENV) == 1
+        out = capsys.readouterr().out
+        assert "unhealthy" in out
+        assert "    Reason: Target.Timeout" in out
+        assert "    Details: timed out" in out
+        assert "1 unhealthy" in out
+
+    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
+        # Pinned, not endorsed: cmd_health() is one of the four sites that let
+        # load_environment_config()'s documented FileNotFoundError reach the
+        # operator as a traceback (Phase 53i).
+        env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
+
+        with pytest.raises(FileNotFoundError):
+            ops.cmd_health(ENV)
+
+
+class TestCmdMaintenance:
+    """Characterization tests for cmd_maintenance()'s two-resource report."""
+
+    def _maintenance(self, monkeypatch, rds_items=(), cache_items=()) -> list[tuple]:
+        """Stub the pending-maintenance lookup; return the calls it received."""
+        calls: list[tuple] = []
+
+        def _get(rds_instance_id, elasticache_cluster_id):
+            calls.append((rds_instance_id, elasticache_cluster_id))
+            return {"rds": list(rds_items), "elasticache": list(cache_items)}
+
+        monkeypatch.setattr(ops, "get_all_pending_maintenance", _get)
+        return calls
+
+    def test_neither_resource_configured_says_so_and_returns_0(
+        self, env_config, monkeypatch, capsys
+    ):
+        calls = self._maintenance(monkeypatch)
+
+        assert ops.cmd_maintenance(ENV) == 0
+        out = capsys.readouterr().out
+        assert calls == [(None, None)]
+        assert "RDS: Not configured" in out
+        assert "ElastiCache: Not configured" in out
+        assert "No pending maintenance" in out
+
+    def test_a_cache_url_derives_the_elasticache_cluster_id(self, env_config, monkeypatch):
+        env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
+        env_config["cache"] = {"url": "redis://cache:6379"}
+        calls = self._maintenance(monkeypatch)
+
+        assert ops.cmd_maintenance(ENV) == 0
+        assert calls == [(RDS_ID, f"{ENV}-cache")]
+
+    def test_nothing_pending_reports_each_resource_as_clear(self, env_config, monkeypatch, capsys):
+        env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
+        env_config["cache"] = {"url": "redis://cache:6379"}
+        self._maintenance(monkeypatch)
+
+        assert ops.cmd_maintenance(ENV) == 0
+        out = capsys.readouterr().out
+        assert f"RDS ({RDS_ID}): No pending maintenance" in out
+        assert f"ElastiCache ({ENV}-cache): No pending maintenance" in out
+
+    def test_pending_rds_actions_are_listed_with_their_dates(self, env_config, monkeypatch, capsys):
+        env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
+        self._maintenance(
+            monkeypatch,
+            rds_items=[
+                {
+                    "action": "system-update",
+                    "description": "Operating system update",
+                    "auto_apply_after": "2026-09-01T00:00:00Z",
+                    "current_apply_date": "2026-09-05T00:00:00Z",
+                }
+            ],
+        )
+
+        assert ops.cmd_maintenance(ENV) == 0
+        out = capsys.readouterr().out
+        assert "  - system-update: Operating system update" in out
+        assert "    Auto-apply after: 2026-09-01T00:00:00Z" in out
+        assert "    Scheduled: 2026-09-05T00:00:00Z" in out
+        assert "Pending maintenance found" in out
+
+    def test_a_cache_update_severity_is_shown_in_brackets_when_present(
+        self, env_config, monkeypatch, capsys
+    ):
+        env_config["cache"] = {"url": "redis://cache:6379"}
+        self._maintenance(
+            monkeypatch,
+            cache_items=[
+                {"action": "update-1", "description": "Engine patch", "severity": "important"},
+                {"action": "update-2", "description": "Node resize", "severity": None},
+            ],
+        )
+
+        assert ops.cmd_maintenance(ENV) == 0
+        out = capsys.readouterr().out
+        assert "  - [important] update-1: Engine patch" in out
+        assert "  - update-2: Node resize" in out
+
+    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
+        # Pinned, not endorsed: the second of the four unhandled sites (53i).
+        env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
+
+        with pytest.raises(FileNotFoundError):
+            ops.cmd_maintenance(ENV)
+
+
+class TestCmdEcr:
+    """Characterization tests for cmd_ecr()'s vulnerability report."""
+
+    def _ecr(self, monkeypatch, repos=(), summaries=None, findings=None) -> list[list[str] | None]:
+        """Stub the three ECR lookups; return the service-name lists seen."""
+        seen: list[list[str] | None] = []
+
+        def _repos(_env, service_names):
+            seen.append(service_names)
+            return list(repos)
+
+        monkeypatch.setattr(ops, "list_repositories_for_environment", _repos)
+        monkeypatch.setattr(
+            ops, "get_repository_scan_summary", lambda repo, **_kw: (summaries or {}).get(repo, [])
+        )
+        monkeypatch.setattr(
+            ops, "get_image_scan_findings", lambda *_a, **_kw: findings or {"findings": []}
+        )
+        return seen
+
+    def _summary(self, critical=0, high=0, tag="latest", status="COMPLETE"):
+        return [
+            {
+                "image_tag": tag,
+                "scan_status": status,
+                "critical_count": critical,
+                "high_count": high,
+            }
+        ]
+
+    def test_no_repositories_returns_0_and_names_what_was_checked(
+        self, env_config, monkeypatch, capsys
+    ):
+        env_config["services"] = {"config": {"web": {}, "worker": {}}}
+        seen = self._ecr(monkeypatch)
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 0
+        out = capsys.readouterr().out
+        assert seen == [["web", "worker"]]
+        assert f"No ECR repositories found for {ENV}" in out
+        assert f"Checked: {ENV}-web, {ENV}-worker" in out
+
+    def test_no_configured_services_asks_for_every_repository(self, env_config, monkeypatch):
+        seen = self._ecr(monkeypatch)
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 0
+        assert seen == [None]
+
+    def test_a_repository_with_no_scan_summary_is_skipped(self, env_config, monkeypatch, capsys):
+        self._ecr(monkeypatch, repos=[f"{ENV}-web"], summaries={})
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 0
+        out = capsys.readouterr().out
+        assert "  web:" not in out
+        assert "  CRITICAL: 0" in out
+
+    def test_a_clean_scan_returns_0(self, env_config, monkeypatch, capsys):
+        self._ecr(monkeypatch, repos=[f"{ENV}-web"], summaries={f"{ENV}-web": self._summary()})
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 0
+        out = capsys.readouterr().out
+        assert "  web:" in out
+        assert "    Tag: latest" in out
+        assert "    Scan: COMPLETE" in out
+        assert "No critical or high vulnerabilities" in out
+
+    def test_high_findings_warn_but_still_return_0(self, env_config, monkeypatch, capsys):
+        self._ecr(
+            monkeypatch,
+            repos=[f"{ENV}-web"],
+            summaries={f"{ENV}-web": self._summary(high=3)},
+        )
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 0
+        out = capsys.readouterr().out
+        assert "HIGH: 3" in out
+        assert "High severity vulnerabilities found" in out
+
+    def test_critical_findings_return_1(self, env_config, monkeypatch, capsys):
+        self._ecr(
+            monkeypatch,
+            repos=[f"{ENV}-web"],
+            summaries={f"{ENV}-web": self._summary(critical=2, high=3)},
+        )
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 1
+        out = capsys.readouterr().out
+        assert "CRITICAL: 2" in out
+        assert "Critical vulnerabilities found" in out
+
+    def test_verbose_lists_the_first_five_findings_and_counts_the_rest(
+        self, env_config, monkeypatch, capsys
+    ):
+        self._ecr(
+            monkeypatch,
+            repos=[f"{ENV}-web"],
+            summaries={f"{ENV}-web": self._summary(critical=6)},
+            findings={
+                "findings": [{"severity": "CRITICAL", "name": f"CVE-2026-000{n}"} for n in range(6)]
+            },
+        )
+
+        assert ops.cmd_ecr(ENV, verbose=True) == 1
+        out = capsys.readouterr().out
+        assert "      - [CRITICAL] CVE-2026-0000" in out
+        assert "      - [CRITICAL] CVE-2026-0004" in out
+        assert "      - [CRITICAL] CVE-2026-0005" not in out
+        assert "      ... and 1 more" in out
+
+    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
+        # Pinned, not endorsed: the third of the four unhandled sites (53i).
+        env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
+
+        with pytest.raises(FileNotFoundError):
+            ops.cmd_ecr(ENV, verbose=False)
+
+
+class TestCmdIncidentStart:
+    """cmd_incident_start()'s initial-state capture — the ops.py:874 call site."""
+
+    @pytest.fixture(autouse=True)
+    def incidents_dir(self, monkeypatch, tmp_path):
+        """Write incident files under tmp_path instead of local/incidents/."""
+        monkeypatch.setattr(ops, "INCIDENTS_DIR", tmp_path / "incidents")
+        return tmp_path / "incidents"
+
+    def _written(self, incidents_dir) -> str:
+        (path,) = list(incidents_dir.glob("*.md"))
+        return path.read_text()
+
+    def test_the_running_services_are_captured_as_the_initial_state(
+        self, env_config, incidents_dir, monkeypatch
+    ):
+        env_config["infrastructure"] = {"cluster_name": CLUSTER}
+        monkeypatch.setattr(
+            ops,
+            "get_all_services_state",
+            lambda _c: {
+                "web": ServiceState(_arn("web", 7), desired_count=2, running_count=1),
+            },
+        )
+
+        assert ops.cmd_incident_start(ENV, "web 500s") == 0
+        body = self._written(incidents_dir)
+        assert "- web: 1/2 running" in body
+        assert "Status: OPEN" in body
+
+    def test_an_unconfigured_cluster_leaves_the_state_empty(
+        self, env_config, incidents_dir, monkeypatch
+    ):
+        monkeypatch.setattr(ops, "get_all_services_state", lambda _c: {})
+
+        assert ops.cmd_incident_start(ENV, "web 500s") == 0
+        assert "(no services found)" in self._written(incidents_dir)
+
+    def test_an_unreadable_cluster_is_recorded_as_no_services_found(
+        self, env_config, incidents_dir, monkeypatch
+    ):
+        # Pinned, not endorsed: the real get_all_services_state() swallows
+        # ClientError and answers {}, so "I could not read the cluster" is
+        # written into the incident record as "(no services found)" — the same
+        # text an empty cluster produces above (Phase 53i).
+        env_config["infrastructure"] = {"cluster_name": CLUSTER}
+        monkeypatch.setattr(ops, "get_all_services_state", ecs.get_all_services_state)
+        monkeypatch.setattr(ecs, "_get_ecs_client", _denied_ecs_client)
+
+        assert ops.cmd_incident_start(ENV, "web 500s") == 0
+        assert "(no services found)" in self._written(incidents_dir)
+
+    def test_a_failed_config_read_is_recorded_in_the_incident_file(self, env_config, incidents_dir):
+        # This one is honest degradation, not misattribution: the incident file
+        # still gets written and says why the state is missing. 53i keeps it.
+        env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
+
+        assert ops.cmd_incident_start(ENV, "web 500s") == 0
+        body = self._written(incidents_dir)
+        assert "(Could not capture state: Config file not found: config.toml)" in body
+        assert "Status: OPEN" in body
