@@ -105,7 +105,9 @@ def resolve_config(environment: str) -> dict:
     tofu_outputs = get_all_tofu_outputs(env_path)
     tofu_outputs_json = json.dumps(tofu_outputs, sort_keys=True)
 
-    # Resolve the config
+    # Resolve the config. Not wrapped in exit_on here: resolve_config() is a
+    # library function with a documented Raises: contract, and cli() below is
+    # the boundary that turns it into an exit status.
     resolved = load_environment_config(env_path)
 
     # Strip the [aws] section — CI/CD doesn't use named profiles

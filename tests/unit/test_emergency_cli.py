@@ -332,20 +332,19 @@ class TestCmdRollbackExplicit:
         assert "Not enough revisions to roll back for web" in capsys.readouterr().out
         assert ecs.checkpoints == []
 
-    def test_declining_the_confirmation_returns_1(self, monkeypatch, ecs):
-        # Pinned, not endorsed: "operator said no" is reported with the same
-        # exit status as "the update failed" (Phase 53i).
+    def test_declining_the_confirmation_returns_declined(self, monkeypatch, ecs):
+        """ "The operator said no" is not "the update failed"."""
         self._setup(monkeypatch)
         _answers(monkeypatch, "n")
 
-        assert emergency.cmd_rollback(ENV, "web", 6, False) == 1
+        assert emergency.cmd_rollback(ENV, "web", 6, False) == emergency.EXIT_DECLINED
         assert ecs.checkpoints == []
         assert ecs.updates == []
 
     def test_a_failed_update_returns_1_after_the_checkpoint_is_written(
         self, monkeypatch, ecs, capsys
     ):
-        # Pinned, not endorsed: same 1 as the declined case above (Phase 53i).
+        # 1, distinct from the declined case above, which is EXIT_DECLINED.
         self._setup(monkeypatch)
         ecs.update_ok = False
 
@@ -355,7 +354,10 @@ class TestCmdRollbackExplicit:
         assert "Failed to update service" in capsys.readouterr().out
 
     def test_a_deployment_timeout_still_returns_0(self, monkeypatch, ecs, capsys):
-        # Pinned, not endorsed: a timeout is a warning, not a failure (Phase 53i).
+        # Deliberate: the rollback *was* applied and only the wait was
+        # inconclusive. Succeeded-with-warnings is the third outcome in the
+        # ladder, and it is a 0 on purpose rather than by omission. A wait that
+        # could not read the service at all raises instead, and exits 1.
         self._setup(monkeypatch)
         ecs.deployment_ok = False
 
@@ -486,7 +488,9 @@ class TestCmdScale:
     def test_service_and_count_scale_one_service(self, monkeypatch, ecs, capsys):
         assert _scale(monkeypatch, service="web", count=5) == 0
         assert ecs.scales == [(CLUSTER, "web", 5)]
-        assert "web: 2 -> 5" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "web: 2 -> 5" in out
+        assert "Scale operation completed" in out
 
     def test_count_is_required_with_service(self, monkeypatch, ecs, capsys):
         assert _scale(monkeypatch, service="web") == 1
@@ -536,9 +540,9 @@ class TestCmdScale:
         assert _scale(monkeypatch) == 1
         assert "Specify --service, --all, or --reset" in capsys.readouterr().out
 
-    def test_declining_the_confirmation_returns_1(self, monkeypatch, ecs):
+    def test_declining_the_confirmation_returns_declined(self, monkeypatch, ecs):
         _answers(monkeypatch, "n")
-        assert _scale(monkeypatch, service="web", count=5, yes=False) == 1
+        assert _scale(monkeypatch, service="web", count=5, yes=False) == emergency.EXIT_DECLINED
         assert ecs.checkpoints == []
         assert ecs.scales == []
 
@@ -550,16 +554,25 @@ class TestCmdScale:
         assert sorted(checkpoint["services"]) == ["web", "worker"]
         assert ecs.cleanups == [{"environment": ENV}]
 
-    def test_a_failed_scale_is_reported_but_the_command_still_returns_0(
-        self, monkeypatch, ecs, capsys
-    ):
-        # Pinned, not endorsed: a service that failed to scale leaves the exit
-        # status at 0 (Phase 53i).
+    def test_a_failed_scale_returns_1(self, monkeypatch, ecs, capsys):
+        """A failure printed to the terminal is invisible to CI if the exit is 0."""
         ecs.scale_ok = False
-        assert _scale(monkeypatch, service="web", count=5) == 0
+        assert _scale(monkeypatch, service="web", count=5) == 1
         out = capsys.readouterr().out
         assert "Failed to scale web" in out
-        assert "Scale operation completed" in out
+        assert "Scale failed for 1 of 1 service(s)" in out
+        assert "Scale operation completed" not in out
+
+    def test_every_service_is_still_attempted_after_one_fails(self, monkeypatch, ecs):
+        """The operator asked for all of them; one failure must not skip the rest."""
+        ecs.scale_ok = False
+        assert _scale(monkeypatch, all_services=True, count=2) == 1
+        assert sorted(ecs.scales) == [(CLUSTER, "web", 2), (CLUSTER, "worker", 2)]
+
+    def test_the_checkpoint_is_still_pruned_after_a_failure(self, monkeypatch, ecs):
+        ecs.scale_ok = False
+        assert _scale(monkeypatch, service="web", count=5) == 1
+        assert ecs.cleanups == [{"environment": ENV}]
 
 
 def _force_deploy(monkeypatch, services=None, **overrides):
@@ -576,7 +589,12 @@ class TestCmdForceDeploy:
     def test_a_named_service_is_redeployed(self, monkeypatch, ecs, capsys):
         assert _force_deploy(monkeypatch, service="web") == 0
         assert ecs.forced == [(CLUSTER, "web")]
-        assert "Force deployment initiated for web" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Force deployment initiated for web" in out
+        # "initiated", not "completed": tasks are replaced over the next few
+        # minutes, so the success summary must not overclaim.
+        assert "Force deploy initiated" in out
+        assert "Note: Tasks will be replaced over the next few minutes" in out
 
     def test_all_redeploys_every_service(self, monkeypatch, ecs):
         assert _force_deploy(monkeypatch, all_services=True) == 0
@@ -593,9 +611,9 @@ class TestCmdForceDeploy:
         assert _force_deploy(monkeypatch) == 1
         assert "Specify --service <name> or --all" in capsys.readouterr().out
 
-    def test_declining_the_confirmation_returns_1(self, monkeypatch, ecs):
+    def test_declining_the_confirmation_returns_declined(self, monkeypatch, ecs):
         _answers(monkeypatch, "n")
-        assert _force_deploy(monkeypatch, service="web", yes=False) == 1
+        assert _force_deploy(monkeypatch, service="web", yes=False) == emergency.EXIT_DECLINED
         assert ecs.forced == []
 
     def test_no_checkpoint_is_written(self, monkeypatch, ecs):
@@ -604,15 +622,14 @@ class TestCmdForceDeploy:
         assert _force_deploy(monkeypatch, all_services=True) == 0
         assert ecs.checkpoints == []
 
-    def test_a_failed_deployment_is_reported_but_the_command_still_returns_0(
-        self, monkeypatch, ecs, capsys
-    ):
-        # Pinned, not endorsed: same swallow as cmd_scale() (Phase 53i).
+    def test_a_failed_deployment_returns_1(self, monkeypatch, ecs, capsys):
+        """Same rule as cmd_scale(): a reported failure must not exit 0."""
         ecs.force_ok = False
-        assert _force_deploy(monkeypatch, service="web") == 0
+        assert _force_deploy(monkeypatch, service="web") == 1
         out = capsys.readouterr().out
         assert "Failed to force deploy web" in out
-        assert "Force deploy initiated" in out
+        assert "Force deploy failed for 1 of 1 service(s)" in out
+        assert "Force deploy initiated" not in out
 
 
 def _checkpoint(
@@ -730,11 +747,11 @@ class TestCmdRevertRefusals:
         assert "Checkpoint is for environment 'myapp-staging', not 'myapp-production'" in out
         assert ecs.updates == []
 
-    def test_declining_the_confirmation_returns_1(self, monkeypatch, ecs):
+    def test_declining_the_confirmation_returns_declined(self, monkeypatch, ecs):
         _revert_context(monkeypatch, _checkpoint())
         _answers(monkeypatch, "n")
 
-        assert _revert(monkeypatch, yes=False) == 1
+        assert _revert(monkeypatch, yes=False) == emergency.EXIT_DECLINED
         assert ecs.updates == []
         assert ecs.scales == []
 
@@ -771,7 +788,7 @@ class TestCmdRevertRestore:
         assert "  Reason: Rolling back web from revision 7 to 6" in out
         assert "  web: revision 6, count 2" in out
 
-    def test_the_revert_is_written_to_the_audit_log(self, monkeypatch, ecs):
+    def test_the_revert_is_written_to_the_audit_log(self, monkeypatch, ecs, capsys):
         logger = _revert_context(monkeypatch, _checkpoint())
 
         assert _revert(monkeypatch) == 0
@@ -780,6 +797,17 @@ class TestCmdRevertRestore:
             "ecs: Restoring web to revision 6",
             "success: Revert completed",
         ]
+        out = capsys.readouterr().out
+        assert "Revert completed" in out
+        assert "Note: Services may take a few minutes to stabilize" in out
+
+    def test_a_partial_restore_names_the_failures_in_the_audit_log(self, monkeypatch, ecs):
+        logger = _revert_context(monkeypatch, _checkpoint())
+        ecs.scale_ok = False
+
+        assert _revert(monkeypatch) == 1
+        assert "error: Revert failed for: web" in logger.lines
+        assert "success: Revert completed" not in logger.lines
 
     def test_no_checkpoint_is_written_for_the_revert_itself(self, monkeypatch, ecs):
         # Reverting a revert is not offered: the checkpoint being restored is
@@ -790,34 +818,37 @@ class TestCmdRevertRestore:
         assert ecs.checkpoints == []
         assert ecs.cleanups == []
 
-    def test_a_failed_task_definition_update_skips_the_scale_but_still_returns_0(
+    def test_a_failed_task_definition_update_skips_the_scale_and_returns_1(
         self, monkeypatch, ecs, capsys
     ):
-        # Pinned, not endorsed: the ADR's third exit-code swallow, and the one
-        # no test caught — a failed restore still reports success (Phase 53i).
+        """The third exit-code swallow, and the one no test caught before 53i-3a.
+
+        A partial restore used to print "Revert completed" and return 0 — on
+        the path an operator reaches for when a rollback has already gone
+        wrong.
+        """
         _revert_context(monkeypatch, _checkpoint())
         ecs.update_ok = False
 
-        assert _revert(monkeypatch) == 0
+        assert _revert(monkeypatch) == 1
         out = capsys.readouterr().out
         assert "Failed to update task definition for web" in out
-        assert "Revert completed" in out
+        assert "Revert failed for 1 of 1 service(s)" in out
+        assert "Revert completed" not in out
         assert ecs.scales == []
 
-    def test_a_failed_scale_still_returns_0(self, monkeypatch, ecs, capsys):
-        # Pinned, not endorsed: same swallow, the second of the two mutators
-        # in the restore loop (Phase 53i).
+    def test_a_failed_scale_returns_1(self, monkeypatch, ecs, capsys):
+        """The second of the two mutators in the restore loop."""
         _revert_context(monkeypatch, _checkpoint())
         ecs.scale_ok = False
 
-        assert _revert(monkeypatch) == 0
+        assert _revert(monkeypatch) == 1
         out = capsys.readouterr().out
         assert "Failed to scale web" in out
-        assert "Revert completed" in out
+        assert "Revert failed for 1 of 1 service(s)" in out
 
-    def test_a_failed_service_does_not_stop_the_next_one(self, monkeypatch, ecs):
-        # Pinned, not endorsed: `continue` is right, `return 0` is not — the
-        # remaining services must still be restored (Phase 53i).
+    def test_a_failed_service_does_not_stop_the_next_one(self, monkeypatch, ecs, capsys):
+        # `continue` is right and stays; the `return 0` next to it was not.
         _revert_context(
             monkeypatch,
             _checkpoint(
@@ -829,8 +860,9 @@ class TestCmdRevertRestore:
         )
         ecs.update_ok = False
 
-        assert _revert(monkeypatch) == 0
+        assert _revert(monkeypatch) == 1
         assert sorted(ecs.updates) == [
             (CLUSTER, "web", _arn("web", 6)),
             (CLUSTER, "worker", _arn("worker", 4)),
         ]
+        assert "Revert failed for 2 of 2 service(s)" in capsys.readouterr().out

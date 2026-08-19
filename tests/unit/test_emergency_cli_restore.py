@@ -405,10 +405,11 @@ class TestCmdRestoreDbInteractive:
         assert emergency.cmd_restore_db(ENV, snapshot=None, time=None) == 0
         assert "Point-in-time recovery is available" not in capsys.readouterr().out
 
-    def test_an_empty_selection_returns_1(self, logger, restore, monkeypatch, capsys):
+    def test_an_empty_selection_returns_declined(self, logger, restore, monkeypatch, capsys):
+        """An empty answer at the menu is a decline, not a failed restore."""
         restore.snapshots = [_snapshot("snap-1")]
         prompts = _answers(monkeypatch, "")
-        assert emergency.cmd_restore_db(ENV, snapshot=None, time=None) == 1
+        assert emergency.cmd_restore_db(ENV, snapshot=None, time=None) == emergency.EXIT_DECLINED
         assert prompts == ["Selection: "]
         assert "Cancelled" in capsys.readouterr().out
 

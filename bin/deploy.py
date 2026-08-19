@@ -64,7 +64,8 @@ def _load_env_config_or_exit(environment: str) -> tuple[dict, str]:
         SystemExit: With code 1 if the directory is missing, the config cannot
             be loaded, or the environment type is invalid.
     """
-    env_path = get_environments_dir() / environment
+    with exit_on(RuntimeError):
+        env_path = get_environments_dir() / environment
     if not env_path.exists():
         log_error(f"Environment directory not found: {env_path}")
         sys.exit(1)
@@ -72,13 +73,17 @@ def _load_env_config_or_exit(environment: str) -> tuple[dict, str]:
     log(f"Loading deployment config from {env_path}...")
     try:
         env_config = load_environment_config(env_path)
-        log_success("Loaded config from config.toml")
     except FileNotFoundError:
         log_error(f"Config file not found: {env_path / 'config.toml'}")
         sys.exit(1)
-    except Exception as e:
+    except RuntimeError as e:
+        # Narrowed from `except Exception` (Phase 53i-3c): the documented pair
+        # is FileNotFoundError and RuntimeError. Anything else is a bug in the
+        # resolver, and reporting it as "Failed to load deployment config" sent
+        # the operator to check a config.toml that was never the problem.
         log_error(f"Failed to load deployment config: {e}")
         sys.exit(1)
+    log_success("Loaded config from config.toml")
 
     with exit_on(ValueError):
         environment_type = get_environment_type(env_config)

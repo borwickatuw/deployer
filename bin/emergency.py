@@ -64,6 +64,7 @@ from deployer.emergency.rds import (
     restore_from_snapshot,
 )
 from deployer.utils import (
+    EXIT_DECLINED,
     Colors,
     confirm_action,
     exit_on,
@@ -165,6 +166,39 @@ def _print_restore_success(logger: EmergencyLogger, result: RestoreResult) -> No
     print(
         f"    aws rds delete-db-instance --db-instance-identifier {result.instance_id} --skip-final-snapshot"
     )
+
+
+def _report_outcome(
+    logger: EmergencyLogger, action: str, summary: str, failed: list[str], attempted: int
+) -> int:
+    """Log a per-service loop's outcome and answer with its exit status.
+
+    Three commands run the same shape -- attempt every service, keep going
+    past a failure, report once at the end -- and all three used to end with
+    an unconditional ``return 0``. A failure printed to the terminal but
+    exiting 0 is invisible to CI and to any wrapper script; the terminal is
+    not the interface a non-interactive caller reads.
+
+    Args:
+        logger: Audit logger for the emergency log file.
+        action: Action name for the audit log and the failure line, e.g. "Revert".
+        summary: What is printed to the operator on success. Kept separate
+            because "Force deploy initiated" is accurate and "Force deploy
+            completed" would not be -- tasks are replaced over minutes.
+        failed: Names of the services that failed, in attempt order.
+        attempted: How many were attempted, for the "n of m" message.
+
+    Returns:
+        0 if every service succeeded, 1 otherwise.
+    """
+    if not failed:
+        logger.success(f"{action} completed")
+        log_success(summary)
+        return 0
+
+    logger.error(f"{action} failed for: {', '.join(failed)}")
+    log_error(f"{action} failed for {len(failed)} of {attempted} service(s)")
+    return 1
 
 
 @dataclass
@@ -366,8 +400,13 @@ def _checkpoint_and_log(
 def _await_deployment(cluster_name: str, service_name: str, logger: EmergencyLogger) -> None:
     """Wait for a rollback deployment to settle, reporting progress as it goes.
 
-    A timeout is reported as a warning, not a failure: the deployment is still
-    running, we simply stopped watching.
+    A timeout is reported as a warning, not a failure, and cmd_rollback() still
+    exits 0: the rollback *was* applied and only the wait was inconclusive --
+    the deployment is still running, we simply stopped watching. That is the
+    third outcome in the exit-code ladder, distinct from both neighbours, and
+    it is a deliberate 0 rather than an accidental one. A wait that could not
+    read the service at all is a different thing again: wait_for_deployment()
+    raises, and the CLI boundary exits 1.
     """
 
     def progress_callback(running: int, desired: int) -> None:
@@ -419,7 +458,7 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
     print()
 
     if not confirm_action(skip=yes):
-        return 1
+        return EXIT_DECLINED
 
     _checkpoint_and_log(
         ctx,
@@ -522,30 +561,33 @@ def cmd_scale(
     print()
 
     if not confirm_action(skip=yes):
-        return 1
+        return EXIT_DECLINED
 
     _checkpoint_and_log(
         ctx, environment, services, "scale", f"Scaling services: {', '.join(to_scale.keys())}"
     )
 
-    # Perform scaling
-    for name, new_count in to_scale.items():
+    # Every service is attempted even after one fails -- the operator asked
+    # for all of them -- but a reported failure must not leave the exit status
+    # at 0, which is invisible to CI and to any wrapper script.
+    def _scale_one(name: str, new_count: int) -> bool:
         old_count = services[name].desired_count
         log(f"Scaling {name} from {old_count} to {new_count}...")
         logger.ecs(f"Scaling {name} from {old_count} to {new_count}")
 
         if scale_service(cluster_name, name, new_count):
             log_ok(f"Scaled {name}")
-        else:
-            logger.error(f"Failed to scale {name}")
-            log_error(f"Failed to scale {name}")
+            return True
 
-    logger.success("Scale completed")
-    log_success("Scale operation completed")
+        logger.error(f"Failed to scale {name}")
+        log_error(f"Failed to scale {name}")
+        return False
+
+    failed = [name for name, new_count in to_scale.items() if not _scale_one(name, new_count)]
 
     cleanup_old_checkpoints(environment=environment)
 
-    return 0
+    return _report_outcome(logger, "Scale", "Scale operation completed", failed, len(to_scale))
 
 
 # =============================================================================
@@ -662,7 +704,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         choice = prompt_or_exit("Selection: ")
         if not choice:
             log_error("Cancelled")
-            return 1
+            return EXIT_DECLINED
 
         # A bare number selects a snapshot; anything else is a point-in-time stamp.
         if not choice.isdigit():
@@ -733,31 +775,35 @@ def cmd_revert(
     print()
 
     if not confirm_action(skip=yes):
-        return 1
+        return EXIT_DECLINED
 
-    # Restore each service
-    for name, state in cp.services.items():
+    # A service that fails does not stop the others -- this is the path an
+    # operator reaches for when a rollback has already gone wrong, so restoring
+    # what can be restored is right -- but a partial restore must not report
+    # itself as a completed one.
+    def _restore_one(name: str, state: ServiceState) -> bool:
         log(f"Restoring {name}...")
         logger.ecs(f"Restoring {name} to revision {state.task_definition.split(':')[-1]}")
 
         if not update_service_task_definition(cluster_name, name, state.task_definition):
             logger.error(f"Failed to update task definition for {name}")
             log_error(f"Failed to update task definition for {name}")
-            continue
+            return False
 
         if not scale_service(cluster_name, name, state.desired_count):
             logger.error(f"Failed to scale {name}")
             log_error(f"Failed to scale {name}")
-            continue
+            return False
 
         log_ok(f"Restored {name}")
+        return True
 
-    logger.success("Revert completed")
-    log_success("Revert completed")
+    failed = [name for name, state in cp.services.items() if not _restore_one(name, state)]
+
+    status = _report_outcome(logger, "Revert", "Revert completed", failed, len(cp.services))
     print()
     log_info("Note: Services may take a few minutes to stabilize")
-
-    return 0
+    return status
 
 
 # =============================================================================
@@ -788,25 +834,30 @@ def cmd_force_deploy(environment: str, service: str | None, all_services: bool, 
     print()
 
     if not confirm_action(skip=yes):
-        return 1
+        return EXIT_DECLINED
 
     logger.action("force-deploy")
 
-    for name in target_services:
+    def _deploy_one(name: str) -> bool:
         log(f"Forcing new deployment of {name}...")
         logger.ecs(f"Force new deployment of {name}")
 
         if force_new_deployment(cluster_name, name):
             log_ok(f"Force deployment initiated for {name}")
-        else:
-            logger.error(f"Failed to force deploy {name}")
-            log_error(f"Failed to force deploy {name}")
+            return True
 
-    logger.success("Force deploy completed")
-    log_success("Force deploy initiated")
-    log_info("Note: Tasks will be replaced over the next few minutes")
+        logger.error(f"Failed to force deploy {name}")
+        log_error(f"Failed to force deploy {name}")
+        return False
 
-    return 0
+    failed = [name for name in target_services if not _deploy_one(name)]
+
+    status = _report_outcome(
+        logger, "Force deploy", "Force deploy initiated", failed, len(target_services)
+    )
+    if status == 0:
+        log_info("Note: Tasks will be replaced over the next few minutes")
+    return status
 
 
 # =============================================================================
@@ -828,6 +879,13 @@ def _run_or_exit(command: Callable[[], int]) -> None:
     an unrelated exception of the same type would be swallowed. That warning
     is about intermediate frames; here there is no frame above this one, so
     the alternative is not "the caller handles it" but a traceback.
+
+    Every command in this file answers with the same ladder:
+
+    * ``0`` — succeeded; warnings may have printed and work completed
+    * ``1`` — failed
+    * ``2`` — usage error, owned by Click and never returned from here
+    * ``3`` — declined by the operator; nothing was attempted
 
     Args:
         command: Thunk returning the command's exit status.

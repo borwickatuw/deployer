@@ -12,6 +12,15 @@ from .environment import get_environment_path, validate_environment_deployed
 from .links import get_linked_deploy_toml
 from .logging import log, log_error, log_error_stderr
 
+#: Exit status for "the operator declined; nothing was attempted".
+#:
+#: Distinct from 1 (something was tried and failed) so a wrapper script can
+#: tell them apart, and distinct from 2, which Click reserves for usage errors
+#: (``click.UsageError.exit_code``). Proposing 2 for this was the one thing the
+#: error-contract ADR got wrong; see docs/internal/DECISIONS.md
+#: § "2026-08-18: Error Contracts".
+EXIT_DECLINED = 3
+
 
 class EnvironmentConfigError(Exception):
     """Raised when environment path or config cannot be loaded."""
@@ -36,16 +45,18 @@ def prompt_or_exit(prompt: str) -> str:
         The stripped input.
 
     Raises:
-        SystemExit: With code 1 if the user cancels (EOF/Ctrl-C). Every bin/
-            command wraps its body in sys.exit(cmd_...()), so this is the same
-            exit status the old per-site "return 1" produced.
+        SystemExit: With EXIT_DECLINED if the user cancels (EOF/Ctrl-C).
+            Ctrl-C at a confirmation prompt is the same answer as typing "n",
+            and must not be reported as a failure. This whole prompt family is
+            reached only from bin/emergency.py, so the status is consistent
+            across every way of declining there.
     """
     try:
         return input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         log_error("Cancelled")
-        raise SystemExit(1) from None
+        raise SystemExit(EXIT_DECLINED) from None
 
 
 def confirm_action(skip: bool = False) -> bool:
@@ -55,7 +66,11 @@ def confirm_action(skip: bool = False) -> bool:
         skip: If True, skip the prompt and return True (for --yes flag).
 
     Returns:
-        True if confirmed, False if cancelled.
+        True if confirmed, False if cancelled. Callers answer a False with
+        EXIT_DECLINED, not 1 -- nothing was attempted.
+
+    Raises:
+        SystemExit: With EXIT_DECLINED if the user cancels with EOF/Ctrl-C.
     """
     if skip:
         return True
@@ -99,7 +114,7 @@ def select_index(
         invalid (the message has already been printed).
 
     Raises:
-        SystemExit: With code 1 if the user cancels the prompt.
+        SystemExit: With EXIT_DECLINED if the user cancels the prompt.
     """
     print()
     print(f"{Colors.BLUE}{header}{Colors.NC}")

@@ -5,6 +5,7 @@ from .aws_profile import (
     configure_aws_profile_for_environment,
 )
 from .cli import (
+    EXIT_DECLINED,
     EnvironmentConfigError,
     EnvironmentInfrastructure,
     configure_aws_for_operation,
@@ -69,6 +70,7 @@ __all__ = [
     "format_timestamp",
     "configure_aws_profile_for_environment",
     "configure_profile_or_exit",
+    "EXIT_DECLINED",
     "confirm_action",
     "ensure_environments_symlinks",
     "exit_on",

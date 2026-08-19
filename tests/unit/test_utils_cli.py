@@ -6,6 +6,7 @@ import pytest
 
 from deployer.utils import cli as cli_utils
 from deployer.utils.cli import (
+    EXIT_DECLINED,
     EnvironmentConfigError,
     configure_aws_for_operation,
     configure_profile_or_exit,
@@ -47,11 +48,17 @@ class TestPromptOrExit:
         assert prompt_or_exit("Name: ") == ""
 
     @pytest.mark.parametrize("interrupt", [EOFError, KeyboardInterrupt])
-    def test_cancellation_exits_1(self, monkeypatch, capsys, interrupt):
+    def test_cancellation_exits_declined(self, monkeypatch, capsys, interrupt):
+        """Ctrl-C at a prompt is the same answer as typing "n", not a failure.
+
+        EXIT_DECLINED is 3, not 2: Click reserves 2 for usage errors. See
+        docs/internal/DECISIONS.md § "2026-08-18: Error Contracts".
+        """
         _answer(monkeypatch, interrupt)
         with pytest.raises(SystemExit) as exc_info:
             prompt_or_exit("Name: ")
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == EXIT_DECLINED
+        assert EXIT_DECLINED == 3
         assert "Cancelled" in capsys.readouterr().out
 
 
@@ -72,12 +79,16 @@ class TestConfirmAction:
         assert confirm_action() is False
         assert "Cancelled" in capsys.readouterr().out
 
-    def test_eof_exits_1(self, monkeypatch, capsys):
-        """EOF/Ctrl-C exits rather than returning False; callers turned False into exit(1)."""
+    def test_eof_exits_declined(self, monkeypatch, capsys):
+        """EOF/Ctrl-C exits rather than returning False, with the same status.
+
+        Answering "n" makes the caller return EXIT_DECLINED; Ctrl-C at the same
+        prompt must not be reported differently.
+        """
         _answer(monkeypatch, EOFError)
         with pytest.raises(SystemExit) as exc_info:
             confirm_action()
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == EXIT_DECLINED
         assert "Cancelled" in capsys.readouterr().out
 
 
@@ -134,11 +145,11 @@ class TestSelectIndex:
         assert select_index("Nothing:", [], "Select: ") is None
         assert "Invalid selection" in capsys.readouterr().out
 
-    def test_cancelling_the_prompt_exits_1(self, monkeypatch, capsys):
+    def test_cancelling_the_prompt_exits_declined(self, monkeypatch, capsys):
         _answer(monkeypatch, EOFError)
         with pytest.raises(SystemExit) as exc_info:
             select_index("Available services:", self.LABELS, "Select: ")
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == EXIT_DECLINED
         assert "Cancelled" in capsys.readouterr().out
 
 

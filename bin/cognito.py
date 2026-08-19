@@ -50,6 +50,7 @@ from deployer.core.config import (
 from deployer.utils import (
     EnvironmentConfigError,
     configure_aws_for_operation,
+    exit_on,
     get_all_environments,
     get_environment_path,
     get_environments_dir,
@@ -69,7 +70,10 @@ def get_cognito_environments() -> list[str]:
         Sorted list of environment names that have Cognito enabled.
     """
     cognito_envs = []
-    for env_name in get_all_environments(get_environments_dir()):
+    with exit_on(RuntimeError):
+        env_names = get_all_environments(get_environments_dir())
+
+    for env_name in env_names:
         env_path = get_environment_path(env_name)
         state_file = env_path / "terraform.tfstate"
         if not state_file.exists():

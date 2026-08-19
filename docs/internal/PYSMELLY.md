@@ -2817,3 +2817,85 @@ The flipped pins cite **`DECISIONS.md § "2026-08-18: Error Contracts"`**, not a
 phase number. A phase number is ephemeral and its meaning is gone once the arc
 closes; the ADR is the standing record. This also keeps `grep -c 53i tests/`
 honest as a measure of *pending* markers rather than of prose.
+
+### 53i-3c — the boundary rule, and the corrected exit-code ladder (2026-08-19)
+
+**Layers 2 and 3 of the ADR, applied together** because they touch the same two
+files and rest on the same pins.
+
+| Measure                 | 53i-3b | 53i-3c  |
+| ----------------------- | ------ | ------- |
+| pysmelly                | 33     | **33**  |
+| Tests                   | 1727   | 1731    |
+| Total coverage          | 78.46% | 78.72%  |
+| `bin/emergency.py`      | 89%    | **90%** |
+| `bin/resolve-config.py` | 26%    | **34%** |
+
+#### The finding will never clear, and that is the honest answer
+
+`exit_on` is a **context manager**, and `inconsistent-error-handling` looks for
+`try`/`except`. Five call sites were wrapped in `exit_on(RuntimeError)` and the
+`get_environments_dir` tally moved from "17 callers, 10 unhandled" to "16
+callers, 9 unhandled" — the single site that moved is the one that was
+**deleted**, not any of the five that were fixed.
+
+So the ADR's chosen fix is invisible to the check that prompted it. Taking a
+count from this finding would mean writing a per-caller `try` at every site
+purely to be seen — the thing the ADR rejected in writing. **Both remaining
+rows are adjudicated as fixed-but-unseen**, not as open work. This is the
+**sixth** "the check's mechanic, not the code" find in the arc, after 53f's
+"accessed from N files", 53g's bare-name collision, 53h-1's
+`write-only-attributes` under-report, 53i-1's `elif`-as-nesting and 53i-2b's
+`N of M caller(s) guard` ratio.
+
+#### One of the ADR's eleven sites was not a defect
+
+It recorded `bin/resolve-config.py:109` as a traceback "in the CI config
+resolver". Measured: `resolve_config()` is a library function with a documented
+`Raises:`, and `cli()` **already** caught `FileNotFoundError`, `RuntimeError`
+and `ValueError` around it — exit 1, clean message, no traceback, verified by
+running it. The check keys on the immediately enclosing function rather than on
+the boundary, which is exactly the mechanic that made `utils/aws_profile.py:85`
+a false positive. Both halves are now pinned in
+`test_bin_error_boundaries.py`.
+
+#### The eleventh site had no `exit_on` to add
+
+`bin/init.py:520` called `get_environments_dir()` a second time only to name,
+in a log line, the directory the function had already been handed.
+`env_path.parent` is the same value and cannot fail. **The site is gone rather
+than guarded** — the cheapest fix in the unit, and the only one that reduced
+the caller count.
+
+#### The exit-code ladder, verified by hand
+
+`EXIT_DECLINED = 3` lives in `utils/cli.py` with the reason on it. The prompt
+family (`prompt_or_exit`, `confirm_action`, `select_index`) is reached **only**
+from `bin/emergency.py`, so Ctrl-C at a prompt now carries the same status as
+typing "n" — a decline reported two ways would have been the same defect in
+miniature. Exercised against a real `havoc-staging`:
+
+| Path                                     | Status      |
+| ---------------------------------------- | ----------- |
+| `ops status havoc-staging`               | `0`         |
+| `emergency rollback … --service nope`    | `1`         |
+| a denied ECS read through `_run_or_exit` | `1`         |
+| `emergency rollback --bogus-flag`        | `2` (Click) |
+| `emergency rollback …` answered "n"      | **`3`**     |
+
+#### Three commands had the same shape, and it cost three new smells
+
+`cmd_scale`, `cmd_force_deploy` and `cmd_revert` all attempt every service,
+keep going past a failure, and report once — and all three ended with an
+unconditional `return 0`. The first fix introduced three `failed = []`
+loop-and-append accumulators, and pysmelly caught all three (32 → 36). They
+collapsed into a per-service predicate plus one comprehension each, feeding a
+shared `_report_outcome`. **The count came back to 33 because the check found
+the mess the fix made** — the intended use of a run mid-unit rather than at
+the end.
+
+`_report_outcome` takes the printed summary as a parameter rather than deriving
+it. "Force deploy **initiated**" is accurate and "Force deploy completed" would
+not be: tasks are replaced over the following minutes. Three previously
+unasserted success strings are now pinned, because the first version of the
+helper silently changed all three.

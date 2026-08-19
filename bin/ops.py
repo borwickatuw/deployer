@@ -44,6 +44,7 @@ from deployer.emergency.ecs import (
 from deployer.emergency.rds import get_rds_snapshots
 from deployer.utils import (
     Colors,
+    exit_on,
     format_iso,
     format_timestamp,
     get_environment_path,
@@ -539,7 +540,8 @@ def cmd_status(environment: str) -> int:
 def cmd_health(environment: str) -> int:
     """Check ALB target health."""
     env_path = get_environment_path(environment)
-    config = load_environment_config(env_path)
+    with exit_on(FileNotFoundError, RuntimeError):
+        config = load_environment_config(env_path)
     target_group_arn = config.get("infrastructure", {}).get("target_group_arn")
 
     if not target_group_arn:
@@ -650,7 +652,8 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
 def cmd_maintenance(environment: str) -> int:
     """Show pending maintenance for RDS and ElastiCache."""
     env_path = get_environment_path(environment)
-    config = load_environment_config(env_path)
+    with exit_on(FileNotFoundError, RuntimeError):
+        config = load_environment_config(env_path)
     rds_id = config.get("infrastructure", {}).get("rds_instance_id")
 
     # ElastiCache cluster ID follows module convention: {environment}-cache
@@ -721,7 +724,8 @@ def cmd_maintenance(environment: str) -> int:
 def cmd_ecr(environment: str, verbose: bool) -> int:
     """Show ECR vulnerability findings."""
     env_path = get_environment_path(environment)
-    config = load_environment_config(env_path)
+    with exit_on(FileNotFoundError, RuntimeError):
+        config = load_environment_config(env_path)
 
     print()
     print(f"{Colors.BLUE}ECR Vulnerability Scan Results:{Colors.NC}")

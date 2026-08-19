@@ -457,14 +457,20 @@ class TestCmdHealth:
         assert "    Details: timed out" in out
         assert "1 unhealthy" in out
 
-    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
-        # Pinned, not endorsed: cmd_health() is one of the four sites that let
-        # load_environment_config()'s documented FileNotFoundError reach the
-        # operator as a traceback (Phase 53i).
+    def test_an_unreadable_config_exits_1_with_the_error_text(
+        self, env_config, monkeypatch, capsys
+    ):
+        """One of the three sites that used to let this become a traceback.
+
+        exit_on() wraps the single call that can fail, which is the boundary
+        rule the error-contract ADR chose over a per-caller try.
+        """
         env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SystemExit) as exit_info:
             ops.cmd_health(ENV)
+        assert exit_info.value.code == 1
+        assert "Config file not found: config.toml" in capsys.readouterr().err
 
 
 class TestCmdMaintenance:
@@ -549,12 +555,15 @@ class TestCmdMaintenance:
         assert "  - [important] update-1: Engine patch" in out
         assert "  - update-2: Node resize" in out
 
-    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
-        # Pinned, not endorsed: the second of the four unhandled sites (53i).
+    def test_an_unreadable_config_exits_1_with_the_error_text(
+        self, env_config, monkeypatch, capsys
+    ):
         env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SystemExit) as exit_info:
             ops.cmd_maintenance(ENV)
+        assert exit_info.value.code == 1
+        assert "Config file not found: config.toml" in capsys.readouterr().err
 
 
 class TestCmdEcr:
@@ -666,12 +675,15 @@ class TestCmdEcr:
         assert "      - [CRITICAL] CVE-2026-0005" not in out
         assert "      ... and 1 more" in out
 
-    def test_an_unreadable_config_is_an_uncaught_traceback(self, env_config, monkeypatch):
-        # Pinned, not endorsed: the third of the four unhandled sites (53i).
+    def test_an_unreadable_config_exits_1_with_the_error_text(
+        self, env_config, monkeypatch, capsys
+    ):
         env_config["_raise"] = FileNotFoundError("Config file not found: config.toml")
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SystemExit) as exit_info:
             ops.cmd_ecr(ENV, verbose=False)
+        assert exit_info.value.code == 1
+        assert "Config file not found: config.toml" in capsys.readouterr().err
 
 
 class TestCmdIncidentStart:

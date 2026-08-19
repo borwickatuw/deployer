@@ -498,7 +498,8 @@ def _resolve_environment_target(
         return None
 
     env_name = template_name if is_shared_infra else f"{app_name}-{env_type}"
-    env_path = get_environments_dir() / env_name
+    with exit_on(RuntimeError):
+        env_path = get_environments_dir() / env_name
     if env_path.exists() and not dry_run:
         print(f"Error: Environment directory already exists: {env_path}", file=sys.stderr)
         print("Remove it first or use a different name.", file=sys.stderr)
@@ -517,7 +518,10 @@ def _write_environment_files(env_path: Path, files: dict[str, str], template_nam
     if is_standalone:
         created_symlinks = ensure_environments_symlinks()
         if created_symlinks:
-            print(f"Created symlinks in {get_environments_dir()}: {', '.join(created_symlinks)}")
+            # env_path.parent is the environments directory the caller already
+            # resolved. Calling get_environments_dir() again just to name it in
+            # a message added an eleventh unguarded site for no information.
+            print(f"Created symlinks in {env_path.parent}: {', '.join(created_symlinks)}")
 
     env_path.mkdir(parents=True, exist_ok=True)
     for filepath, content in files.items():

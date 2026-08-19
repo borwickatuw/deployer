@@ -30,6 +30,7 @@ from deployer.core.config import (
 )
 from deployer.utils import (
     configure_aws_profile,
+    exit_on,
     get_all_environments,
     get_environments_dir,
     iter_deployed_environments,
@@ -64,7 +65,10 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
 
 def cmd_status(environment: str | None) -> int:
     """Show status of environments."""
-    environments = [environment] if environment else get_all_environments(get_environments_dir())
+    with exit_on(RuntimeError):
+        environments = (
+            [environment] if environment else get_all_environments(get_environments_dir())
+        )
 
     if not environments:
         print("No environments found.", file=sys.stderr)
