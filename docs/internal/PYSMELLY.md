@@ -1016,7 +1016,7 @@ is a real defect left for a subphase that owns the contract.
 
 | Bug                                                                                                                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it. | Pinned by `test_a_non_string_value_under_a_non_masked_name_raises`.                                                                                                |
+| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it. | **FIXED by 53j-2** (`0760a27`). Stringified once at the top of the loop body; the deploy path was never affected.                                                  |
 | **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                          | Pinned, not endorsed. Fixing it is a display-contract decision, not a refactor.                                                                                    |
 | **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                       | **FIXED by 53i-3d** (`600c788`). It now returns a non-critical warning naming the instance, and a non-AWS error propagates instead of being answered as "healthy". |
 
@@ -1190,16 +1190,16 @@ Continuing the section 53e-3 opened. 53e-4a's tests pin all eight as **current
 behaviour, not as endorsements**; each is a real defect left for a subphase that
 owns the contract. Ordered by importance.
 
-| Bug                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`build_args.<env>` dispatch divergence — a production crash on a typo.** The dict arm's `.update(<non-dict>)` raises `TypeError` for an int and `ValueError: dictionary update sequence…` for a string; the `ImageConfig` arm does not raise and passes the scalar through as a literal `--build-arg staging=5`. **Production always takes the dict arm** (`deployer.py:112` passes `get_raw_dict()`), so a typo'd `build_args.staging = "x"` crashes the deploy with an opaque message naming **neither the image nor the key**. | Pinned by `TestBuildArgsDispatchDiverges`. The highest-severity item in this table; belongs with whichever subphase owns the config-error contract. |
-| **A non-existent `context` directory is not an error.** `rglob` yields nothing, so the image gets the digest of nothing (`e3b0c44298fc`) and `docker build` then runs against a path that does not exist.                                                                                                                                                                                                                                                                                                                           | Pinned. Two failures for the price of one typo — a wrong cache tag *and* a misleading docker error.                                                 |
-| **`ecr_login` discards both streams** (`DEVNULL`), so a `docker login` failure surfaces as a bare `RuntimeError("ECR login failed")` with no diagnostics.                                                                                                                                                                                                                                                                                                                                                                           | **FIXED by 53i-3d** (`600c788`). stderr is captured and carried in the message; stdout stays discarded.                                             |
-| **The Dockerfile is hashed twice** — once under the `Dockerfile:` prefix, then again as an ordinary context file.                                                                                                                                                                                                                                                                                                                                                                                                                   | Pinned. Harmless today (the tag is still stable and still changes when it should), but it makes the hash inputs read wrong.                         |
-| **`.dockerignore` edits always bust the cache**, even comment-only ones, because the file is hashed as context.                                                                                                                                                                                                                                                                                                                                                                                                                     | Pinned. A rebuild of every image for a comment.                                                                                                     |
-| **`should_ignore`'s final `fnmatch` is dead** for real files — it can only fire when the path *is* the context root, which `rglob` never yields.                                                                                                                                                                                                                                                                                                                                                                                    | Pinned. Dead code that looks like a pattern-matching feature.                                                                                       |
-| **`parse_dockerignore` does not de-duplicate `.git`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Pinned. Cosmetic.                                                                                                                                   |
-| **`NullTimer` would raise `AttributeError` in `_run_timed_subprocess`** — it is truthy and has no `_current_step`.                                                                                                                                                                                                                                                                                                                                                                                                                  | Pinned. Confirms the 53e-3b null-object never reaches this module, and pins the trap for whoever tries to extend it here.                           |
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **`build_args.<env>` dispatch divergence — a production crash on a typo.** The dict arm's `.update(<non-dict>)` raises `TypeError` for an int and `ValueError: dictionary update sequence…` for a string; the `ImageConfig` arm does not raise and passes the scalar through as a literal `--build-arg staging=5`. **Production always takes the dict arm** (`deployer.py:112` passes `get_raw_dict()`), so a typo'd `build_args.staging = "x"` crashes the deploy with an opaque message naming **neither the image nor the key**. | **FIXED by 53j-2** (`0760a27`). Both arms reject a scalar identically via one shared `merge_build_args`; ADR in DECISIONS.md 2026-08-20. |
+| **A non-existent `context` directory is not an error.** `rglob` yields nothing, so the image gets the digest of nothing (`e3b0c44298fc`) and `docker build` then runs against a path that does not exist.                                                                                                                                                                                                                                                                                                                           | **FIXED by 53j-1** (`752e146`). `_resolve_context` raises naming the image and the resolved path.                                        |
+| **`ecr_login` discards both streams** (`DEVNULL`), so a `docker login` failure surfaces as a bare `RuntimeError("ECR login failed")` with no diagnostics.                                                                                                                                                                                                                                                                                                                                                                           | **FIXED by 53i-3d** (`600c788`). stderr is captured and carried in the message; stdout stays discarded.                                  |
+| **The Dockerfile is hashed twice** — once under the `Dockerfile:` prefix, then again as an ordinary context file.                                                                                                                                                                                                                                                                                                                                                                                                                   | Pinned. Harmless today (the tag is still stable and still changes when it should), but it makes the hash inputs read wrong.              |
+| **`.dockerignore` edits always bust the cache**, even comment-only ones, because the file is hashed as context.                                                                                                                                                                                                                                                                                                                                                                                                                     | Pinned. A rebuild of every image for a comment.                                                                                          |
+| **`should_ignore`'s final `fnmatch` is dead** for real files — it can only fire when the path *is* the context root, which `rglob` never yields.                                                                                                                                                                                                                                                                                                                                                                                    | Pinned. Dead code that looks like a pattern-matching feature.                                                                            |
+| **`parse_dockerignore` does not de-duplicate `.git`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Pinned. Cosmetic.                                                                                                                        |
+| **`NullTimer` would raise `AttributeError` in `_run_timed_subprocess`** — it is truthy and has no `_current_step`.                                                                                                                                                                                                                                                                                                                                                                                                                  | **FIXED by 53j-2** (`0760a27`). Both timers answer a public `in_step`; `NullTimer` gained a no-op `sub_step`.                            |
 
 #### Side effects and mints
 
@@ -1448,17 +1448,17 @@ subphase that owns the contract.
 
 **From 5a-1 (`b42be87`), the deploy path — nine:**
 
-| Bug                                                                                                                                                                                                                         | Status                                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **`service_exists` swallows `ClusterNotFoundException`** and returns `False`, so a **typo in the cluster name takes the CREATE branch** rather than reporting an unknown cluster.                                           | Pinned. The highest-severity item here: a wrong answer that routes the deploy down the wrong path instead of stopping it. |
-| **The `ClientError` swallow makes a partial deploy look successful.** A per-service failure is reported and the loop continues; the run still ends as a success.                                                            | **FIXED by 53i-3d** (`600c788`). `deploy_services` collects per-service failures and raises once, naming all of them.     |
-| **`update_service` carries no network configuration, no load balancer and no launch type**, so a target-group change on an existing service has **no effect** — the parameters are built and never sent on the update path. | Pinned, and **owned by Phase 69**, member 2 — "an instruction is ignored". Not Phase 53 residue.                          |
-| **A load-balanced service can be created with no target group** — nothing fails when the lookup yields nothing.                                                                                                             | Pinned. The service comes up and receives no traffic.                                                                     |
-| **`port` is read from the raw table while `load_balanced` comes from merged sizing.** Two keys of one decision sourced from two different config layers.                                                                    | Pinned. The kind of split that makes an environment override behave differently from the base.                            |
-| **`--dry-run` previews an *update* for a service that does not exist**, and prints **none of the parameters it just built**.                                                                                                | Pinned. A preview that is wrong about the branch and silent about the payload.                                            |
-| **`_ensure_az_rebalancing_disabled` indexes `services[0]` unconditionally.**                                                                                                                                                | Pinned. `IndexError` on an empty describe response.                                                                       |
-| **An empty-string per-service target group falls through to the default.** `""` is falsy, so an explicit "no target group" reads as "unset".                                                                                | Pinned. Config that cannot express what it looks like it expresses.                                                       |
-| **`_get_deployment_config` ignores the dataclass field names and does no range validation.**                                                                                                                                | Pinned. A misspelled key is accepted silently; an out-of-range percentage reaches the ECS API.                            |
+| Bug                                                                                                                                                                                                                         | Status                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **`service_exists` swallows `ClusterNotFoundException`** and returns `False`, so a **typo in the cluster name takes the CREATE branch** rather than reporting an unknown cluster.                                           | **FIXED by 53j-1** (`752e146`). Raises naming the cluster; deliberately uncaught by `_deploy_one_service`.            |
+| **The `ClientError` swallow makes a partial deploy look successful.** A per-service failure is reported and the loop continues; the run still ends as a success.                                                            | **FIXED by 53i-3d** (`600c788`). `deploy_services` collects per-service failures and raises once, naming all of them. |
+| **`update_service` carries no network configuration, no load balancer and no launch type**, so a target-group change on an existing service has **no effect** — the parameters are built and never sent on the update path. | Pinned, and **owned by Phase 69**, member 2 — "an instruction is ignored". Not Phase 53 residue.                      |
+| **A load-balanced service can be created with no target group** — nothing fails when the lookup yields nothing.                                                                                                             | Pinned. The service comes up and receives no traffic.                                                                 |
+| **`port` is read from the raw table while `load_balanced` comes from merged sizing.** Two keys of one decision sourced from two different config layers.                                                                    | Pinned. The kind of split that makes an environment override behave differently from the base.                        |
+| **`--dry-run` previews an *update* for a service that does not exist**, and prints **none of the parameters it just built**.                                                                                                | Pinned. A preview that is wrong about the branch and silent about the payload.                                        |
+| **`_ensure_az_rebalancing_disabled` indexes `services[0]` unconditionally.**                                                                                                                                                | Pinned. `IndexError` on an empty describe response.                                                                   |
+| **An empty-string per-service target group falls through to the default.** `""` is falsy, so an explicit "no target group" reads as "unset".                                                                                | Pinned. Config that cannot express what it looks like it expresses.                                                   |
+| **`_get_deployment_config` ignores the dataclass field names and does no range validation.**                                                                                                                                | Pinned. A misspelled key is accepted silently; an out-of-range percentage reaches the ECS API.                        |
 
 **From 5a-2 (`fb561e3`), the migration + wait path — five:**
 
@@ -2993,6 +2993,13 @@ each "current behaviour, not an endorsement". Reconciled at `b62a0f9`:
 | **Owned by Phase 69** ("instruction ignored") | 1      | `update_service` carries no network config / LB / launch type |
 | **Unowned residue**                           | **10** | scoped as **53j**, claude-meta `docs/PLAN.md` Phase 53        |
 
+**Updated 2026-08-20:** 53j-1 and 53j-2 took **5 of those 10** — the rows now
+marked FIXED by `752e146` / `0760a27`. **5 remain**, of which 53j-3 (cache-tag
+hash inputs: the Dockerfile hashed twice, `.dockerignore` busting the cache,
+`should_ignore`'s dead `fnmatch`, `parse_dockerignore` not de-duplicating
+`.git`) is scopeable as-is and 53j-4 (the masking display contract) needs an
+operator decision first. See §53j-1 / 53j-2 below.
+
 **The three 53i-3d fixed were never planned as 53i-3's work.** They fell out
 of applying layer 4 of the error contract, which is the argument for keeping a
 pin ledger at all: a pin written in 53e-3a in one subphase is what let a
@@ -3002,3 +3009,119 @@ ledger the fixes would have landed unattributed and the rows would still read
 
 **Re-verify before acting on any row here.** These four moved without anyone
 touching the ledger — see the standing lesson on stale escalations.
+
+### 53j-1 / 53j-2 — five latent bugs, all pinned, none flagged (2026-08-20)
+
+**The first unit in the arc measured by a diff rather than a total.** Every
+member is pinned by a test asserting today's behaviour and **carries no
+pysmelly finding** — no check will ever surface one. The count was **33** at
+`f9a5843` and **33** at `0760a27`, and the finding set is identical line for
+line (only line-number shifts from the edits). That is the result, not a
+disappointment: measured between the two commits as well as at the end, exactly
+because 53i-3c and 53i-3d each caught an accumulator mid-unit that way.
+
+Two commits: `752e146` (53j-1, a failure reported as a usable answer),
+`0760a27` (53j-2, a crash whose message names nothing). Scope was **5 of the
+10** unowned residue rows above, taken by shape. 53j-3 (the cache-tag hash
+inputs) and 53j-4 (the masking display contract) are unstarted; 53j-4 needs an
+operator decision before it can be scheduled.
+
+**No pin-first commit, for the first time in the arc.** Every prior subphase
+touching production code opened with a tests-only commit because the target was
+uncovered. Measured at `b62a0f9`: `images.py` **100%**, `deployer.py` **100%**,
+`service.py` **99%** — and both affected consumers covered too, `service_exists`
+having exactly one production caller and `print_environment_config` one. Every
+fix landed as a visible diff against an existing pin. Recorded because pin-first
+had been right six times running: **skipping it was a measurement, not a
+judgement call**, and the measurement is repeatable.
+
+#### 53j-1 — the answer was wrong, not missing
+
+| Fix                                                                                                                                                       | Discriminator                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `service_exists` raises `RuntimeError` naming the cluster, chained `from e`, instead of answering `False` for every `ClientError`                         | `describe_services` answers a genuinely absent service with an **empty `services` list**, not an error. So every `ClientError` reaching that `except` is a failure and **none** is an absence. |
+| `_resolve_image_spec` resolves the context through a new `_resolve_context`, which raises naming the image and the resolved path if it is not a directory | `rglob` over a missing directory yields nothing, so the image took the digest of the empty string (`e3b0c44298fc`) and `docker build` then failed against a path that does not exist.          |
+
+The `service_exists` discriminator is **the same one 53i-3b used for
+`emergency/`** — "does the API distinguish absence from failure?" — arrived at
+independently, one subsystem over. That is now three uses of it in this arc.
+
+**Where the raise must *not* be caught.** `_deploy_one_service` deliberately
+does not catch it. A cluster-level failure is not per-service: every service
+would fail identically, so 53i-3d's per-service collector would turn one bad
+cluster name into N identical failures. It propagates through `deploy_services`
+to `deploy()` and aborts the run. `test_a_mistyped_cluster_aborts_instead_of_creating_services`
+pins both halves — no `create_service`, and no `Failed to deploy service(s)`.
+
+**Why the context check is not in `compute_context_hash`.** ~20 direct pins on
+that function use real `tmp_path` directories, so putting the check there would
+have left them all untouched — and would have put a policy decision inside a
+pure hasher. `_resolve_image_spec` is where `source_dir / context` is built, and
+it needed `image_name` threaded through it for the `build_args` fix anyway: one
+threading change served both.
+
+#### 53j-2 — the message named nothing
+
+| Fix                                                                                                                               | Note                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `build_args.<environment>` scalars rejected identically on both arms, via one shared `config.merge_build_args`                    | Operator decision; **ADR in [DECISIONS.md](DECISIONS.md) 2026-08-20** because it changes what a `deploy.toml` may contain.                       |
+| `print_environment_config` stringifies once at the top of the loop body                                                           | Display-only: `task_definition.py` already `str()`s the same value, so the deploy always handled `[environment] MAX_WORKERS = 4` correctly.      |
+| `DeploymentTimer`/`NullTimer` both answer a public `in_step`; `NullTimer` gains a no-op `sub_step`; `get_timer`/`set_timer` widen | Fixed at the **reach** — `timer._current_step` — not at the symptom. `NullTimer` never reaches the global today, so this is a trap, not a crash. |
+
+**The `ImageConfig` arm is a real path, not dead code.** `deployer.py` passes
+`get_raw_dict()` so `build_and_push_images` always takes the dict arm, but
+`ImageConfig.get_build_args` is live through `validate_ecr_repositories` and
+`core/audit.py`. Both arms had to agree, which is why the fix reaches into
+`config/deploy_config.py` rather than staying inside `images.py`.
+
+**`print_environment_config` is not in the register** and never was: the crash
+is display-only, and the fix cannot regress the deploy. Named here so the next
+reader does not go looking for a finding that explains it.
+
+**The masking rule is untouched.** It is wrong in both directions — `BASE_URL`
+and `MONKEY_BUSINESS` are masked, a real secret under `PUBLIC_HOSTNAME` is not
+— and that row stays **Pinned** below. It is 53j-4, and it is a display-contract
+decision for the operator, not a refactor.
+
+#### Verification, and the one step the plan got wrong
+
+`make check` (1741 tests), `make format-docs-check` and `make security` all
+pass, security **after staging** since `security-secrets` scans `git ls-files`.
+Coverage floor 74; `images.py` and `deployer.py` stayed at **100%**,
+`service.py` at **99%**, and `timing.py` rose **78% → 80%** (the last gap in the
+changed area, `DeploymentTimer.sub_step`'s outside-a-step guard, is now pinned
+as the contrast `NullTimer.sub_step` deliberately does not copy).
+
+**Exercised by hand against `havoc-staging` with `deploy --dry-run`**, which
+proved three of the five and disproved the plan's fourth claim:
+
+- a typo'd `context` aborts with `Image 'transcoder': build context '/Users/borwick/code/havoc/transcodr' is not a directory.`
+- `build_args.staging = "oops"` aborts with the ADR's message, naming
+  `transcoder` and the key.
+- `MAX_WORKERS = 4` / `RELOAD = false` print as `4` and `False` instead of
+  raising.
+- **The cluster typo cannot be exercised by dry-run at all.**
+  `_deploy_one_service` reads `service_exists(...) if not ctx.dry_run else True`
+  — so a dry run never calls it, and previews an *update* for every service.
+  That short-circuit is itself one of 53e-5a's still-pinned rows ("`--dry-run`
+  previews an update for a service that does not exist"). What a dry run *does*
+  show is the **preflight cluster check** catching the typo first, with
+  `--skip-cluster-check` off; the raise is the backstop for when it is skipped,
+  and it is proven by the moto-backed pin, which raises a real
+  `ClusterNotFoundException`.
+
+The lesson generalises: **a dry-run is only a witness for code a dry-run
+runs.** Checking that before writing "exercise by hand against X" into a plan is
+cheaper than finding out afterwards.
+
+#### Side effects and mints
+
+Nothing minted, nothing cleared. `_merge_build_args` was **deleted** from
+`images.py` rather than fixed in place — the duplicate was the bug — so the
+module lost a function and gained a smaller one (`_resolve_context`).
+
+One thing was **noticed and left alone**: a config-error `RuntimeError` from
+this path surfaces as a full traceback, because `pipeline.py` only translates
+push errors and re-raises the rest. That is pre-existing and identical for every
+other `RuntimeError` `images.py` raises, including 53i-3d's `ecr_login` one.
+Out of scope for 53j; captured as an idea rather than fixed here.

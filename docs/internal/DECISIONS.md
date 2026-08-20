@@ -794,11 +794,63 @@ latent bugs are **not** in 53i-3's scope, including
 `deploy/service.py:171/193 service_exists` swallowing `ClusterNotFoundException`
 so a mistyped cluster takes the CREATE branch. Same `except` shape, higher
 severity; it belongs to 53e-5's pin list, and folding it in would have made
-53i-3 unscopeable.
+53i-3 unscopeable. **That one was fixed by 53j-1** (`752e146`) using this same
+entry's discriminator — does the API distinguish absence from failure? — see
+[PYSMELLY.md](PYSMELLY.md) §53j-1.
 53i-2a (`4678c1e`) repaired six detached suppression rationales and moved the
 count by zero, and 53i-2b wrote the fleet guide. The register entry is
 deployer `docs/internal/PYSMELLY.md` §53i-2a; the phase record is claude-meta
 `docs/PLAN.md` Phase 53.
+
+______________________________________________________________________
+
+## 2026-08-20: `build_args.<environment>` Must Be a Table on Both Config Arms
+
+**Decision:** A scalar under `build_args.<environment>` in `deploy.toml` is a
+**config error**, and it is rejected identically whichever config shape the
+caller holds. Both arms route through `config.merge_build_args`, which raises:
+
+```
+Image 'web': build_args.staging must be a table of build args, got str.
+Did you mean [images.web.build_args.staging]?
+```
+
+**This changes what a `deploy.toml` may contain**, which is why it is recorded
+here and not only in the pysmelly register. The accepted cost: a build arg
+**named after an environment** — `build_args.staging = "x"` meaning "pass
+`--build-arg staging=x`" — can no longer be expressed. Nothing in the fleet does
+this, and the name collision with the per-environment block is exactly the typo
+the message exists to catch.
+
+**The two arms disagreed before this.** `ImageConfig.get_build_args` guarded
+with `isinstance(env_override, dict)` and passed the scalar straight through as
+a literal `--build-arg staging=5`. The inline copy in `deploy/images.py` did
+not guard, so `dict.update(<scalar>)` raised — `TypeError` for an int,
+`ValueError: dictionary update sequence…` for a string — **naming neither the
+image nor the key**. Same file, two outcomes, decided by which object the caller
+happened to be holding. Production takes the dict arm (`deployer.py` passes
+`get_raw_dict()`), so the live behaviour was the opaque crash.
+
+**Alternatives considered:**
+
+- **Both arms pass the scalar through** (the `ImageConfig` behaviour). Rejected:
+  `--build-arg staging=5` is not what `build_args.staging = 5` reads as to
+  anyone, and the deploy would silently build the wrong image.
+- **Both arms ignore it silently.** Rejected: a typo in `deploy.toml` that
+  changes nothing and says nothing is the worst of the three.
+- **Keep the divergence, document it.** Rejected: it was already documented, in
+  a docstring that said the arms "deliberately stay separate". Two answers to
+  one question is not a contract.
+- **Warn rather than raise.** Rejected: this is a fail-fast repo, and a warning
+  in a deploy log is a warning nobody reads.
+
+**Reasoning:** One canonical implementation is what makes the arms unable to
+drift again — the shared function is the decision, the message is the surface.
+`build_args` sub-tables are the only place `deploy.toml` overloads a key's type
+by name, so it is the only place this shape can arise.
+
+**See also:** [PYSMELLY.md](PYSMELLY.md) §53j-2 for the unit that applied it;
+the fifth of five items in the 53e latent-bug ledger's 53j scope.
 
 ______________________________________________________________________
 
