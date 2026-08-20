@@ -195,7 +195,13 @@ class Deployer:
         """Print the merged environment configuration for visibility."""
         log("Global environment variables:")
         env_vars = get_environment_variables(self.ctx)
-        for key, value in sorted(env_vars.items()):
+        for key, raw_value in sorted(env_vars.items()):
+            # TOML yields ints and bools as well as strings -- [environment]
+            # MAX_WORKERS = 4 arrives as an int -- and startswith() assumes str.
+            # The task definition stringifies the same value (task_definition.py
+            # build_task_definition), so this changes no output that printed
+            # before; it only stops the display crashing on what deploys fine.
+            value = str(raw_value)
             # Mask sensitive values
             if any(
                 s in key.lower()

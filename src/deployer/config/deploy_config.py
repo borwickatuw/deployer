@@ -32,6 +32,53 @@ KNOWN_SECTIONS = {
 }
 
 
+def merge_build_args(
+    image_name: str, build_args: dict[str, Any], environment: str
+) -> dict[str, str]:
+    """Merge one image's global and per-environment build args.
+
+    Merge order (later values override earlier):
+    1. ``build_args = { KEY = "value" }`` -- base args
+    2. ``build_args.{environment} = { KEY = "value" }`` -- environment-specific
+
+    Values that are themselves tables are read as per-environment blocks rather
+    than as build args, so only the block for ``environment`` is merged in.
+
+    Both config shapes route here -- ``ImageConfig.get_build_args`` and the raw
+    dict arm in ``deploy/images.py`` -- so the two cannot drift. They used to:
+    the dict arm called ``dict.update(<scalar>)`` and died with a message naming
+    neither the image nor the key, while this arm silently passed the scalar
+    through as a literal ``--build-arg staging=5``.
+
+    Args:
+        image_name: Name of the image, for the error message.
+        build_args: The image's raw ``build_args`` table.
+        environment: The target environment (staging, production).
+
+    Returns:
+        Merged build arguments dictionary.
+
+    Raises:
+        RuntimeError: If ``build_args.<environment>`` is present but is not a
+            table. A build arg named after an environment cannot be expressed;
+            that is accepted.
+    """
+    merged = {k: v for k, v in build_args.items() if not isinstance(v, dict)}
+
+    env_override = build_args.get(environment)
+    if env_override is None:
+        return merged
+    if not isinstance(env_override, dict):
+        raise RuntimeError(
+            f"Image '{image_name}': build_args.{environment} must be a table of "
+            f"build args, got {type(env_override).__name__}. "
+            f"Did you mean [images.{image_name}.build_args.{environment}]?"
+        )
+
+    merged.update(env_override)
+    return merged
+
+
 @dataclass
 class ImageConfig:
     """Configuration for a Docker image build."""
@@ -64,25 +111,16 @@ class ImageConfig:
     def get_build_args(self, environment: str) -> dict[str, str]:
         """Get merged build arguments for this image.
 
-        Merge order (later values override earlier):
-        1. build_args = { KEY = "value" } - base args
-        2. build_args.{environment} = { KEY = "value" } - environment-specific
-
         Args:
             environment: The target environment (staging, production).
 
         Returns:
             Merged build arguments dictionary.
+
+        Raises:
+            RuntimeError: If ``build_args.<environment>`` is not a table.
         """
-        # Start with base build_args - filter out sub-tables (staging, production, etc.)
-        merged = {k: v for k, v in self.build_args.items() if not isinstance(v, dict)}
-
-        # Merge environment-specific build_args if exists
-        env_override = self.build_args.get(environment, {})
-        if isinstance(env_override, dict):
-            merged.update(env_override)
-
-        return merged
+        return merge_build_args(self.name, self.build_args, environment)
 
 
 @dataclass

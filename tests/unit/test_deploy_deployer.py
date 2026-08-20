@@ -477,11 +477,13 @@ SM_REF = "secretsmanager:arn:aws:secretsmanager:x"
         names = list(self._printed(capsys))
         assert names == sorted(names)
 
-    def test_a_non_string_value_under_a_non_masked_name_raises(self, make_deployer):
-        """LATENT BUG, pinned: value.startswith() assumes str, TOML gives int/bool.
+    def test_a_non_string_value_under_a_non_masked_name_is_printed(self, make_deployer, capsys):
+        """value.startswith() assumed str; TOML gives ints and bools too.
 
-        A masked name never reaches the .startswith() call, so this only bites
-        variables whose names miss every sensitive substring.
+        It used to raise AttributeError, and only for names that miss *every*
+        mask substring — a masked name short-circuits before the .startswith().
+        The deploy itself was always fine: build_task_definition str()s the same
+        value, so this was a display-only crash on config that deploys.
         """
         toml = """
 [application]
@@ -490,11 +492,13 @@ source = "."
 
 [environment]
 MAX_WORKERS = 4
+RELOAD = false
 """
-        deployer = make_deployer(toml=toml)
+        make_deployer(toml=toml).print_environment_config()
 
-        with pytest.raises(AttributeError, match="startswith"):
-            deployer.print_environment_config()
+        printed = self._printed(capsys)
+        assert printed["MAX_WORKERS"] == "4"
+        assert printed["RELOAD"] == "False"
 
     def test_a_non_string_value_under_a_masked_name_is_fine(self, make_deployer, capsys):
         """The same int is harmless when the name short-circuits to "***"."""

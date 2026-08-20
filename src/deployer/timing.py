@@ -116,6 +116,17 @@ class DeploymentTimer:
         """Finish the deployment timer."""
         self.report.end_time = time.time()
 
+    @property
+    def in_step(self) -> bool:
+        """Whether a step() context is currently open.
+
+        The public form of the ``_current_step is not None`` test that callers
+        need before opening a sub_step. Reaching for the private attribute is
+        what made ``NullTimer`` -- which has no such attribute -- unable to
+        stand in here.
+        """
+        return self._current_step is not None
+
     @contextmanager
     def step(self, name: str) -> Iterator[StepTiming]:
         """Time a deployment step.
@@ -179,6 +190,11 @@ class NullTimer:
     def finish(self) -> None:
         """Do nothing; there is no run to time."""
 
+    @property
+    def in_step(self) -> bool:
+        """Never in a step; nothing here records one."""
+        return False
+
     @contextmanager
     def step(self, name: str) -> Iterator[StepTiming]:
         """Run a step untimed, yielding an unrecorded StepTiming.
@@ -191,17 +207,34 @@ class NullTimer:
         """
         yield StepTiming(name=name)
 
+    @contextmanager
+    def sub_step(self, name: str) -> Iterator[StepTiming]:
+        """Run a sub-step untimed, yielding an unrecorded StepTiming.
+
+        Unlike ``DeploymentTimer.sub_step`` this does not require an open step:
+        a null object that raised where the real one records would not be a
+        stand-in. Present so the null object carries the *whole* public surface
+        -- a partial one is a trap for whoever installs it globally.
+
+        Args:
+            name: Name of the sub-step being run.
+
+        Yields:
+            A StepTiming that is never timed, finished, or reported.
+        """
+        yield StepTiming(name=name)
+
 
 # Global timer instance for optional use in modules
-_global_timer: DeploymentTimer | None = None
+_global_timer: DeploymentTimer | NullTimer | None = None
 
 
-def get_timer() -> DeploymentTimer | None:
+def get_timer() -> DeploymentTimer | NullTimer | None:
     """Get the global deployment timer, if set."""
     return _global_timer
 
 
-def set_timer(timer: DeploymentTimer | None) -> None:
+def set_timer(timer: DeploymentTimer | NullTimer | None) -> None:
     """Set the global deployment timer.
 
     Args:

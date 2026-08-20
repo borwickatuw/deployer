@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from botocore.exceptions import ClientError
 
-from ..config import DeployConfig, ImageConfig
+from ..config import DeployConfig, ImageConfig, merge_build_args
 from ..core.deploy import topological_sort
 from ..timing import get_timer
 from ..utils import Colors, log, log_error, log_status, log_success
@@ -18,7 +18,7 @@ from ..utils import Colors, log, log_error, log_status, log_success
 def _run_timed_subprocess(cmd: list[str], step_name: str) -> subprocess.CompletedProcess:
     """Run a subprocess with optional timer integration."""
     timer = get_timer()
-    if timer and timer._current_step:
+    if timer and timer.in_step:
         with timer.sub_step(step_name):
             return subprocess.run(cmd, capture_output=True, text=True, check=False)
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -231,29 +231,6 @@ class ImageBuildSpec(NamedTuple):
     target: str | None
 
 
-def _merge_build_args(build_args_config: dict, environment: str) -> dict:
-    """Merge global and per-environment build args from a raw dict config.
-
-    Values that are themselves dicts are read as per-environment blocks
-    rather than as build args, and the block for ``environment`` is merged
-    last so it wins.
-
-    Args:
-        build_args_config: The raw ``build_args`` table.
-        environment: Target environment whose block wins.
-
-    Returns:
-        The merged build args.
-
-    Raises:
-        TypeError, ValueError: If the value under ``environment`` is not a
-            mapping. The ``ImageConfig`` arm does not share this behaviour.
-    """
-    build_args = {k: v for k, v in build_args_config.items() if not isinstance(v, dict)}
-    build_args.update(build_args_config.get(environment, {}))
-    return build_args
-
-
 def _resolve_context(image_name: str, source_dir: Path, context: str) -> Path:
     """Resolve one image's build context and check that it exists.
 
@@ -283,10 +260,10 @@ def _resolve_image_spec(
 ) -> ImageBuildSpec:
     """Resolve one image's config entry into concrete build inputs.
 
-    The two arms are not equivalent and deliberately stay separate: the raw
-    dict arm merges per-environment build args itself, so a non-dict value
-    under the environment key raises, while the ``ImageConfig`` arm defers to
-    the dataclass and passes any scalar straight through.
+    The two arms read the same deploy.toml through two shapes and must agree.
+    Both route build args through :func:`merge_build_args` and both resolve the
+    context through :func:`_resolve_context`, so neither can drift from the
+    other on a config error.
 
     Args:
         image_name: Name of the image, for error messages.
@@ -299,7 +276,8 @@ def _resolve_image_spec(
         The resolved :class:`ImageBuildSpec`.
 
     Raises:
-        RuntimeError: If the build context does not exist.
+        RuntimeError: If the build context does not exist, or if
+            ``build_args.<environment>`` is not a table.
     """
     if isinstance(image_config, ImageConfig):
         return ImageBuildSpec(
@@ -316,7 +294,7 @@ def _resolve_image_spec(
         context=_resolve_context(image_name, source_dir, image_config["context"]),
         dockerfile=image_config.get("dockerfile", "Dockerfile"),
         should_push=image_config.get("push", True),
-        build_args=_merge_build_args(image_config.get("build_args", {}), environment),
+        build_args=merge_build_args(image_name, image_config.get("build_args", {}), environment),
         target=target_config.get(environment) if isinstance(target_config, dict) else target_config,
     )
 

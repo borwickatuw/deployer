@@ -8,6 +8,7 @@ from .deploy_config import (
     ImageConfig,
     MigrationConfig,
     ServiceConfig,
+    merge_build_args,
     parse_deploy_config,
 )
 from .toml import parse_deploy_toml
@@ -20,6 +21,7 @@ __all__ = [
     "ImageConfig",
     "MigrationConfig",
     "ServiceConfig",
+    "merge_build_args",
     "parse_deploy_config",
     # Other config utilities
     "get_compose_services",

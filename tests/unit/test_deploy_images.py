@@ -25,11 +25,14 @@ Five pins exist specifically to make 53e-4b's extractions verifiable:
    raises ``RuntimeError`` after echoing stdout and stderr. Collapsing the
    three dry-run/execute blocks into one helper would silently change that.
    ``TestTagFailureModeDiverges`` pins both shapes.
-2. **Both arms of the ``DeployConfig``-vs-``dict`` dispatch**, including the
-   real divergence between them: the inline "legacy" copy lacks the
+2. **Both arms of the ``DeployConfig``-vs-``dict`` dispatch**, and that they
+   now *agree*. They used to diverge: the inline "legacy" copy lacked the
    ``isinstance(env_override, dict)`` guard that ``ImageConfig.get_build_args``
-   has, so a non-dict ``build_args.<environment>`` raises on one path and is
-   silently ignored on the other. ``TestBuildArgsDispatchDiverges`` pins both.
+   had, so a non-dict ``build_args.<environment>`` raised on one path with a
+   message naming neither the image nor the key, and was silently passed
+   through as a literal build arg on the other. Both route through
+   ``config.merge_build_args`` and ``_resolve_context``;
+   ``TestBuildArgsDispatchAgrees`` pins that the two messages are identical.
 3. **The cache-hit ``continue``** — the loop's only early exit, gated on
    ``ecr_client and not dry_run and not force_build``. All four gate states are
    pinned in ``TestCacheHit``.
@@ -42,9 +45,9 @@ Five pins exist specifically to make 53e-4b's extractions verifiable:
    ``images.py`` reads the module-global via ``get_timer()``, so the two real
    arms are "a ``DeploymentTimer`` inside a ``step()`` context" and "``None``".
    ``TestTimerArmsAgree`` asserts the two produce byte-identical subprocess
-   calls and byte-identical output. ``NullTimer`` is not a third arm: it has no
-   ``_current_step``, so it would raise ``AttributeError`` here — pinned in
-   ``TestRunTimedSubprocess`` as the reason it never reaches this module.
+   calls and byte-identical output. ``NullTimer`` is a *substitutable* third
+   arm rather than a distinct one: it answers ``in_step`` False, so it takes
+   the untimed path — pinned in ``TestRunTimedSubprocess``.
 
 Stubbing is at the outermost boundary — ``subprocess.run``, ``subprocess.Popen``
 and the real filesystem — never at a ``deployer`` binding. That is 53d-2a's
@@ -370,15 +373,44 @@ class TestRunTimedSubprocess:
         assert step.sub_steps[0].success is False
         assert step.sub_steps[0].error == "docker"
 
-    def test_a_null_timer_would_raise_attribute_error(self, run):
-        """Pinned, not endorsed: NullTimer is truthy but has no _current_step.
+    def test_a_null_timer_set_globally_runs_the_command(self, run):
+        """A NullTimer used to raise here: truthy, but with no _current_step.
 
-        This is why NullTimer is not a third arm — it cannot reach this module.
+        The reach for that private attribute is what made the null object
+        unsubstitutable. It now answers ``in_step`` like anything else, so
+        installing one globally runs the pipeline untimed rather than crashing.
         """
         set_timer(NullTimer())
 
-        with pytest.raises(AttributeError):
+        result = _run_timed_subprocess(["docker", "build", "."], "web_build")
+
+        assert run.argv == [["docker", "build", "."]]
+        assert run.kwargs == [{"capture_output": True, "text": True, "check": False}]
+        assert result.returncode == 0
+
+    def test_a_null_timer_inside_its_own_step_still_runs_the_command(self, run):
+        """The sub_step arm: NullTimer.step() opens nothing, so in_step stays
+        False — but NullTimer carries a sub_step anyway, so a future caller that
+        does reach it gets a no-op rather than an AttributeError."""
+        timer = NullTimer()
+        set_timer(timer)
+
+        with timer.step("build_and_push_images"), timer.sub_step("web_build") as sub:
             _run_timed_subprocess(["docker", "build", "."], "web_build")
+
+        assert sub.name == "web_build"
+        assert run.argv == [["docker", "build", "."]]
+
+    def test_the_real_timer_still_requires_a_step_around_sub_step(self, run):
+        """The contrast NullTimer.sub_step deliberately does not copy: the real
+        timer has nowhere to file a sub-step outside one, so it refuses."""
+        timer = DeploymentTimer("run-1")
+
+        with (
+            pytest.raises(RuntimeError, match="within a step context"),
+            timer.sub_step("web_build"),
+        ):
+            pass
 
 
 class TestCheckSubprocessResult:
@@ -1347,42 +1379,57 @@ class TestBuildAndPushDeployConfig:
         assert argv[argv.index("-f") + 1] == str(source_dir / "web" / "Dockerfile")
 
 
-class TestBuildArgsDispatchDiverges:
-    """MUST-PIN 2 (second half): the two arms disagree on a non-dict override.
+class TestBuildArgsDispatchAgrees:
+    """MUST-PIN 2 (second half): the two arms must answer a scalar the same way.
 
-    ``ImageConfig.get_build_args`` guards with ``isinstance(env_override, dict)``
-    (config/deploy_config.py:80). The inline "legacy" copy in ``images.py`` does
-    not, so ``dict.update(<non-dict>)`` raises. Same deploy.toml, two outcomes.
+    They used to disagree. ``ImageConfig.get_build_args`` guarded with
+    ``isinstance(env_override, dict)`` and passed the scalar through as a
+    literal ``--build-arg staging=5``; the inline "legacy" copy in ``images.py``
+    did not guard, so ``dict.update(<non-dict>)`` raised — ``TypeError`` for an
+    int, ``ValueError`` for a string, and neither named the image or the key.
+    Same deploy.toml, two outcomes. Both now route through ``merge_build_args``.
     """
 
-    def test_the_dict_arm_raises_type_error_on_a_non_dict_environment_override(
-        self, source_dir, run
-    ):
+    EXPECTED = (
+        "Image 'web': build_args.staging must be a table of build args, got {type}. "
+        r"Did you mean \[images.web.build_args.staging\]\?"
+    )
+
+    def test_the_dict_arm_rejects_an_int_environment_override(self, source_dir, run):
         config = _dict_config(web={"context": "web", "build_args": {"staging": 5}})
 
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError, match=self.EXPECTED.format(type="int")):
             _build(config, source_dir)
 
-    def test_the_dict_arm_raises_value_error_on_a_string_environment_override(
-        self, source_dir, run
-    ):
-        """A string is iterable, so ``update`` gets past ``TypeError`` and dies on
-        the element shape instead — a second failure mode from the same bug."""
+    def test_the_dict_arm_rejects_a_string_environment_override(self, source_dir, run):
+        """A string is iterable, so ``update`` used to get past ``TypeError`` and
+        die on the element shape instead — a second failure mode, same bug."""
         config = _dict_config(web={"context": "web", "build_args": {"staging": "oops"}})
 
-        with pytest.raises(ValueError, match="dictionary update sequence"):
+        with pytest.raises(RuntimeError, match=self.EXPECTED.format(type="str")):
             _build(config, source_dir)
 
-    def test_the_image_config_arm_silently_ignores_the_same_input(self, source_dir, run):
+    def test_the_image_config_arm_rejects_the_same_input_identically(self, source_dir, run):
         config = _deploy_config(
             web=ImageConfig(name="web", context="web", build_args={"staging": 5})
         )
 
-        _build(config, source_dir)
+        with pytest.raises(RuntimeError, match=self.EXPECTED.format(type="int")):
+            _build(config, source_dir)
 
-        argv = run.argv[0]
-        # Not only does it not raise — the scalar survives as a literal build arg.
-        assert argv[argv.index("--build-arg") + 1] == "staging=5"
+    def test_both_arms_produce_the_identical_message(self, source_dir, run):
+        """The pin that keeps the two arms from drifting apart again."""
+        build_args = {"staging": 5}
+
+        with pytest.raises(RuntimeError) as dict_arm:
+            _build(_dict_config(web={"context": "web", "build_args": build_args}), source_dir)
+        with pytest.raises(RuntimeError) as image_config_arm:
+            _build(
+                _deploy_config(web=ImageConfig(name="web", context="web", build_args=build_args)),
+                source_dir,
+            )
+
+        assert str(dict_arm.value) == str(image_config_arm.value)
 
     def test_a_non_matching_environment_key_is_harmless_on_the_dict_arm(self, source_dir, run):
         """The guard's absence only bites when the sub-table key *is* the
