@@ -40,11 +40,15 @@ def _check_subprocess_result(
 def parse_dockerignore(context_path: Path) -> list[str]:
     """Parse .dockerignore file and return list of patterns.
 
+    ``.git`` is always ignored, whether or not the file names it. Duplicate
+    patterns are dropped, keeping the first occurrence, so the returned list
+    reads as the user's ignore rules rather than as a transcript of the file.
+
     Args:
         context_path: Path to the build context directory.
 
     Returns:
-        List of ignore patterns.
+        List of ignore patterns, in file order and without repeats.
     """
     dockerignore_path = context_path / ".dockerignore"
     patterns = []
@@ -60,7 +64,7 @@ def parse_dockerignore(context_path: Path) -> list[str]:
                 if stripped and not stripped.startswith("#"):
                     patterns.append(stripped)
 
-    return patterns
+    return list(dict.fromkeys(patterns))
 
 
 def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> bool:
@@ -75,7 +79,6 @@ def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> b
         True if the file should be ignored.
     """
     rel_path = file_path.relative_to(context_path)
-    rel_str = str(rel_path)
 
     for pattern in patterns:
         # Handle negation patterns (!)
@@ -94,10 +97,6 @@ def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> b
                 return True
             if fnmatch.fnmatch(part, pattern):
                 return True
-
-        # Also check full path
-        if fnmatch.fnmatch(rel_str, pattern):
-            return True
 
     return False
 

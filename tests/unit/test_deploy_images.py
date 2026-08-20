@@ -484,11 +484,17 @@ class TestParseDockerignore:
 
         assert parse_dockerignore(tmp_path) == [".git", "*", "!keep.txt"]
 
-    def test_a_dockerignore_listing_git_yields_it_twice(self, tmp_path):
-        """Pinned, not endorsed: the implicit .git is not de-duplicated."""
+    def test_a_dockerignore_listing_git_yields_it_once(self, tmp_path):
+        """The implicit ``.git`` and an explicit one collapse to a single pattern."""
         (tmp_path / ".dockerignore").write_text(".git\n")
 
-        assert parse_dockerignore(tmp_path) == [".git", ".git"]
+        assert parse_dockerignore(tmp_path) == [".git"]
+
+    def test_an_ordinary_repeated_pattern_is_de_duplicated_too(self, tmp_path):
+        """De-duplication is not special-cased to ``.git``; first occurrence wins."""
+        (tmp_path / ".dockerignore").write_text("*.log\nbuild/\n*.log\n")
+
+        assert parse_dockerignore(tmp_path) == [".git", "*.log", "build/"]
 
     def test_an_empty_dockerignore_yields_only_git(self, tmp_path):
         (tmp_path / ".dockerignore").write_text("")
@@ -497,7 +503,7 @@ class TestParseDockerignore:
 
 
 class TestShouldIgnore:
-    """Pins for the seven fnmatch branches."""
+    """Pins for the fnmatch branches."""
 
     def test_no_patterns_means_nothing_is_ignored(self, tmp_path):
         assert should_ignore(tmp_path / "a.txt", tmp_path, []) is False
@@ -530,18 +536,19 @@ class TestShouldIgnore:
     def test_the_first_matching_pattern_wins(self, tmp_path):
         assert should_ignore(tmp_path / "a.txt", tmp_path, ["nope", "a.txt", "also-nope"]) is True
 
-    def test_the_context_root_itself_is_the_only_path_reaching_the_full_path_check(self, tmp_path):
-        """Pinned, not endorsed: the trailing ``fnmatch(rel_str, pattern)`` is dead
-        for real files.
+    def test_the_context_root_itself_is_no_longer_special_cased(self, tmp_path):
+        """The context root matches nothing, because it has no path components.
 
-        For any file under the context the last loop iteration already tests
-        ``rel_str`` against the same pattern, so the final check can only fire
-        when ``rel_path.parts`` is empty — i.e. when the path *is* the context
-        directory, whose relative path is ``"."``. ``compute_context_hash``
-        never passes that, because ``rglob`` does not yield the root.
+        A trailing ``fnmatch(str(rel_path), pattern)`` used to sit after the
+        loop. For any file under the context it was dead — the last iteration
+        already tests the full relative path against the same pattern — and it
+        could only fire when ``rel_path.parts`` is empty, i.e. when the path
+        *is* the context directory, whose relative path is ``"."``.
+        ``compute_context_hash`` never passes that, because ``rglob`` does not
+        yield the root, so removing it changed no digest.
         """
-        assert should_ignore(tmp_path, tmp_path, ["*"]) is True
-        assert should_ignore(tmp_path, tmp_path, ["."]) is True
+        assert should_ignore(tmp_path, tmp_path, ["*"]) is False
+        assert should_ignore(tmp_path, tmp_path, ["."]) is False
         assert should_ignore(tmp_path, tmp_path, ["nope"]) is False
 
     def test_a_path_outside_the_context_raises(self, tmp_path):
