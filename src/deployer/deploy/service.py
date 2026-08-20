@@ -181,17 +181,31 @@ def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
         service_name: Name of the service.
 
     Returns:
-        True if service exists and is not INACTIVE.
+        True if service exists and is not INACTIVE, False if it is absent or
+        INACTIVE.
+
+    Raises:
+        RuntimeError: If ``describe_services`` fails. A genuinely absent service
+            comes back as an *empty* ``services`` list, not an error, so every
+            ``ClientError`` here is a failure and none is an absence. Answering
+            one with False sent a mistyped cluster name down the CREATE branch.
+            Deliberately not caught by ``_deploy_one_service``: the failure is
+            cluster-level, so the per-service collector would report the one bad
+            cluster once per service.
     """
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
-        # Service exists if it's in the response and not INACTIVE
-        for svc in response.get("services", []):
-            if svc["serviceName"] == service_name and svc["status"] != "INACTIVE":
-                return True
-        return False
-    except ClientError:
-        return False
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not check whether service '{service_name}' exists in cluster "
+            f"'{cluster_name}': {e}"
+        ) from e
+
+    # Service exists if it's in the response and not INACTIVE
+    for svc in response.get("services", []):
+        if svc["serviceName"] == service_name and svc["status"] != "INACTIVE":
+            return True
+    return False
 
 
 def register_task_definition(

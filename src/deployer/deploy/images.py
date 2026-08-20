@@ -254,8 +254,32 @@ def _merge_build_args(build_args_config: dict, environment: str) -> dict:
     return build_args
 
 
+def _resolve_context(image_name: str, source_dir: Path, context: str) -> Path:
+    """Resolve one image's build context and check that it exists.
+
+    Args:
+        image_name: Name of the image, for the error message.
+        source_dir: Root of the source tree that ``context`` is relative to.
+        context: The image's ``context`` value from deploy.toml.
+
+    Returns:
+        The resolved context directory.
+
+    Raises:
+        RuntimeError: If the resolved path is not an existing directory. Without
+            this check ``rglob`` yields nothing, the image silently takes the
+            digest of the empty string, and ``docker build`` then fails against a
+            path that does not exist -- two failures for one typo, neither of
+            which names the typo.
+    """
+    resolved = source_dir / context
+    if not resolved.is_dir():
+        raise RuntimeError(f"Image '{image_name}': build context '{resolved}' is not a directory.")
+    return resolved
+
+
 def _resolve_image_spec(
-    image_config: ImageConfig | dict, source_dir: Path, environment: str
+    image_name: str, image_config: ImageConfig | dict, source_dir: Path, environment: str
 ) -> ImageBuildSpec:
     """Resolve one image's config entry into concrete build inputs.
 
@@ -265,6 +289,7 @@ def _resolve_image_spec(
     the dataclass and passes any scalar straight through.
 
     Args:
+        image_name: Name of the image, for error messages.
         image_config: Either an ``ImageConfig`` or the raw dict form.
         source_dir: Root of the source tree that ``context`` is relative to.
         environment: Target environment, selecting per-environment build
@@ -272,10 +297,13 @@ def _resolve_image_spec(
 
     Returns:
         The resolved :class:`ImageBuildSpec`.
+
+    Raises:
+        RuntimeError: If the build context does not exist.
     """
     if isinstance(image_config, ImageConfig):
         return ImageBuildSpec(
-            context=source_dir / image_config.context,
+            context=_resolve_context(image_name, source_dir, image_config.context),
             dockerfile=image_config.dockerfile,
             should_push=image_config.push,
             build_args=image_config.get_build_args(environment),
@@ -285,7 +313,7 @@ def _resolve_image_spec(
     # Legacy dict support - inline the logic
     target_config = image_config.get("target")
     return ImageBuildSpec(
-        context=source_dir / image_config["context"],
+        context=_resolve_context(image_name, source_dir, image_config["context"]),
         dockerfile=image_config.get("dockerfile", "Dockerfile"),
         should_push=image_config.get("push", True),
         build_args=_merge_build_args(image_config.get("build_args", {}), environment),
@@ -478,7 +506,7 @@ def build_and_push_images(
         raise
 
     for image_name in build_order:
-        spec = _resolve_image_spec(images[image_name], source_dir, environment)
+        spec = _resolve_image_spec(image_name, images[image_name], source_dir, environment)
         tag = _cache_tag(spec)
 
         # Local-only images are tagged with just their name (for FROM references)

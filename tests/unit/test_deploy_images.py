@@ -967,16 +967,33 @@ class TestBuildAndPushRawDict:
         assert _build({}, source_dir) == {}
         assert run.calls == []
 
-    def test_a_missing_context_directory_hashes_to_the_empty_digest(self, source_dir, run):
-        """Pinned, not endorsed: a context that does not exist is not an error —
-        rglob over a missing directory yields nothing, so every such image gets
-        the same digest of nothing."""
+    def test_a_missing_context_directory_names_the_image_and_the_path(self, source_dir, run):
+        """A context that does not exist used to hash to the digest of nothing.
+
+        rglob over a missing directory yields nothing, so the image took the
+        empty digest and docker build then failed against a path that does not
+        exist — two failures for one typo, neither naming the typo.
+        """
         config = _dict_config(web={"context": "nope"})
 
-        uris = _build(config, source_dir)
+        with pytest.raises(RuntimeError, match=r"Image 'web': build context .*nope"):
+            _build(config, source_dir)
 
-        empty = hashlib.sha256().hexdigest()[:12]
-        assert uris == {"web": f"{ECR_HOST}/{ECR_PREFIX}-web:{empty}"}
+        assert run.calls == []
+
+    def test_a_missing_context_directory_raises_on_the_image_config_arm_too(self, source_dir, run):
+        config = _deploy_config(web=ImageConfig(name="web", context="nope"))
+
+        with pytest.raises(RuntimeError, match=r"Image 'web': build context .*nope"):
+            _build(config, source_dir)
+
+    def test_a_context_that_is_a_file_is_rejected(self, source_dir, run):
+        """is_dir(), not exists(): docker build needs a directory."""
+        (source_dir / "Dockerfile.web").write_text("FROM scratch\n")
+        config = _dict_config(web={"context": "Dockerfile.web"})
+
+        with pytest.raises(RuntimeError, match="is not a directory"):
+            _build(config, source_dir)
 
 
 class TestBuildFailures:

@@ -547,12 +547,13 @@ class TestServiceExists:
         aws.client.delete_service(cluster=CLUSTER, service="web", force=True)
         assert service_exists(aws.client, CLUSTER, "web") is False
 
-    def test_missing_cluster_is_false(self, aws):
-        # ClusterNotFoundException is a ClientError, so a typo in the cluster
-        # name is indistinguishable from "the service does not exist yet" --
-        # and deploy_services() will then try to *create* the service.
+    def test_missing_cluster_raises_naming_the_cluster(self, aws):
+        # A typo in the cluster name used to be answered False, which is what
+        # "the service does not exist yet" looks like -- so deploy_services()
+        # went on to *create* every service in a cluster that does not exist.
         _make_service(aws)
-        assert service_exists(aws.client, "no-such-cluster", "web") is False
+        with pytest.raises(RuntimeError, match="no-such-cluster"):
+            service_exists(aws.client, "no-such-cluster", "web")
 
     def test_other_service_in_the_response_does_not_match(self):
         client = _DescribeServicesStub([{"serviceName": "worker", "status": "ACTIVE"}])
@@ -576,9 +577,17 @@ class TestServiceExists:
         client = _DescribeServicesStub([{"serviceName": "web", "status": "DRAINING"}])
         assert service_exists(client, CLUSTER, "web") is True
 
-    def test_client_error_is_swallowed(self):
-        client = _DescribeServicesStub([], error=_client_error("AccessDenied", "DescribeServices"))
-        assert service_exists(client, CLUSTER, "web") is False
+    def test_client_error_raises_and_chains(self):
+        # describe_services answers a genuinely absent service with an empty
+        # list, so every ClientError arriving here is a failure and none of them
+        # is an absence -- there is nothing to report as False.
+        error = _client_error("AccessDenied", "DescribeServices")
+        client = _DescribeServicesStub([], error=error)
+
+        with pytest.raises(RuntimeError, match="AccessDenied") as exc:
+            service_exists(client, CLUSTER, "web")
+
+        assert exc.value.__cause__ is error
 
     def test_query_shape(self, aws):
         service_exists(aws.client, CLUSTER, "web")
@@ -1080,6 +1089,21 @@ class TestDeployServices:
             "  web service created [done]",
             "  web [service created]",
         ]
+
+    def test_a_mistyped_cluster_aborts_instead_of_creating_services(self, aws, capsys):
+        """The cluster typo must stop the run, not route it to CREATE.
+
+        It also must not land in the per-service failure collector: the failure
+        is cluster-level, so every service would report it identically. It
+        propagates out of deploy_services() and aborts the deploy.
+        """
+        ctx = _ctx(aws, services={"web": {}, "worker": {}}, cluster_name="no-such-cluster")
+
+        with pytest.raises(RuntimeError, match="no-such-cluster"):
+            deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
+
+        assert "create_service" not in aws.client.operations
+        assert "Failed to deploy service(s)" not in capsys.readouterr().out
 
     def test_existing_service_takes_the_update_branch(self, aws, capsys):
         _make_service(aws)
