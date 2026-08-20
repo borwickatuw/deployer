@@ -1190,16 +1190,16 @@ Continuing the section 53e-3 opened. 53e-4a's tests pin all eight as **current
 behaviour, not as endorsements**; each is a real defect left for a subphase that
 owns the contract. Ordered by importance.
 
-| Bug                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **`build_args.<env>` dispatch divergence — a production crash on a typo.** The dict arm's `.update(<non-dict>)` raises `TypeError` for an int and `ValueError: dictionary update sequence…` for a string; the `ImageConfig` arm does not raise and passes the scalar through as a literal `--build-arg staging=5`. **Production always takes the dict arm** (`deployer.py:112` passes `get_raw_dict()`), so a typo'd `build_args.staging = "x"` crashes the deploy with an opaque message naming **neither the image nor the key**. | **FIXED by 53j-2** (`0760a27`). Both arms reject a scalar identically via one shared `merge_build_args`; ADR in DECISIONS.md 2026-08-20. |
-| **A non-existent `context` directory is not an error.** `rglob` yields nothing, so the image gets the digest of nothing (`e3b0c44298fc`) and `docker build` then runs against a path that does not exist.                                                                                                                                                                                                                                                                                                                           | **FIXED by 53j-1** (`752e146`). `_resolve_context` raises naming the image and the resolved path.                                        |
-| **`ecr_login` discards both streams** (`DEVNULL`), so a `docker login` failure surfaces as a bare `RuntimeError("ECR login failed")` with no diagnostics.                                                                                                                                                                                                                                                                                                                                                                           | **FIXED by 53i-3d** (`600c788`). stderr is captured and carried in the message; stdout stays discarded.                                  |
-| **The Dockerfile is hashed twice** — once under the `Dockerfile:` prefix, then again as an ordinary context file.                                                                                                                                                                                                                                                                                                                                                                                                                   | Pinned. Harmless today (the tag is still stable and still changes when it should), but it makes the hash inputs read wrong.              |
-| **`.dockerignore` edits always bust the cache**, even comment-only ones, because the file is hashed as context.                                                                                                                                                                                                                                                                                                                                                                                                                     | Pinned. A rebuild of every image for a comment.                                                                                          |
-| **`should_ignore`'s final `fnmatch` is dead** for real files — it can only fire when the path *is* the context root, which `rglob` never yields.                                                                                                                                                                                                                                                                                                                                                                                    | Pinned. Dead code that looks like a pattern-matching feature.                                                                            |
-| **`parse_dockerignore` does not de-duplicate `.git`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Pinned. Cosmetic.                                                                                                                        |
-| **`NullTimer` would raise `AttributeError` in `_run_timed_subprocess`** — it is truthy and has no `_current_step`.                                                                                                                                                                                                                                                                                                                                                                                                                  | **FIXED by 53j-2** (`0760a27`). Both timers answer a public `in_step`; `NullTimer` gained a no-op `sub_step`.                            |
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`build_args.<env>` dispatch divergence — a production crash on a typo.** The dict arm's `.update(<non-dict>)` raises `TypeError` for an int and `ValueError: dictionary update sequence…` for a string; the `ImageConfig` arm does not raise and passes the scalar through as a literal `--build-arg staging=5`. **Production always takes the dict arm** (`deployer.py:112` passes `get_raw_dict()`), so a typo'd `build_args.staging = "x"` crashes the deploy with an opaque message naming **neither the image nor the key**. | **FIXED by 53j-2** (`0760a27`). Both arms reject a scalar identically via one shared `merge_build_args`; ADR in DECISIONS.md 2026-08-20.                                    |
+| **A non-existent `context` directory is not an error.** `rglob` yields nothing, so the image gets the digest of nothing (`e3b0c44298fc`) and `docker build` then runs against a path that does not exist.                                                                                                                                                                                                                                                                                                                           | **FIXED by 53j-1** (`752e146`). `_resolve_context` raises naming the image and the resolved path.                                                                           |
+| **`ecr_login` discards both streams** (`DEVNULL`), so a `docker login` failure surfaces as a bare `RuntimeError("ECR login failed")` with no diagnostics.                                                                                                                                                                                                                                                                                                                                                                           | **FIXED by 53i-3d** (`600c788`). stderr is captured and carried in the message; stdout stays discarded.                                                                     |
+| **The Dockerfile is hashed twice** — once under the `Dockerfile:` prefix, then again as an ordinary context file.                                                                                                                                                                                                                                                                                                                                                                                                                   | **FIXED by 53j-3b** (`3e1c474`). `_context_files` excludes the selected Dockerfile from the walk; the `Dockerfile:` prefix stays, because it is what records the selection. |
+| **`.dockerignore` edits always bust the cache**, even comment-only ones, because the file is hashed as context.                                                                                                                                                                                                                                                                                                                                                                                                                     | **FIXED by 53j-3b** (`3e1c474`). Excluded from the walk, not hashed as a patterns digest; ADR in DECISIONS.md 2026-08-20.                                                   |
+| **`should_ignore`'s final `fnmatch` is dead** for real files — it can only fire when the path *is* the context root, which `rglob` never yields.                                                                                                                                                                                                                                                                                                                                                                                    | **FIXED by 53j-3a** (`d306897`). Deleted with its `rel_str` local; the root-only pin flips `True` → `False`. Digest-neutral.                                                |
+| **`parse_dockerignore` does not de-duplicate `.git`.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | **FIXED by 53j-3a** (`d306897`). `dict.fromkeys` de-dupes any repeat, first occurrence wins. Digest-neutral.                                                                |
+| **`NullTimer` would raise `AttributeError` in `_run_timed_subprocess`** — it is truthy and has no `_current_step`.                                                                                                                                                                                                                                                                                                                                                                                                                  | **FIXED by 53j-2** (`0760a27`). Both timers answer a public `in_step`; `NullTimer` gained a no-op `sub_step`.                                                               |
 
 #### Side effects and mints
 
@@ -2993,12 +2993,11 @@ each "current behaviour, not an endorsement". Reconciled at `b62a0f9`:
 | **Owned by Phase 69** ("instruction ignored") | 1      | `update_service` carries no network config / LB / launch type |
 | **Unowned residue**                           | **10** | scoped as **53j**, claude-meta `docs/PLAN.md` Phase 53        |
 
-**Updated 2026-08-20:** 53j-1 and 53j-2 took **5 of those 10** — the rows now
-marked FIXED by `752e146` / `0760a27`. **5 remain**, of which 53j-3 (cache-tag
-hash inputs: the Dockerfile hashed twice, `.dockerignore` busting the cache,
-`should_ignore`'s dead `fnmatch`, `parse_dockerignore` not de-duplicating
-`.git`) is scopeable as-is and 53j-4 (the masking display contract) needs an
-operator decision first. See §53j-1 / 53j-2 below.
+**Updated 2026-08-20:** 53j-1, 53j-2 and 53j-3 took **9 of those 10** — the
+rows now marked FIXED by `752e146` / `0760a27` / `d306897` / `3e1c474`. **1
+remains**: 53j-4, the masking display contract, which needs an operator
+decision about what `print_environment_config` should show before it can be
+scheduled. See §53j-1 / 53j-2 and §53j-3 below.
 
 **The three 53i-3d fixed were never planned as 53i-3's work.** They fell out
 of applying layer 4 of the error contract, which is the argument for keeping a
@@ -3022,9 +3021,9 @@ because 53i-3c and 53i-3d each caught an accumulator mid-unit that way.
 
 Two commits: `752e146` (53j-1, a failure reported as a usable answer),
 `0760a27` (53j-2, a crash whose message names nothing). Scope was **5 of the
-10** unowned residue rows above, taken by shape. 53j-3 (the cache-tag hash
-inputs) and 53j-4 (the masking display contract) are unstarted; 53j-4 needs an
-operator decision before it can be scheduled.
+10** unowned residue rows above, taken by shape. 53j-3 took the next four (see
+below); 53j-4, the masking display contract, needs an operator decision before
+it can be scheduled.
 
 **No pin-first commit, for the first time in the arc.** Every prior subphase
 touching production code opened with a tests-only commit because the target was
@@ -3125,3 +3124,115 @@ this path surfaces as a full traceback, because `pipeline.py` only translates
 push errors and re-raises the rest. That is pre-existing and identical for every
 other `RuntimeError` `images.py` raises, including 53i-3d's `ecr_login` one.
 Out of scope for 53j; captured as an idea rather than fixed here.
+
+### 53j-3 — the cache-tag hash inputs, four members in one file (2026-08-20)
+
+**The four remaining `images.py` rows, taken as one unit** because fixing them
+separately means re-deriving what the cache tag should hash four times. Like
+53j-1/2, **none carries a pysmelly finding**, so the result is a **diffed
+finding set**, not a total: **33** at `b1e3db7`, **33** at `d306897`, **33** at
+`3e1c474`, identical modulo line-number shifts. `images.py`'s only finding
+throughout is the standing `hash_modifiers` `temp-accumulators`, which this unit
+does not touch.
+
+**No pin-first commit, again for the same measured reason.** `images.py` was at
+**100%** at `b1e3db7` and all four members were already pinned in
+`tests/unit/test_deploy_images.py`; `tests/unit/test_images.py` does not touch
+these functions. Every fix landed as a visible diff against an existing pin.
+Coverage stayed at **100%** — the new `_context_files` helper is exercised by
+every `compute_context_hash` pin.
+
+Two commits, split by whether a digest can move:
+
+| Commit             | Fix                                                                                                  | Digest             |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | ------------------ |
+| `d306897` (53j-3a) | `should_ignore`'s trailing `fnmatch(rel_str, pattern)` deleted, with its now-unused local            | Cannot move        |
+| `d306897` (53j-3a) | `parse_dockerignore` returns `list(dict.fromkeys(patterns))`                                         | Cannot move        |
+| `3e1c474` (53j-3b) | `_context_files` excludes the selected Dockerfile from the walk; the `Dockerfile:` prefix hash stays | Moves one image    |
+| `3e1c474` (53j-3b) | `_context_files` excludes `.dockerignore` from the walk                                              | Moves the same one |
+
+**The split is the point.** 53j-3a's two members are digest-neutral *by
+argument*: the dead `fnmatch` can only fire when `rel_path.parts` is empty —
+i.e. when the path *is* the context root, whose relative path is `"."` and whose
+`.parts` is `()` — and `rglob` never yields the root; de-duplicating patterns
+changes nothing because `should_ignore` short-circuits on the first match and
+the pattern list is not itself a hash input. **Both re-measured rather than
+asserted**, before and after: havoc `446952b9b7a2`, cantaloupe `5ec6bfaec77d`,
+transcoder `c074ce44013a`, all unchanged.
+
+#### The blast radius decided the recipe
+
+The written plan proposed hashing a **digest of the parsed patterns** in place
+of the raw `.dockerignore`. Measuring the two candidates against havoc's three
+real contexts overruled it:
+
+| context      | before         | exclude-from-walk | patterns-digest |
+| ------------ | -------------- | ----------------- | --------------- |
+| `havoc`      | `446952b9b7a2` | `446952b9b7a2`    | *changes*       |
+| `cantaloupe` | `5ec6bfaec77d` | `5c3ff5cc515e` \* | *changes*       |
+| `transcoder` | `c074ce44013a` | `c074ce44013a`    | *changes*       |
+
+The patterns-digest column is deliberately not given as digests: what it lands
+on depends on the framing bytes chosen for the pattern list, which is arbitrary.
+What is not arbitrary is that it moves **all three** — necessarily, since it
+feeds every context a hash input it did not have before, `.dockerignore` or not.
+So a patterns digest triples the churn for no benefit. **Every context that has a
+`.dockerignore` already self-ignores it** — havoc's lists `Dockerfile*` and
+`.dockerignore`, transcoder's lists `Dockerfile` and `.dockerignore` — and a
+pattern change that actually matters already reaches the digest **through the
+file set it selects**. It would also have flipped a fifth pin,
+`test_an_empty_context_hashes_the_empty_digest`, because `[".git"]` would be
+hashed even for a context with nothing in it.
+
+**The blast radius is one image, not the fleet.** `havoc` is the only live app
+with `[images]` (`archive/uwlib-storage` is archived; `outscience-staging` has
+no `deploy.toml` with images). Only `cantaloupe` moves — it has no
+`.dockerignore`, so it is the only one whose Dockerfile was reaching the walk.
+One rebuild-and-push on the next havoc deploy; `docker build` still layer-caches
+locally, and a changed tag is a cache *miss*, never a failure. **ADR in
+[DECISIONS.md](DECISIONS.md) 2026-08-20**, because it changes what does and does
+not invalidate a built image.
+
+#### Pins
+
+Four flipped, each losing its "pinned, not endorsed" framing and citing the
+defect rather than a phase number:
+
+| Was                                                                          | Now                                                           |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `test_a_dockerignore_listing_git_yields_it_twice`                            | `..._yields_it_once`                                          |
+| `test_the_context_root_itself_is_the_only_path_reaching_the_full_path_check` | `..._is_no_longer_special_cased` — `True` → `False`           |
+| `test_the_dockerignore_file_is_itself_hashed`                                | `test_a_comment_only_dockerignore_edit_does_not_bust_the_tag` |
+| `test_the_dockerfile_is_hashed_twice`                                        | `test_the_dockerfile_is_hashed_once_under_its_prefix`         |
+
+Four added, three of them the half that proves the exclusion did not go too far:
+a pattern that hides a real file still busts the tag; deleting `.dockerignore`
+busts it; two contexts with identical files hash the same whether or not a
+`.dockerignore` names the Dockerfile (the pin that encodes why havoc and
+transcoder do not move and cantaloupe does); and `parse_dockerignore` de-dupes
+an ordinary repeated pattern, not only `.git`.
+
+Six were checked-not-edited and still pass unchanged, including
+`test_an_empty_context_hashes_the_empty_digest` and
+`test_naming_a_different_dockerfile_changes_the_hash` — the latter is why
+`compute_context_hash` keeps its `Dockerfile:` pre-hash: dropping it would let
+`(ctx, "Dockerfile")` and `(ctx, "Dockerfile.dev")` collide.
+
+#### Verification
+
+`make check` (1745 tests), `make format-docs-check`, `make security` — the last
+**after staging**, since `security-secrets` scans `git ls-files`. **Exercised by
+hand against `havoc-staging`** with `deploy --dry-run --skip-secrets-check --ignore-audit`: `web` `1f48e716652f` and `transcoder` `c074ce44013a`
+unchanged, `cantaloupe` `5ec6bfaec77d` → `5c3ff5cc515e`.
+
+**This time the dry-run genuinely was a witness.** `_resolve_image_spec` and
+`_cache_tag` both run before the build, unlike 53j-1's cluster check — which is
+exactly the lesson the previous unit wrote down, applied.
+
+#### Side effects and mints
+
+Nothing minted, nothing cleared. The `files_to_hash` accumulator disappeared
+into `_context_files`'s comprehension **rather than growing two more
+conditions**, which is how this unit would otherwise have newly tripped
+`temp-accumulators` — the check 53i-3c and 53i-3d each caught mid-unit, which is
+why pysmelly was run *between* the two commits and not only at the end.

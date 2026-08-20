@@ -854,6 +854,76 @@ the fifth of five items in the 53e latent-bug ledger's 53j scope.
 
 ______________________________________________________________________
 
+## 2026-08-20: The Cache-Tag Recipe — What Invalidates a Built Image
+
+**Decision:** `compute_context_hash` hashes the **selected Dockerfile under its
+own `Dockerfile:` prefix**, then the path and content of every context file
+that survives `.dockerignore` — **excluding two files the walk skips whether or
+not `.dockerignore` names them**: the selected Dockerfile (already counted by
+the prefix) and `.dockerignore` itself.
+
+**This is an operational promise**, not a refactor: it changes what does and
+does not invalidate a built image, and therefore when a deploy rebuilds and
+pushes. It is recorded here for that reason.
+
+**The accepted cost, and it is the surprising half:** a `.dockerignore` edit
+that only affects files which **do not exist yet** no longer changes the tag.
+Add `*.tmp` to a context that has no `.tmp` files and the tag is unchanged.
+That is correct — the context docker would send is byte-for-byte identical — but
+it is the half that surprises, because "I edited a config file and nothing
+rebuilt" reads like a bug. A pattern change that *does* hide or reveal a real
+file still busts the tag, through the file set it selects, and that direction is
+pinned from both sides.
+
+**`.dockerignore` is build metadata, not build input.** The raw file was hashed
+as an ordinary context file, so a comment-only edit rebuilt every image in the
+app. The information that matters — which files docker receives — already
+reaches the digest through the file set.
+
+**The `Dockerfile:` prefix stays.** It is what records *which* Dockerfile was
+selected; without it `compute_context_hash(ctx, "Dockerfile")` and
+`(ctx, "Dockerfile.dev")` would collide whenever the two files have identical
+content. What was wrong was hashing the same file *again* in the walk.
+
+**Alternatives considered:**
+
+- **Hash a digest of the parsed patterns** in place of the raw file (what the
+  written plan proposed). **Rejected on measurement.** Prototyped read-only
+  against havoc's three real contexts, it moves **all three** tags where
+  exclude-from-walk moves **one** — necessarily, since it feeds every context a
+  new hash input it did not have before, `.dockerignore` or not. (The exact
+  digests it lands on depend on the framing bytes chosen for the pattern list,
+  which is an arbitrary choice; the 3-vs-1 churn is not.) It buys nothing: every
+  context that has a `.dockerignore` already self-ignores it, and a pattern
+  change that matters already reaches the digest through the file set. It would
+  also hash `[".git"]` for an empty context, so an empty context would stop
+  hashing the empty digest.
+- **Add `Dockerfile` and `.dockerignore` to `parse_dockerignore`'s pattern
+  list.** Rejected: those are hash-recipe decisions, not the user's ignore
+  rules, and `parse_dockerignore`'s output is read as the latter. Conflating
+  them would also make `should_ignore` claim docker excludes files it does not.
+- **Leave both defects.** Rejected: the doubled Dockerfile makes the hash inputs
+  read wrong to anyone auditing them, and the `.dockerignore` hash rebuilt every
+  image in an app for a comment.
+
+**Blast radius, measured before choosing:** `havoc` is the only live app with an
+`[images]` section. Of its three contexts only `cantaloupe` moves —
+`5ec6bfaec77d` → `5c3ff5cc515e` — because it is the only one with no
+`.dockerignore`, so the only one whose Dockerfile was reaching the walk. One
+rebuild-and-push on the next havoc deploy. `docker build` still layer-caches
+locally, and a changed tag is a cache **miss**, never a failure.
+
+**Reasoning:** The tag answers one question — "would docker build the same
+image from the same inputs?" — so the hash should cover exactly the inputs and
+nothing else. Both defects were the same mistake in opposite directions: one
+input counted twice, one non-input counted at all.
+
+**See also:** [PYSMELLY.md](PYSMELLY.md) §53j-3 for the unit that applied it and
+the full pin list; the 2026-01-21 decision on `--no-cache` for the separate
+question of base-image staleness *within* a build.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown
