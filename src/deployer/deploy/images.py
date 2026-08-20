@@ -101,11 +101,48 @@ def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> b
     return False
 
 
+def _context_files(context_path: Path, dockerfile: str, patterns: list[str]) -> list[Path]:
+    """The context files whose path and content feed the hash, in sorted order.
+
+    Two files are excluded that .dockerignore does not have to name. The
+    selected Dockerfile is hashed separately under its own prefix, so that
+    *which* Dockerfile was chosen is part of the digest; hashing it here as
+    well counted it twice. .dockerignore is build metadata rather than build
+    input -- a change to it that matters already reaches the digest through the
+    file set it selects, so hashing the raw file only meant that editing a
+    comment rebuilt every image.
+
+    These are hash-recipe decisions, not user ignore rules, which is why they
+    live here and not in parse_dockerignore's pattern list.
+
+    Args:
+        context_path: Path to the build context directory.
+        dockerfile: Name of the selected Dockerfile.
+        patterns: Ignore patterns from parse_dockerignore.
+
+    Returns:
+        Files to hash, sorted by their path relative to the context.
+    """
+    excluded = {context_path / dockerfile, context_path / ".dockerignore"}
+
+    return sorted(
+        (
+            path
+            for path in context_path.rglob("*")
+            if path.is_file()
+            and path not in excluded
+            and not should_ignore(path, context_path, patterns)
+        ),
+        key=lambda p: str(p.relative_to(context_path)),
+    )
+
+
 def compute_context_hash(context_path: Path, dockerfile: str) -> str:
     """Compute a hash of the build context for cache detection.
 
-    The hash includes the Dockerfile and all files in the context,
-    respecting .dockerignore patterns.
+    The hash covers the selected Dockerfile under its own prefix, then the path
+    and content of every context file that survives .dockerignore. See
+    ``_context_files`` for what the walk deliberately leaves out.
 
     Args:
         context_path: Path to the build context directory.
@@ -116,27 +153,17 @@ def compute_context_hash(context_path: Path, dockerfile: str) -> str:
     """
     hasher = hashlib.sha256()
 
-    # Parse .dockerignore
     patterns = parse_dockerignore(context_path)
 
-    # Hash the Dockerfile first
+    # Hash the Dockerfile first, under a prefix that records the selection
     dockerfile_path = context_path / dockerfile
     if dockerfile_path.exists():
         with open(dockerfile_path, "rb") as f:
             hasher.update(b"Dockerfile:")
             hasher.update(f.read())
 
-    # Collect and sort all files for deterministic hashing
-    files_to_hash = []
-    for file_path in context_path.rglob("*"):
-        if file_path.is_file() and not should_ignore(file_path, context_path, patterns):
-            files_to_hash.append(file_path)
-
-    # Sort by relative path for determinism
-    files_to_hash.sort(key=lambda p: str(p.relative_to(context_path)))
-
-    # Hash each file (path + content)
-    for file_path in files_to_hash:
+    # Hash each remaining file (path + content)
+    for file_path in _context_files(context_path, dockerfile, patterns):
         rel_path = file_path.relative_to(context_path)
         hasher.update(f"\n{rel_path}:".encode())
         try:

@@ -661,26 +661,69 @@ class TestComputeContextHash:
 
         assert compute_context_hash(tmp_path, "Dockerfile") == before
 
-    def test_the_dockerignore_file_is_itself_hashed(self, tmp_path):
-        """Pinned, not endorsed: editing .dockerignore always busts the cache,
-        even when the edit changes nothing about which files are included."""
+    def test_a_comment_only_dockerignore_edit_does_not_bust_the_tag(self, tmp_path):
+        """.dockerignore is build metadata, not build input: it is excluded from
+        the walk, so an edit that changes no file selection changes no digest."""
         (tmp_path / "Dockerfile").write_text("FROM scratch\n")
         (tmp_path / ".dockerignore").write_text("*.log\n")
+        (tmp_path / "app.py").write_text("x = 1\n")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / ".dockerignore").write_text("*.log\n# a comment\n")
 
+        assert compute_context_hash(tmp_path, "Dockerfile") == before
+
+    def test_a_real_ignore_set_change_still_busts_the_tag(self, tmp_path):
+        """The half that proves the exclusion did not go too far: a pattern that
+        actually hides a file reaches the digest through the file set."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / ".dockerignore").write_text("*.log\n")
+        (tmp_path / "app.py").write_text("x = 1\n")
+        before = compute_context_hash(tmp_path, "Dockerfile")
+
+        (tmp_path / ".dockerignore").write_text("*.log\napp.py\n")
+
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
-    def test_the_dockerfile_is_hashed_twice(self, tmp_path):
-        """Pinned, not endorsed: the Dockerfile is hashed under the literal
-        ``Dockerfile:`` prefix *and* again as a context file, because nothing
-        excludes it from the rglob walk."""
+    def test_deleting_the_dockerignore_busts_the_tag(self, tmp_path):
+        """The files it hid come back into the walk."""
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / ".dockerignore").write_text("*.log\n")
+        (tmp_path / "noisy.log").write_text("lots of noise\n")
+        before = compute_context_hash(tmp_path, "Dockerfile")
+
+        (tmp_path / ".dockerignore").unlink()
+
+        assert compute_context_hash(tmp_path, "Dockerfile") != before
+
+    def test_naming_the_dockerfile_in_the_dockerignore_makes_no_difference(self, tmp_path):
+        """Two contexts with identical files hash the same whether or not a
+        .dockerignore names the Dockerfile, because the walk excludes both files
+        either way.
+
+        This is why havoc's and transcoder's contexts -- whose .dockerignore
+        files already list ``Dockerfile`` and ``.dockerignore`` -- did not move
+        when the exclusions became implicit, and cantaloupe's, which has no
+        .dockerignore at all, did.
+        """
+        listed, absent = tmp_path / "listed", tmp_path / "absent"
+        for context in (listed, absent):
+            context.mkdir()
+            (context / "Dockerfile").write_text("FROM scratch\n")
+            (context / "app.py").write_text("x = 1\n")
+        (listed / ".dockerignore").write_text("Dockerfile\n.dockerignore\n")
+
+        assert compute_context_hash(listed, "Dockerfile") == compute_context_hash(
+            absent, "Dockerfile"
+        )
+
+    def test_the_dockerfile_is_hashed_once_under_its_prefix(self, tmp_path):
+        """The Dockerfile reaches the hash only through the ``Dockerfile:``
+        prefix, which is what records *which* Dockerfile was selected. It is
+        excluded from the context walk, so it is not counted a second time."""
         (tmp_path / "Dockerfile").write_text("FROM scratch\n")
         hasher = hashlib.sha256()
         hasher.update(b"Dockerfile:")
-        hasher.update(b"FROM scratch\n")
-        hasher.update(b"\nDockerfile:")
         hasher.update(b"FROM scratch\n")
 
         assert compute_context_hash(tmp_path, "Dockerfile") == hasher.hexdigest()[:12]
