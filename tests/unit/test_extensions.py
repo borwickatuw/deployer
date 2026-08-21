@@ -13,10 +13,10 @@ print_with_advice() emits a leading blank line that today's code does not.
 "pinned, not endorsed": the invoke path catches bare `Exception` and reports
 every non-ClientError failure as "Unexpected error invoking Lambda", so a bug
 raised inside boto3 is presented to the operator as a credentials or network
-problem. Whether it should catch at all is an error-contract question tracked
-decided in docs/internal/DECISIONS.md § "2026-08-18: Error Contracts", layer
-4: the advice block is reserved for BotoCoreError, which is the connectivity
-and configuration family it actually describes.
+problem. Whether it should catch at all is an error-contract question decided
+in docs/internal/DECISIONS.md § "2026-08-18: Error Contracts", layer 4: the
+advice block is reserved for BotoCoreError, which is the connectivity and
+configuration family it actually describes.
 """
 
 import json

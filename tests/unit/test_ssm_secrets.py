@@ -34,7 +34,8 @@ What is pinned:
    ``get_secrets_from_config``, whose signature declared a non-optional
    ``dict`` and which calls ``env_config.get("secrets", {})`` on the
    module-style path. Its only production caller, ``bin/ssm-secrets.py``,
-   passes two arguments. The signatures now agree.
+   passes one argument, so ``env_config`` arrived as None. The signatures now
+   agree.
 
 2. **``bin/ssm-secrets.py check`` end-to-end on both styles**, so the
    user-visible behaviour is pinned too. The recommended form used to print

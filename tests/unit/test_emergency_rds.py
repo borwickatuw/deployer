@@ -4,14 +4,16 @@ Backed by moto (``mocked_aws`` fixture): the RDS calls run against moto's
 in-memory backend rather than mocked boto3 objects, so the request shapes
 these functions send are validated by botocore for real.
 
-Several tests are marked "pinned, not endorsed": the functions under test
-swallow ClientError and return None/[] , which makes "the call failed" and
-"there is nothing there" indistinguishable to callers. That is a real design
-question, decided in docs/internal/DECISIONS.md § "2026-08-18: Error
-Contracts": the two *queries* raise RuntimeError
-when a read fails, and keep None/[] only for genuine absence, while
-create_emergency_snapshot -- a mutator -- keeps its None as a documented
-failure sentinel its caller branches on.
+These tests were written while the functions under test swallowed ClientError
+and returned None/[], which made "the call failed" and "there is nothing
+there" indistinguishable to callers, and several carried a "pinned, not
+endorsed" marker saying so. That design question is decided in
+docs/internal/DECISIONS.md § "2026-08-18: Error Contracts": the two *queries*
+raise RuntimeError when a read fails and keep None/[] only for genuine
+absence, while create_emergency_snapshot -- a mutator -- keeps its None as a
+documented failure sentinel its caller branches on. 53i-3b applied that
+decision and retired the markers with it, so what these tests assert now is
+the decided contract rather than a pin against it.
 """
 
 import re
