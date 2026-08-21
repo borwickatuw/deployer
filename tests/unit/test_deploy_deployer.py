@@ -403,12 +403,14 @@ class TestPrintServiceConfig:
 
 
 class TestPrintEnvironmentConfig:
-    """Characterization pins for print_environment_config()'s masking.
+    """Pins for print_environment_config()'s display contract.
 
-    Masking keys on a substring of the *name* is what the code does today.
-    Two consequences are pinned below and are NOT endorsed: names that merely
-    contain "url"/"key" are masked whether or not they are secret, and any
-    name that does not match is printed in full whatever its value.
+    Every variable prints its value in full. Nothing that reaches this map can
+    be a secret -- ``[secrets] names`` travel the task definition's ``secrets``
+    block and never the environment map, and preflight's
+    ``check_environment_secrets_overlap`` enforces that rather than assuming
+    it. The substring masking this replaced was wrong nine times out of nine
+    against the only live app; see DECISIONS.md 2026-08-21.
     """
 
     MASKING_TOML = """
@@ -434,37 +436,38 @@ SM_REF = "secretsmanager:arn:aws:secretsmanager:x"
         pairs = [line.strip() for line in _lines(capsys.readouterr().out)[1:]]
         return dict(pair.split("=", 1) for pair in pairs)
 
-    def test_names_matching_a_sensitive_substring_are_masked(self, make_deployer, capsys):
+    def test_names_matching_the_old_mask_substrings_print_their_values(self, make_deployer, capsys):
+        """The names the substring list used to hide now print in full.
+
+        "url", "key" and the rest were only ever a guess about the name. The
+        same list hid MONKEY_BUSINESS -- "key" is a substring of "monkey".
+        """
         make_deployer(toml=self.MASKING_TOML).print_environment_config()
 
         printed = self._printed(capsys)
-        for masked in (
-            "DATABASE_URL",
-            "SECRET_KEY",
-            "API_TOKEN",
-            "ADMIN_PASSWORD",
-            "CONNECTION_STRING",
-        ):
-            assert printed[masked] == "***"
-
-    def test_innocuous_names_containing_url_or_key_are_masked_too(self, make_deployer, capsys):
-        """Over-masking, pinned not endorsed: "url" and "key" are substrings."""
-        make_deployer(toml=self.MASKING_TOML).print_environment_config()
-
-        printed = self._printed(capsys)
-        assert printed["BASE_URL"] == "***"
-        assert printed["MONKEY_BUSINESS"] == "***"
+        assert printed["DATABASE_URL"] == "postgres://user:pw@host/db"  # pragma: allowlist secret
+        assert printed["SECRET_KEY"] == "s3cret"  # pragma: allowlist secret
+        assert printed["API_TOKEN"] == "tok-123"
+        assert printed["ADMIN_PASSWORD"] == "hunter2"  # pragma: allowlist secret
+        assert printed["CONNECTION_STRING"] == "host=db"
+        assert printed["BASE_URL"] == "https://example.com"
+        assert printed["MONKEY_BUSINESS"] == "bananas"
 
     def test_non_matching_names_are_printed_in_full(self, make_deployer, capsys):
-        """Pinned not endorsed: a secret under a non-matching name is exposed."""
         make_deployer(toml=self.MASKING_TOML).print_environment_config()
 
         printed = self._printed(capsys)
         assert printed["LOG_LEVEL"] == "info"
         assert printed["PUBLIC_HOSTNAME"] == "example.com"
 
-    def test_ssm_and_secretsmanager_references_are_shown_not_masked(self, make_deployer, capsys):
-        """The reference is shown so the operator can see which secret is wired."""
+    def test_ssm_and_secretsmanager_references_print_like_any_other_value(
+        self, make_deployer, capsys
+    ):
+        """These once had their own arm; now they are values like any other.
+
+        "show the reference, not the value" and "show the value" say the same
+        thing once nothing is masked, so the arm went with the masking.
+        """
         make_deployer(toml=self.MASKING_TOML).print_environment_config()
 
         printed = self._printed(capsys)
@@ -477,11 +480,11 @@ SM_REF = "secretsmanager:arn:aws:secretsmanager:x"
         names = list(self._printed(capsys))
         assert names == sorted(names)
 
-    def test_a_non_string_value_under_a_non_masked_name_is_printed(self, make_deployer, capsys):
+    def test_a_non_string_value_is_printed(self, make_deployer, capsys):
         """value.startswith() assumed str; TOML gives ints and bools too.
 
-        It used to raise AttributeError, and only for names that miss *every*
-        mask substring — a masked name short-circuits before the .startswith().
+        It used to raise AttributeError, and only for names that missed *every*
+        mask substring — a masked name short-circuited before the .startswith().
         The deploy itself was always fine: build_task_definition str()s the same
         value, so this was a display-only crash on config that deploys.
         """
@@ -500,8 +503,8 @@ RELOAD = false
         assert printed["MAX_WORKERS"] == "4"
         assert printed["RELOAD"] == "False"
 
-    def test_a_non_string_value_under_a_masked_name_is_fine(self, make_deployer, capsys):
-        """The same int is harmless when the name short-circuits to "***"."""
+    def test_a_non_string_value_under_an_old_mask_substring_prints_too(self, make_deployer, capsys):
+        """This int used to short-circuit to "***" on the word "secret"."""
         toml = """
 [application]
 name = "testapp"
@@ -512,7 +515,71 @@ SECRET_ROTATION_DAYS = 4
 """
         make_deployer(toml=toml).print_environment_config()
 
-        assert "  SECRET_ROTATION_DAYS=***" in _lines(capsys.readouterr().out)
+        assert "  SECRET_ROTATION_DAYS=4" in _lines(capsys.readouterr().out)
+
+    def test_an_empty_value_prints_the_unset_marker(self, make_deployer, capsys):
+        """Three of havoc's nine masked variables were empty strings.
+
+        "***" claimed there was something to hide where the truth was "unset".
+        """
+        toml = """
+[application]
+name = "testapp"
+source = "."
+
+[environment]
+CLOUDFRONT_KEY_ID = ""
+"""
+        make_deployer(toml=toml).print_environment_config()
+
+        assert "  CLOUDFRONT_KEY_ID=(unset)" in _lines(capsys.readouterr().out)
+
+    def test_zero_and_false_are_values_not_unset(self, make_deployer, capsys):
+        """The guard that makes `value or '(unset)'` correct.
+
+        str() runs first, so the only falsy value left is "". Were `or` applied
+        to the raw TOML value, 0 and false would both claim to be unset.
+        """
+        toml = """
+[application]
+name = "testapp"
+source = "."
+
+[environment]
+WORKER_COUNT = 0
+DEBUG = false
+EMPTY_STRING = ""
+"""
+        make_deployer(toml=toml).print_environment_config()
+
+        printed = self._printed(capsys)
+        assert printed["WORKER_COUNT"] == "0"
+        assert printed["DEBUG"] == "False"
+        assert printed["EMPTY_STRING"] == "(unset)"
+
+    def test_a_literal_unset_value_is_indistinguishable_from_an_empty_one(
+        self, make_deployer, capsys
+    ):
+        """The accepted ambiguity of an in-band marker, pinned deliberately.
+
+        This block is narration for a human, not a format anything parses. A
+        machine-readable dump would need its own subcommand with real quoting;
+        a sentinel like $NONE was rejected because a dotenv parser would take
+        it literally, a shell would expand it, and set -u would error on it.
+        """
+        toml = """
+[application]
+name = "testapp"
+source = "."
+
+[environment]
+LITERAL = "(unset)"
+EMPTY = ""
+"""
+        make_deployer(toml=toml).print_environment_config()
+
+        printed = self._printed(capsys)
+        assert printed["LITERAL"] == printed["EMPTY"] == "(unset)"
 
     def test_an_empty_environment_prints_only_the_heading(self, make_deployer, capsys):
         make_deployer().print_environment_config()

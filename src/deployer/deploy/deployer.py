@@ -192,27 +192,41 @@ class Deployer:
         print()
 
     def print_environment_config(self) -> None:
-        """Print the merged environment configuration for visibility."""
+        """Print the merged environment configuration in full, masking nothing.
+
+        Nothing printed here can be a secret. ``get_environment_variables`` and
+        ``get_secrets`` are disjoint routes off ``_collect_modules`` -- the
+        ``.environment`` half and the ``.secrets`` half (task_definition.py).
+        A ``[secrets] names`` entry reaches the container through the task
+        definition's ``secrets`` block via SSM and never enters the environment
+        map, which is the repo's own ADR: "Secret values never appear in
+        deploy.toml, deploy script logs, or CI/CD output" (DECISIONS.md
+        2026-01-21). ``check_environment_secrets_overlap`` enforces that
+        disjointness at preflight rather than leaving it assumed.
+
+        The masking this replaced keyed on substrings of the *name*, and
+        measured against the only live app it was wrong nine times out of nine:
+        it hid a public base URL, a health-check path, an IdP metadata URL, an
+        expiry in seconds, and three empty strings, while printing
+        CSRF_TRUSTED_ORIGINS in full holding the value it masked BASE_URL for.
+
+        ``str(raw_value)`` is what makes ``or`` safe: after it, only ``""`` is
+        falsy, so ``0`` prints ``0`` and ``false`` prints ``False`` rather than
+        ``(unset)``. TOML yields ints and bools as well as strings, and the
+        task definition stringifies the same value (build_task_definition), so
+        this prints what deploys.
+
+        ``(unset)`` is a marker for a human reading deploy narration, not a
+        parseable encoding -- a value literally equal to ``(unset)`` is
+        indistinguishable from an empty one, and nothing in the fleet parses
+        this block. A machine-readable dump would need its own subcommand with
+        real quoting.
+        """
         log("Global environment variables:")
         env_vars = get_environment_variables(self.ctx)
         for key, raw_value in sorted(env_vars.items()):
-            # TOML yields ints and bools as well as strings -- [environment]
-            # MAX_WORKERS = 4 arrives as an int -- and startswith() assumes str.
-            # The task definition stringifies the same value (task_definition.py
-            # build_task_definition), so this changes no output that printed
-            # before; it only stops the display crashing on what deploys fine.
             value = str(raw_value)
-            # Mask sensitive values
-            if any(
-                s in key.lower()
-                for s in ["secret", "password", "key", "token", "url", "database", "connection"]
-            ):
-                display_value = "***"
-            elif value.startswith("ssm:") or value.startswith("secretsmanager:"):
-                display_value = value  # Show reference, not actual value
-            else:
-                display_value = value
-            print(f"  {key}={display_value}")
+            print(f"  {key}={value or '(unset)'}")
         print()
 
     def check_infrastructure_status(self) -> InfraStatus:
