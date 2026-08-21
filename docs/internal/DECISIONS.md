@@ -924,6 +924,102 @@ question of base-image staleness *within* a build.
 
 ______________________________________________________________________
 
+## 2026-08-21: The Deploy Log Prints Every Environment Variable in Full (Phase 53j-4)
+
+**Decision:** `Deployer.print_environment_config` masks nothing. Every variable
+in the environment map prints its value; an empty value prints `(unset)`. The
+disjointness that makes this safe is enforced at preflight by
+`check_environment_secrets_overlap` rather than assumed.
+
+**What the masking did, measured.** Until this decision the display hid any
+variable whose *name* contained `secret`, `password`, `key`, `token`, `url`,
+`database` or `connection`. Measured against `havoc-staging`, the only live app,
+on a real `deploy --dry-run`: **40 variables, 9 masked, and all 9 held nothing
+secret.**
+
+| Masked                   | Actual value                               | What it was       |
+| ------------------------ | ------------------------------------------ | ----------------- |
+| `BASE_URL`               | `https://havoc-staging.uw-lib-pilot.click` | public            |
+| `HEALTH_CHECK_URL`       | `/health/`                                 | a path            |
+| `IIIF_SERVER_URL`        | an internal service URL                    | not secret        |
+| `SAML_METADATA_URL`      | UW's public IdP metadata URL               | public            |
+| `SIGNED_URL_EXPIRY`      | `3600`                                     | a number          |
+| `REDIS_URL`              | `redis://<endpoint>:6379`                  | no auth token     |
+| `CLOUDFRONT_KEY_ID`      | `""`                                       | empty             |
+| `CLOUDFRONT_PRIVATE_KEY` | `""`                                       | empty             |
+| `SAML_SP_KEY_PATH`       | `""`                                       | empty, and a path |
+
+`SIGNED_URL_EXPIRY` was masked because its name contains `url`. Three masked an
+**empty string**, printing `***` where the truth was "unset". And
+`CSRF_TRUSTED_ORIGINS` printed in full holding the same value `BASE_URL` was
+masked for — the contradiction was visible on one screen, in every deploy log,
+for months.
+
+**Under-masking is structurally impossible, not merely unobserved.**
+`get_environment_variables` and `get_secrets` are disjoint routes off
+`_collect_modules` — the `.environment` half and the `.secrets` half
+(`task_definition.py`). A `[secrets] names` entry reaches the container as the
+task definition's `secrets` block, resolved from SSM, and never enters the
+environment map. That is this document's own 2026-01-21 decision: *"Secret
+values never appear in deploy.toml, deploy script logs, or CI/CD output."* The
+masking was defending against a shape the repo had already banned by ADR, and
+charging nine wrong answers out of forty for the defence.
+
+**Alternatives considered:**
+
+- **Keep masking, fix the substring list.** Rejected: the list was 0-for-9 on
+  live data while looking obviously right in review. A better list is the same
+  bet — a guess about a *name* standing in for a fact about a *value* — and its
+  failures are just as invisible.
+- **Also abort on credential-*shaped* values at preflight.** Rejected: a
+  heuristic with production stakes, where a false positive blocks a deploy, made
+  of the same guesswork this decision deleted. The check that shipped is exact:
+  a name is in both lists or it is not.
+- **A `$NONE` sentinel for empty values instead of `(unset)`.** Rejected: a
+  dotenv parser would take it literally, a shell would expand it, `set -u` would
+  error on it, and it collides with a real value. All four are only problems if
+  the block is machine-read, which is the point — it is not.
+- **Leave the defect standing as a display-only nuisance.** Rejected: the whole
+  point of printing the environment is to debug a deploy, and nine of forty
+  answers were wrong in the direction that hides the truth.
+
+**`(unset)` is a marker, not an encoding.** This block is deploy narration for a
+human. Nothing in the fleet parses it — the only references to the heading
+`"Global environment variables:"` anywhere are `deployer.py` and two of its own
+tests. A value literally equal to `(unset)` is therefore indistinguishable from
+an empty one, which is pinned as an accepted ambiguity rather than worked
+around. If a pipeable dump is ever wanted it gets its own subcommand with real
+quoting.
+
+`str(raw_value)` runs before the `or`, which is what makes the marker safe: only
+`""` is falsy afterwards, so `0` prints `0` and `false` prints `False`.
+
+**The accepted cost:** values that are **sensitive but not secret** now print in
+full to anyone reading a deploy log — internal hostnames, the RDS endpoint, the
+Redis endpoint, bucket names. They already appeared in task definitions,
+CloudWatch and the AWS console; the masking never protected them anywhere but
+this one screen, and it protected them there at the price of hiding a health
+check path. If any of these should be secret, the answer is to move them into
+`[secrets]`, where the preflight check now guarantees they cannot also be
+sitting in `[environment]`.
+
+**The invariant is now enforced.** `check_environment_secrets_overlap` runs
+unconditionally in `run_preflight_checks`, beside `check_secrets_style`, and
+raises when a name appears in both `[secrets] names` and any `[environment]`
+table — base, per-environment, `[services.X.environment]`, or its sub-table. A
+collision is an error on its own terms whatever ECS makes of it: the deployer
+emits the colliding name twice on the same container definition, once per block,
+and reconciles them nowhere. The check fires before the task definition is
+built, so it rests on no assumption about precedence. Blast radius measured
+before shipping: havoc's three declared secrets intersect its environment tables
+in nothing, so the check passed for the live fleet on day one.
+
+**See also:** the 2026-01-21 decision on secrets via SSM references, whose
+security claim this makes checkable; [PYSMELLY.md](PYSMELLY.md) §53j-4 for the
+unit that applied it and the closing of the 53j arc.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown

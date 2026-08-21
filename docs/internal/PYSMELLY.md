@@ -1014,11 +1014,11 @@ dataclass conversion cannot be done by field access alone.**
 53e-3a's tests pin all three as **current behaviour, not as endorsements**; each
 is a real defect left for a subphase that owns the contract.
 
-| Bug                                                                                                                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it. | **FIXED by 53j-2** (`0760a27`). Stringified once at the top of the loop body; the deploy path was never affected.                                                  |
-| **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                          | Pinned, not endorsed. Fixing it is a display-contract decision, not a refactor.                                                                                    |
-| **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                       | **FIXED by 53i-3d** (`600c788`). It now returns a non-critical warning naming the instance, and a non-AWS error propagates instead of being answered as "healthy". |
+| Bug                                                                                                                                                                                                                                                                                                                                                                                                | Status                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`print_environment_config` raises `AttributeError` on a non-string value.** `value.startswith("ssm:")` assumes `str`, but `[environment] MAX_WORKERS = 4` in `deploy.toml` arrives from TOML as an `int` and `get_environment_variables` never stringifies it. Only bites names that miss **every** mask substring, because a masked name short-circuits first — which is why nobody has hit it. | **FIXED by 53j-2** (`0760a27`). Stringified once at the top of the loop body; the deploy path was never affected.                                                        |
+| **Masking is name-substring-based and wrong in both directions.** `BASE_URL` and `MONKEY_BUSINESS` get masked (`url`, `key`), while a real secret under a name like `PUBLIC_HOSTNAME` prints in full. It also renders the `ssm:` / `secretsmanager:` `elif` nearly dead: a value referencing a secret almost always sits under a name the substring list already catches.                          | **FIXED by 53j-4a** (`630740c`). Masking deleted outright — 9 of havoc's 40 were masked and none held a secret. The `elif` went with it. ADR in DECISIONS.md 2026-08-21. |
+| **`check_infrastructure_status`'s bare `except Exception` reports a _clean_ status.** A credentials failure or a network timeout is indistinguishable from "the database is healthy" — the one direction this function must never get wrong.                                                                                                                                                       | **FIXED by 53i-3d** (`600c788`). It now returns a non-critical warning naming the instance, and a non-AWS error propagates instead of being answered as "healthy".       |
 
 #### Side effects and mints
 
@@ -2991,13 +2991,16 @@ each "current behaviour, not an endorsement". Reconciled at `b62a0f9`:
 | --------------------------------------------- | ------ | ------------------------------------------------------------- |
 | **Fixed** by 53i-3d as a by-product           | 3      | rows marked FIXED above                                       |
 | **Owned by Phase 69** ("instruction ignored") | 1      | `update_service` carries no network config / LB / launch type |
-| **Unowned residue**                           | **10** | scoped as **53j**, claude-meta `docs/PLAN.md` Phase 53        |
+| **Unowned residue**                           | **10** | **10 of 10 done** — the 53j arc, closed 2026-08-21            |
 
-**Updated 2026-08-20:** 53j-1, 53j-2 and 53j-3 took **9 of those 10** — the
-rows now marked FIXED by `752e146` / `0760a27` / `d306897` / `3e1c474`. **1
-remains**: 53j-4, the masking display contract, which needs an operator
-decision about what `print_environment_config` should show before it can be
-scheduled. See §53j-1 / 53j-2 and §53j-3 below.
+**Closed 2026-08-21.** All **10 of 10** unowned residue rows are FIXED: 53j-1
+and 53j-2 took five (`752e146`, `0760a27`), 53j-3 took four (`d306897`,
+`3e1c474`), and **53j-4a took the last one** (`630740c`) once the operator made
+the display-contract decision the row had been waiting on. **The 53j arc is
+closed.** See §53j-1 / 53j-2, §53j-3 and §53j-4 below.
+
+53j-4b — the preflight overlap check — is **additive scope the decision
+justified, not a ledger row**. It closes nothing in the table above.
 
 **The three 53i-3d fixed were never planned as 53i-3's work.** They fell out
 of applying layer 4 of the error contract, which is the argument for keeping a
@@ -3022,8 +3025,8 @@ because 53i-3c and 53i-3d each caught an accumulator mid-unit that way.
 Two commits: `752e146` (53j-1, a failure reported as a usable answer),
 `0760a27` (53j-2, a crash whose message names nothing). Scope was **5 of the
 10** unowned residue rows above, taken by shape. 53j-3 took the next four (see
-below); 53j-4, the masking display contract, needs an operator decision before
-it can be scheduled.
+below); 53j-4 took the tenth and last (see §53j-4), once the operator made the
+display-contract decision it was waiting on.
 
 **No pin-first commit, for the first time in the arc.** Every prior subphase
 touching production code opened with a tests-only commit because the target was
@@ -3080,7 +3083,8 @@ reader does not go looking for a finding that explains it.
 **The masking rule is untouched.** It is wrong in both directions — `BASE_URL`
 and `MONKEY_BUSINESS` are masked, a real secret under `PUBLIC_HOSTNAME` is not
 — and that row stays **Pinned** below. It is 53j-4, and it is a display-contract
-decision for the operator, not a refactor.
+decision for the operator, not a refactor. *(Taken 2026-08-21: the masking was
+deleted. See §53j-4.)*
 
 #### Verification, and the one step the plan got wrong
 
@@ -3236,3 +3240,155 @@ into `_context_files`'s comprehension **rather than growing two more
 conditions**, which is how this unit would otherwise have newly tripped
 `temp-accumulators` — the check 53i-3c and 53i-3d each caught mid-unit, which is
 why pysmelly was run *between* the two commits and not only at the end.
+
+### 53j-4 — the masking display contract, and the ADR it stood in for (2026-08-21)
+
+**The tenth and last unowned-residue row, and the only one that was a decision
+rather than a defect.** It sat Pinned through 53j-1, 53j-2 and 53j-3 because the
+register said so in as many words: masking too little leaks, masking too much
+makes the output useless for debugging, and that trade is the operator's. The
+operator took it on 2026-08-21, and **the corpus made it lopsided.**
+
+Two commits: `630740c` (53j-4a, the display contract — the ledger row) and
+`540d1d2` (53j-4b, the preflight overlap check — **additive scope the decision
+justified, not a row**). Full reasoning in
+[DECISIONS.md](DECISIONS.md) 2026-08-21.
+
+#### What the measurement settled
+
+`deploy --dry-run` against `havoc-staging`, the only live app: **40 variables, 9
+masked, and all 9 held nothing secret.** A public base URL, `/health/`, an
+internal service URL, UW's public IdP metadata URL, `3600` (masked because
+`SIGNED_URL_EXPIRY` contains `url`), a Redis URL with no AUTH token — verified
+in `modules/shared-infrastructure/outputs.tf`, which builds it as
+`redis://${endpoint}:6379` — and **three empty strings**, where `***` claimed
+there was something to hide. Meanwhile `CSRF_TRUSTED_ORIGINS` printed in full
+holding the same value `BASE_URL` was masked for. **The contradiction was on one
+screen, in every deploy log, for months.**
+
+The other direction cannot happen. `get_environment_variables` and `get_secrets`
+are disjoint routes off `_collect_modules` — `.environment` at
+`task_definition.py:346`, `.secrets` at `:350`. A `[secrets] names` entry
+reaches the container through the task definition's `secrets` block via SSM and
+never enters the environment map. That is the repo's own ADR, DECISIONS.md
+2026-01-21. **The masking had been defending a shape the repo banned by ADR, and
+charging nine wrong answers out of forty for it.**
+
+So the plan's own framing — "masking too little leaks" — was answered by the
+corpus rather than argued with: it cannot leak, and the entire cost was on the
+other side.
+
+#### 53j-4a — the display contract
+
+Both branches of the `if/elif/else` deleted. With nothing masked the
+`ssm:`/`secretsmanager:` arm is dead too: "show the reference, not the value"
+and "show the value" are the same statement. The body is two lines:
+
+```python
+value = str(raw_value)
+print(f"  {key}={value or '(unset)'}")
+```
+
+`str(raw_value)` is 53j-2's fix and it is **what makes `or` safe** — only `""`
+is falsy afterwards, so `0` prints `0` and `false` prints `False`. The docstring
+now carries the contract and the argument for it rather than the word "Mask".
+
+**Pins that flipped**, all in `TestPrintEnvironmentConfig`. The class docstring
+said the two consequences were "NOT endorsed"; it is now a statement of the
+contract.
+
+| Was                                                           | Now                                                              |
+| ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `test_names_matching_a_sensitive_substring_are_masked`        | `..._matching_the_old_mask_substrings_print_their_values`        |
+| `test_innocuous_names_containing_url_or_key_are_masked_too`   | folded into the above — over-masking is gone                     |
+| `test_a_non_string_value_under_a_masked_name_is_fine`         | `..._under_an_old_mask_substring_prints_too` — `4`, not `***`    |
+| `test_ssm_and_secretsmanager_references_are_shown_not_masked` | `..._print_like_any_other_value` — passes for a different reason |
+
+Three added: an empty value prints `(unset)`; `0` and `false` do **not** (the
+guard that makes `or` correct); and a value literally equal to `(unset)` is
+indistinguishable from an empty one — **pinned as an accepted ambiguity**, not
+worked around, because this block is narration and nothing in the fleet parses
+it. A `$NONE` sentinel was rejected: a dotenv parser would take it literally, a
+shell would expand it, `set -u` would error on it.
+
+Five were checked-not-edited and still pass unchanged, including the
+whole-output pin, which uses an empty `[environment]` and so never saw a mask.
+
+#### 53j-4b — enforcing the invariant instead of compensating for it
+
+`check_environment_secrets_overlap` raises `PreflightError` when a name appears
+in both `[secrets] names` and any `[environment]` table — base, per-environment,
+`[services.X.environment]`, or its sub-table. Wired into `run_preflight_checks`
+directly after `check_secrets_style` and, like its neighbour, **unconditional**:
+no `--skip` reaches it.
+
+**A collision is an error on its own terms**, whatever ECS makes of it — the
+deployer emits the colliding name **twice on the same container definition**,
+once per block, and reconciles them nowhere. The check fires before the task
+definition is ever built, so its justification rests on no assumption about
+precedence.
+
+**The check is exact.** Also aborting on credential-*shaped* values was
+considered and rejected: a heuristic with a deploy riding on each false
+positive, made of exactly the substring guesswork 4a had just deleted.
+
+**The name set was the one trap.** `get_all_env_var_names` walks all four
+declaration shapes, but then unions `ModuleRegistry.injected_names()` — **which
+is where `[secrets] names` arrive from**, so every declared secret would have
+reported as colliding with itself. The deploy.toml-declared half is now
+`declared_env_var_names()` and `get_all_env_var_names` calls it: one traversal,
+two callers. The comment at `deploy_config.py` records that module knowledge was
+once a fourth hand-maintained copy that had already gone wrong; this did not add
+a fifth, and secret names come from `SecretsModule.injected_names` for the same
+reason. A test pins the self-collision that would otherwise have shipped.
+
+One inherited quirk is pinned rather than fixed: `[environment.staging]` puts
+`staging` into `self._environment` beside the real variables, so the walk counts
+it. That predates the split, and changing it would change what the audit
+considers declared.
+
+**Blast radius zero, measured before shipping.** havoc's `[secrets] names` are
+`SECRET_KEY`, `SIGNED_URL_SECRET`, `IIIF_ACCESS_CHECK_SECRET`; the intersection <!-- pragma: allowlist secret -->
+with every `[environment]` table, service tables included, is empty.
+
+#### Verification
+
+`make check` (1758 tests), `make lint`, `make format-docs-check` and `make security` all pass, security **after staging** since `security-secrets` scans
+`git ls-files` — it flagged three new assertions holding the fixture's fake
+values, allowlisted inline, and rewrote `.secrets.baseline`.
+
+pysmelly **diffed as a finding set**, not read as a total: **33** at `78c059c`,
+**33** after 4a, **33** after 4b, and the sets are identical apart from
+line-number drift. Run *between* the two commits as well as at the end, for the
+reason 53i-3c and 53i-3d each established. Neither target file carries a finding
+this touched.
+
+Coverage: floor 74, total **86.55%**. `deployer.py` held at **100%**;
+`preflight.py` rose **85% → 86%** (remaining gaps are `check_audit` and the
+optional branches), because the new check is unconditional and every existing
+preflight test reaches it.
+
+#### Exercised by hand, both ways
+
+`deploy --dry-run --skip-secrets-check --ignore-audit` against `havoc-staging`:
+**40 variables, 0 masked**, the nine formerly-masked values printing exactly as
+measured, and `Secrets and environment variables are disjoint`.
+
+**The plan predicted 7 `(unset)` and the real number is 9.** The three
+formerly-masked empties are there, plus six that had been printing as a bare
+trailing `=` and were never masked at all — `AUTOSCALE_NAMESPACE`,
+`AUTOSCALE_SERVICES`, `CLOUDFRONT_DOMAIN`, `S3_ADDRESSING_STYLE`,
+`SAML_ENTITY_ID`, `SAML_SP_CERT_PATH`. The prediction counted the masked empties
+and forgot the unmasked ones; the marker applies to both.
+
+The abort was exercised without touching another repo's tree: havoc's
+`deploy.toml` copied to the scratchpad, `SECRET_KEY` added to `[environment]` in
+the copy, run with `--deploy-toml <scratch path>`. It aborted naming
+`SECRET_KEY`. `git status` in havoc stayed clean.
+
+#### Side effects and mints
+
+Nothing minted, nothing cleared. `declared_env_var_names` is a second public
+method on `DeployConfig` with **two** call sites, so it does not trip
+`single-call-site`; `check_environment_secrets_overlap` has one caller and one
+test class, matching every check beside it.
