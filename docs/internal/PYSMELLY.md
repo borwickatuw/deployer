@@ -11,7 +11,9 @@ or regenerate the generic guide with `pysmelly init --short`.
 **Near-zero suppression.** Findings are fixed, or left standing as an
 operator-visible decision recorded below. Inline `# pysmelly: ignore` is reserved
 for cut-and-dry false positives (Lambda handler signatures, JSON-serialized dict
-returns), each with a rationale and a `re-evaluate-by:` tag. Suppression comments
+returns), each with a rationale and a `re-evaluate-by:` tag — **which is true of
+15 of the 20 standing directives; the five in `utils/logging.py` carry a tag and
+no reason, escalated by §53l**. Suppression comments
 go on the finding line or the line immediately above it — pysmelly does not see
 them anywhere else.
 
@@ -30,7 +32,8 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **33** (measured at `8d5629d`, the 53k re-measure; it was 33 at
+Standing total: **33** (measured at `983237c`, the 53l re-verification, and at
+`8d5629d`, the 53k re-measure; it was 33 at
 the 53i-3 closeout `600c788` and unmoved by the whole of 53j, 32 at `a9327ab`,
 35 at the 53f/53g closeout `722d50b`, 37 at `aacee1b`, 38 at `a8d7369`, 39 at
 `4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
@@ -1713,6 +1716,14 @@ effect was a one-line anchor drift.
 
 #### The skip list, as recorded and as re-verified
 
+**Superseded at HEAD by §53l (2026-08-21)**, which re-verified the eleven of
+these that are still live. The column below is the `722d50b` state and is kept
+as the record of that re-verification, not as the current one; §53l corrects
+two of its rationales — `core/ssm_secrets.py:36`/`:49`'s call-site count, which
+was already stale when this column was written, and the anchor drift on
+`aws/cognito.py:46`, `core/ssm_secrets.py:268`, `deploy/preflight.py:46`,
+`aws/cloudwatch.py:50` and `bin/cognito.py:218`.
+
 19 findings in 13 lines (the ledger's prose says "eighteen lines", counting the
 whole block including two non-53g entries; the finding count is what matters
 and it is **19**). Re-verified 2026-08-18 at `c283f5e`/`722d50b`, per the
@@ -1837,6 +1848,11 @@ It claimed 22 tracked `# pysmelly: ignore` lines, of which five carried
 `aws/rds.py get_status` as correct-but-offset. Re-measured over
 `git ls-files '*.py'` by classifying every directive on where its rationale sits:
 
+**The "After" column is wrong, and §53l re-measured it to 7 / 8 / 0 / 5** — a
+bare `(re-evaluate-by: …)` tag was counted as a rationale, so five directives in
+`utils/logging.py` that carry no reason at all landed in the on-line bucket.
+The total, 20, is right.
+
 | Placement                                                | Before §53i-2a | After |
 | -------------------------------------------------------- | -------------- | ----- |
 | Rationale on the directive line                          | 13             | 13    |
@@ -1872,7 +1888,13 @@ adjudication.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-21 at HEAD)
 
-**Live total: 33, measured at `8d5629d`** with `uvx pysmelly . --more-please` —
+**Re-pinned at `983237c` (2026-08-21).** §53l re-verified all **25** settled
+rows at that SHA: **0 stale, 22 hold, 3 rationales corrected**, and the
+corrections are in §53l, not applied to the table below — the *rows* are
+unchanged. The eight escalations are untouched; 53l took no verdict on them.
+
+**Live total: 33, measured at `8d5629d` and unmoved at `983237c`** with
+`uvx pysmelly . --more-please` —
 **the plain `make pysmelly` view truncates to the top ten categories and HEAD
 has exactly ten, so any drift hides a row.** This table is the authoritative
 one; scope each subphase from it.
@@ -1918,7 +1940,8 @@ HEAD). **Three findings cleared in 53i-1** and left this table:
 
 #### Settled — 25 adjudicated leave-standings
 
-Anchors are at `8d5629d`. **Seven of the twenty carried-forward rows had
+Anchors are at `8d5629d`, re-verified unchanged at `983237c` (§53l).
+**Seven of the twenty carried-forward rows had
 drifted line numbers** and are corrected here: `utils/cli.py:208`×2/`:225` →
 `:223`×2/`:240`, `bin/cognito.py:214` → `:218`, `bin/emergency.py:386` →
 `:427`, `deploy/service.py:197` → `:211`, `deploy/deployer.py:219` → `:240`.
@@ -2052,8 +2075,8 @@ it is the reason the three were folded rather than tallied.
 `boolean-param-explosion` (cleared by 53c's `DeployOptions`).
 
 **The convergence-hotspot list is empty.** No file is flagged by three or more
-checks. Re-derived at `a9327ab`, the repo-wide maximum is **2**, and only two
-files hold it: `init/deploy_toml.py` (`single-call-site` + `arrow-code`) and
+checks. Re-derived at `a9327ab` and **again at `983237c` by §53l, unchanged**,
+the repo-wide maximum is **2**, and only two files hold it: `init/deploy_toml.py` (`single-call-site` + `arrow-code`) and
 `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` +
 `param-clumps`). `init/template.py` dropped to one when 53i-1 cleared its
 `law-of-demeter`, `core/ssm_secrets.py` when `722d50b` took its clump, and
@@ -2422,6 +2445,11 @@ split, after 53d (twice), 53e (up front) and 53h (twice):
 | **53i-1** | 10 mechanical findings — code motion and adjudication      | **this entry**      |
 | 53i-2     | The raise-vs-return policy, written from the pinned corpus | scoped, not planned |
 | 53i-3     | Apply that policy across the call sites 53i-2 names        | blocked on 53i-2    |
+
+**Both numbers below are superseded — see §53l.** The corpus is **0** at HEAD,
+consumed by 53i-3b/3c/3d as designed; and the measurement recorded here
+(`grep -c 53i`) counted *route-to-53i* references rather than
+"pinned, not endorsed" markers, which are two different populations.
 
 The split is not about size. 53i-2's corpus is **31** "pinned, not endorsed"
 markers across 6 test files, plus 4 `inconsistent-error-handling` findings,
@@ -3565,3 +3593,275 @@ staging. `make security` was run **after** staging, since `security-secrets`
 scans `git ls-files` and silently skips untracked files; it is the one file
 outside `docs/` this zero-code unit touches, and it is a companion to the doc
 edit, not a change to the tree's behaviour.
+
+### 53l — the 25 settled leave-standings re-verified at HEAD (2026-08-21)
+
+**53k rebuilt the split and deferred one thing**: re-verifying the 25 settled
+rows, as "worth doing… but it roughly doubles the unit and is a separate call."
+The operator made the call. §53g is the precedent and the justification — its
+2026-08-18 re-verification of 19 skips found **three stale verdicts**, one of
+which became a measured 37 → 35 code fix.
+
+**Result: 25 rows read at HEAD, 0 stale, 22 hold, 3 rationales corrected.**
+pysmelly **33 → 33**, diffed as a finding set and identical line for line. The
+unit was **not** zero-code — three test docstrings were repaired (`983237c`) and
+one escalation was drafted and measured.
+
+**Zero stale is the number this plan said to distrust**, so the confirmations
+are recorded with what was actually read rather than asserted. Two of them are
+stronger than the verdicts they confirm: see `core/config.py:205` below, where
+the arithmetic now closes exactly, and `aws/ecs.py:92`, where the six members
+were re-derived from the live output rather than carried.
+
+#### Scope of the re-read
+
+16 of the 25 were last re-verified at `722d50b`, 26 commits back; **9 had never
+been re-verified at all**. **9 of the 17 anchor files had changed** since
+`e539257` — `utils/cli.py`, `core/ssm_secrets.py`, `bin/emergency.py`,
+`deploy/deployer.py`, `deploy/preflight.py`, `bin/cognito.py`,
+`deploy/service.py`, `init/template.py`, `core/config.py`. Cross-file findings
+were churn-checked across every file they name, not just the anchor.
+
+#### The 25, re-verified at `983237c`
+
+| Finding                                                   | Adjudicated by                       | Verdict at HEAD                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                                  | **Holds.** Both Lambda files unchanged since `bcd2218`, the 53a commit itself. `handle_setup_database` still opens two connections (`conn_admin` to `postgres`, `conn_app` to the app db) with `db_created` crossing between them; `handle_create_users` opens one. The context manager still hides the lifetime that *is* the shared-instance model.                                                                                              |
+| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                                  | **Holds.** Signatures are still `create_app_user(conn, user, db_name)` in both modules, and `conn` still differs per call site — `conn_admin` in db-on-shared-rds, the single `conn` in db-users. A dataclass would bundle a live connection with data.                                                                                                                                                                                            |
+| `pass-through-params` `utils/cli.py:223` ×2, `:240`       | 53b, 53g                             | **Holds.** Two production callers each, unchanged: `configure_profile_or_exit` ← `bin/deploy.py:147`, `bin/resolve-config.py:230`; `configure_aws_for_operation` ← `bin/ssm-secrets.py:414`, `bin/cognito.py:63`. The `try`/`except RuntimeError` → `sys.exit(1)` and the `if environment` branch are still the whole value. 53i-3c added `exit_on`/`EXIT_DECLINED` to this file without touching either.                                          |
+| `pass-through-params` `aws/cognito.py:46`                 | 53c, 53g                             | **Holds** on 53g's corrected rationale. Still one caller, `bin/cognito.py:194` (was `:190`). Two-line body; inlining would put a raw `run_aws_json("cognito-idp", …)` back into `bin/`. The layering is still the reason.                                                                                                                                                                                                                          |
+| `pass-through-params` `core/ssm_secrets.py:268`           | 53d-1, 53g, operator-confirmed 53i-1 | **Holds** on the operator-confirmed rationale; **all four of its anchors had drifted**. One caller `preflight.py:163` (was `:165`); `ssm_put_commands` still shared with `bin/ssm-secrets.py:211` (was `:208`); the test pin `test_ssm_secrets_cli.py:35` is intact; the symmetric pair `format_missing_ecr_error` is now `images.py:591` (was `:550`), still called one position earlier at `preflight.py:143`.                                   |
+| `param-clumps` `bin/emergency.py:427`                     | 53d-2a, 53g                          | **Holds, rationale corrected** — see below. The highest-risk row and the one §53g never covered.                                                                                                                                                                                                                                                                                                                                                   |
+| `law-of-demeter` `deploy/deployer.py:240`                 | 53e-3                                | **Holds.** Three commits touched the file and none touched this. `self.rds = boto3.client("rds")` at `:145`, `except self.rds.exceptions.DBInstanceNotFoundFault:` at `:240` — still the botocore runtime-only namespace, still no intermediate object worth asking.                                                                                                                                                                               |
+| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                                  | **Holds.** `get_task_logs` still exists to build `f"{stream_prefix}/{container_name}/{task_id}"`, still two callers — but one anchor moved with a changed file: `deploy/service.py:759` (was `:718`) and `bin/ecs-run.py:72`.                                                                                                                                                                                                                      |
+| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                                  | **Holds, re-read.** `parameter_exists` calls `client.get_parameter(Name=name)`; `_get_call_target_name` returns `.attr` for an `ast.Attribute`, colliding with the module's own `def get_parameter` at `:46`.                                                                                                                                                                                                                                      |
+| `pass-through-params` `core/ssm_secrets.py:36`, `:49`     | 53g                                  | **Holds, rationale corrected** — the supporting count was already stale when §53g wrote it. See below.                                                                                                                                                                                                                                                                                                                                             |
+| `pass-through-params` `core/ssm_secrets.py:63` ×2         | 53g                                  | **Holds.** One production caller, `bin/ssm-secrets.py:164`; the body is still parse-then-delegate (`parse_deploy_config` ← `deploy_toml_path`, `get_secrets_from_config` ← `env_config`). Noted, not a defect: that sole caller passes only `deploy_toml_path`, and `env_config`'s `None` path is a *documented contract* — `EnvironmentConfigError` — not a dead parameter. **This is the shape §53g's stale verdict took, checked and cleared.** |
+| `pass-through-params` `deploy/preflight.py:46`            | 53g                                  | **Holds** through 53j-4b's rewrite. Still one caller, now `preflight.py:316` (was `:254`) and now passing `target.config`; the body still turns `validate_environment_config`'s error list into a `PreflightError` carrying an `advice_block`.                                                                                                                                                                                                     |
+| `param-clumps` `aws/ecs.py:92`                            | 53g                                  | **Holds**, re-derived from the live output rather than carried: still 6 functions, still 3 in `ecs.py` (`:92`, `:298`, `:450`) and 3 in `service.py` (`:121`, `:175`, `:1097`), the same six names. `deploy/context.py` imports nothing from `deployer`, so `aws/` importing it is still an inversion.                                                                                                                                             |
+| `param-clumps` `bin/cognito.py:218`                       | 53g                                  | **Holds.** Still `cmd_create` / `cmd_reset_password` / `core/cognito.py:format_welcome_message:97`; the Click wrappers moved to `:403`/`:442` (were `:399`/`:438`). Still rejected on design — Click parameters unpacked immediately at the wrapper — not on "it does not clear".                                                                                                                                                                  |
+| `param-clumps` `deploy/service.py:211`                    | 53e-5, 53g                           | **Holds** through two commits to the file. `register_task_definition(ctx, service_name, image_uri, credential_mode)`; the other two are still `task_definition.py:get_environment_variables:165` and `:build_task_definition:314`; `ctx` is still `DeploymentContext`. The advice still asks for a second dataclass.                                                                                                                               |
+| `return-none-instead-of-raise` `aws/cli.py:48`            | 53i-2c                               | **Holds, rationale corrected.** `run_aws_json`'s `None` is still failure-only (command failed, or output was not JSON) and still contract 3. Still 4 callers, 3 guarding. But the rationale's second half — "the defect **was** one layer down, in `aws/rds.py`" — is past tense for something never fixed. See below.                                                                                                                             |
+| `inconsistent-error-handling` `utils/aws_profile.py:85`   | 53i-2c                               | **Holds.** `raise RuntimeError` is still reachable only inside `if validate:` (`:138`/`:141`). Three callers, all in `utils/cli.py`: `:234` passes `validate=True` and catches `RuntimeError`; `:248` and `:269` take the default and cannot reach the raise.                                                                                                                                                                                      |
+| `inconsistent-error-handling` `init/template.py:126`      | 53i-2c                               | **Holds** through one commit to the file. Still 4 callers: `init/environment.py:163`'s `except KeyError` is still a fallback *dispatch* to `substitute_optional`, and `bootstrap.py:170`/`:175`/`:179` still want the `KeyError`.                                                                                                                                                                                                                  |
+| `inconsistent-error-handling` `core/config.py:205`        | 53i-3c                               | **Holds — and the arithmetic now closes exactly.** See below.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `inconsistent-error-handling` `utils/environment.py:17`   | 53i-3c                               | **Holds.** All five `exit_on(RuntimeError)` wrappers 53i-3c added are still in place and still wrap a `get_environments_dir()` call: `capacity-report.py:225`, `cognito.py:73`, `deploy.py:67`, `environment.py:68`, `init.py:503`. The eleventh site is still gone, with the comment saying why at `bin/init.py:522`.                                                                                                                             |
+
+#### `param-clumps` `bin/emergency.py:427` — the rationale under-described its own subject
+
+The verdict is right and unchanged: `yes` is a confirmation flag rather than an
+attribute of a target, and all three functions are still Click parameters
+unpacked immediately at the wrapper (`:920`, `:934`, `:979`) — the flag-shuffling
+shape 53c's register rejected and 53d-2a re-rejected.
+
+**What needed correcting is the third leg.** 53d-2a wrote that "the real
+duplication behind the clump was the membership check and its error, and that
+**was** fixed (`_require_service`)" — a sentence that reads as though the
+clump's shared shape had been fully accounted for. It had not. **53i-3c found a
+second one in the same three functions** — attempt every service, keep going
+past a failure, report once, and all three ending on an unconditional
+`return 0` — and extracted `_report_outcome` for it. One subphase's "the real
+duplication" was another's starting point.
+
+The rationale of record is now:
+
+> The clump's shared shape has been extracted **twice**, by two subphases, and
+> neither extraction needed a bundle: `_require_service` (53d-2a) for the
+> membership check, `_report_outcome` (53i-3c) for the per-service loop's
+> outcome and exit status. What is left is a two-line
+> `if not confirm_action(skip=yes): return EXIT_DECLINED` — identical in
+> `cmd_rollback`, `cmd_scale`, `cmd_force_deploy` **and** `cmd_revert`, and
+> unextractable because a helper cannot early-return for its caller — plus a
+> three-line `_load_cluster_services` opener shared by two of the three, below
+> `duplicate-blocks`' five-statement threshold. `yes` is still a flag, and
+> `environment` / `service` are consumed differently in each function.
+
+#### `core/ssm_secrets.py:36`, `:49` — a re-verification that transcribed a stale count
+
+§53g's re-verified column reads "`get_path_prefix` has 5 call sites and
+`get_parameter_path` 3". At HEAD `get_path_prefix` has **3**
+(`ssm_secrets.py:174`, `bin/ssm-secrets.py:181`, `:330`) and `get_parameter_path`
+has 3 (`bin/ssm-secrets.py:264`, `:311`, `:372`).
+
+**It was already 3 at `c283f5e`** — §53g's own re-verification pin, checked with
+`git grep`. So 53g re-verified the *verdict* against HEAD and carried the
+*supporting count* forward from its 2026-08-13 skip list without re-measuring
+it. The verdict is unaffected: both functions still wrap `parse_environment` in
+an f-string that **is** the SSM path convention, and inlining would put that
+convention at three sites. But a rationale is only as good as the measurement
+under it, and this is the failure mode the caller-count rule exists for.
+
+Rationale of record, corrected: *encode the SSM path convention;
+`get_path_prefix` 3 call sites across two files, `get_parameter_path` 3.*
+
+#### `core/config.py:205` — the fixed-but-unseen verdict, now closed arithmetically
+
+53i-3c adjudicated this **fixed-but-unseen**: the three unhandled `bin/ops.py`
+callers took `exit_on`, which is a context manager and therefore invisible to a
+check that looks for `try`/`except`. The verdict was right, but it rested on
+"the check cannot see it" rather than on showing *which* callers the check still
+counts.
+
+Enumerated at HEAD, the check reads **14 callers: 10 catch specific, 1 catch
+broad, 3 unhandled** — and the three unhandled are **exactly** the three
+`exit_on` sites, `bin/ops.py:544`, `:656`, `:728`. The one broad is
+`cmd_incident_start:913`, the documented honest-degradation case 53i-3b and
+53i-3d deliberately left alone. Every other caller catches
+`(FileNotFoundError, RuntimeError)` explicitly.
+
+**The set the check calls "unhandled" is now identical to the set that was
+fixed, with nothing left over.** That is a stronger statement than 53i-3c could
+make, and it is what re-verification is for.
+
+#### The one escalation 53l produces: `aws/rds.py:get_status`
+
+§53i-2c's verdict on `aws/cli.py:48` says the defect "was one layer down, in
+`aws/rds.py`" — `get_status` translating a failure-`None` into its own
+documented "or None if **not found**". Re-read at HEAD: **it is still there, and
+no subphase ever owned it.** The docstring still says "or None if not found" and
+the standing suppression rationale still says `None means "not found"`, while
+`if not data: return None` covers a failed read just as much as a missing
+instance.
+
+This is not an open question. DECISIONS.md § "2026-08-18: Error Contracts"
+decides it for **every function in this repo**: *one sentinel never means both
+"nothing is there" and "I could not look."* 53i-3 applied that to `emergency/`
+and never came back for `aws/`. The finding is suppressed, so it appeared in no
+count the arc used to scope itself — which is exactly how it survived four
+subphases of an error-contract arc.
+
+**Two of its three siblings are the same shape.** Of the four standing
+`return-none-instead-of-raise` suppressions, `core/config.py:291`
+(`get_cognito_user_pool_id_from_config`) is a pure dict read that cannot fail and
+is compliant; `utils/links.py:29` reports a corrupt links file as "not linked"
+(behind a `# noqa: BLE001`), and `init/bootstrap.py:185` reports an unresolvable
+environments dir as "no bootstrap directory". **Three of four conflict with the
+decision.**
+
+**Drafted and measured on the anchor** (diff at
+`scratchpad/53l-draft-get-status.diff`): `get_status` switches to `run_aws`,
+returns `None` only on `DBInstanceNotFound` in the error text, and raises
+`RuntimeError` otherwise. Cost, measured against a clean tree and reverted with
+`git apply -R`:
+
+- pysmelly **33 → 33.** Nothing clears. `aws/cli.py:48` — an *escalated* finding
+  — degrades from "3 of 4 callers guard" to "2 of 3", because `get_status` stops
+  being a `run_aws_json` caller.
+- **2 tests fail**, and the second is the substance:
+  `TestWaitForStatus::test_reports_each_status_to_the_callback` feeds a failed
+  read and expects the poll loop to continue. `wait_for_status` (`rds.py:111`)
+  reads `get_status`'s `None` as `"unknown"` **on purpose**, so a transient
+  throttle does not abort a wait. Making `get_status` raise turns a retryable
+  blip into an aborted wait. Preserving the polling contract needs a second
+  decision — a `try`/`except` inside `wait_for_status` — that the ADR does not
+  make.
+- +19 / −4 lines in `aws/rds.py`.
+
+**Escalated, not decided**, and not shipped: the anchor's fix has a live
+behaviour conflict, and the other two members carry their own callers. 53l takes
+no verdict here, as it takes none on the original eight.
+
+#### Two routed items whose destination ran without consuming them
+
+53d-2a routed `cmd_restore_db` and `cmd_revert`'s hand-rolled error handling to
+**53i** as "hand-rolled versions of what `exit_on` covers", and no subphase ever
+recorded what became of them. 53i-3c ran; `bin/emergency.py` has exactly **one**
+`exit_on` call at HEAD, at `:897`, in `_run_or_exit`.
+
+Read at HEAD, they were **correctly not consumed**, and the routing was wrong
+rather than forgotten:
+
+- `cmd_restore_db:654` — `except ValueError` around `datetime.fromisoformat`,
+  replacing the exception's own text with `"Invalid time format: {time}"` plus
+  an ISO-format hint, and **returning 1**. `exit_on` surfaces the exception's
+  message and `sys.exit`s; here that would print
+  `Invalid isoformat string: …` and bypass the status ladder `_run_or_exit`
+  owns.
+- `cmd_revert:749` — `except FileNotFoundError` around `load_checkpoint`,
+  same shape, naming the checkpoint.
+
+Both replace the exception's message with a domain message and answer through
+the command's return status. **Neither is the `exit_on` shape.** Disposition:
+**not applicable, closed** — recorded here because a routed item whose
+destination has already run is precisely what goes stale in silence.
+
+#### Three stale pins in this document, re-measured
+
+| Claim                                               | Was                                            | At HEAD                                                                                                                                                                                                                                   |
+| --------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 53i-2's "pinned, not endorsed" corpus               | **31** markers, 6 test files, pinned `a9327ab` | **0.** Consumed by 53i-3b/3c/3d exactly as designed — `600c788`'s message records "markers 32 → 0, with one provenance reference left standing", and that reference is `test_modules.py:1`, never part of the 31.                         |
+| Convergence-hotspot list empty, repo max 2          | pinned `a9327ab`                               | **Re-derived at HEAD, unchanged.** No file at 3+; max **2**, held by the same two files — `init/deploy_toml.py` (`single-call-site` + `arrow-code`) and `modules/db-on-shared-rds/lambda/index.py` (`duplicate-blocks` + `param-clumps`). |
+| Suppression placement classifier **13 / 7 / 0 / 0** | re-measured 2026-08-18                         | **7 / 8 / 0 / 5.** Total still 20; **the split was wrong when it was written.** See below.                                                                                                                                                |
+
+**The corpus claim also mismeasured what it counted.** §53i-1's entry describes
+"31 *pinned, not endorsed* markers" but records the measurement as
+`grep -c 53i` — it counted *route-to-53i* references and labelled them
+"pinned, not endorsed". The two are different populations: the phrase
+`"pinned, not endorsed"` still appears in **3** files at HEAD
+(`test_emergency_rds.py:7`, `test_extensions.py:13`, `test_init_cli.py:19`) as
+file-header prose, with **no per-test marker anywhere in the repo**. Counting
+one population under another's name is why the number could go to zero without
+the label looking false.
+
+#### The suppression classifier counted a tag as a rationale
+
+Re-measured over `git ls-files '*.py'` at HEAD — 20 directives, classified by
+reading each one's neighbourhood rather than by the presence of a comment:
+
+| Placement                                              | §53i-2a said | 53l measures |
+| ------------------------------------------------------ | ------------ | ------------ |
+| Rationale on the directive line                        | 13           | **7**        |
+| Rationale on the line(s) directly above, no blank line | 7            | **8**        |
+| Rationale detached by blank lines                      | 0            | 0            |
+| **No rationale at all**                                | **0**        | **5**        |
+| **Total**                                              | 20           | 20           |
+
+The five with no rationale are **`src/deployer/utils/logging.py` `:41`, `:57`,
+`:63`, `:69`, `:75`** — all `inconsistent-error-handling`, each reading
+`# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)`
+and preceded by two blank lines and unrelated code. They carry a **tag** and no
+reason. The eighth "directly above" is `utils/datetime.py:8`, which has a real
+two-line rationale immediately above it and was counted on-line.
+
+**They are byte-identical at `a9327ab`**, so this is not drift: §53i-2a's
+classifier treated a bare `(re-evaluate-by: …)` tag as a rationale, and the six
+genuinely detached ones it *was* repairing masked the six it was miscounting.
+The convention this document states in § "Deployer's convention" — "each with a
+rationale and a `re-evaluate-by:` tag" — is false for five of twenty.
+
+**Not self-authored a fix.** Writing five rationales for suppressions whose
+reason nobody recorded is exactly the self-authored justification the register
+weighs at ~zero. **Escalated**: either a reason is written by the operator, or
+the five directives come out and the findings are adjudicated like everything
+else here.
+
+#### The docstring repairs (`983237c`)
+
+Three test docstrings, all edit scars from earlier subphases, found by reading
+the files the settled rows pointed at:
+
+- `test_extensions.py` — 53i-3d substituted "decided in DECISIONS.md" for
+  "tracked as claude-meta Phase 53i" and left `tracked` stranded on the previous
+  line: *"an error-contract question tracked decided in"*.
+- `test_emergency_rds.py` — the header claimed *"Several tests are marked
+  'pinned, not endorsed'"* and described the swallow-`ClientError` behaviour in
+  the present tense. 53i-3b made the two queries raise and deleted every marker
+  in the file, so the paragraph contradicted its own next sentence.
+- `test_ssm_secrets.py` — *"Its only production caller, `bin/ssm-secrets.py`,
+  passes two arguments"* **inverts the crash it explains**. `bin/ssm-secrets.py:164`
+  passes one, which is why `env_config` arrived as `None` and
+  `get_secrets_from_config` raised `AttributeError` on it. Found while
+  re-verifying `ssm_secrets.py:63`.
+
+#### Verification
+
+`env -u VIRTUAL_ENV make check` clean; **1758 tests**, unchanged.
+`uvx pysmelly . --more-please` reads **33** and the finding set is identical to
+the pre-unit baseline line for line — diffed sorted, because pysmelly's emit
+order within a repeated anchor is not stable and an unsorted diff shows three
+false moves (`cloudwatch.py:50`, `ssm_secrets.py:63`, `utils/cli.py:223`).
+Coverage untouched at **78.81%**, floor 74 — the unit changes no executable
+line. `.secrets.baseline` **did not move** this time; verified before staging.
+`make security` run after staging. The one drafted fix was applied against a
+clean tree, measured, and reverted with `git apply -R`; every measurement was
+teed to the scratchpad and read back from the file.
