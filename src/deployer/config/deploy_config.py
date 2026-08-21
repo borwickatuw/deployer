@@ -206,15 +206,23 @@ class DeployConfig:
     _warnings: list[str] = field(default_factory=list, repr=False)
     _path: Path | None = field(default=None, repr=False)
 
-    def get_all_env_var_names(self) -> set[str]:
-        """Extract all environment variable names from configuration.
+    def declared_env_var_names(self) -> set[str]:
+        """The environment variable names deploy.toml writes out by hand.
+
+        Split out of ``get_all_env_var_names`` for preflight's
+        ``check_environment_secrets_overlap``, which asks whether a
+        ``[secrets] names`` entry is *also* declared as an environment
+        variable. It cannot use ``get_all_env_var_names``: that one unions the
+        module-injected names on top, which is where ``[secrets] names``
+        themselves arrive from, so every declared secret would collide with
+        itself. One traversal, two callers -- the alternative is a second copy
+        of this walk, and the comment below records how the last duplicated
+        piece of this knowledge went.
 
         Includes:
         - Explicit environment variables from [environment] section
         - Environment-specific overrides (e.g., [environment.staging])
         - Service-specific environment variables (e.g., [services.X.environment])
-        - Variables that modules will inject based on declared resources,
-          which is where [secrets] names arrive from
 
         Returns:
             Set of environment variable names.
@@ -239,14 +247,24 @@ class DeployConfig:
                     # Environment-specific overrides within service
                     env_vars.update(value.keys())
 
+        return env_vars
+
+    def get_all_env_var_names(self) -> set[str]:
+        """Every environment variable name the container will see.
+
+        Includes everything ``declared_env_var_names`` returns, plus the
+        variables modules inject based on declared resources -- which is where
+        [secrets] names arrive from.
+
+        Returns:
+            Set of environment variable names.
+        """
         # Module-injected variables -- each module answers for itself. This
         # used to be a fourth hand-maintained copy of module knowledge, and it
         # had already gone wrong: it claimed S3_{NAME}_BUCKET_REGION, which
         # StorageModule has never injected, so the audit reported that variable
         # as satisfied by nothing.
-        env_vars.update(ModuleRegistry.injected_names(self.get_raw_dict()))
-
-        return env_vars
+        return self.declared_env_var_names() | ModuleRegistry.injected_names(self.get_raw_dict())
 
     def get_warnings(self) -> list[str]:
         """Get configuration warnings (unknown keys, etc.).

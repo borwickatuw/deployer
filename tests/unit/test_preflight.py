@@ -13,6 +13,7 @@ from deployer.deploy.preflight import (
     check_ecr_repositories,
     check_ecs_cluster,
     check_environment_config,
+    check_environment_secrets_overlap,
     check_modules,
     check_secrets_style,
     run_preflight_checks,
@@ -308,6 +309,146 @@ class TestCheckSecretsStyle:
                 target=make_target(),
                 project_dir=tmp_path,
                 options=PreflightOptions(),
+            )
+
+
+class TestCheckEnvironmentSecretsOverlap:
+    """The check that keeps [secrets] names and [environment] disjoint.
+
+    53j-4a stopped masking anything in the deploy log, on the argument that
+    nothing in the environment map can be a secret: the two travel disjoint
+    routes off ``_collect_modules``. This check turns that argument into an
+    enforced invariant instead of an assumption -- the exact form of it, since
+    aborting on credential-*shaped* values would be a heuristic with a deploy
+    riding on each false positive.
+    """
+
+    @staticmethod
+    def _config(tmp_path, toml: str):
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(f'[application]\nname = "test"\nsource = "."\n{toml}')
+        return parse_deploy_config(deploy_toml)
+
+    def test_disjoint_names_pass(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\n[environment]\nLOG_LEVEL = "info"\n',
+        )
+        check_environment_secrets_overlap(config)
+
+    def test_no_secrets_section_passes(self, tmp_path):
+        check_environment_secrets_overlap(self._config(tmp_path, '[environment]\nA = "b"\n'))
+
+    def test_no_environment_section_passes(self, tmp_path):
+        check_environment_secrets_overlap(
+            self._config(tmp_path, '[secrets]\nnames = ["SECRET_KEY"]\n')
+        )
+
+    def test_a_declared_secret_does_not_collide_with_itself(self, tmp_path):
+        """The trap this check would fall into using get_all_env_var_names.
+
+        That one unions ModuleRegistry.injected_names on top, which is where
+        [secrets] names arrive from -- so every secret would report as
+        colliding with itself. Hence declared_env_var_names.
+        """
+        check_environment_secrets_overlap(
+            self._config(tmp_path, '[secrets]\nnames = ["SECRET_KEY", "API_TOKEN"]\n')
+        )
+
+    def test_a_collision_in_base_environment_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\n'
+            '[environment]\nSECRET_KEY = "hardcoded"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="SECRET_KEY"):
+            check_environment_secrets_overlap(config)
+
+    def test_a_collision_in_an_environment_override_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\n'
+            '[environment.staging]\nSECRET_KEY = "hardcoded"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="SECRET_KEY"):
+            check_environment_secrets_overlap(config)
+
+    def test_a_collision_in_a_service_environment_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\n'
+            '[services.web]\nimage = "web"\n'
+            '[services.web.environment]\nSECRET_KEY = "hardcoded"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="SECRET_KEY"):
+            check_environment_secrets_overlap(config)
+
+    def test_a_collision_in_a_service_environment_override_is_rejected(self, tmp_path):
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY"]\n'
+            '[services.web]\nimage = "web"\n'
+            "[services.web.environment.staging]\n"
+            'SECRET_KEY = "hardcoded"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="SECRET_KEY"):
+            check_environment_secrets_overlap(config)
+
+    def test_the_message_names_every_collision(self, tmp_path):
+        """Not just the first -- fixing one at a time is three more deploys."""
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["SECRET_KEY", "API_TOKEN", "DB_PASSWORD", "INNOCENT"]\n'
+            '[environment]\nSECRET_KEY = "a"\nLOG_LEVEL = "info"\n'  # pragma: allowlist secret
+            '[environment.staging]\nAPI_TOKEN = "b"\n'  # pragma: allowlist secret
+            '[services.web]\nimage = "web"\n'
+            '[services.web.environment]\nDB_PASSWORD = "c"\n',  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError) as excinfo:
+            check_environment_secrets_overlap(config)
+        message = str(excinfo.value)
+        assert "API_TOKEN" in message
+        assert "DB_PASSWORD" in message
+        assert "SECRET_KEY" in message
+        assert "INNOCENT" not in message
+        assert "LOG_LEVEL" not in message
+
+    def test_a_sub_table_name_counts_as_a_declared_name(self, tmp_path):
+        """An inherited quirk of the traversal, recorded rather than fixed.
+
+        ``[environment.staging]`` puts "staging" in ``self._environment``
+        alongside the real variables, so the walk counts it. This predates the
+        split and ``get_all_env_var_names`` has always behaved this way; the
+        only way it reaches this check is a secret literally named "staging",
+        which no SCREAMING_CASE convention produces. Changing the walk would
+        change what the audit considers declared, which is not this unit's job.
+        """
+        config = self._config(
+            tmp_path,
+            '[secrets]\nnames = ["staging"]\n[environment.staging]\nA = "b"\n',
+        )
+        with pytest.raises(PreflightError, match="staging"):
+            check_environment_secrets_overlap(config)
+
+    def test_it_runs_on_the_always_run_path(self, tmp_path):
+        """Unconditional, like check_secrets_style -- no option skips it."""
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(
+            '[application]\nname = "test"\nsource = "."\n'
+            '[secrets]\nnames = ["SECRET_KEY"]\n'
+            '[environment]\nSECRET_KEY = "hardcoded"\n'  # pragma: allowlist secret
+        )
+        with pytest.raises(PreflightError, match="both secrets and environment variables"):
+            run_preflight_checks(
+                deploy_config=parse_deploy_config(deploy_toml),
+                target=make_target(),
+                project_dir=tmp_path,
+                options=PreflightOptions(
+                    skip_ecr_check=True,
+                    skip_secrets_check=True,
+                    skip_cluster_check=True,
+                    skip_audit=True,
+                ),
             )
 
 

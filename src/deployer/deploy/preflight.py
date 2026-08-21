@@ -25,7 +25,7 @@ from deployer.deploy.images import (
 )
 from deployer.deploy.validation import validate_ecs_cluster
 from deployer.modules import ModuleRegistry
-from deployer.modules.secrets import explicit_path_error, explicit_path_keys
+from deployer.modules.secrets import SecretsModule, explicit_path_error, explicit_path_keys
 from deployer.utils import advice_block, log, log_debug, log_success, log_warning
 
 
@@ -194,6 +194,70 @@ def check_secrets_style(deploy_config: DeployConfig) -> None:
     print()
 
 
+def check_environment_secrets_overlap(deploy_config: DeployConfig) -> None:
+    """Reject a name declared as both a secret and an environment variable.
+
+    The two are meant to be disjoint. ``[secrets] names`` reach the container
+    through the task definition's ``secrets`` block, resolved from SSM at
+    start-up; ``[environment]`` values reach it through the ``environment``
+    block, in plaintext, and are printed in full by
+    ``Deployer.print_environment_config``. Keeping them disjoint is what makes
+    that printing safe, and it is the repo's own ADR: "Secret values never
+    appear in deploy.toml, deploy script logs, or CI/CD output"
+    (DECISIONS.md 2026-01-21). Until 53j-4b it was assumed rather than
+    enforced.
+
+    A collision is a config error on its own terms, whatever ECS makes of it:
+    the deployer emits the colliding name *twice* on the same container
+    definition, once in each block, and reconciles them nowhere. This check
+    fires before the task definition is ever built, so it does not rest on any
+    assumption about which copy wins.
+
+    The check is exact -- a name is in both lists or it is not. Aborting on
+    credential-*shaped* values was considered and rejected: that is a
+    heuristic with production stakes, where a false positive blocks a deploy,
+    and the name-substring heuristic 53j-4a deleted is what it would have been
+    made of.
+
+    Kept separate from ``check_modules`` for the same reason
+    ``check_secrets_style`` is: one fix, its own message.
+
+    Raises:
+        PreflightError: If any name appears in both places.
+    """
+    log("Checking environment/secrets separation...")
+    raw_config = deploy_config.get_raw_dict()
+    # Ask SecretsModule what it injects rather than re-reading `names` here --
+    # the module is where that knowledge lives.
+    secret_names = SecretsModule().injected_names(raw_config.get("secrets", {}))
+    collisions = sorted(secret_names & deploy_config.declared_env_var_names())
+    if collisions:
+        raise PreflightError(
+            advice_block(
+                "These names are declared as both secrets and environment variables:",
+                collisions,
+                (
+                    "A secret reaches the container from SSM, as a task definition",
+                    "secret. An environment variable reaches it in plaintext, and is",
+                    "printed in full in the deploy log. Declaring one name both ways",
+                    "puts it on the container definition twice, and nothing",
+                    "reconciles the two.",
+                    "",
+                    "Remove each name from whichever side is wrong:",
+                    "",
+                    "  - if the value is a secret, drop it from [environment] (and",
+                    "    from [environment.<env>] and [services.<name>.environment]);",
+                    "    the SSM parameter is the only place it should live",
+                    "  - if it is not a secret, drop it from [secrets] names",
+                    "",
+                    "See docs/CONFIG-REFERENCE.md.",
+                ),
+            )
+        )
+    log_success("Secrets and environment variables are disjoint")
+    print()
+
+
 def check_modules(deploy_config: DeployConfig, env_config: dict) -> None:
     """Validate resource module declarations against environment config.
 
@@ -253,6 +317,9 @@ def run_preflight_checks(
 
     # deploy.toml declares its secrets in the one supported style
     check_secrets_style(deploy_config)
+
+    # ...and does not also declare any of them as a plaintext env var
+    check_environment_secrets_overlap(deploy_config)
 
     # Resource modules (database, cache, storage, secrets)
     check_modules(deploy_config, target.config)
