@@ -3363,7 +3363,8 @@ line-number drift. Run *between* the two commits as well as at the end, for the
 reason 53i-3c and 53i-3d each established. Neither target file carries a finding
 this touched.
 
-Coverage: floor 74, total **86.55%**. `deployer.py` held at **100%**;
+Coverage: floor 74, `make test-cov` total **78.73% → 78.81%**.
+`deployer.py` held at **100%**;
 `preflight.py` rose **85% → 86%** (remaining gaps are `check_audit` and the
 optional branches), because the new check is unconditional and every existing
 preflight test reaches it.
