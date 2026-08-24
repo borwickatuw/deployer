@@ -32,8 +32,9 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **33** (measured at `983237c`, the 53l re-verification, and at
-`8d5629d`, the 53k re-measure; it was 33 at
+Standing total: **33** (measured at `411c8f0`, the 53n close, and unmoved by
+53m and 53n; at `983237c`, the 53l re-verification; and at `8d5629d`, the 53k
+re-measure; it was 33 at
 the 53i-3 closeout `600c788` and unmoved by the whole of 53j, 32 at `a9327ab`,
 35 at the 53f/53g closeout `722d50b`, 37 at `aacee1b`, 38 at `a8d7369`, 39 at
 `4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
@@ -1888,10 +1889,14 @@ adjudication.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-21 at HEAD)
 
-**Re-pinned at `983237c` (2026-08-21).** §53l re-verified all **25** settled
-rows at that SHA: **0 stale, 22 hold, 3 rationales corrected**, and the
+**Re-pinned at `411c8f0` (2026-08-24).** §53l re-verified all **25** settled
+rows at `983237c`: **0 stale, 22 hold, 3 rationales corrected**, and the
 corrections are in §53l, not applied to the table below — the *rows* are
-unchanged. The eight escalations are untouched; 53l took no verdict on them.
+unchanged. **53m and 53n moved no row and no count**; the one effect on this
+table is an anchor, `param-clumps bin/emergency.py:427` → **`:458`** (its
+members are now `cmd_rollback():458`, `cmd_scale():553`,
+`cmd_force_deploy():821`). The eight escalations are untouched; neither 53l nor
+53m/53n took a verdict on them.
 
 **Live total: 33, measured at `8d5629d` and unmoved at `983237c`** with
 `uvx pysmelly . --more-please` —
@@ -1940,7 +1945,8 @@ HEAD). **Three findings cleared in 53i-1** and left this table:
 
 #### Settled — 25 adjudicated leave-standings
 
-Anchors are at `8d5629d`, re-verified unchanged at `983237c` (§53l).
+Anchors are at `8d5629d`, re-verified unchanged at `983237c` (§53l); the sole
+later drift is `bin/emergency.py:427` → **`:458`**, from 53m.
 **Seven of the twenty carried-forward rows had
 drifted line numbers** and are corrected here: `utils/cli.py:208`×2/`:225` →
 `:223`×2/`:240`, `bin/cognito.py:214` → `:218`, `bin/emergency.py:386` →
@@ -3060,6 +3066,12 @@ tool told an operator something untrue.
 53e-3a, 53e-4a and 53e-5a pinned **14 latent bugs** across three tables above,
 each "current behaviour, not an endorsement". Reconciled at `b62a0f9`:
 
+> **This section reconciles three tables of five, and saying so was not
+> enough.** §53f's four and §53h-1's three sat unswept until 53m/53n because a
+> reader checking for completeness found a heading that said "reconciled" and a
+> total that balanced. The complete population is in
+> § "The pin ledger, reconciled across all five populations".
+
 | State                                         | Count  | Where                                                         |
 | --------------------------------------------- | ------ | ------------------------------------------------------------- |
 | **Fixed** by 53i-3d as a by-product           | 3      | rows marked FIXED above                                       |
@@ -3865,3 +3877,140 @@ line. `.secrets.baseline` **did not move** this time; verified before staging.
 `make security` run after staging. The one drafted fix was applied against a
 clean tree, measured, and reverted with `git apply -R`; every measurement was
 teed to the scratchpad and read back from the file.
+
+### 53m / 53n — the residue no ledger ever swept (2026-08-24)
+
+**53l closed the settled rows; these close the populations nobody counted.**
+§"The latent-bug ledger, reconciled" states its own scope: "53e-3a, 53e-4a and
+53e-5a pinned 14 latent bugs across **three tables above**." There is a
+**fourth** *Latent bugs pinned, not fixed* table — §53f's — and a **fifth**
+population, §53h-1's *"Pinned, not endorsed — handed to 53h-2"*. Neither was
+ever in scope for 53j, which was scoped from the ledger, or for anything else.
+
+**Six items were live at HEAD; a seventh belongs to Phase 69 and an eighth was
+already retired.** Every one was re-verified before being acted on, per the
+standing rule, and that re-verification is what caught the two that had moved.
+
+pysmelly **33 → 33** across both units, finding set identical; the only movement
+is one settled anchor, `bin/emergency.py:427` → **`:458`**. Tests 1758 → **1760**.
+
+#### 53m — the RDS half of `bin/emergency.py`
+
+The half 53d-2a named and no subphase ever got. Its "Noticed, not changed" note
+routed the twin to "a subphase that owns the file's RDS half"; §53l closed the
+*other* two items in that note as not-applicable, and this closes the twin.
+
+| Item                                                   | Verified at HEAD                                                                                                                                                                                                                                | Outcome                                                                                                                                        |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idx < 0` unreachable (53f)                            | Live. `if not choice.isdigit()` returns first, so `int(choice)` cannot be negative.                                                                                                                                                             | **Deleted**, reason left as a comment at the site.                                                                                             |
+| non-`DBInstanceAlreadyExists` `ClientError` (53f)      | Live, and **sharper than when pinned**: `_handle_restore_error` re-raises deliberately and now documents it (`emergency/rds.py:279`, `:318`), but nothing between there and the boundary catches it and `exit_on(RuntimeError)` does not match. | **Fixed at the boundary**, not inside the command. See below.                                                                                  |
+| `cmd_restore_db`'s snapshot/PITR twin (53d-2a, routed) | Live. The two arms differ only in the mutator called and the line logged before calling it; the eleven lines after the call were identical.                                                                                                     | **`_report_restore` extracted.** It also **retired `cmd_restore_db`'s `# noqa: C901`** — removed, not moved, as 53d-2a did for `cmd_rollback`. |
+
+**Why the boundary and not a local catch.** `_run_or_exit` is this file's one
+process boundary, and its docstring already argues why `exit_on`'s
+"don't wrap a whole command body" warning does not apply there — there is no
+frame above it, so the alternative is a traceback rather than "the caller
+handles it". Widening it to `(RuntimeError, ClientError)` keeps the 53i-3c
+ladder intact (`1` for failed) and covers every future re-raise in the file,
+where a local `try` would have covered exactly one call.
+
+**The old pin was right and stayed.** `cmd_restore_db` still propagates the
+`ClientError` — that is `_handle_restore_error` doing its job. What was
+unpinned was the *boundary*: nothing asserted what the CLI does with it, which
+is why 1758 tests passed both before and after the fix. The new pin asserts the
+exit status, and the file docstring's "pinned as-is rather than fixed"
+paragraph is now a record of what 53m fixed.
+
+**Coverage moved and it is denominator shrink, not regression.**
+`bin/emergency.py` reads 90% → 89% and the total 78.81% → 78.78%; statements
+**468 → 460**, branches **126 → 122**, **missed unchanged at 55**. The
+extraction deleted covered duplicate statements. Every remaining missed line
+maps to a pre-existing one offset by the helper's length, and `_report_restore`
+is itself fully covered. The same mechanism §53f recorded for `task_definition.py`.
+
+#### 53n — the module-system residue handed to 53h-2 and never taken
+
+| Item                                                    | Verified at HEAD                                                                                     | Outcome                                                              |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `collect()` does not re-check what `validate()` rejects | Live, and `database.py` said so in a comment. But the *premise* did not survive reading — see below. | **Fixed**, and the pin flipped with its rationale rewritten.         |
+| the dead `if not app_config` guard, `secrets.py` ×2     | Live. Coverage confirmed `:169` unreachable.                                                         | **Deleted both.** The file went **98% → 100%**.                      |
+| unimplemented sections never validated                  | Live, but a **different mechanism already reports them**.                                            | **Adjudicated, not fixed**, with a companion pin for the other half. |
+
+**53h-1's premise did not survive reading, and that is the find.** It pinned
+the `credentials` gap as "a container that starts and fails to authenticate."
+At HEAD that container **is not reachable**: `check_modules` sits in
+`run_preflight_checks`' always-run block — no skip flag, unlike audit, ECR,
+secrets and cluster — ahead of `Deployer`'s construction, and **both** routes
+into `collect()` are downstream of it (`build_task_definition` via
+`register_task_definition`, and `print_environment_config` at `deployer.py:323`,
+called from `deploy()`).
+
+So the fix is **defence in depth made load-bearing, not a live-bug fix**, and
+the record says so rather than inheriting the scarier framing. It still earns
+its line: the failure it guards is silent — the task definition would be
+*valid*, merely credential-less — and reaching it is a **deployer** bug, which
+this repo's standing rule (§53i-3d, and `bin/ssm-secrets.py:173`) says must not
+be dressed up as the operator's error. Measured cost: **exactly one test**, the
+pin asserting the old silent behaviour. Nothing else moved.
+
+**The guards were redundant, not merely unreachable** — which is a stronger
+reason to delete them than 53h-1's. `validate_all` and `collect_all` both skip a
+module whose section is falsy, so neither guard can fire from the registry
+route; and with `app_config = {}` the very next line,
+`app_config.get("names", [])`, returns the identical answer. Deleting them
+changes no behaviour on any input, reachable or not.
+
+**The unimplemented-section pin is an adjudication.** `validate_all` reporting
+nothing for `[cdn]` is correct division of labour: `DeployConfig.get_warnings()`
+compares every top-level section against `KNOWN_SECTIONS` (which contains
+neither `cdn` nor `autoscale`) and `Deployer.__init__` surfaces it on the deploy
+path at `deployer.py:108`. Making `validate_all` reject unknown sections would
+move that judgement into the module registry and **re-create the second list
+53h-2a deleted**. A companion test now pins the reporting channel, so the
+adjudication carries both halves rather than resting on prose.
+
+#### One item routed out, with its reason
+
+53f's fourth pin — *"both placeholder readers stringify bools Python-style"*
+(`core/config.py:190`'s `return str(resolved)` turns a tofu `true` into
+`"True"` in a container environment variable) — is **routed to Phase 69, not
+fixed here.** Phase 69 already owns *"the two placeholder readers use opposite
+matching rules"* on the **same two functions**, and its sequencing note says
+that item and `_get_legacy_secrets` are one file and move together. The region
+(`core/config.py:163-202`) is at **0%**, so the pin-first cost belongs with
+whoever touches it, once. Splitting two defects in the same two functions across
+two phases would pay that cost twice and land two unrelated diffs on the same
+lines.
+
+**Recording the routing *and its reason* is the §53l lesson applied forward**:
+a routed item whose destination has run is exactly what goes stale in silence.
+
+#### 53f's third pin was already gone, and Phase 69's anchor has rotted
+
+`_get_legacy_secrets` "silently drops a secret whose value matches neither
+prefix" is **not residue** — it is Phase 69's first member. But re-verifying it
+found that **`_get_legacy_secrets` does not exist at HEAD**: `deploy/task_definition.py`
+holds only `_resolve_legacy_placeholders`, and the `secretsmanager:` prefix
+logic now lives in `modules/secrets.py:35`. Phase 69's member 1 and its
+"same file, should move together" sequencing are both anchored to a function
+that is gone. Filed against Phase 69 in claude-meta `docs/PLAN.md`; **not
+re-derived here**, because inventing a replacement anchor for another phase is
+the same error as writing its record for it.
+
+### The pin ledger, reconciled across all five populations (2026-08-24)
+
+**The ledger above reconciled three tables and said so.** That sentence is what
+let §53f's four sit unswept: a reader checking whether everything was closed
+found a section titled "reconciled" and a total that balanced. This is the
+complete population.
+
+| Population                           | Count | Disposition                                                                                                                                                                                             |
+| ------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 53e-3a / 53e-4a / 53e-5a (3 tables)  | 14    | 3 fixed by 53i-3d as a by-product, 1 owned by Phase 69 (`update_service`), **10 closed by the 53j arc** — 2026-08-21.                                                                                   |
+| §53f *Latent bugs pinned, not fixed* | 4     | 2 fixed by **53m** (`idx < 0`, the `ClientError` traceback); 1 **routed to Phase 69** with its reason (placeholder bools); 1 **is** Phase 69 member 1 (`_get_legacy_secrets`), whose anchor has rotted. |
+| §53h-1 *handed to 53h-2*             | 3     | 2 fixed by **53n** (the `credentials` re-check, the dead guards); 1 **adjudicated** by 53n (unimplemented sections).                                                                                    |
+| §53d-2a *Noticed, not changed*       | 3     | 2 closed **not-applicable** by §53l (the `exit_on` routings); 1 fixed by **53m** (the restore twin).                                                                                                    |
+| 53i route-markers (`grep -c 53i`)    | 31    | **0** — consumed by 53i-3b/3c/3d, re-measured by §53l.                                                                                                                                                  |
+
+**Nothing pinned by any subphase of Phase 53 is now unowned.** Four items sit
+with Phase 69 by explicit routing, each with the reason recorded.
