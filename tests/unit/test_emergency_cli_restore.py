@@ -40,10 +40,13 @@ What is pinned here:
   availability line and its two absent arms, the cancel arm, and **both**
   recursive re-entries -- a bare number re-enters as ``--snapshot``, anything
   else re-enters as ``--time``.
-* Two behaviours that look like latent bugs, pinned as-is rather than fixed:
-  the ``idx < 0`` guard is unreachable because ``str.isdigit()`` already
-  rejects a leading minus, and a non-``DBInstanceAlreadyExists`` ``ClientError``
-  propagates out of the command as an exception rather than an exit status.
+* Two behaviours pinned as latent bugs by 53f and **fixed by 53m**: the
+  ``idx < 0`` guard was unreachable because ``str.isdigit()`` already rejects a
+  leading minus (the guard is gone, the reason is a comment at the site), and a
+  non-``DBInstanceAlreadyExists`` ``ClientError`` reached the operator as a
+  traceback because nothing between the re-raise and the process boundary
+  caught it (``_run_or_exit`` now catches it, and the pin below asserts the
+  exit status).
 
 Stubbing is at the outermost boundary -- 53d-2a's recorded rule -- so the pins
 survive code motion inside the package. Concretely:
@@ -281,15 +284,38 @@ class TestCmdRestoreDbFromSnapshot:
         assert "error: Failed to initiate restore" in logger.lines
 
     def test_a_non_already_exists_client_error_propagates_out_of_the_command(self, logger, restore):
-        # Pinned, not endorsed: _handle_restore_error re-raises everything but
-        # DBInstanceAlreadyExists, and cmd_restore_db catches nothing, so the
-        # CLI exits on a traceback rather than an exit status.
+        """_handle_restore_error re-raises everything but DBInstanceAlreadyExists.
+
+        Still true and still correct: the command does not swallow it. What
+        changed in 53m is one frame up -- see the boundary test below.
+        """
         restore.snapshot_result = ClientError(
             {"Error": {"Code": "InvalidDBSnapshotState", "Message": "bad state"}},
             "RestoreDBInstanceFromDBSnapshot",
         )
         with pytest.raises(ClientError, match="InvalidDBSnapshotState"):
             emergency.cmd_restore_db(ENV, snapshot="snap-1", time=None)
+
+    def test_the_cli_boundary_turns_that_into_a_clean_exit_1(self, logger, restore, capsys):
+        """UPDATED PIN. _run_or_exit() catches ClientError as well as RuntimeError.
+
+        This used to assert nothing, because nothing caught it: a permissions
+        or parameter error on restore-db reached the operator as a traceback.
+        53m widened the file's one process boundary rather than adding a catch
+        inside the command, so the re-raise above keeps doing its job and the
+        exit-code ladder still answers 1 for "failed".
+        """
+        restore.snapshot_result = ClientError(
+            {"Error": {"Code": "InvalidDBSnapshotState", "Message": "bad state"}},
+            "RestoreDBInstanceFromDBSnapshot",
+        )
+        with pytest.raises(SystemExit) as exit_info:
+            emergency._run_or_exit(
+                lambda: emergency.cmd_restore_db(ENV, snapshot="snap-1", time=None)
+            )
+
+        assert exit_info.value.code == 1
+        assert "Emergency command aborted: " in capsys.readouterr().err
 
     def test_snapshot_wins_over_time_when_both_are_given(self, logger, restore):
         assert emergency.cmd_restore_db(ENV, snapshot="snap-1", time="not-a-time") == 0

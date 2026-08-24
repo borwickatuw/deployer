@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import click
+from botocore.exceptions import ClientError
 
 from deployer.aws import rds
 from deployer.core.config import get_service_replicas_from_config
@@ -166,6 +167,36 @@ def _print_restore_success(logger: EmergencyLogger, result: RestoreResult) -> No
     print(
         f"    aws rds delete-db-instance --db-instance-identifier {result.instance_id} --skip-final-snapshot"
     )
+
+
+def _report_restore(logger: EmergencyLogger, result: RestoreResult | None) -> int:
+    """Report one restore attempt's outcome and answer with its exit status.
+
+    The snapshot and point-in-time arms of cmd_restore_db differ only in which
+    mutator they call and what they log before calling it; everything after the
+    call was the same eleven lines twice. 53f noticed the twin, 53d-2a routed
+    it, and neither owned the file's RDS half.
+
+    Args:
+        logger: Audit logger for the emergency log file.
+        result: What the restore mutator answered. None is its documented
+            failure sentinel -- the request was never accepted.
+
+    Returns:
+        0 if the restore was initiated, 1 otherwise.
+    """
+    if not result:
+        logger.error("Failed to initiate restore")
+        log_error("Failed to initiate restore")
+        return 1
+
+    if result.status == "error":
+        logger.error(result.message)
+        log_error(result.message)
+        return 1
+
+    _print_restore_success(logger, result)
+    return 0
 
 
 def _report_outcome(
@@ -626,9 +657,7 @@ def cmd_snapshot(environment: str, no_wait: bool) -> int:
 # =============================================================================
 
 
-def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
-    environment: str, snapshot: str | None, time: str | None
-) -> int:
+def cmd_restore_db(environment: str, snapshot: str | None, time: str | None) -> int:
     """Restore database from snapshot or point-in-time."""
     rds_id, logger = _init_rds_command(environment, "restore-db")
 
@@ -636,19 +665,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         log(f"Restoring from snapshot: {snapshot}")
         logger.rds(f"Restoring from snapshot {snapshot}")
 
-        result = restore_from_snapshot(rds_id, snapshot)
-        if result:
-            if result.status == "error":
-                logger.error(result.message)
-                log_error(result.message)
-                return 1
-            else:
-                _print_restore_success(logger, result)
-                return 0
-        else:
-            logger.error("Failed to initiate restore")
-            log_error("Failed to initiate restore")
-            return 1
+        return _report_restore(logger, restore_from_snapshot(rds_id, snapshot))
 
     elif time:
         try:
@@ -661,19 +678,7 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         log(f"Restoring to point in time: {restore_time.isoformat()}")
         logger.rds(f"Restoring to point in time {restore_time.isoformat()}")
 
-        result = restore_from_point_in_time(rds_id, restore_time)
-        if result:
-            if result.status == "error":
-                logger.error(result.message)
-                log_error(result.message)
-                return 1
-            else:
-                _print_restore_success(logger, result)
-                return 0
-        else:
-            logger.error("Failed to initiate restore")
-            log_error("Failed to initiate restore")
-            return 1
+        return _report_restore(logger, restore_from_point_in_time(rds_id, restore_time))
 
     else:
         # Interactive mode
@@ -710,8 +715,10 @@ def cmd_restore_db(  # noqa: C901 — RDS restore with snapshot/PITR paths
         if not choice.isdigit():
             return cmd_restore_db(environment, snapshot=None, time=choice)
 
+        # No lower bound: str.isdigit() above already rejects a leading minus,
+        # so int(choice) cannot be negative here.
         idx = int(choice)
-        if idx < 0 or idx >= len(snapshots):
+        if idx >= len(snapshots):
             log_error("Invalid selection")
             return 1
         return cmd_restore_db(environment, snapshot=snapshots[idx]["id"], time=None)
@@ -880,6 +887,14 @@ def _run_or_exit(command: Callable[[], int]) -> None:
     is about intermediate frames; here there is no frame above this one, so
     the alternative is not "the caller handles it" but a traceback.
 
+    ``ClientError`` is caught here for the same reason. The emergency/ queries
+    raise RuntimeError, but the *restore* mutators deliberately re-raise every
+    ClientError other than DBInstanceAlreadyExists
+    (``emergency/rds.py:_handle_restore_error``) so it is not swallowed --
+    and nothing between there and here caught it, so a permissions or
+    parameter error left ``restore-db`` as a traceback rather than an exit
+    status. The boundary is where it becomes one.
+
     Every command in this file answers with the same ladder:
 
     * ``0`` — succeeded; warnings may have printed and work completed
@@ -894,7 +909,7 @@ def _run_or_exit(command: Callable[[], int]) -> None:
         SystemExit: Always — with the command's status, or 1 if an AWS request
             failed.
     """
-    with exit_on(RuntimeError, prefix="Emergency command aborted: "):
+    with exit_on(RuntimeError, ClientError, prefix="Emergency command aborted: "):
         status = command()
     sys.exit(status)
 
