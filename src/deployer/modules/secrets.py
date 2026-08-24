@@ -121,12 +121,12 @@ class SecretsModule(ResourceModule):
         """Validate secrets configuration."""
         errors = []
 
-        if not app_config:
-            return []  # Secrets not declared - not an error
-
+        # No `if not app_config` guard: ModuleRegistry.validate_all only calls a
+        # module whose section is truthy, and an empty dict would fall through
+        # the `names` check below to the same answer anyway.
         names = app_config.get("names", [])
         if not names:
-            return []  # Empty names list is valid (no secrets needed)
+            return []  # Not declared, or an empty names list - both valid
 
         if not isinstance(names, list):
             errors.append("[secrets] 'names' must be a list in deploy.toml")
@@ -165,9 +165,8 @@ class SecretsModule(ResourceModule):
         context: ModuleContext,
     ) -> ModuleOutput:
         """Collect secrets references."""
-        if not app_config:
-            return ModuleOutput()
-
+        # Same as validate(): collect_all only calls a declared module, and the
+        # `names` check below answers identically for an empty dict.
         names = app_config.get("names", [])
         if not names:
             return ModuleOutput()

@@ -188,8 +188,17 @@ class DatabaseModule(ResourceModule):
                 SecretReference(var, context.ssm_parameter_arn(env_config[key]))
                 for var, key in _CREDENTIAL_KEYS["ssm"][mode]
             ]
-        # Any other value of `credentials` is rejected by validate(); collect()
-        # does not re-check it, and emits no credentials at all.
+        else:
+            # Unreachable: validate() rejects any other value, and
+            # preflight's check_modules() is in run_preflight_checks'
+            # always-run block, before Deployer is constructed. Reaching here
+            # is a deployer bug, not an operator error -- and emitting a task
+            # definition with connection details and no credentials would ship
+            # that bug as a container that starts and cannot authenticate.
+            raise RuntimeError(
+                f"[database] collect() reached an unvalidated credentials value "
+                f"{credentials!r}; validate() should have rejected it"
+            )
 
         return ModuleOutput(environment=env_vars, secrets=secrets)
 

@@ -63,6 +63,7 @@ rather than reached by calling past the seam:
 
 import pytest
 
+from deployer.config.deploy_config import KNOWN_SECTIONS, DeployConfig
 from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.task_definition import get_environment_variables, get_secrets
 from deployer.modules import ModuleRegistry
@@ -258,19 +259,36 @@ class TestDatabaseCollectGuards:
         with pytest.raises(ValueError, match="credential_mode"):
             get_secrets(ctx, None, credential_mode="")
 
-    def test_an_unsupported_provider_yields_no_credentials_and_no_error(self):
-        """collect() does not re-check what validate() rejects.
+    def test_an_unsupported_provider_now_raises_instead_of_shipping_no_credentials(self):
+        """UPDATED PIN. collect() re-checks what validate() rejects, and fails fast.
 
-        ``validate`` calls ``credentials = "vault"`` an error; ``collect`` just
-        falls off the end of its if/elif and emits the connection env vars with
-        no credentials at all. Pinned as-is: the container would start and fail
-        to authenticate. Nothing here fixes it.
+        This used to assert that ``collect`` fell off the end of its if/elif and
+        emitted the connection env vars with **no credentials at all** -- pinned
+        as-is by 53h-1, which described it as a container that starts and cannot
+        authenticate.
+
+        53n made it raise. The premise has to be stated honestly: that container
+        is **not reachable** at HEAD. ``validate`` rejects the value, and
+        preflight's ``check_modules`` sits in ``run_preflight_checks``'
+        always-run block -- no skip flag -- ahead of ``Deployer``'s
+        construction, so both routes into ``collect`` are downstream of it.
+
+        So this is defence in depth made load-bearing rather than a live-bug
+        fix. It earns its line because the failure it guards is silent: the
+        task definition would be *valid*, just credential-less, and the first
+        symptom is a container that will not authenticate. Reaching it is a
+        deployer bug, and the repo's standing rule is that a deployer bug must
+        not be dressed up as the operator's error.
         """
         env_config = {"database": {**DB_ENV_SECRETSMANAGER, "credentials": "vault"}}
         ctx = _ctx({"database": {"type": "postgresql"}}, env_config)
 
-        assert get_secrets(ctx, None) == []
-        assert get_environment_variables(ctx)["DB_HOST"] == "db.example.com"
+        with pytest.raises(RuntimeError, match="unvalidated credentials value 'vault'"):
+            get_secrets(ctx, None)
+
+        # The env-var route reaches the same collect() and fails the same way.
+        with pytest.raises(RuntimeError, match="unvalidated credentials value 'vault'"):
+            get_environment_variables(ctx)
 
 
 class TestSecretsCollect:
@@ -424,13 +442,39 @@ class TestModuleSectionsRegistryGap:
     a module the application did not declare, so the shape of deploy.toml is
     no longer consulted to decide which reader runs.
 
-    Only the first pin survives unchanged -- an unimplemented section is still
-    never validated, and it is now inert rather than dangerous.
+    The first pin survives unchanged, and 53n **adjudicated it rather than
+    fixing it**: an unimplemented section is still never validated by
+    ``validate_all``, and that is correct division of labour, not a gap. A
+    typo'd or unimplemented section is caught by
+    ``DeployConfig.get_warnings()``, which compares every top-level section
+    against ``KNOWN_SECTIONS`` and is surfaced on the deploy path at
+    ``Deployer.__init__`` (``deployer.py:108``). ``validate_all``'s job is to
+    validate the modules the registry implements; deciding whether a section
+    name is meaningful at all belongs to the thing that parses deploy.toml.
+    Making ``validate_all`` reject unknown sections would move that judgement
+    into the module registry and re-create the second list 53h-2a deleted.
     """
 
     def test_an_unimplemented_section_is_never_validated(self):
-        """[cdn] can say anything at all and validate_all reports nothing."""
+        """[cdn] can say anything at all and validate_all reports nothing.
+
+        Adjudicated by 53n, not a leftover: the companion test below is the
+        other half, and shows the operator is warned by a different mechanism.
+        """
         assert ModuleRegistry.validate_all({"cdn": {"type": "not-a-real-type"}}, {}) == []
+
+    def test_but_deploy_config_warns_about_it(self):
+        """The channel that *does* report an unimplemented section.
+
+        Pins the half that makes the pin above an adjudication rather than a
+        gap. If ``cdn`` is ever implemented as a module it must be added to
+        ``KNOWN_SECTIONS`` too, and this test is what says so.
+        """
+        assert "cdn" not in KNOWN_SECTIONS
+        config = DeployConfig.from_dict(
+            {"application": {"name": "myapp"}, "cdn": {"enabled": True}}
+        )
+        assert "Unknown top-level section: [cdn]" in config.get_warnings()
 
     def test_an_unimplemented_section_no_longer_changes_what_is_collected(self):
         """UPDATED: [cdn] used to flip a routing decision. Now it is inert."""
