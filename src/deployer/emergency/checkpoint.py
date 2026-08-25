@@ -102,16 +102,6 @@ class Checkpoint:
         )
 
 
-def generate_checkpoint_filename() -> str:
-    """Generate a unique checkpoint filename based on current timestamp.
-
-    Returns:
-        Filename like 'emergency-2026-02-04-120000.json'
-    """
-    now = datetime.now(UTC)
-    return f"emergency-{now.strftime('%Y-%m-%d-%H%M%S')}.json"
-
-
 def create_checkpoint(
     environment: str,
     action: str,
@@ -134,11 +124,12 @@ def create_checkpoint(
     checkpoint_dir = get_checkpoint_dir()
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = generate_checkpoint_filename()
+    now = datetime.now(UTC)
+    filename = f"emergency-{now.strftime('%Y-%m-%d-%H%M%S')}.json"
     filepath = checkpoint_dir / filename
 
     checkpoint = Checkpoint(
-        timestamp=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        timestamp=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         environment=environment,
         action=action,
         reason=reason,

@@ -17,7 +17,6 @@ from deployer.emergency.checkpoint import (
     ServiceState,
     cleanup_old_checkpoints,
     create_checkpoint,
-    generate_checkpoint_filename,
     get_checkpoint_dir,
     list_checkpoints,
     load_checkpoint,
@@ -157,16 +156,6 @@ class TestCheckpointSerialization:
             Checkpoint.from_dict({"timestamp": "2026-02-04T12:00:00Z"})
 
 
-class TestGenerateCheckpointFilename:
-    def test_filename_shape(self):
-        assert FILENAME_PATTERN.match(generate_checkpoint_filename())
-
-    def test_filename_uses_current_utc_date(self):
-        filename = generate_checkpoint_filename()
-        today = datetime.now(UTC).strftime("%Y-%m-%d")
-        assert filename.startswith(f"emergency-{today}-")
-
-
 class TestGetCheckpointDir:
     def test_dir_is_under_deployer_root(self, checkpoint_dir: Path, tmp_path: Path):
         assert get_checkpoint_dir() == tmp_path / "local" / "checkpoints"
@@ -194,6 +183,19 @@ class TestCreateCheckpoint:
         data = json.loads(filepath.read_text(encoding="utf-8"))
         assert data == checkpoint.to_dict()
         assert data["state"]["rds"]["instance_id"] == "myapp-production-db"
+
+    def test_filename_uses_current_utc_date(self, checkpoint_dir: Path):
+        checkpoint = create_checkpoint(
+            environment="production",
+            action="scale",
+            reason="load spike",
+            services={},
+            rds=None,
+        )
+
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        assert checkpoint.filename is not None
+        assert checkpoint.filename.startswith(f"emergency-{today}-")
 
     def test_written_file_is_the_only_one(self, checkpoint_dir: Path):
         checkpoint = create_checkpoint(
