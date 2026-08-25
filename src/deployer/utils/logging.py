@@ -1,7 +1,13 @@
-# Leaf logging utilities are called from many error contexts; the
-# "inconsistency" pysmelly reports is in callers' try/except boundaries, not
-# here. Per-function ignore lines below (placement must be 1-2 lines above
-# each flagged def).
+# These are print() wrappers with no error contract of their own. The four
+# inconsistent-error-handling findings they carry report the *callers'*
+# handling of their own unrelated work, not anything about these functions —
+# the same check mechanic that made utils/aws_profile.py:85 a false positive.
+#
+# They are left visible rather than suppressed, per this repo's near-zero
+# suppression convention: the five ignore lines that used to sit here carried
+# a re-evaluate-by tag and no rationale, so the reasoning was 40 lines from
+# the findings and one of the five had been dead for months. Adjudicated as
+# leave-standing in docs/internal/PYSMELLY.md § 53p (operator, 2026-08-25).
 """Logging utilities for formatted console output."""
 
 import sys
@@ -38,7 +44,6 @@ def log_debug(msg: str) -> None:
         print(f"  {Colors.CYAN}[debug]{Colors.NC} {msg}")
 
 
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
 def log(msg: str) -> None:
     """Print a message in blue."""
     print(f"{Colors.BLUE}{msg}{Colors.NC}")
@@ -54,25 +59,21 @@ def log_ok(msg: str) -> None:
     print(f"  {Colors.GREEN}✓{Colors.NC} {msg}")
 
 
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
 def log_success(msg: str) -> None:
     """Print a message with [done] suffix in green."""
     print(f"  {msg} {Colors.GREEN}[done]{Colors.NC}")
 
 
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
 def log_status(msg: str, status: str) -> None:
     """Print a message with a status suffix in yellow."""
     print(f"  {msg} {Colors.YELLOW}[{status}]{Colors.NC}")
 
 
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
 def log_warning(msg: str) -> None:
     """Print a warning message with yellow indicator."""
     print(f"  {Colors.YELLOW}⚠{Colors.NC} {msg}")
 
 
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
 def log_error(msg: str) -> None:
     """Print an error message with red indicator."""
     print(f"  {Colors.RED}✗{Colors.NC} {msg}")
