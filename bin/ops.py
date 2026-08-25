@@ -433,9 +433,14 @@ def _print_rds_status(rds_id: str) -> None:
     The in-place failure report every other section in this file now follows.
     """
     print(f"{Colors.BLUE}RDS Instance: {rds_id}{Colors.NC}")
-    rds_status = rds.get_status(rds_id)
+    try:
+        rds_status = rds.get_status(rds_id)
+    except RuntimeError as e:
+        print(f"  Unable to retrieve status ({e})")
+        return
+
     if not rds_status:
-        print("  Unable to retrieve status")
+        print("  No such instance")
         return
 
     print(f"  Status: {rds_status['status']}")

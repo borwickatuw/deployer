@@ -295,13 +295,31 @@ class TestCmdStatus:
         assert "RDS Instance:" not in out
         assert "Recent Snapshots:" not in out
 
-    def test_an_unreadable_rds_status_is_reported_in_place(self, status_env, capsys):
+    def test_an_unreadable_rds_status_is_reported_in_place(self, status_env, monkeypatch, capsys):
+        """A describe that failed is reported as such, and the rest still prints."""
+
+        def unreadable(_id):
+            raise RuntimeError("ThrottlingException")
+
+        monkeypatch.setattr(ops.rds, "get_status", unreadable)
+
+        assert ops.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert f"RDS Instance: {RDS_ID}" in out
+        assert "  Unable to retrieve status (ThrottlingException)" in out
+        assert "Recent Snapshots:" in out
+
+    def test_an_absent_rds_instance_is_distinguished_from_an_unreadable_one(
+        self, status_env, capsys
+    ):
+        """None means the instance is gone, which is not the same as a failed look."""
         status_env["rds_status"] = None
 
         assert ops.cmd_status(ENV) == 0
         out = capsys.readouterr().out
         assert f"RDS Instance: {RDS_ID}" in out
-        assert "  Unable to retrieve status" in out
+        assert "  No such instance" in out
+        assert "Unable to retrieve status" not in out
 
     def test_no_snapshots_prints_no_snapshot_section(self, status_env, capsys):
         status_env["snapshots"] = []

@@ -83,20 +83,27 @@ class TestGetStatus:
         )
         assert rds.get_status(INSTANCE)["engine"] == "postgres "
 
-    def test_none_when_command_fails(self, aws_cli):
-        """A failed describe answers None — the instance may not exist."""
-        aws_cli.replies((False, "DBInstanceNotFound"))
+    def test_none_when_the_instance_does_not_exist(self, aws_cli):
+        """Only DBInstanceNotFound answers None: absence, not failure."""
+        aws_cli.replies((False, "An error occurred (DBInstanceNotFound) when calling ..."))
         assert rds.get_status(INSTANCE) is None
+
+    def test_raises_when_the_describe_fails_for_any_other_reason(self, aws_cli):
+        """A throttle or an expired credential is "I could not look", not "absent"."""
+        aws_cli.replies((False, "An error occurred (ThrottlingException) when calling ..."))
+        with pytest.raises(RuntimeError, match="Could not describe RDS instance"):
+            rds.get_status(INSTANCE)
 
     def test_none_when_no_instances(self, aws_cli):
         """An empty DBInstances list answers None."""
         aws_cli.replies((True, json.dumps({"DBInstances": []})))
         assert rds.get_status(INSTANCE) is None
 
-    def test_none_when_output_is_not_json(self, aws_cli):
-        """Unparseable output answers None instead of raising JSONDecodeError."""
+    def test_raises_when_output_is_not_json(self, aws_cli):
+        """Unparseable output is a failure to look, not an absent instance."""
         aws_cli.replies((True, "not json"))
-        assert rds.get_status(INSTANCE) is None
+        with pytest.raises(RuntimeError, match="Could not parse"):
+            rds.get_status(INSTANCE)
 
 
 class TestInstanceActions:

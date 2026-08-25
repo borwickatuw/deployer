@@ -103,13 +103,19 @@ def cmd_status(environment: str | None) -> int:
         rds_id = config.get("infrastructure", {}).get("rds_instance_id")
         if rds_id:
             print(f"\n  RDS Instance: {rds_id}")
-            rds_status = rds.get_status(rds_id)
-            if rds_status:
-                print(f"    Status: {rds_status['status']}")
-                print(f"    Class: {rds_status['instance_class']}")
-                print(f"    Engine: {rds_status['engine']}")
+            try:
+                rds_status = rds.get_status(rds_id)
+            except RuntimeError as e:
+                # Report in place: one unreadable instance must not abort the
+                # status render for every other environment in the loop.
+                print(f"    Status: Unable to retrieve ({e})")
             else:
-                print("    Status: Unable to retrieve")
+                if rds_status:
+                    print(f"    Status: {rds_status['status']}")
+                    print(f"    Class: {rds_status['instance_class']}")
+                    print(f"    Engine: {rds_status['engine']}")
+                else:
+                    print("    Status: No such instance")
         else:
             print("\n  RDS: Not configured or unable to determine instance ID")
 
@@ -133,7 +139,9 @@ def cmd_stop(environment: str) -> int:
 
     # Step 2: Stop RDS instance
     print("\n2. Stopping RDS instance...")
-    rds_status = rds.get_status(rds_id)
+    with exit_on(RuntimeError, prefix="Cannot read RDS status, stop aborted: "):
+        rds_status = rds.get_status(rds_id)
+
     if rds_status:
         if rds_status["status"] == "stopped":
             print("   RDS instance already stopped")
@@ -158,9 +166,11 @@ def _ensure_rds_available(rds_id: str) -> None:
     def status_callback(status: str) -> None:
         print(f"  RDS status: {status}...")
 
-    rds_status = rds.get_status(rds_id)
+    with exit_on(RuntimeError, prefix="Cannot read RDS status, start aborted: "):
+        rds_status = rds.get_status(rds_id)
+
     if not rds_status:
-        print("   Warning: Unable to get RDS status", file=sys.stderr)
+        print("   Warning: no such RDS instance", file=sys.stderr)
         return
 
     current = rds_status["status"]

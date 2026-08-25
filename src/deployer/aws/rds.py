@@ -1,12 +1,16 @@
 """AWS RDS instance operations."""
 
+import json
 import time
 from collections.abc import Callable
 
-from .cli import run_aws, run_aws_json
+from .cli import run_aws
 
 
-# query function, None means "not found"  (re-evaluate-by: 2026-11 review)
+# absence sentinel: None means the instance does not exist, and nothing else —
+# every other failure raises, per DECISIONS.md 2026-08-18 "Error Contracts".
+# The check still fires because the None return is unconditional in shape; the
+# contract it asks about is the one documented here. (re-evaluate-by: 2026-11 review)
 # pysmelly: ignore return-none-instead-of-raise
 def get_status(instance_id: str) -> dict | None:
     """Get RDS instance status.
@@ -15,11 +19,27 @@ def get_status(instance_id: str) -> dict | None:
         instance_id: The DB instance identifier.
 
     Returns:
-        Dict with identifier, status, instance_class, engine, or None if not found.
+        Dict with identifier, status, instance_class, engine, or None if no
+        such instance exists.
+
+    Raises:
+        RuntimeError: If the instance could not be described for any reason
+            other than it not existing, or if the output was not valid JSON.
     """
-    data = run_aws_json("rds", "describe-db-instances", "--db-instance-identifier", instance_id)
-    if not data:
-        return None
+    success, output = run_aws(
+        "rds", "describe-db-instances", "--db-instance-identifier", instance_id
+    )
+    if not success:
+        if "DBInstanceNotFound" in output:
+            return None
+        raise RuntimeError(f"Could not describe RDS instance '{instance_id}': {output}")
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Could not parse the describe-db-instances response for '{instance_id}'"
+        ) from exc
 
     instances = data.get("DBInstances", [])
     if not instances:
@@ -93,7 +113,14 @@ def wait_for_status(
     """
     start_time = time.time()
     while time.time() - start_time < timeout:
-        rds_status = get_status(instance_id)
+        try:
+            rds_status = get_status(instance_id)
+        except RuntimeError:
+            # Deliberate: a describe that fails mid-wait (throttling, a brief
+            # credential expiry) reports as "unknown" and the loop tries again.
+            # Only the timeout ends this wait, not one bad poll.
+            rds_status = None
+
         current_status = rds_status["status"] if rds_status else "unknown"
 
         if rds_status and rds_status["status"] == target_status:

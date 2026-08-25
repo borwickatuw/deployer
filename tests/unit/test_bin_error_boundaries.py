@@ -53,6 +53,7 @@ cognito = _load("boundary_cognito", "cognito.py")
 deploy = _load("boundary_deploy", "deploy.py")
 environment = _load("boundary_environment", "environment.py")
 init = _load("boundary_init", "init.py")
+link_environments = _load("boundary_link_environments", "link-environments.py")
 resolve_config = _load("boundary_resolve_config", "resolve-config.py")
 
 ENV = "myapp-staging"
@@ -242,3 +243,70 @@ class TestDeployNarrowedCatch:
         with pytest.raises(TypeError, match="unhashable type"):
             deploy._load_env_config_or_exit(ENV)
         assert "Failed to load deployment config" not in capsys.readouterr().out
+
+
+class TestRdsAndLinksBoundaries:
+    """Phase 53p — the two library functions the error-contract ADR reached last.
+
+    ``utils/links.get_linked_deploy_toml`` and ``aws/rds.get_status`` each used
+    one sentinel for both "nothing is there" and "I could not look". Now that
+    they separate the two, every bin/ site that reads them has to have a
+    boundary; these are those boundaries.
+    """
+
+    def test_a_corrupt_links_file_does_not_traceback_out_of_unlink(self, monkeypatch, capsys):
+        """bin/link-environments.py had no exception handling of any kind."""
+
+        def corrupt(_env):
+            raise RuntimeError("Could not read the links file /x/environments.toml: bad TOML")
+
+        monkeypatch.setattr(link_environments, "get_linked_deploy_toml", corrupt)
+
+        with pytest.raises(SystemExit) as exit_info:
+            link_environments.cmd_unlink(ENV)
+        assert exit_info.value.code == 1
+        assert "Could not read the links file" in capsys.readouterr().err
+
+    def test_an_unreadable_rds_aborts_the_stop_rather_than_reporting_it_stopped(
+        self, monkeypatch, capsys
+    ):
+        """cmd_stop() printed "stop initiated" after a failed describe."""
+        monkeypatch.setattr(
+            environment,
+            "_load_environment_context",
+            lambda _env: ({}, "cluster", "myapp-staging-db"),
+        )
+        monkeypatch.setattr(environment.ecs, "get_services", lambda _cluster: [])
+
+        def unreadable(_id):
+            raise RuntimeError("ThrottlingException")
+
+        monkeypatch.setattr(environment.rds, "get_status", unreadable)
+
+        with pytest.raises(SystemExit) as exit_info:
+            environment.cmd_stop(ENV)
+        assert exit_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "ThrottlingException" in captured.err
+        assert "stop initiated" not in captured.out
+
+    def test_an_unreadable_rds_aborts_the_start_before_scaling_ecs_up(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            environment,
+            "_load_environment_context",
+            lambda _env: ({}, "cluster", "myapp-staging-db"),
+        )
+        scaled: list[str] = []
+        monkeypatch.setattr(environment.ecs, "scale_service", lambda *a: scaled.append(a) or True)
+
+        def unreadable(_id):
+            raise RuntimeError("ThrottlingException")
+
+        monkeypatch.setattr(environment.rds, "get_status", unreadable)
+
+        with pytest.raises(SystemExit) as exit_info:
+            environment.cmd_start(ENV)
+        assert exit_info.value.code == 1
+        assert "ThrottlingException" in capsys.readouterr().err
+        assert scaled == []

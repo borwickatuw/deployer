@@ -1,9 +1,14 @@
 """Tests for deployer.utils package."""
 
+from pathlib import Path
+
+import pytest
+
 from deployer.utils import (
     Colors,
     advice_block,
     format_timestamp,
+    links,
     log,
     log_error,
     log_info,
@@ -220,3 +225,41 @@ class TestFormatTimestamp:
     def test_non_string_passes_through(self):
         """Test that a non-string value is returned unchanged (AttributeError path)."""
         assert format_timestamp(None) is None
+
+
+class TestGetLinkedDeployToml:
+    """The absence/failure split decided in DECISIONS.md 2026-08-18.
+
+    None means "not linked" and nothing else. A links file that exists but
+    will not parse is "I could not look", and raises.
+    """
+
+    @staticmethod
+    def _links_file(monkeypatch, tmp_path, content: str | None):
+        links_file = tmp_path / "environments.toml"
+        if content is not None:
+            links_file.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(links, "get_links_file", lambda: links_file)
+        return links_file
+
+    def test_none_when_there_is_no_links_file(self, tmp_path, monkeypatch):
+        self._links_file(monkeypatch, tmp_path, None)
+        assert links.get_linked_deploy_toml("myapp-staging") is None
+
+    def test_none_when_the_environment_is_not_linked(self, tmp_path, monkeypatch):
+        self._links_file(monkeypatch, tmp_path, '[other-staging]\ndeploy_toml = "~/o.toml"\n')
+        assert links.get_linked_deploy_toml("myapp-staging") is None
+
+    def test_returns_the_linked_path(self, tmp_path, monkeypatch):
+        self._links_file(monkeypatch, tmp_path, '[myapp-staging]\ndeploy_toml = "/a/deploy.toml"\n')
+        assert links.get_linked_deploy_toml("myapp-staging") == Path("/a/deploy.toml")
+
+    def test_raises_naming_the_file_when_it_will_not_parse(self, tmp_path, monkeypatch):
+        """A corrupt file used to report as "not linked", which sent the
+        operator to link an environment that already was."""
+        links_file = self._links_file(monkeypatch, tmp_path, "this is not toml {{{\n")
+
+        with pytest.raises(RuntimeError, match="Could not read the links file") as exc_info:
+            links.get_linked_deploy_toml("myapp-staging")
+
+        assert str(links_file) in str(exc_info.value)

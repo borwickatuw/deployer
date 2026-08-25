@@ -202,12 +202,18 @@ class TestBootstrapDirExists:
             result = bootstrap_dir_exists()
             assert result is None
 
-    def test_returns_none_when_env_var_unset(self):
+    def test_raises_when_env_var_unset(self):
+        """An unset env var is "I could not look", not "no bootstrap dir".
+
+        Every call site establishes DEPLOYER_ENVIRONMENTS_DIR is set before
+        calling, so this raise is unreachable in production — it exists so the
+        two answers can never be confused again (DECISIONS.md 2026-08-18).
+        """
         with patch.dict(os.environ, {}, clear=True):
             # Remove DEPLOYER_ENVIRONMENTS_DIR if set
             os.environ.pop("DEPLOYER_ENVIRONMENTS_DIR", None)
-            result = bootstrap_dir_exists()
-            assert result is None
+            with pytest.raises(RuntimeError):
+                bootstrap_dir_exists()
 
 
 class TestPromptAccountIdAndRegion:

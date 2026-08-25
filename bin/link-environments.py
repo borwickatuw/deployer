@@ -21,6 +21,7 @@ from pathlib import Path
 import click
 
 from deployer.utils import (
+    exit_on,
     get_all_links,
     get_linked_deploy_toml,
     get_links_file,
@@ -132,7 +133,9 @@ def cmd_show_file() -> int:
 def cmd_unlink(environment: str) -> int:
     """Remove link for an environment."""
     # Show current link before removing
-    current = get_linked_deploy_toml(environment)
+    with exit_on(RuntimeError):
+        current = get_linked_deploy_toml(environment)
+
     if not current:
         click.echo(f"No link found for '{environment}'", err=True)
         return 1

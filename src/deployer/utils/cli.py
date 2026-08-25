@@ -187,8 +187,9 @@ def resolve_deploy_toml_or_exit(
         The resolved, existing deploy.toml path.
 
     Raises:
-        SystemExit: With code 1 if no deploy.toml can be resolved or the
-            resolved path is not a readable .toml file.
+        SystemExit: With code 1 if no deploy.toml can be resolved, the links
+            file cannot be parsed, or the resolved path is not a readable
+            .toml file.
     """
     if deploy_toml:
         config_path = Path(deploy_toml).expanduser().resolve()
@@ -196,7 +197,14 @@ def resolve_deploy_toml_or_exit(
             print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
             print(f"     to {link_benefit}\n")
     else:
-        config_path = get_linked_deploy_toml(environment)
+        try:
+            config_path = get_linked_deploy_toml(environment)
+        except RuntimeError as e:
+            # A corrupt links file is not "not linked" — say so here rather
+            # than sending the operator to link an environment that already is.
+            log_error_stderr(str(e))
+            sys.exit(1)
+
         if config_path is None:
             log_error_stderr(f"No deploy.toml linked for '{environment}'")
             print(

@@ -653,9 +653,10 @@ class TestCmdEnvironmentGuards:
     ):
         """Test that an unset DEPLOYER_ENVIRONMENTS_DIR is reported as such.
 
-        bootstrap_dir_exists() swallows the RuntimeError and returns None, so
-        this used to be reported as a missing bootstrap directory — sending
-        the operator to run bootstrap, which would fail the same way.
+        bootstrap_dir_exists() used to swallow the RuntimeError and return
+        None, so this was reported as a missing bootstrap directory — sending
+        the operator to run bootstrap, which would fail the same way. The
+        guard here is what keeps that call from being reached at all.
         """
 
         def unset():

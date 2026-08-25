@@ -238,6 +238,26 @@ class TestResolveDeployTomlOrExit:
         assert "link-environments.py myapp-staging /path/to/deploy.toml" in captured.err
         assert f"Or specify: {self.HINTS['specify_hint']}" in captured.err
 
+    def test_a_corrupt_links_file_exits_1_saying_so(self, monkeypatch, capsys):
+        """Not the "no deploy.toml linked" guidance — the environment may well be.
+
+        The RuntimeError is caught here, which already owns the sys.exit(1) for
+        this path, rather than propagating to the three bin/ callers.
+        """
+
+        def corrupt(_env):
+            raise RuntimeError("Could not read the links file /x/environments.toml: bad TOML")
+
+        monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", corrupt)
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._resolve("myapp-staging", None)
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "Could not read the links file /x/environments.toml" in err
+        assert "No deploy.toml linked" not in err
+
     def test_missing_path_exits_1(self, tmp_path, capsys):
         with pytest.raises(SystemExit) as exc_info:
             self._resolve("myapp-staging", str(tmp_path / "absent.toml"))
