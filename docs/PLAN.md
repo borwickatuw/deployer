@@ -7,17 +7,29 @@ _No repo-local phases yet._ This file exists so cross-repo backlog has a
 visible home in-repo (fleet convention).
 
 Cross-repo backlog queued against this repo: claude-meta docs/PLAN.md
-Phase 52 (container-level health checks for non-HTTP services) and Phase
-53 (pysmelly subphase backlog 53a–53i).
+Phase 52 (container-level health checks for non-HTTP services). **Phase 53
+(the pysmelly subphase arc, 53a–53p) closed 2026-08-25** — its record is in
+claude-meta `docs/PLAN-ARCHIVE.md`.
 
 Per-finding dispositions for the Phase 53 arc are in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md); size and simplification
 candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
-## Phase 53 status
+## Phase 53 status — **closed 2026-08-25**
 
-**33 findings** at `600c788` (the 53i-3d closeout), from 97 at the start of
-the arc. **53a through 53i are done; the arc has no open unit.**
+**36 findings** at `187b2f9` (the 53p closeout), from 97 at the start of the
+arc. **All sixteen subphases 53a–53p are done, every live finding is an
+adjudicated leave-standing, and nothing is escalated or open.** The operator
+took the last ten verdicts on 2026-08-25: seven confirmed leave-standings,
+four units of work applied by 53p.
+
+**The count rose from 33 on purpose.** 53p-1 cleared one, and 53p-3 deleted
+five `utils/logging.py` suppressions that carried a `re-evaluate-by:` tag and
+no rationale — surfacing four findings whose adjudications now live in the
+register instead of in comments nobody re-measures. One of the five had
+suppressed nothing since `a9327ab`.
+
+The sections below are the arc's working detail, left as written at the time.
 
 **53i-3 moved the count up by one, and that was the right outcome.** It added
 `emergency/ecs.py:81` — three callers of `get_all_services_state` handling it

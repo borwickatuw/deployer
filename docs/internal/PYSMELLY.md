@@ -32,9 +32,13 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **33** (measured at `411c8f0`, the 53n close, and unmoved by
+Standing total: **36** (measured at `187b2f9`, the 53p close and the close of
+Phase 53 — re-verified 2026-08-25. The rise from 33 is deliberate: 53p-1
+cleared one and 53p-3 surfaced four by deleting rationale-free suppressions,
+moving those four decisions out of comments and into this register. It was 33
+at `411c8f0`, the 53n close, and unmoved by
 53m and 53n; at `983237c`, the 53l re-verification; and at `8d5629d`, the 53k
-re-measure; it was 33 at
+re-measure; 33 at
 the 53i-3 closeout `600c788` and unmoved by the whole of 53j, 32 at `a9327ab`,
 35 at the 53f/53g closeout `722d50b`, 37 at `aacee1b`, 38 at `a8d7369`, 39 at
 `4e63c05`, 41 at `bb17c37`/`b5b8465` — the 53f/53g state — 47 at `64e3e18`,
@@ -42,13 +46,14 @@ the 53i-3 closeout `600c788` and unmoved by the whole of 53j, 32 at `a9327ab`,
 56 at `a304fa1`, 57 at `9903e2b`, 60 at `805d516`, 68 at `db8aa78`, 71 at
 `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
-**Every live finding is attributed, nothing is unowned, and nothing is open.**
-See § "Remainder — the reconciled adjudication split": **25** adjudicated
-leave-standings and **8** escalated with measured diffs awaiting the operator —
-53i-1's 7 plus 53i-3b's `emergency/ecs.py:81`. **0 open.** The 3 findings that
-53f/53g's reconciliation found owned by no subphase were folded into 53i-1 by
-operator decision (2026-08-18); one of them is cleared and two are among the
-eight escalations.
+**Phase 53 is closed (2026-08-25).** Every live finding is attributed, nothing
+is unowned, nothing is open, **and nothing is escalated**. See § "Remainder —
+the reconciled adjudication split": **36** adjudicated leave-standings, **0**
+escalated, **0** open. The operator took the last ten verdicts on 2026-08-25;
+§53p applies the four that were work and records the seven that were not. The 3
+findings that 53f/53g's reconciliation found owned by no subphase were folded
+into 53i-1 by operator decision (2026-08-18); one of them is cleared and two are
+among the leave-standings the operator confirmed in §53p.
 
 **The 53f/53g register gap is closed** (2026-08-18). Both shipped in the
 2026-08-13 unattended run without an adjudication entry here; the gap was
@@ -1889,16 +1894,24 @@ adjudication.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-21 at HEAD)
 
-**Re-pinned at `411c8f0` (2026-08-24).** §53l re-verified all **25** settled
+**Re-pinned at `187b2f9` (2026-08-25), the Phase 53 close.** §53p applied the
+operator's ten verdicts: **the Escalated column is now 0**. Seven escalations
+became confirmed leave-standings, one (`single-call-site`
+`emergency/checkpoint.py:105`) cleared, and four new
+`inconsistent-error-handling` rows on `utils/logging.py` were **surfaced on
+purpose** by deleting suppressions that carried a tag and no rationale. The
+`aws/cli.py:48` and `utils/environment.py:17` rationales are corrected below,
+because 53p-2 changed the caller ratios they cited.
+
+**Prior pin, `411c8f0` (2026-08-24).** §53l re-verified all **25** settled
 rows at `983237c`: **0 stale, 22 hold, 3 rationales corrected**, and the
 corrections are in §53l, not applied to the table below — the *rows* are
 unchanged. **53m and 53n moved no row and no count**; the one effect on this
 table is an anchor, `param-clumps bin/emergency.py:427` → **`:458`** (its
 members are now `cmd_rollback():458`, `cmd_scale():553`,
-`cmd_force_deploy():821`). The eight escalations are untouched; neither 53l nor
-53m/53n took a verdict on them.
+`cmd_force_deploy():821`).
 
-**Live total: 33, measured at `8d5629d` and unmoved at `983237c`** with
+**Live total: 36, measured at `187b2f9`** with
 `uvx pysmelly . --more-please` —
 **the plain `make pysmelly` view truncates to the top ten categories and HEAD
 has exactly ten, so any drift hides a row.** This table is the authoritative
@@ -1920,72 +1933,84 @@ absorbed below.
 | Category                     | Live | Settled | Escalated | Open  |
 | ---------------------------- | ---- | ------- | --------- | ----- |
 | pass-through-params          | 13   | 13      | 0         | 0     |
+| inconsistent-error-handling  | 9    | 9       | 0         | 0     |
 | param-clumps                 | 5    | 5       | 0         | 0     |
-| inconsistent-error-handling  | 5    | 4       | 1         | 0     |
-| foo-equals-foo               | 3    | 0       | 3         | 0     |
-| single-call-site             | 2    | 0       | 2         | 0     |
-| arrow-code                   | 1    | 0       | 1         | 0     |
+| foo-equals-foo               | 3    | 3       | 0         | 0     |
+| single-call-site             | 1    | 1       | 0         | 0     |
+| arrow-code                   | 1    | 1       | 0         | 0     |
 | law-of-demeter               | 1    | 1       | 0         | 0     |
 | duplicate-blocks             | 1    | 1       | 0         | 0     |
 | return-none-instead-of-raise | 1    | 1       | 0         | 0     |
-| temp-accumulators            | 1    | 0       | 1         | 0     |
-| **Total**                    | 33   | **25**  | **8**     | **0** |
+| temp-accumulators            | 1    | 1       | 0         | 0     |
+| **Total**                    | 36   | **36**  | **0**     | **0** |
 
-**Nothing at HEAD is open work.** Every live finding is either an adjudicated
-leave-standing or one of the eight awaiting a verdict — which is what makes the
-Phase 53 closeout gated on exactly those eight and nothing else.
+**Nothing at HEAD is open work, and nothing awaits a verdict.** Every live
+finding is an adjudicated leave-standing. This is what closes Phase 53.
 
-**Escalated** means a fix was drafted, measured and handed to the operator
+**Escalated** meant a fix was drafted, measured and handed to the operator
 rather than recorded as a self-authored justification; the diffs and their
 re-measured costs are in §53i-1 (seven) and §53k (all eight, re-measured at
-HEAD). **Three findings cleared in 53i-1** and left this table:
+HEAD). **All eight were decided on 2026-08-25** — seven confirmed as
+leave-standings with the operator's reasons in §53p, one
+(`emergency/checkpoint.py:105`) inlined by 53p-1.
+**Three findings cleared in 53i-1** and left this table:
 `single-call-site` `modules/secrets.py:86` and `law-of-demeter`
 `init/template.py:26` (both were open under 53i), and `arrow-code`
 `cli/ci_deploy.py:181` (one of the three orphans).
 
-#### Settled — 25 adjudicated leave-standings
+#### Settled — 36 adjudicated leave-standings
 
-Anchors are at `8d5629d`, re-verified unchanged at `983237c` (§53l); the sole
-later drift is `bin/emergency.py:427` → **`:458`**, from 53m.
-**Seven of the twenty carried-forward rows had
-drifted line numbers** and are corrected here: `utils/cli.py:208`×2/`:225` →
-`:223`×2/`:240`, `bin/cognito.py:214` → `:218`, `bin/emergency.py:386` →
-`:427`, `deploy/service.py:197` → `:211`, `deploy/deployer.py:219` → `:240`.
+Anchors are at `187b2f9` (2026-08-25). **Three drifted under 53p-2's
+eight-line insertion into `resolve_deploy_toml_or_exit`** and are corrected
+here: `utils/cli.py:223`×2 → **`:231`**×2, `:240` → **`:248`**. The
+`bin/emergency.py:427` → **`:458`** correction from 53m stands. Earlier anchors
+were at `8d5629d`, re-verified unchanged at `983237c` (§53l).
 
-| Finding                                                   | Adjudicated by                                |
-| --------------------------------------------------------- | --------------------------------------------- |
-| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                                           |
-| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                                           |
-| `pass-through-params` `utils/cli.py:223` ×2, `:240`       | 53b (minted), 53g                             |
-| `pass-through-params` `aws/cognito.py:46`                 | 53c (minted), 53g                             |
-| `pass-through-params` `core/ssm_secrets.py:268`           | 53d-1 (minted), 53g, operator-confirmed 53i-1 |
-| `param-clumps` `bin/emergency.py:427`                     | 53d-2a, 53g                                   |
-| `law-of-demeter` `deploy/deployer.py:240`                 | 53e-3                                         |
-| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                                           |
-| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                                           |
-| `pass-through-params` `core/ssm_secrets.py:36`, `:49`     | 53g                                           |
-| `pass-through-params` `core/ssm_secrets.py:63` ×2         | 53g                                           |
-| `pass-through-params` `deploy/preflight.py:46`            | 53g                                           |
-| `param-clumps` `aws/ecs.py:92`                            | 53g                                           |
-| `param-clumps` `bin/cognito.py:218`                       | 53g                                           |
-| `param-clumps` `deploy/service.py:211`                    | 53e-5 routed, 53g                             |
-| `return-none-instead-of-raise` `aws/cli.py:48`            | 53i-2c                                        |
-| `inconsistent-error-handling` `utils/aws_profile.py:85`   | 53i-2c (false positive)                       |
-| `inconsistent-error-handling` `init/template.py:126`      | 53i-2c (callers legitimately differ)          |
-| `inconsistent-error-handling` `core/config.py:205`        | 53i-3c (fixed-but-unseen)                     |
-| `inconsistent-error-handling` `utils/environment.py:17`   | 53i-3c (fixed-but-unseen)                     |
+| Finding                                                   | Adjudicated by                                   |
+| --------------------------------------------------------- | ------------------------------------------------ |
+| `duplicate-blocks` `db-on-shared-rds/lambda/index.py:131` | 53a                                              |
+| `param-clumps` `db-on-shared-rds/lambda/index.py:50`      | 53a                                              |
+| `pass-through-params` `utils/cli.py:231` ×2, `:248`       | 53b (minted), 53g                                |
+| `pass-through-params` `aws/cognito.py:46`                 | 53c (minted), 53g                                |
+| `pass-through-params` `core/ssm_secrets.py:268`           | 53d-1 (minted), 53g, operator-confirmed 53i-1    |
+| `param-clumps` `bin/emergency.py:427`                     | 53d-2a, 53g                                      |
+| `law-of-demeter` `deploy/deployer.py:240`                 | 53e-3                                            |
+| `pass-through-params` `aws/cloudwatch.py:50` ×2           | 53g                                              |
+| `pass-through-params` `aws/ssm.py:131` (false positive)   | 53g                                              |
+| `pass-through-params` `core/ssm_secrets.py:36`, `:49`     | 53g                                              |
+| `pass-through-params` `core/ssm_secrets.py:63` ×2         | 53g                                              |
+| `pass-through-params` `deploy/preflight.py:46`            | 53g                                              |
+| `param-clumps` `aws/ecs.py:92`                            | 53g                                              |
+| `param-clumps` `bin/cognito.py:218`                       | 53g                                              |
+| `param-clumps` `deploy/service.py:211`                    | 53e-5 routed, 53g                                |
+| `return-none-instead-of-raise` `aws/cli.py:48`            | 53i-2c                                           |
+| `inconsistent-error-handling` `utils/aws_profile.py:85`   | 53i-2c (false positive)                          |
+| `inconsistent-error-handling` `init/template.py:126`      | 53i-2c (callers legitimately differ)             |
+| `inconsistent-error-handling` `core/config.py:205`        | 53i-3c (fixed-but-unseen)                        |
+| `inconsistent-error-handling` `utils/environment.py:17`   | 53i-3c (fixed-but-unseen), ratio corrected 53p-2 |
+| `single-call-site` `init/deploy_toml.py:77`               | **operator-confirmed 2026-08-25** (§53p)         |
+| `foo-equals-foo` `bin/init.py:220`                        | **operator-confirmed 2026-08-25** (§53p)         |
+| `foo-equals-foo` `bin/init.py:563`                        | **operator-confirmed 2026-08-25** (§53p)         |
+| `foo-equals-foo` `config/deploy_config.py:435`            | **operator-confirmed 2026-08-25** (§53p)         |
+| `arrow-code` `init/deploy_toml.py:195`                    | **operator-confirmed 2026-08-25** (§53p)         |
+| `temp-accumulators` `deploy/images.py:342`                | **operator-confirmed 2026-08-25** (§53p)         |
+| `inconsistent-error-handling` `emergency/ecs.py:81`       | **operator-confirmed 2026-08-25** (§53p)         |
+| `inconsistent-error-handling` `utils/logging.py:47`       | 53p-3 (unsuppressed and adjudicated)             |
+| `inconsistent-error-handling` `utils/logging.py:67`       | 53p-3 (unsuppressed and adjudicated)             |
+| `inconsistent-error-handling` `utils/logging.py:72`       | 53p-3 (unsuppressed and adjudicated)             |
+| `inconsistent-error-handling` `utils/logging.py:77`       | 53p-3 (unsuppressed and adjudicated)             |
 
 **The bottom five were settled in prose and never posted here.** They are the
 rows this table listed as "open under 53i-3" through four subphases after they
 had been decided. Their verdicts, transcribed from the sections that took them:
 
-| Finding                                                 | Verdict of record                                                                                                          | Where   |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `return-none-instead-of-raise` `aws/cli.py:48`          | Its `None` means **failure only** — PYTHON.md #19 contract 3, and correct. The defect was one layer down, in `aws/rds.py`. | §53i-2c |
-| `inconsistent-error-handling` `utils/aws_profile.py:85` | **False positive.** It raises only inside `if validate:`; the two unhandled callers pass the default and cannot reach it.  | §53i-2c |
-| `inconsistent-error-handling` `init/template.py:126`    | **Callers legitimately differ — document only.** One `except KeyError` is a fallback *dispatch*; three others want it.     | §53i-2c |
-| `inconsistent-error-handling` `core/config.py:205`      | Real bug, **fixed by 53i-3c** with `exit_on` — which is a context manager, so the check that asked for it cannot see it.   | §53i-3c |
-| `inconsistent-error-handling` `utils/environment.py:17` | Same shape: **fixed-but-unseen.** Wrapping five sites moved the tally by one, and that one was a *deleted* site.           | §53i-3c |
+| Finding                                                 | Verdict of record                                                                                                                                                                                                                                                                                                                                                                                                                                   | Where         |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `return-none-instead-of-raise` `aws/cli.py:48`          | Its `None` means **failure only** — PYTHON.md #19 contract 3, and correct. The defect was one layer down, in `aws/rds.py`, **and 53p-2 fixed it**: `get_status` no longer translates a failure-`None` into "not found". §53l flagged this sentence as past tense for something never fixed; it is now past tense for something done. The check reads **2 of 3** callers guarding since that fix (was 3 of 4) — a ratio the verdict never rested on. | §53i-2c, §53p |
+| `inconsistent-error-handling` `utils/aws_profile.py:85` | **False positive.** It raises only inside `if validate:`; the two unhandled callers pass the default and cannot reach it.                                                                                                                                                                                                                                                                                                                           | §53i-2c       |
+| `inconsistent-error-handling` `init/template.py:126`    | **Callers legitimately differ — document only.** One `except KeyError` is a fallback *dispatch*; three others want it.                                                                                                                                                                                                                                                                                                                              | §53i-2c       |
+| `inconsistent-error-handling` `core/config.py:205`      | Real bug, **fixed by 53i-3c** with `exit_on` — which is a context manager, so the check that asked for it cannot see it.                                                                                                                                                                                                                                                                                                                            | §53i-3c       |
+| `inconsistent-error-handling` `utils/environment.py:17` | Same shape: **fixed-but-unseen.** Wrapping five sites moved the tally by one, and that one was a *deleted* site. 53p-2 deleted a sixth — `bootstrap_dir_exists`' redundant guard — taking the read to **6 specific / 10 unhandled** (was 7/9), again by removing a site rather than adding one.                                                                                                                                                     | §53i-3c, §53p |
 
 The last two are adjudicated as **fixed-but-unseen, not as open work**. Taking
 a count from either would mean writing a per-caller `try` at every site purely
@@ -4014,3 +4039,152 @@ complete population.
 
 **Nothing pinned by any subphase of Phase 53 is now unowned.** Four items sit
 with Phase 69 by explicit routing, each with the reason recorded.
+
+### 53p — the ten verdicts applied, and Phase 53 closed (2026-08-25)
+
+**The operator took all ten outstanding verdicts on 2026-08-25.** Phase 53 had
+no code work left that a session could decide: the register read 33 live = 25
+settled + 8 escalated + 0 open, every pin population was reconciled, and the
+closeout was gated on verdicts only the operator can take. Seven of the ten are
+confirmed leave-standings needing no code; four are work.
+
+**The Escalated column goes to 0.** Arithmetic, stated up front and accounted
+for finding-by-finding below: **33 → 32 (53p-1) → 32 (53p-2) → 36 (53p-3)**.
+The rise is deliberate — four decisions moved out of comments and into this
+register.
+
+#### The seven confirmed leave-standings (operator, 2026-08-25)
+
+Each was drafted and measured by an earlier subphase; the operator's reason of
+record is below. **These are not to be re-litigated.**
+
+| Finding                                                        | Reason of record                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `single-call-site` `init/deploy_toml.py:77` `is_likely_secret` | The named predicate heads a 4-way dispatch; inlining buries secret-detection policy in a 3-line boolean. |
+| `foo-equals-foo` `bin/init.py:563`                             | Inlining widens a `try` over `get_next_listener_priority`, whose `iterdir()` raises `FileNotFoundError`. |
+| `foo-equals-foo` `bin/init.py:220`                             | The fix does not clear (33 → 33), 10 tests fail, and it reorders operator prompts.                       |
+| `foo-equals-foo` `config/deploy_config.py:435`                 | Splits each `dacite` parse from its own unknown-key loop; the `*_data` local survives anyway.            |
+| `arrow-code` `init/deploy_toml.py:195`                         | Depth 6 counts `elif` as nesting; real depth is 4. Filed as a check mechanic by 53i-1.                   |
+| `temp-accumulators` `deploy/images.py:342`                     | The list *is* the image cache-tag format; changing it re-tags the fleet.                                 |
+| `inconsistent-error-handling` `emergency/ecs.py:81`            | The fix clears one and mints `utils/environment.py:17` (33 → 33), and breaks `test_ops.py:749`.          |
+
+#### 53p-1 — `generate_checkpoint_filename` inlined (verdict 2)
+
+**33 → 32**, one row, no mints; tests 1760 → 1759. The two-line body moved into
+`create_checkpoint`, its only caller. `test_filename_shape` was redundant with
+`test_creates_directory_and_parseable_file`, which already asserts
+`FILENAME_PATTERN` through `create_checkpoint`; `test_filename_uses_current_utc_date`
+— the only assertion that the stamp is UTC and not local — moved into
+`TestCreateCheckpoint` and drives the same path. The filename and the checkpoint
+timestamp now read the clock once between them rather than twice.
+
+#### 53p-2 — the error-contract ADR's unapplied corner (verdicts 9, 9b)
+
+DECISIONS.md § "2026-08-18: Error Contracts" decides for **every function in
+this repo** that one sentinel never means both "nothing is there" and "I could
+not look". 53i-3 applied it to `emergency/` only. All three sites below were
+**suppressed**, so none moves the count — the deliverable is that their
+rationales became *true*. Measured **32 → 32**.
+
+**`aws/rds.py get_status`** — `run_aws` instead of `run_aws_json`, so the error
+text survives. `None` now means `DBInstanceNotFound` and nothing else; every
+other failure, and a `JSONDecodeError`, raises `RuntimeError`. The docstring's
+`Returns:` and the standing suppression rationale — both of which claimed "not
+found" while the code meant either — now say what the code does.
+
+- **`wait_for_status` catches it deliberately.** It reads a failed describe as
+  `"unknown"` so a transient throttle cannot abort a poll loop; only the
+  timeout ends that wait. A prior draft that skipped this failed
+  `TestWaitForStatus::test_reports_each_status_to_the_callback`.
+- **Five `bin/` call sites needed a boundary**, and the ADR already said which
+  kind. `bin/emergency.py` needed nothing: its `exit_on(RuntimeError, ClientError)` at `:912` already aborts, which is the ADR's answer for
+  destructive commands. `bin/ops.py` `_print_rds_status` and
+  `bin/environment.py` `cmd_status` report in place. `bin/environment.py`'s
+  `cmd_stop` and `cmd_start` abort — `cmd_stop` previously printed
+  "stop initiated" after a describe that failed.
+
+**`init/bootstrap.py:185`** — the `try/except RuntimeError` is deleted, verified
+dead at all three call sites: `bin/init.py:462` and `verify.py:87` each call
+`get_environments_dir()` in their own `try` and return first, and
+`verify.py:137` `_check_bootstrap_plan` is reached only after `cmd_verify`
+confirms `_check_deployer_config()` returned True, which requires that same call
+to have succeeded. Same shape as the redundant guards 53n deleted from
+`modules/secrets.py`. **One test asserted the swallow directly**
+(`test_returns_none_when_env_var_unset`) and now asserts the raise — production
+callers decide the interface, not test callers.
+
+**`utils/links.py:29`** — its `except Exception: return None` made a *corrupt*
+links file report as "not linked", so `utils/cli.py:199` told the operator to
+link an environment that already was. Narrowed: `None` for "no links file" /
+"not linked", `RuntimeError` naming the file on a parse failure.
+
+> **The plan verified the three `resolve_deploy_toml_or_exit` callers and
+> missed a second caller of `get_linked_deploy_toml`.** `bin/link-environments.py:135`
+> `cmd_unlink` reads it too, and that file has **no exception handling of any
+> kind** — the `RuntimeError` would have reached the operator as a traceback.
+> Both boundaries are now pinned in `test_bin_error_boundaries.py`.
+
+**Two settled rows degrade, and their rationales are corrected below**, since
+`get_status` stops being a `run_aws_json` caller and `bootstrap_dir_exists`
+stops being a `get_environments_dir` catcher:
+
+| Row                                                     | Was                      | Now              |
+| ------------------------------------------------------- | ------------------------ | ---------------- |
+| `return-none-instead-of-raise` `aws/cli.py:48`          | 3 of 4 guard             | **2 of 3** guard |
+| `inconsistent-error-handling` `utils/environment.py:17` | 7 specific / 9 unhandled | **6 / 10**       |
+
+Neither verdict changes. `aws/cli.py:48`'s `None` still means failure only
+(PYTHON.md #19 contract 3); the ratio was always incidental to that reading,
+which is the argument for not citing a ratio in a rationale at all.
+`utils/environment.py:17` is still fixed-but-unseen — and the tally moved
+because a *deleted* site left it, exactly as §53i-3c observed the first time.
+
+#### 53p-3 — `utils/logging.py` unsuppressed and adjudicated (verdict 10)
+
+The five `# pysmelly: ignore inconsistent-error-handling (re-evaluate-by: 2026-11 review)` directives carried a tag and **no rationale** — 53l's find,
+which also corrected this register's placement classifier from 13/7/0/0 to
+**7/8/0/5**. The reasoning existed, but in a file header forty lines from the
+findings it justified, where no reader of a finding would meet it.
+
+**Measured: 32 → 36. Only four of the five fire** — `log_success` (`:57`) has
+suppressed nothing since at least `a9327ab`, which is the cost of a directive
+nobody re-measures.
+
+| Surfaced        | Callers                                |
+| --------------- | -------------------------------------- |
+| `log()`         | 46 — 23 specific, 23 unhandled         |
+| `log_status()`  | 5 — 2 specific, 3 unhandled            |
+| `log_warning()` | 31 — 2 specific, 1 broad, 28 unhandled |
+| `log_error()`   | 66 — 1 specific, 65 unhandled          |
+
+All four are **adjudicated leave-standings** on this reason:
+
+> `print()` wrappers with no error contract of their own. The check reports the
+> **callers'** handling of their own unrelated work, not this function's
+> contract — the same mechanic that made `utils/aws_profile.py:85` a false
+> positive. Left visible rather than suppressed, per this repo's stated
+> convention of near-zero suppression.
+
+The file header now carries that reasoning instead of a pointer to directives
+that no longer exist.
+
+#### Verification
+
+`make check` passes at `187b2f9`: **1769 tests** (1760 → 1759 after 53p-1, then
++10 pins across 53p-2), ruff and black clean. Coverage **79.35%** against a
+floor of 74, up from 78.78%; `aws/rds.py`, `emergency/rds.py` and
+`init/bootstrap.py` are each at 100%, and `utils/links.py` rose from 11% to 35%.
+Every pysmelly measurement was taken with `uvx pysmelly . --more-please` and
+diffed as a **sorted** finding set — HEAD has exactly ten categories, so the
+plain view truncates.
+
+**The final 36, accounted for finding-by-finding:** 32 after 53p-1 and 53p-2,
+plus the four `logging.py` rows surfaced by 53p-3. Nothing was minted anywhere
+else. The only other movement in the whole subphase was text: `aws/cli.py:48`
+and `utils/environment.py:17` restating their caller ratios, and
+`utils/cli.py:223`/`:240` drifting to `:231`/`:248` under an eight-line
+insertion.
+
+#### Phase 53 is closed
+
+**36 live = 36 settled, 0 escalated, 0 open.** From 97 findings at triage.
