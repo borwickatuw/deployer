@@ -899,6 +899,7 @@ class TestBuildAndPushRawDict:
 
         tag = _expected_tag(source_dir / "web")
         repo = f"{ECR_PREFIX}-web"
+        cache_ref = f"{ECR_HOST}/{repo}:buildcache"
         assert uris == {"web": f"{ECR_HOST}/{repo}:{tag}"}
         assert run.argv == [
             [
@@ -910,6 +911,10 @@ class TestBuildAndPushRawDict:
                 f"{repo}:{tag}",
                 "-f",
                 str(source_dir / "web" / "Dockerfile"),
+                "--cache-from",
+                f"type=registry,ref={cache_ref}",
+                "--cache-to",
+                f"type=registry,ref={cache_ref},mode=max,image-manifest=true,oci-mediatypes=true",
                 str(source_dir / "web"),
             ],
             ["docker", "tag", f"{repo}:{tag}", f"{ECR_HOST}/{repo}:{tag}"],
@@ -965,7 +970,7 @@ class TestBuildAndPushRawDict:
         _build(config, source_dir)
 
         argv = run.argv[0]
-        assert argv[argv.index("--build-arg") : -1] == [
+        assert argv[argv.index("--build-arg") : argv.index("--cache-from")] == [
             "--build-arg",
             "Z=1",
             "--build-arg",
@@ -1000,6 +1005,14 @@ class TestBuildAndPushRawDict:
             f"  base (build {tag[:8]}) [done]",
             "  base [local only]",
         ]
+
+    def test_a_local_only_image_builds_without_registry_cache_flags(self, source_dir, run):
+        config = _dict_config(base={"context": "base", "push": False})
+
+        _build(config, source_dir)
+
+        assert "--cache-from" not in run.argv[0]
+        assert "--cache-to" not in run.argv[0]
 
     def test_push_defaults_to_true(self, source_dir, run):
         config = _dict_config(web={"context": "web"})
@@ -1261,7 +1274,10 @@ class TestDryRun:
         assert out == [
             "Building and pushing images...",
             "  [dry-run] docker build --platform linux/amd64 -t "
-            f"{repo}:{tag} -f {source_dir / 'web' / 'Dockerfile'} {source_dir / 'web'}",
+            f"{repo}:{tag} -f {source_dir / 'web' / 'Dockerfile'} "
+            f"--cache-from type=registry,ref={ECR_HOST}/{repo}:buildcache "
+            f"--cache-to type=registry,ref={ECR_HOST}/{repo}:buildcache,"
+            f"mode=max,image-manifest=true,oci-mediatypes=true {source_dir / 'web'}",
             f"  web (build {tag[:8]}) [done]",
             f"  [dry-run] docker tag {repo}:{tag} {ECR_HOST}/{repo}:{tag}",
             f"  [dry-run] docker push {ECR_HOST}/{repo}:{tag}",

@@ -401,7 +401,9 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
     return content_hash
 
 
-def _docker_build_cmd(spec: ImageBuildSpec, local_tag: str) -> list[str]:
+def _docker_build_cmd(
+    spec: ImageBuildSpec, local_tag: str, cache_ref: str | None = None
+) -> list[str]:
     """Assemble the ``docker build`` argv for one image.
 
     ``--platform`` ensures consistent builds for Fargate (x86_64) regardless
@@ -412,6 +414,15 @@ def _docker_build_cmd(spec: ImageBuildSpec, local_tag: str) -> list[str]:
     Args:
         spec: The resolved build inputs for the image.
         local_tag: The local ``name:tag`` to build into.
+        cache_ref: Registry ref (``repo:tag``) for BuildKit's remote build
+            cache, or None for no remote cache. With a ref, the build imports
+            cached layers from the registry (a cold local cache reuses them
+            instead of rebuilding — and unchanged layers keep their digests,
+            so the later push uploads nothing) and exports the refreshed
+            cache back. Requires the containerd image store; the classic
+            graphdriver fails fast with docker's own "cache export is not
+            supported" error. ``image-manifest=true,oci-mediatypes=true``
+            is what ECR accepts for cache manifests.
 
     Returns:
         The full ``docker build`` argv.
@@ -438,6 +449,16 @@ def _docker_build_cmd(spec: ImageBuildSpec, local_tag: str) -> list[str]:
     # Add named additional contexts (for COPY --from=name stages)
     for name, path in spec.additional_contexts.items():
         build_cmd.extend(["--build-context", f"{name}={path}"])
+
+    if cache_ref:
+        build_cmd.extend(
+            [
+                "--cache-from",
+                f"type=registry,ref={cache_ref}",
+                "--cache-to",
+                f"type=registry,ref={cache_ref},mode=max,image-manifest=true,oci-mediatypes=true",
+            ]
+        )
 
     build_cmd.append(str(spec.context))
     return build_cmd
@@ -567,11 +588,13 @@ def build_and_push_images(
 
         # Local-only images are tagged with just their name (for FROM references)
         # Pushed images get the ecr_prefix
+        cache_ref = None
         if spec.should_push:
             repo_name = f"{ecr_prefix}-{image_name}"
             local_tag = f"{repo_name}:{tag}"
             ecr_repo = f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
             ecr_uri = f"{ecr_repo}:{tag}"
+            cache_ref = f"{ecr_repo}:buildcache"
 
             # Check if image already exists in ECR (skip if no client or dry_run)
             if ecr_client and not dry_run and not force_build:  # noqa: SIM102
@@ -582,7 +605,7 @@ def build_and_push_images(
         else:
             local_tag = f"{image_name}:{tag}"
 
-        _run_docker(_docker_build_cmd(spec, local_tag), image_name, "build", dry_run)
+        _run_docker(_docker_build_cmd(spec, local_tag, cache_ref), image_name, "build", dry_run)
         log_success(f"{image_name} (build {tag[:8]})")
 
         if spec.should_push:

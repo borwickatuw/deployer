@@ -291,6 +291,45 @@ deploy_services (2s) ──┴─ ECS pulling/starting (~30s) → stabilize ┴�
 
 ______________________________________________________________________
 
+## Implemented: Registry-Backed Build Cache
+
+**Status: IMPLEMENTED (2026-08-26)**
+
+Every pushed image builds with BuildKit registry cache flags pointing at a
+`:buildcache` tag in its own ECR repository:
+
+```
+--cache-from type=registry,ref=<repo>:buildcache
+--cache-to   type=registry,ref=<repo>:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+```
+
+### Why
+
+The content-hash tag skip already makes unchanged images free, and a warm
+local Docker layer cache makes rebuilds cheap. The pathological case was a
+**cold local cache** (new machine, cache prune): every layer rebuilds with a
+fresh digest, so the full compressed image set re-uploads. For havoc
+(web 236MB + cantaloupe 389MB + transcoder 909MB compressed) that measured
+~17 minutes end to end.
+
+With the registry cache, a cold build imports cached layers from ECR instead
+of re-running them — measured on havoc's cantaloupe image: a completely
+empty buildx builder rebuilt it in **8.8s with all 7 steps CACHED**. Reused
+layers keep their digests, so the subsequent push uploads nothing.
+
+### Costs and requirements
+
+- Cache export adds ~2s to a warm build; cache blobs dedupe against the
+  image layers already in the repository, so ECR storage overhead is small.
+- Requires the Docker daemon's **containerd image store** (Docker Desktop:
+  Settings → General → "Use containerd for pulling and storing images").
+  The classic graphdriver fails fast with docker's own "cache export is not
+  supported for the docker driver" error.
+- ECR repositories must allow the mutable `:buildcache` tag (`MUTABLE` tag
+  setting, the default).
+
+______________________________________________________________________
+
 ## Future Optimization Targets
 
 Additional optimizations not yet implemented:
