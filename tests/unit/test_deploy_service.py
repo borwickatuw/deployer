@@ -1115,9 +1115,26 @@ class TestDeployServices:
 
     def test_empty_service_map_logs_only_the_banner(self, aws, capsys):
         ctx = _ctx(aws, services={})
-        deploy_services(ctx, {})
+        assert deploy_services(ctx, {}) == {}
         assert aws.client.operations == []
         assert _lines(capsys.readouterr().out) == ["Deploying ECS services..."]
+
+    def test_returns_the_registered_arn_per_service(self, aws):
+        """The return value is what wait_for_stable verifies PRIMARY against."""
+        _make_service(aws, "web")
+        ctx = _ctx(aws, services={"web": {}, "worker": {}})
+        updated = deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
+        assert set(updated) == {"web", "worker"}
+        assert updated["web"] == aws.client.all_params("update_service")[0]["taskDefinition"]
+        # The create branch reports its ARN too.
+        assert updated["worker"] == aws.client.params("create_service")["taskDefinition"]
+
+    def test_dry_run_returns_the_fabricated_arns(self, aws):
+        ctx = _ctx(aws, dry_run=True)
+        updated = deploy_services(ctx, {"web": IMAGE_URI})
+        assert updated == {
+            "web": f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:dry-run"
+        }
 
     def test_missing_image_uri_skips_the_service_and_fails_the_deploy(self, aws, capsys):
         """A skipped service is a service that was not deployed.

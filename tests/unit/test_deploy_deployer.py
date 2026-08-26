@@ -59,6 +59,9 @@ RDS_ID = "testapp-staging-db"
 
 IMAGE_URIS = {"web": f"{ACCOUNT_ID}.dkr.ecr.{REGION}.amazonaws.com/{ECR_PREFIX}/web:abc123"}
 MIGRATION_TASK = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task/{ECR_PREFIX}/deadbeef"
+UPDATED_SERVICES = {
+    "web": f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{APP_NAME}-{ENVIRONMENT}-web:9"
+}
 
 # The order deploy() calls them in. Note that the timer step name for
 # create_database_extensions is "create_extensions", not the function name.
@@ -180,6 +183,7 @@ class _StepRecorder:
         self.returns: dict[str, object] = {
             "build_and_push_images": IMAGE_URIS,
             "start_migrations": MIGRATION_TASK,
+            "deploy_services": UPDATED_SERVICES,
             "wait_for_stable": [],
         }
         self.raises: dict[str, Exception] = {}
@@ -743,7 +747,9 @@ class TestDeploySteps:
             ),
             ("deploy_services", (deployer.ctx, IMAGE_URIS), {}),
             ("wait_for_migrations", (aws["ecs"], MIGRATION_TASK), {}),
-            ("wait_for_stable", (deployer.ctx,), {}),
+            # deploy_services' return value scopes the wait and carries the
+            # per-service expected task-definition ARNs (rollback detection).
+            ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES), {}),
         ]
 
     def test_a_clean_run_returns_the_image_uris_and_no_failures(self, make_deployer, timer, capsys):

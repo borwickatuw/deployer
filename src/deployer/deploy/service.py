@@ -475,7 +475,7 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
         return False
 
 
-def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: dict) -> bool:
+def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: dict) -> str | None:
     """Register one service's task definition and create or update the service.
 
     Args:
@@ -485,10 +485,10 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
         image_uris: Dictionary mapping image names to ECR URIs.
 
     Returns:
-        True if the service was created or its deployment started; False if it
-        had no built image or AWS rejected the update. Both are failures the
-        caller must report -- a service that was never deployed is not a
-        deployed service.
+        The task definition ARN the service was created with or updated to,
+        or None if it had no built image or AWS rejected the update. Both are
+        failures the caller must report -- a service that was never deployed
+        is not a deployed service.
     """
     # Get merged config (deploy.toml + environment sizing)
     service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
@@ -498,7 +498,7 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
     image_uri = image_uris.get(image_name)
     if not image_uri:
         log_error(f"No image URI for service {service_name} (image: {image_name})")
-        return False
+        return None
 
     task_def_arn = register_task_definition(ctx, service_name, image_uri)
 
@@ -509,7 +509,7 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
     if not exists:
         create_service(ctx, service_name, task_def_arn)
         log_status(service_name, "service created")
-        return True
+        return task_def_arn
 
     dep_cfg = _get_deployment_config(ctx.infra_config, svc_config)
 
@@ -532,15 +532,17 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
             f"maxPercent={dep_cfg.max_percent}%, "
             f"circuitBreaker={dep_cfg.circuit_breaker}"
         )
-        return True
+        return task_def_arn
 
-    return _update_service(ctx, service_name, task_def_arn, dep_cfg)
+    if not _update_service(ctx, service_name, task_def_arn, dep_cfg):
+        return None
+    return task_def_arn
 
 
 def deploy_services(
     ctx,
     image_uris: dict[str, str],
-) -> None:
+) -> dict[str, str]:
     """Register task definitions and deploy all services (create or update).
 
     Every service is attempted even after one fails -- stopping halfway leaves
@@ -552,6 +554,11 @@ def deploy_services(
         ctx: DeploymentContext with shared deployment parameters.
         image_uris: Dictionary mapping image names to ECR URIs.
 
+    Returns:
+        Mapping of service name to the task definition ARN it was deployed
+        with. ``wait_for_stable`` uses this to verify each service actually
+        ends up running the revision this deploy registered.
+
     Raises:
         RuntimeError: If any service could not be deployed, naming all of them.
     """
@@ -560,14 +567,19 @@ def deploy_services(
     services = ctx.config.get("services", {})
     log_debug(f"Services to deploy: {list(services.keys())}")
 
-    failed = [
-        name
-        for name, svc_config in services.items()
-        if not _deploy_one_service(ctx, name, svc_config, image_uris)
-    ]
+    updated: dict[str, str] = {}
+    failed: list[str] = []
+    for name, svc_config in services.items():
+        task_def_arn = _deploy_one_service(ctx, name, svc_config, image_uris)
+        if task_def_arn is None:
+            failed.append(name)
+        else:
+            updated[name] = task_def_arn
 
     if failed:
         raise RuntimeError(f"Failed to deploy service(s): {', '.join(failed)}")
+
+    return updated
 
 
 def _resolve_migration_image(ctx, migration_service: str, image_uris: dict[str, str]) -> str | None:
@@ -849,6 +861,7 @@ def _wait_for_service_and_targets(
     elbv2_client,
     service_name: str,
     stability: StabilityConfig = StabilityConfig(),  # noqa: B008
+    expected_arn: str | None = None,
 ) -> ServiceWaitResult:
     """Wait for a single service to stabilize and its targets to be healthy.
 
@@ -861,12 +874,14 @@ def _wait_for_service_and_targets(
         elbv2_client: boto3 ELBv2 client.
         service_name: Name of the service.
         stability: Polling configuration for stability checks.
+        expected_arn: Task definition ARN this deploy registered for the
+            service; stability additionally requires PRIMARY to run it.
 
     Returns:
         ServiceWaitResult with success status and any error details.
     """
     try:
-        _wait_for_service_stable(ctx, service_name, stability)
+        _wait_for_service_stable(ctx, service_name, stability, expected_arn)
 
         # Also wait for target group health if service is load balanced
         target_group_arn = _get_service_target_group(ctx.ecs_client, ctx.cluster_name, service_name)
@@ -894,9 +909,10 @@ def _wait_for_service_and_targets(
 
 def wait_for_stable(
     ctx: DeploymentContext,
+    updated_services: dict[str, str] | None = None,
     stability: StabilityConfig = StabilityConfig(),  # noqa: B008
 ) -> list[str]:
-    """Wait for all services to stabilize with active error detection.
+    """Wait for deployed services to stabilize with active error detection.
 
     Uses active polling instead of AWS waiter to detect failures early
     and provide actionable error messages. Also waits for load balancer
@@ -907,6 +923,13 @@ def wait_for_stable(
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
+        updated_services: Mapping of service name to the task definition ARN
+            this deploy registered for it, as returned by ``deploy_services``.
+            Only these services are waited on, and each must end up with
+            PRIMARY running its ARN — a circuit-breaker rollback swaps PRIMARY
+            back to the healthy *old* revision, which otherwise looks exactly
+            like success. None waits on every configured service with no
+            identity check (direct callers that did not deploy).
         stability: Polling configuration for stability checks.
 
     Returns:
@@ -922,8 +945,13 @@ def wait_for_stable(
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs wait services-stable")
         return []
 
-    services = list(ctx.config.get("services", {}).keys())
-    if not services:
+    if updated_services is None:
+        service_arns: dict[str, str | None] = dict.fromkeys(ctx.config.get("services", {}))
+    else:
+        service_arns = dict(updated_services)
+    if not service_arns:
+        # Nothing deployed, nothing to wait for. Also protects
+        # ThreadPoolExecutor(max_workers=0), which is a ValueError.
         return []
 
     # Create elbv2 client once and share across threads (boto3 clients are thread-safe)
@@ -931,7 +959,7 @@ def wait_for_stable(
     health_check_failures = []
 
     # Wait for all services in parallel
-    with ThreadPoolExecutor(max_workers=len(services)) as executor:
+    with ThreadPoolExecutor(max_workers=len(service_arns)) as executor:
         futures = {
             executor.submit(
                 _wait_for_service_and_targets,
@@ -939,8 +967,9 @@ def wait_for_stable(
                 elbv2_client,
                 service_name,
                 stability,
+                expected_arn,
             ): service_name
-            for service_name in services
+            for service_name, expected_arn in service_arns.items()
         }
 
         # Process results as they complete - first fatal error fails deployment
@@ -1039,24 +1068,94 @@ def _describe_service_or_raise(ctx: DeploymentContext, service_name: str) -> dic
     return response["services"][0]
 
 
+def _check_for_failed_rollout(service: dict, service_name: str) -> None:
+    """Raise if any deployment in the service reports rolloutState FAILED.
+
+    Only the circuit breaker sets FAILED, so this is a no-op on environments
+    without one. The failed deployment is often no longer PRIMARY by the time
+    a poll sees it -- circuit_breaker_rollback swaps PRIMARY back to the old
+    revision -- which is why the whole list is scanned.
+
+    Args:
+        service: ECS service description.
+        service_name: Name of the service (for error messages).
+
+    Raises:
+        DeploymentError: If a FAILED rollout is found.
+    """
+    for deployment in service.get("deployments", []):
+        if deployment.get("rolloutState") == "FAILED":
+            reason = deployment.get("rolloutStateReason", "no reason given")
+            raise DeploymentError(
+                f"{service_name}: deployment rollout FAILED: {reason}",
+                service_name=service_name,
+                error_type="rollout_failed",
+            )
+
+
+def _check_expected_task_definition(
+    deployment: dict, service_name: str, expected_arn: str | None
+) -> None:
+    """Raise if a settled PRIMARY deployment runs the wrong task definition.
+
+    This is the strong form of rollback detection: a 15s poll window can miss
+    the transient FAILED state entirely, but after a circuit-breaker rollback
+    the settled PRIMARY permanently runs an ARN this deploy never registered.
+
+    Args:
+        deployment: The PRIMARY deployment, already meeting the success
+            criterion (running == desired, nothing pending).
+        service_name: Name of the service (for error messages).
+        expected_arn: The ARN this deploy registered, or None to skip.
+
+    Raises:
+        DeploymentError: If PRIMARY runs a different task definition.
+    """
+    actual_arn = deployment.get("taskDefinition")
+    if expected_arn is not None and actual_arn != expected_arn:
+        raise DeploymentError(
+            f"{service_name}: service stabilized on task definition "
+            f"{actual_arn}, but this deploy registered {expected_arn} "
+            f"(circuit breaker rolled back?)",
+            service_name=service_name,
+            error_type="rollback_detected",
+        )
+
+
 def _wait_for_service_stable(
     ctx: DeploymentContext,
     service_name: str,
     stability: StabilityConfig = StabilityConfig(),  # noqa: B008
+    expected_arn: str | None = None,
 ) -> None:
     """Wait for a single service to stabilize.
+
+    Success requires the criterion (running == desired > 0, nothing pending,
+    PRIMARY running ``expected_arn``) to hold on **two consecutive polls** of
+    the same deployment with ``failedTasks`` not increasing between them. One
+    poll is not enough: a crash loop whose tasks live ~15s can show
+    running == desired on every poll with a different task each time -- that
+    is exactly how a crash-looping beat once passed the deploy, only for the
+    circuit breaker to fail it a minute after the deployer exited 0. Costs
+    one extra poll interval per service, all services in parallel.
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         service_name: Name of the service.
         stability: Polling configuration for stability checks.
+        expected_arn: Task definition ARN this deploy registered, or None to
+            accept whatever PRIMARY runs.
 
     Raises:
-        DeploymentError: If a fatal error is detected.
+        DeploymentError: If a fatal error, FAILED rollout, or rollback to a
+            different task definition is detected.
         RuntimeError: If the service doesn't stabilize within max_attempts.
     """
     last_status = ""
     consecutive_failures = 0
+    # (deployment id, failedTasks) from the previous poll iff it met the
+    # success criterion; None otherwise. Success needs two in a row.
+    settling: tuple[str | None, int] | None = None
 
     for _ in range(1, stability.max_attempts + 1):
         service = _describe_service_or_raise(ctx, service_name)
@@ -1065,11 +1164,15 @@ def _wait_for_service_stable(
         # Check for fatal errors in events
         _check_for_fatal_errors(events, service_name)
 
+        # A FAILED rollout anywhere in the deployment list is fatal
+        _check_for_failed_rollout(service, service_name)
+
         # Get deployment status
         deployment, running, desired, failed = _get_deployment_status(service)
 
         if not deployment:
             log_warning(f"{service_name}: No primary deployment found")
+            settling = None
             time.sleep(stability.poll_interval)
             continue
 
@@ -1085,26 +1188,30 @@ def _wait_for_service_stable(
 
         # Check for success: running matches desired and no pending tasks
         pending = deployment.get("pendingCount", 0)
-        rollout_state = deployment.get("rolloutState", "")
 
-        if (
-            running == desired
-            and pending == 0
-            and running > 0
-            and (rollout_state == "COMPLETED" or running == desired)
-        ):
-            log_success(f"{service_name} (stable)")
-            return
-
-        # Check for persistent failures
-        if failed >= stability.failure_threshold:
-            _raise_task_failure(events, service_name, failed)
-
-        # Track consecutive polls with no progress
-        if running == 0 and failed > 0:
-            consecutive_failures = _track_no_progress(events, service_name, consecutive_failures)
+        if running == desired and pending == 0 and running > 0:
+            _check_expected_task_definition(deployment, service_name, expected_arn)
+            current = (deployment.get("id"), failed)
+            if settling is not None and settling[0] == current[0] and failed <= settling[1]:
+                log_success(f"{service_name} (stable)")
+                return
+            # First qualifying poll (or the id changed, or failures grew):
+            # (re)start the settle window.
+            settling = current
         else:
-            consecutive_failures = 0
+            settling = None
+
+            # Check for persistent failures
+            if failed >= stability.failure_threshold:
+                _raise_task_failure(events, service_name, failed)
+
+            # Track consecutive polls with no progress
+            if running == 0 and failed > 0:
+                consecutive_failures = _track_no_progress(
+                    events, service_name, consecutive_failures
+                )
+            else:
+                consecutive_failures = 0
 
         time.sleep(stability.poll_interval)
 

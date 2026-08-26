@@ -26,12 +26,15 @@ Nine pins exist specifically to make 53e-5c/5d verifiable:
    ``TestFailureThresholdFatalPassthrough`` pins that a fatal pattern found on
    the failure-threshold path escapes with its *pattern* error_type, not the
    generic ``task_failures``, so deleting the wrapper stays visible.
-3. **The tautological success condition** at service.py:874-879:
-   ``(rollout_state == "COMPLETED" or running == desired)`` — but
-   ``running == desired`` is already required two lines above, so the whole
-   parenthesis is always true and ``rolloutState`` is not actually consulted.
-   ``TestStableSuccessIgnoresRolloutState`` pins success for
-   ``IN_PROGRESS``/``FAILED``/missing alike. Pin, do not fix.
+3. **OVERTURNED** (stability hardening, 2026-08-26): the tautological success
+   condition ``(rollout_state == "COMPLETED" or running == desired)`` was
+   pinned here as "pin, do not fix" for 53e-5d's sake. That refactor is done;
+   the clause is gone, and the hardening deliberately changes the behaviour
+   the old ``TestStableSuccessIgnoresRolloutState`` recorded: rolloutState
+   FAILED now raises (``TestStableRolloutFailed``), success requires two
+   consecutive qualifying polls of the same deployment
+   (``TestStableSettleWindow``), and PRIMARY must run the task definition the
+   deploy registered (``TestStableRollbackDetection``).
 4. **The timeout ``RuntimeError`` message format** (service.py:923) — the
    ``max_attempts * poll_interval`` arithmetic and the trailing
    ``Last status: ...`` are asserted literally in ``TestStableTimeout``.
@@ -652,12 +655,16 @@ FAST = StabilityConfig(poll_interval=1, max_attempts=3, failure_threshold=3)
 
 
 class TestStableSuccess:
-    """Pins the success route out of the stability loop."""
+    """Pins the success route out of the stability loop.
+
+    Success is two consecutive qualifying polls (the settle window), so even
+    an immediately-stable service costs one poll interval.
+    """
 
     def test_running_equals_desired_returns_none(self, sleeps, capsys):
         client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
         assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
-        assert sleeps == []
+        assert sleeps == [1]  # the settle window's confirming poll
         assert "web (stable) [done]" in _plain(capsys.readouterr().out)
 
     def test_status_line_is_printed(self, sleeps, capsys):
@@ -680,7 +687,7 @@ class TestStableSuccess:
                 _stable_response(2, 2, rollout_state="COMPLETED"),
             ]
         )
-        _wait_for_service_stable(_ctx(client), "web", FAST)
+        _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 5, 3))
         printed = [line for line in _lines(capsys.readouterr().out) if line.startswith("  web: ")]
         assert printed == ["  web: running=0/2", "  web: running=2/2"]
 
@@ -704,28 +711,203 @@ class TestStableSuccess:
         assert sleeps == [7] * 4
 
 
-class TestStableSuccessIgnoresRolloutState:
-    """MUST-PIN 3: the success condition's last clause is tautological.
+class TestStableRolloutState:
+    """rolloutState after the hardening: FAILED raises, nothing else gates.
 
-    service.py:874-879 reads::
-
-        running == desired and pending == 0 and running > 0
-        and (rollout_state == "COMPLETED" or running == desired)
-
-    ``running == desired`` is already required, so the parenthesised clause is
-    always true and ``rolloutState`` never actually gates success. These pins
-    record that, so 53e-5d deleting the clause is provably a no-op and
-    "fixing" it to require COMPLETED is provably not.
+    The pre-hardening pin (``TestStableSuccessIgnoresRolloutState``) recorded
+    a tautological clause that consulted rolloutState for nothing; it is
+    deliberately overturned. Requiring COMPLETED was considered and rejected:
+    it waits out the old task's drain (40-60s) for no signal the settle
+    window doesn't already give.
     """
 
-    @pytest.mark.parametrize(
-        "rollout_state", ["COMPLETED", "IN_PROGRESS", "FAILED", "", "GARBAGE", None]
-    )
-    def test_any_rollout_state_succeeds(self, rollout_state, sleeps):
+    @pytest.mark.parametrize("rollout_state", ["COMPLETED", "IN_PROGRESS", "", "GARBAGE", None])
+    def test_non_failed_rollout_states_do_not_gate_success(self, rollout_state, sleeps):
         client = ScriptedClient(
             describe_services=_stable_response(1, 1, rollout_state=rollout_state)
         )
         assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+
+
+class TestStableRolloutFailed:
+    """A FAILED rollout anywhere in the deployment list is an immediate error."""
+
+    def test_failed_primary_raises_with_the_reason(self, sleeps):
+        client = ScriptedClient(
+            describe_services=_describe_services(
+                deployments=[
+                    _deployment(running=1, desired=1, rollout_state="FAILED")
+                    | {"rolloutStateReason": "ECS deployment circuit breaker: tasks failed."}
+                ]
+            )
+        )
+        with pytest.raises(DeploymentError) as exc_info:
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+        assert exc_info.value.error_type == "rollout_failed"
+        assert "ECS deployment circuit breaker: tasks failed." in str(exc_info.value)
+        assert sleeps == []
+
+    def test_failed_non_primary_deployment_also_raises(self, sleeps):
+        """After circuit_breaker_rollback the FAILED deployment is no longer
+        PRIMARY — the healthy old revision is. Scanning only PRIMARY would
+        read the rollback as success; the whole list is scanned."""
+        client = ScriptedClient(
+            describe_services=_describe_services(
+                deployments=[
+                    _deployment(running=1, desired=1, status="PRIMARY"),
+                    _deployment(running=0, desired=1, status="ACTIVE", rollout_state="FAILED"),
+                ]
+            )
+        )
+        with pytest.raises(DeploymentError) as exc_info:
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+        assert exc_info.value.error_type == "rollout_failed"
+
+    def test_missing_reason_uses_a_placeholder(self, sleeps):
+        client = ScriptedClient(
+            describe_services=_describe_services(
+                deployments=[_deployment(running=0, desired=1, rollout_state="FAILED")]
+            )
+        )
+        with pytest.raises(DeploymentError, match="no reason given"):
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+
+
+TASK_DEF_NEW = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:8"
+TASK_DEF_OLD = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:7"
+
+
+class TestStableRollbackDetection:
+    """PRIMARY must run the task definition this deploy registered.
+
+    The strong form of rollback detection: a 15s poll window can miss the
+    transient FAILED state, but a rolled-back service permanently settles on
+    an ARN the deploy never registered.
+    """
+
+    def _stable_with_arn(self, arn: str) -> dict:
+        return _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"taskDefinition": arn}]
+        )
+
+    def test_matching_arn_succeeds(self, sleeps):
+        client = ScriptedClient(describe_services=self._stable_with_arn(TASK_DEF_NEW))
+        assert (
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW) is None
+        )
+
+    def test_settled_wrong_arn_raises_naming_both(self, sleeps):
+        client = ScriptedClient(describe_services=self._stable_with_arn(TASK_DEF_OLD))
+        with pytest.raises(DeploymentError) as exc_info:
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW)
+        assert exc_info.value.error_type == "rollback_detected"
+        assert TASK_DEF_OLD in str(exc_info.value)
+        assert TASK_DEF_NEW in str(exc_info.value)
+        assert "circuit breaker rolled back?" in str(exc_info.value)
+
+    def test_wrong_arn_raises_on_the_first_qualifying_poll(self, sleeps):
+        """The identity check fires before the settle window: a rollback is
+        not given a confirming poll's grace."""
+        client = ScriptedClient(describe_services=self._stable_with_arn(TASK_DEF_OLD))
+        with pytest.raises(DeploymentError):
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW)
+        assert sleeps == []
+
+    def test_wrong_arn_mid_rollout_does_not_raise(self, sleeps):
+        """The identity check applies only to a settled deployment; while
+        tasks are still pending the PRIMARY ARN is not yet a verdict."""
+        client = ScriptedClient(
+            describe_services=[
+                _describe_services(
+                    deployments=[
+                        _deployment(running=0, desired=1, pending=1)
+                        | {"taskDefinition": TASK_DEF_OLD}
+                    ]
+                ),
+                self._stable_with_arn(TASK_DEF_NEW),
+            ]
+        )
+        assert (
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW) is None
+        )
+
+    def test_no_expected_arn_accepts_any_task_definition(self, sleeps):
+        client = ScriptedClient(describe_services=self._stable_with_arn(TASK_DEF_OLD))
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+
+
+class TestStableSettleWindow:
+    """Success must hold on two consecutive polls of the same deployment.
+
+    A crash loop with ~15s task lifetime shows running == desired on many
+    polls with a different task each time — one qualifying poll proved
+    nothing when a crash-looping beat passed the deploy and the circuit
+    breaker failed it a minute after the deployer exited 0.
+    """
+
+    def test_two_qualifying_polls_of_the_same_deployment_succeed(self, sleeps):
+        stable = _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/1"}]
+        )
+        client = ScriptedClient(describe_services=stable)
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+        assert len(client.calls_to("describe_services")) == 2
+        assert sleeps == [1]
+
+    def test_failed_tasks_increase_restarts_the_window(self, sleeps):
+        """running == desired with failedTasks climbing is the crash-loop
+        signature: each qualifying poll with more failures restarts the
+        window instead of confirming it."""
+        polls = [
+            _describe_services(
+                deployments=[_deployment(running=1, desired=1, failed=n) | {"id": "ecs-svc/1"}]
+            )
+            for n in (0, 1, 2)
+        ]
+        client = ScriptedClient(describe_services=polls)
+        with pytest.raises(RuntimeError, match="did not stabilize"):
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+
+    def test_steady_failed_count_still_succeeds(self, sleeps):
+        """A deployment that failed early and then recovered keeps its
+        cumulative failedTasks; a non-increasing count confirms."""
+        stable = _describe_services(
+            deployments=[_deployment(running=1, desired=1, failed=2) | {"id": "ecs-svc/1"}]
+        )
+        client = ScriptedClient(describe_services=stable)
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+
+    def test_deployment_id_swap_restarts_the_window(self, sleeps):
+        """A new deployment id between qualifying polls (rollback creating a
+        fresh deployment) must not inherit the first poll's confirmation."""
+        polls = [
+            _describe_services(
+                deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/1"}]
+            ),
+            _describe_services(
+                deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/2"}]
+            ),
+            _describe_services(
+                deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/2"}]
+            ),
+        ]
+        client = ScriptedClient(describe_services=polls)
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+        # Three polls: the id swap discarded the first confirmation.
+        assert len(client.calls_to("describe_services")) == 3
+        assert sleeps == [1, 1]
+
+    def test_a_non_qualifying_poll_resets_the_window(self, sleeps):
+        """qualify → dip → qualify is not two consecutive successes."""
+        qualifying = _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/1"}]
+        )
+        dip = _describe_services(
+            deployments=[_deployment(running=0, desired=1, pending=1) | {"id": "ecs-svc/1"}]
+        )
+        client = ScriptedClient(describe_services=[qualifying, dip, qualifying, qualifying])
+        assert _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 6, 99)) is None
+        assert len(client.calls_to("describe_services")) == 4
 
 
 class TestStableLookupFailures:
@@ -747,7 +929,10 @@ class TestStableLookupFailures:
     def test_describe_is_called_with_cluster_and_service(self, sleeps):
         client = ScriptedClient(describe_services=_stable_response(1, 1))
         _wait_for_service_stable(_ctx(client), "web", FAST)
-        assert client.calls_to("describe_services") == [{"cluster": CLUSTER, "services": ["web"]}]
+        assert client.calls_to("describe_services") == [
+            {"cluster": CLUSTER, "services": ["web"]},
+            {"cluster": CLUSTER, "services": ["web"]},  # settle window's confirming poll
+        ]
 
 
 class TestStableFatalEvents:
@@ -1046,6 +1231,7 @@ class TestWaitForServiceAndTargets:
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _describe_services(),
             ]
         )
@@ -1058,6 +1244,7 @@ class TestWaitForServiceAndTargets:
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _describe_services(load_balancers=[{"targetGroupArn": TG_ARN}]),
             ]
         )
@@ -1066,6 +1253,18 @@ class TestWaitForServiceAndTargets:
         assert result.success is True
         assert result.health_check_failed is False
         assert result.error is None
+
+    def test_expected_arn_is_threaded_through_to_the_stability_loop(self, sleeps):
+        stable = _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"taskDefinition": TASK_DEF_OLD}]
+        )
+        client = ScriptedClient(describe_services=stable)
+        result = _wait_for_service_and_targets(
+            _ctx(client), ScriptedClient(), "web", FAST, expected_arn=TASK_DEF_NEW
+        )
+        assert result.success is False
+        assert isinstance(result.error, DeploymentError)
+        assert result.error.error_type == "rollback_detected"
 
     def test_health_check_timeout_is_success_true_with_failure_flag(self, sleeps):
         """MUST-PIN 6: a health-check timeout is reported as a *successful* wait.
@@ -1076,6 +1275,7 @@ class TestWaitForServiceAndTargets:
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _describe_services(load_balancers=[{"targetGroupArn": TG_ARN}]),
             ]
         )
@@ -1115,6 +1315,7 @@ class TestWaitForServiceAndTargets:
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _client_error(),
             ]
         )
@@ -1163,7 +1364,8 @@ class TestWaitForStable:
         client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
         ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
         assert wait_for_stable(ctx) == []
-        assert len(client.calls_to("describe_services")) == 4
+        # Per service: two stability polls (settle window) + target lookup.
+        assert len(client.calls_to("describe_services")) == 6
 
     def test_health_check_failure_is_returned_not_raised(self, sleeps):
         """MUST-PIN 6 end-to-end, against a real (empty) moto target group."""
@@ -1177,6 +1379,7 @@ class TestWaitForStable:
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _describe_services(load_balancers=[{"targetGroupArn": target_group_arn}]),
             ]
         )
@@ -1208,15 +1411,45 @@ class TestWaitForStable:
         assert exc_info.value.service_name in {"web", "worker"}
 
     def test_service_names_come_from_config_services_keys(self, sleeps):
+        """With no updated-services map, every configured service is waited on."""
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
+                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
                 _describe_services(),
             ]
         )
         ctx = _ctx(client, config={"services": {"beat": {"image": "web"}}})
         assert wait_for_stable(ctx) == []
         assert client.calls_to("describe_services")[0]["services"] == ["beat"]
+
+    def test_only_updated_services_are_waited_on(self, sleeps):
+        """The map from deploy_services scopes the wait: a skipped service is
+        never described."""
+        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        ctx = _ctx(client, config={"services": {"web": {}, "cantaloupe": {}}})
+        assert wait_for_stable(ctx, {"web": None}) == []
+        assert all(call["services"] == ["web"] for call in client.calls_to("describe_services"))
+
+    def test_empty_updated_services_returns_immediately(self, sleeps):
+        """Nothing deployed, nothing waited on — also protects
+        ThreadPoolExecutor(max_workers=0)."""
+        client = ScriptedClient()
+        ctx = _ctx(client, config={"services": {"web": {}}})
+        assert wait_for_stable(ctx, {}) == []
+        assert client.calls == []
+
+    def test_updated_services_map_carries_the_expected_arn(self, sleeps):
+        """A service that settles on a different revision than the map says
+        fails the wait — the end-to-end rollback detection."""
+        stable_on_old = _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"taskDefinition": TASK_DEF_OLD}]
+        )
+        client = ScriptedClient(describe_services=stable_on_old)
+        ctx = _ctx(client, config={"services": {"web": {}}})
+        with pytest.raises(DeploymentError) as exc_info:
+            wait_for_stable(ctx, {"web": TASK_DEF_NEW})
+        assert exc_info.value.error_type == "rollback_detected"
 
 
 # ===========================================================================

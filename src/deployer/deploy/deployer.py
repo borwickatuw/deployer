@@ -358,7 +358,7 @@ class Deployer:
 
         # Step 5: Deploy services (triggers ECS to pull images)
         with timer.step("deploy_services"):
-            deploy_services(self.ctx, image_uris)
+            updated_services = deploy_services(self.ctx, image_uris)
         print()
 
         # Step 6: Wait for migrations to complete
@@ -375,9 +375,11 @@ class Deployer:
             raise
         print()
 
-        # Step 7: Wait for services to stabilize (parallel)
+        # Step 7: Wait for services to stabilize (parallel). Each service must
+        # end up with PRIMARY running the revision deploy_services registered
+        # for it — a circuit-breaker rollback otherwise reads as success.
         with timer.step("wait_for_stable"):
-            health_failures = wait_for_stable(self.ctx)
+            health_failures = wait_for_stable(self.ctx, updated_services)
         print()
 
         timer.finish()
