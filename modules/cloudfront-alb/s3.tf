@@ -14,6 +14,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "error_pages" {
   bucket = aws_s3_bucket.error_pages.id
 
   rule {
+    blocked_encryption_types = ["SSE-C"]
+
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }

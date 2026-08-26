@@ -62,6 +62,7 @@ resource "aws_s3_bucket_versioning" "resolved_configs" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "resolved_configs" {
   bucket = aws_s3_bucket.resolved_configs.id
   rule {
+    blocked_encryption_types = ["SSE-C"]
     apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
   }
 }
