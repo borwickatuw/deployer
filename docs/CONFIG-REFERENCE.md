@@ -243,16 +243,27 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 
 **Note:** Sizing fields (`cpu`, `memory`, `replicas`, `load_balanced`) are configured in OpenTofu tfvars, not here.
 
-| Field               | Type    | Required | Description                                                                                         |
-| ------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `command`           | array   | No       | Container command override.                                                                         |
-| `health_check_path` | string  | No       | ALB health check endpoint.                                                                          |
-| `image`             | string  | Yes      | Image name (references `[images.*]`).                                                               |
-| `interruptible`     | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. |
-| `min_cpu`           | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                  |
-| `min_memory`        | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                |
-| `path_pattern`      | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                    |
-| `port`              | integer | No       | Container port (for load-balanced services).                                                        |
+| Field                     | Type    | Required | Description                                                                                         |
+| ------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `command`                 | array   | No       | Container command override.                                                                         |
+| `health_check_path`       | string  | No       | ALB health check endpoint.                                                                          |
+| `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                               |
+| `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. |
+| `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.               |
+| `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                  |
+| `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                |
+| `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.               |
+| `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                    |
+| `port`                    | integer | No       | Container port (for load-balanced services).                                                        |
+
+`minimum_healthy_percent` / `maximum_percent` override the environment's
+`[deployment]` rollout strategy **per key** for one service: a service setting
+only one of them inherits the other from config.toml. Use this for services
+whose replica invariant forbids the environment-wide strategy — e.g. a
+single-replica scheduler that must roll stop-first (`0` / `100`) while
+everything else rolls start-first (`100` / `200`). `100`/`100` is rejected at
+parse time (ECS would have no headroom to replace tasks). The circuit-breaker
+keys have no per-service form.
 
 **Examples:**
 
@@ -763,6 +774,12 @@ ECS deployment configuration. Optional - controls how ECS deploys new task revis
 | `circuit_breaker_rollback` | boolean | true    | Automatically rollback on deployment failure (requires circuit breaker).                                                   |
 | `maximum_percent`          | number  | 200     | Maximum percentage of tasks during deployment. Use 100 for staging (no extra capacity), 200 for production (rolling).      |
 | `minimum_healthy_percent`  | number  | 100     | Minimum percentage of healthy tasks to maintain during deployment. Use 0 for staging (faster), 100 for production (safer). |
+
+`minimum_healthy_percent` and `maximum_percent` can be overridden per service
+in the application's deploy.toml (`[services.X] minimum_healthy_percent = 0`),
+key by key — see the `[services.*]` table in the deploy.toml section. Typical
+use: keep a start-first environment (`100`/`200`) while a single-replica
+scheduler service rolls stop-first (`0`/`100`) so two replicas never overlap.
 
 **Staging example (faster deployments):**
 

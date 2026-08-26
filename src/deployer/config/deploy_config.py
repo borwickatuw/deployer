@@ -145,6 +145,11 @@ class ServiceConfig:
     min_cpu: int | None = None
     min_memory: int | None = None
     interruptible: bool = False
+    # Per-service override of the environment's [deployment] rollout strategy.
+    # Same key names as config.toml's [deployment] section; None inherits the
+    # environment value per key.
+    minimum_healthy_percent: int | None = None
+    maximum_percent: int | None = None
     environment: dict[str, Any] = field(default_factory=dict, repr=False)
 
     _KNOWN_KEYS = {
@@ -157,7 +162,40 @@ class ServiceConfig:
         "min_cpu",
         "min_memory",
         "interruptible",
+        "minimum_healthy_percent",
+        "maximum_percent",
     }
+
+    def validate_deployment_override(self) -> None:
+        """Fail fast on a rollout override ECS would only reject mid-deploy.
+
+        ECS refuses ``minimumHealthyPercent == maximumPercent == 100`` (no
+        room to make progress), but only when ``update_service`` is called --
+        by which point ``_update_service`` swallows the ClientError into a
+        vague per-service failure. Rejecting at parse time names the service
+        and the rule instead.
+
+        Raises:
+            ValueError: If a set value is out of range, or the pair is 100/100.
+        """
+        if self.minimum_healthy_percent is not None and not (
+            0 <= self.minimum_healthy_percent <= 100
+        ):
+            raise ValueError(
+                f"[services.{self.name}] minimum_healthy_percent must be "
+                f"between 0 and 100, got {self.minimum_healthy_percent}"
+            )
+        if self.maximum_percent is not None and self.maximum_percent < 100:
+            raise ValueError(
+                f"[services.{self.name}] maximum_percent must be at least "
+                f"100, got {self.maximum_percent}"
+            )
+        if self.minimum_healthy_percent == 100 and self.maximum_percent == 100:
+            raise ValueError(
+                f"[services.{self.name}] minimum_healthy_percent and "
+                f"maximum_percent cannot both be 100: ECS would have no "
+                f"capacity headroom to replace tasks"
+            )
 
 
 @dataclass
@@ -353,6 +391,12 @@ class DeployConfig:
                 svc_dict["min_memory"] = svc.min_memory
             if svc.interruptible:
                 svc_dict["interruptible"] = svc.interruptible
+            # service.py reads these off the raw dict, not ServiceConfig; a
+            # field dropped here silently never reaches ECS.
+            if svc.minimum_healthy_percent is not None:
+                svc_dict["minimum_healthy_percent"] = svc.minimum_healthy_percent
+            if svc.maximum_percent is not None:
+                svc_dict["maximum_percent"] = svc.maximum_percent
             if svc.environment:
                 svc_dict["environment"] = svc.environment
             result["services"][name] = svc_dict
@@ -428,6 +472,7 @@ class DeployConfig:
                 services[service_name] = dacite.from_dict(
                     ServiceConfig, {**service_config, "name": service_name}, config=_DACITE_CONFIG
                 )
+                services[service_name].validate_deployment_override()
 
         # Parse [migrations] section
         migrations_data = data.get("migrations", {})

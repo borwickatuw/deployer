@@ -92,6 +92,120 @@ interruptible = true
 
         assert raw["services"]["worker"]["interruptible"] is True
 
+    def test_deployment_override_fields_parse(self, tmp_path):
+        """Per-service rollout override keys parse without warnings."""
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.beat]
+image = "web"
+minimum_healthy_percent = 0
+maximum_percent = 100
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        assert config.services["beat"].minimum_healthy_percent == 0
+        assert config.services["beat"].maximum_percent == 100
+        assert config.get_warnings() == []
+
+    def test_deployment_override_fields_default_to_none(self, tmp_path):
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.web]
+image = "web"
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        assert config.services["web"].minimum_healthy_percent is None
+        assert config.services["web"].maximum_percent is None
+
+    def test_deployment_override_in_raw_dict(self, tmp_path):
+        """The override keys round-trip through get_raw_dict.
+
+        service.py reads raw dicts, not ServiceConfig; a field missing here
+        silently never reaches ECS — the exact dual-beat hazard the override
+        exists to close.
+        """
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.beat]
+image = "web"
+minimum_healthy_percent = 0
+maximum_percent = 100
+
+[services.web]
+image = "web"
+""")
+        raw = parse_deploy_config(tmp_path / "deploy.toml").get_raw_dict()
+
+        assert raw["services"]["beat"]["minimum_healthy_percent"] == 0
+        assert raw["services"]["beat"]["maximum_percent"] == 100
+        # Unset overrides stay absent, so service.py inherits the environment.
+        assert "minimum_healthy_percent" not in raw["services"]["web"]
+        assert "maximum_percent" not in raw["services"]["web"]
+
+    def test_zero_minimum_healthy_percent_survives_the_raw_dict(self, tmp_path):
+        """0 is falsy; the raw-dict emission must test `is not None`, not truth."""
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.beat]
+minimum_healthy_percent = 0
+""")
+        raw = parse_deploy_config(tmp_path / "deploy.toml").get_raw_dict()
+
+        assert raw["services"]["beat"]["minimum_healthy_percent"] == 0
+
+    @pytest.mark.parametrize(
+        ("toml_line", "match"),
+        [
+            ("minimum_healthy_percent = -1", "between 0 and 100"),
+            ("minimum_healthy_percent = 101", "between 0 and 100"),
+            ("maximum_percent = 99", "at least 100"),
+            (
+                "minimum_healthy_percent = 100\nmaximum_percent = 100",
+                "cannot both be 100",
+            ),
+        ],
+    )
+    def test_invalid_deployment_override_fails_at_parse_time(self, tmp_path, toml_line, match):
+        """Fail fast: ECS rejects these values only mid-deploy, and
+        _update_service would swallow that ClientError into a vague
+        per-service failure."""
+        (tmp_path / "deploy.toml").write_text(f"""
+[application]
+name = "test"
+
+[services.beat]
+{toml_line}
+""")
+        with pytest.raises(ValueError, match=match):
+            parse_deploy_config(tmp_path / "deploy.toml")
+
+    def test_100_100_is_only_rejected_when_both_are_set_by_the_service(self, tmp_path):
+        """A service pinning just one side to 100 is legal — the other side
+        comes from the environment, which parse time cannot see."""
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.web]
+minimum_healthy_percent = 100
+
+[services.worker]
+maximum_percent = 100
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        assert config.services["web"].minimum_healthy_percent == 100
+        assert config.services["worker"].maximum_percent == 100
+
     def test_additional_contexts_in_raw_dict(self, tmp_path):
         """Test additional_contexts roundtrips through get_raw_dict.
 

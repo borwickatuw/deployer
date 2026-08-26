@@ -56,14 +56,36 @@ _DEPLOYMENT_CONFIG_KEYS = {
 }
 
 
-def _get_deployment_config(infra_config: InfraConfig) -> DeploymentConfig:
-    """Extract deployment configuration from infra_config."""
+def _get_deployment_config(
+    infra_config: InfraConfig, service_toml: dict | None = None
+) -> DeploymentConfig:
+    """Extract deployment configuration from infra_config.
+
+    A service's deploy.toml stanza may override ``minimum_healthy_percent``
+    and ``maximum_percent`` per key: a service setting only one of them
+    inherits the other from the environment's [deployment] section. The
+    circuit-breaker keys have no per-service form.
+
+    Args:
+        infra_config: Environment infrastructure config carrying [deployment].
+        service_toml: Raw deploy.toml stanza for the service, or None.
+
+    Returns:
+        The merged DeploymentConfig.
+    """
     deployment_cfg = infra_config.deployment_config
     kwargs = {
         field: deployment_cfg[key]
         for key, field in _DEPLOYMENT_CONFIG_KEYS.items()
         if key in deployment_cfg
     }
+    if service_toml:
+        for key, field in (
+            ("minimum_healthy_percent", "min_healthy"),
+            ("maximum_percent", "max_percent"),
+        ):
+            if service_toml.get(key) is not None:
+                kwargs[field] = service_toml[key]
     return DeploymentConfig(**kwargs)
 
 
@@ -365,7 +387,7 @@ def create_service(
 
     subnet_ids, security_group_id = _require_network_config(ctx)
 
-    dep_cfg = _get_deployment_config(ctx.infra_config)
+    dep_cfg = _get_deployment_config(ctx.infra_config, service_toml)
 
     create_params = {
         "cluster": ctx.cluster_name,
@@ -489,7 +511,7 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
         log_status(service_name, "service created")
         return True
 
-    dep_cfg = _get_deployment_config(ctx.infra_config)
+    dep_cfg = _get_deployment_config(ctx.infra_config, svc_config)
 
     # Disable AZ rebalancing if using max_percent <= 100 (AWS doesn't support it)
     if dep_cfg.max_percent <= 100 and not ctx.dry_run:

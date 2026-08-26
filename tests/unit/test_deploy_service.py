@@ -388,6 +388,62 @@ class TestGetDeploymentConfig:
         cfg = _get_deployment_config(InfraConfig(subnet_ids=["subnet-x"]))
         assert cfg == DeploymentConfig()
 
+    # -- per-service overrides ([services.X] minimum_healthy_percent /
+    # -- maximum_percent, overlaid per key on the environment values) ----
+
+    def test_none_service_toml_keeps_the_environment_values(self):
+        infra = InfraConfig(
+            deployment_config={"minimum_healthy_percent": 100, "maximum_percent": 200}
+        )
+        assert _get_deployment_config(infra, None) == _get_deployment_config(infra)
+
+    def test_empty_service_toml_keeps_the_environment_values(self):
+        infra = InfraConfig(
+            deployment_config={"minimum_healthy_percent": 100, "maximum_percent": 200}
+        )
+        assert _get_deployment_config(infra, {}) == DeploymentConfig(
+            min_healthy=100, max_percent=200
+        )
+
+    def test_service_overrides_both_keys(self):
+        infra = InfraConfig(
+            deployment_config={
+                "minimum_healthy_percent": 100,
+                "maximum_percent": 200,
+                "circuit_breaker_enabled": True,
+            }
+        )
+        cfg = _get_deployment_config(infra, {"minimum_healthy_percent": 0, "maximum_percent": 100})
+        assert cfg == DeploymentConfig(min_healthy=0, max_percent=100, circuit_breaker=True)
+
+    def test_service_setting_one_key_inherits_the_other(self):
+        infra = InfraConfig(
+            deployment_config={"minimum_healthy_percent": 100, "maximum_percent": 200}
+        )
+        cfg = _get_deployment_config(infra, {"minimum_healthy_percent": 0})
+        assert cfg == DeploymentConfig(min_healthy=0, max_percent=200)
+
+        cfg = _get_deployment_config(infra, {"maximum_percent": 150})
+        assert cfg == DeploymentConfig(min_healthy=100, max_percent=150)
+
+    def test_service_override_applies_over_environment_defaults_too(self):
+        # No [deployment] section at all: the override still lands on top of
+        # the dataclass defaults.
+        cfg = _get_deployment_config(
+            InfraConfig(), {"minimum_healthy_percent": 0, "maximum_percent": 100}
+        )
+        assert cfg == DeploymentConfig(min_healthy=0, max_percent=100)
+
+    def test_unrelated_service_keys_are_ignored(self):
+        cfg = _get_deployment_config(InfraConfig(), {"image": "web", "port": 8000})
+        assert cfg == DeploymentConfig()
+
+    def test_circuit_breaker_keys_have_no_per_service_form(self):
+        cfg = _get_deployment_config(
+            InfraConfig(), {"circuit_breaker_enabled": True, "circuit_breaker_rollback": False}
+        )
+        assert cfg == DeploymentConfig(circuit_breaker=False, circuit_rollback=True)
+
 
 class TestDeploymentError:
     """``DeploymentError.__init__``.
@@ -758,6 +814,33 @@ class TestCreateService:
             "minimumHealthyPercent": 50,
             "maximumPercent": 150,
         }
+
+    def test_per_service_override_reaches_the_create_call(self, aws):
+        arn = _make_service(aws, "seed")
+        ctx = _ctx(
+            aws,
+            services={"web": {"minimum_healthy_percent": 0}},
+            infra={
+                "deployment_config": {"minimum_healthy_percent": 100, "maximum_percent": 200},
+            },
+        )
+        create_service(ctx, "web", arn)
+        assert aws.client.params("create_service")["deploymentConfiguration"] == {
+            "minimumHealthyPercent": 0,
+            "maximumPercent": 200,
+        }
+
+    def test_per_service_max_percent_100_triggers_the_az_check_on_create(self, aws):
+        # The AZ-rebalance gate keys off the merged dep_cfg, so a per-service
+        # maximum_percent = 100 fires it even when the environment says 200.
+        arn = _make_service(aws, "seed")
+        ctx = _ctx(
+            aws,
+            services={"web": {"maximum_percent": 100}},
+            infra={"deployment_config": {"maximum_percent": 200}},
+        )
+        create_service(ctx, "web", arn)
+        assert aws.client.operations == ["create_service", "describe_services"]
 
     # -- must-pin #1: interruptible arms ---------------------------------
 
@@ -1214,6 +1297,44 @@ class TestDeployServices:
         deploy_services(_ctx(aws), {"web": IMAGE_URI})
         assert aws.client.operations.count("describe_services") == 1
 
+    # -- per-service deployment overrides on the update arm ----------------
+
+    def test_update_applies_per_service_deployment_override(self, aws):
+        _make_service(aws, "beat")
+        _make_service(aws, "web")
+        ctx = _ctx(
+            aws,
+            services={
+                "beat": {"minimum_healthy_percent": 0, "maximum_percent": 100},
+                "web": {},
+            },
+            infra={
+                "deployment_config": {"minimum_healthy_percent": 100, "maximum_percent": 200},
+            },
+        )
+        deploy_services(ctx, {"beat": IMAGE_URI, "web": IMAGE_URI})
+        configs = {
+            p["service"]: p["deploymentConfiguration"]
+            for p in aws.client.all_params("update_service")
+        }
+        assert configs["beat"] == {"minimumHealthyPercent": 0, "maximumPercent": 100}
+        assert configs["web"] == {"minimumHealthyPercent": 100, "maximumPercent": 200}
+
+    def test_update_per_service_max_percent_100_runs_the_az_check(self, aws):
+        _make_service(aws)
+        ctx = _ctx(
+            aws,
+            services={"web": {"maximum_percent": 100}},
+            infra={"deployment_config": {"maximum_percent": 200}},
+        )
+        deploy_services(ctx, {"web": IMAGE_URI})
+        assert aws.client.operations == [
+            "register_task_definition",
+            "describe_services",  # service_exists
+            "describe_services",  # _ensure_az_rebalancing_disabled
+            "update_service",
+        ]
+
     # -- must-pin #7: the per-service ClientError -------------------------
 
     def test_update_client_error_is_logged_and_fails_the_deploy(self, aws, capsys):
@@ -1315,6 +1436,19 @@ class TestDeployServices:
         out = _lines(capsys.readouterr().out)
         assert "    cpu=512, memory=1024, replicas=3" in out
         assert "    deployment: minHealthy=50%, maxPercent=100%, circuitBreaker=True" in out
+
+    def test_dry_run_reports_per_service_deployment_overrides(self, aws, capsys):
+        ctx = _ctx(
+            aws,
+            services={"beat": {"minimum_healthy_percent": 0, "maximum_percent": 100}},
+            infra={
+                "deployment_config": {"minimum_healthy_percent": 100, "maximum_percent": 200},
+            },
+            dry_run=True,
+        )
+        deploy_services(ctx, {"beat": IMAGE_URI})
+        out = _lines(capsys.readouterr().out)
+        assert "    deployment: minHealthy=0%, maxPercent=100%, circuitBreaker=False" in out
 
     def test_dry_run_at_max_percent_100_skips_the_az_check(self, aws, run):
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 100}}, dry_run=True)
