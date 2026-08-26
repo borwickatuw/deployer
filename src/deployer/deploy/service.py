@@ -1,15 +1,18 @@
 """ECS service deployment operations."""
 
+import hashlib
+import json
 import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NoReturn
 
 import boto3
 from botocore.exceptions import ClientError
 
+from ..aws import ssm
 from ..aws.cloudwatch import get_task_logs
 from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
 from .context import DeploymentContext, InfraConfig, StabilityConfig
@@ -194,8 +197,8 @@ def _ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name:
         return False
 
 
-def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
-    """Check if an ECS service exists.
+def _get_live_service(ecs_client, cluster_name: str, service_name: str) -> dict | None:
+    """Describe an ECS service, returning its description or None if absent.
 
     Args:
         ecs_client: boto3 ECS client.
@@ -203,14 +206,14 @@ def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
         service_name: Name of the service.
 
     Returns:
-        True if service exists and is not INACTIVE, False if it is absent or
+        The live service description, or None if the service is absent or
         INACTIVE.
 
     Raises:
         RuntimeError: If ``describe_services`` fails. A genuinely absent service
             comes back as an *empty* ``services`` list, not an error, so every
             ``ClientError`` here is a failure and none is an absence. Answering
-            one with False sent a mistyped cluster name down the CREATE branch.
+            one with None sent a mistyped cluster name down the CREATE branch.
             Deliberately not caught by ``_deploy_one_service``: the failure is
             cluster-level, so the per-service collector would report the one bad
             cluster once per service.
@@ -226,8 +229,26 @@ def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
     # Service exists if it's in the response and not INACTIVE
     for svc in response.get("services", []):
         if svc["serviceName"] == service_name and svc["status"] != "INACTIVE":
-            return True
-    return False
+            return svc
+    return None
+
+
+def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
+    """Check if an ECS service exists.
+
+    Args:
+        ecs_client: boto3 ECS client.
+        cluster_name: Name of the ECS cluster.
+        service_name: Name of the service.
+
+    Returns:
+        True if service exists and is not INACTIVE, False if it is absent or
+        INACTIVE.
+
+    Raises:
+        RuntimeError: If ``describe_services`` fails (see ``_get_live_service``).
+    """
+    return _get_live_service(ecs_client, cluster_name, service_name) is not None
 
 
 def register_task_definition(
@@ -475,20 +496,207 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
         return False
 
 
-def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: dict) -> str | None:
+@dataclass
+class ServiceDeployOutcome:
+    """Outcome of deploying (or skipping) one service.
+
+    ``task_def_arn`` is set when the service was created or its deployment
+    started; None when it was skipped as unchanged or failed. ``state_hash``
+    is the intended-state hash (None on dry runs, which never hash).
+    """
+
+    task_def_arn: str | None = None
+    state_hash: str | None = None
+    skipped: bool = False
+
+    @property
+    def failed(self) -> bool:
+        """A service that was neither deployed nor deliberately skipped."""
+        return self.task_def_arn is None and not self.skipped
+
+
+@dataclass
+class DeployedServices:
+    """What ``deploy_services`` did, service by service.
+
+    ``updated`` maps each created-or-updated service to the task definition
+    ARN this deploy registered for it — ``wait_for_stable`` waits on exactly
+    these and verifies PRIMARY runs that ARN. ``state_hashes`` carries the
+    intended-state hash per updated service, stored to SSM only after
+    stability. ``skipped`` lists services left untouched as unchanged.
+    """
+
+    updated: dict[str, str] = field(default_factory=dict)
+    state_hashes: dict[str, str] = field(default_factory=dict)
+    skipped: list[str] = field(default_factory=list)
+
+
+def _compute_service_state_hash(ctx, service_name: str, image_uri: str, dep_cfg) -> str:
+    """Hash everything this deploy would send ECS for a service.
+
+    Covers the full task definition plus the update-time service parameters
+    (deployment configuration, service registries) — everything
+    ``_update_service`` would send except the ARN and forceNewDeployment.
+    ``containerDefinitions[].environment`` and ``.secrets`` are sorted by name
+    first: they are built from dicts, and dict-order lists would make an
+    unchanged service hash differently between runs (a false redeploy).
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+        image_uri: ECR image URI the service would run.
+        dep_cfg: Merged DeploymentConfig for the service.
+
+    Returns:
+        Hex SHA-256 of the sorted-key JSON of the intended state.
+    """
+    task_def = build_task_definition(ctx, service_name, image_uri)
+    for container in task_def.get("containerDefinitions", []):
+        container["environment"] = sorted(
+            container.get("environment", []), key=lambda entry: entry["name"]
+        )
+        container["secrets"] = sorted(container.get("secrets", []), key=lambda entry: entry["name"])
+
+    intended = {
+        "task_def": task_def,
+        "deployment_configuration": _deployment_configuration(dep_cfg),
+        "service_registries": _service_registries(ctx, service_name),
+    }
+    return hashlib.sha256(json.dumps(intended, sort_keys=True).encode()).hexdigest()
+
+
+def _service_state_param_name(app_name: str, environment: str, service_name: str) -> str:
+    """SSM parameter holding a service's last deployed state hash + ARN."""
+    return f"/{app_name}/{environment}/service-state-hash-{service_name}"
+
+
+def get_stored_service_state(
+    app_name: str, environment: str, service_name: str
+) -> tuple[str, str] | None:
+    """Read a service's stored (state hash, task definition ARN) from SSM.
+
+    Returns:
+        The (hash, arn) pair, or None if absent or unparseable — both of
+        which simply disable skipping for the service.
+    """
+    value, error = ssm.get_parameter(_service_state_param_name(app_name, environment, service_name))
+    if error or value is None:
+        return None
+    try:
+        data = json.loads(value)
+        return data["hash"], data["task_def_arn"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def store_service_state(
+    app_name: str, environment: str, service_name: str, state_hash: str, task_def_arn: str
+) -> bool:
+    """Store a service's deployed state hash + ARN in SSM.
+
+    Returns:
+        True on success. A denied write is logged and answered False — the
+        stale stored state then fails the next deploy's live-ARN gate, so
+        skipping stays disabled rather than going wrong.
+    """
+    success, error = ssm.put_parameter(
+        name=_service_state_param_name(app_name, environment, service_name),
+        value=json.dumps({"hash": state_hash, "task_def_arn": task_def_arn}),
+        description="Intended-state hash of the last stable deployment",
+        overwrite=True,
+    )
+    if not success:
+        log_warning(f"Failed to store service state hash for {service_name}: {error}")
+    return success
+
+
+def store_service_state_hashes(
+    app_name: str, environment: str, deployed: "DeployedServices", health_check_failures: list[str]
+) -> None:
+    """Persist state hashes for the services that deployed AND stabilized.
+
+    Runs only after ``wait_for_stable`` — a hash stored earlier would let a
+    failed deploy skip its own retry. Services in ``health_check_failures``
+    (the exit-2 warning list) are excluded for the same reason: storing their
+    hash would make "redeploy after exit 2" silently no-op.
+
+    Args:
+        app_name: Application name.
+        environment: Environment name.
+        deployed: The ``deploy_services`` result.
+        health_check_failures: Services whose health checks failed.
+    """
+    for service_name, state_hash in deployed.state_hashes.items():
+        if service_name in health_check_failures:
+            continue
+        store_service_state(
+            app_name, environment, service_name, state_hash, deployed.updated[service_name]
+        )
+
+
+def _service_is_unchanged(ctx, service_name: str, current_hash: str, live_service: dict) -> bool:
+    """Decide whether a service can skip its register + update entirely.
+
+    All three gates must hold:
+
+    1. The stored hash (last stable deploy) matches ``current_hash``.
+    2. The live service still runs the stored task definition ARN. This gate
+       makes out-of-band changes — emergency-module pins, console edits, a
+       rollback after the hash was stored — self-heal into a redeploy
+       instead of a silent skip.
+    3. The live service is settled and healthy: exactly one deployment
+       (PRIMARY), running == desired > 0.
+
+    Args:
+        ctx: DeploymentContext with shared deployment parameters.
+        service_name: Name of the service.
+        current_hash: Hash of the state this deploy intends.
+        live_service: The live ECS service description.
+
+    Returns:
+        True if the service is unchanged and healthy.
+    """
+    stored = get_stored_service_state(ctx.app_name, ctx.environment, service_name)
+    if stored is None:
+        return False
+    stored_hash, stored_arn = stored
+    if stored_hash != current_hash:
+        return False
+
+    if live_service.get("taskDefinition") != stored_arn:
+        return False
+
+    deployments = live_service.get("deployments", [])
+    if len(deployments) != 1 or deployments[0].get("status") != "PRIMARY":
+        return False
+    primary = deployments[0]
+    running = primary.get("runningCount", 0)
+    desired = primary.get("desiredCount", 0)
+    return running == desired and running > 0
+
+
+def _deploy_one_service(
+    ctx, service_name: str, svc_config: dict, image_uris: dict, force_deploy: bool = False
+) -> ServiceDeployOutcome:
     """Register one service's task definition and create or update the service.
+
+    An unchanged, healthy service is skipped entirely (no new task-definition
+    revision, no forced deployment) unless ``force_deploy`` is set -- see
+    ``_service_is_unchanged`` for the gates. Dry runs bypass the skip check:
+    they narrate what a real deploy would send and never touch SSM.
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         service_name: Name of the service.
         svc_config: The service's entry in deploy.toml's [services].
         image_uris: Dictionary mapping image names to ECR URIs.
+        force_deploy: Deploy even when the service state is unchanged.
 
     Returns:
-        The task definition ARN the service was created with or updated to,
-        or None if it had no built image or AWS rejected the update. Both are
-        failures the caller must report -- a service that was never deployed
-        is not a deployed service.
+        ServiceDeployOutcome. ``failed`` is True when the service had no
+        built image or AWS rejected the update -- both are failures the
+        caller must report; a service that was never deployed is not a
+        deployed service.
     """
     # Get merged config (deploy.toml + environment sizing)
     service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
@@ -498,26 +706,12 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
     image_uri = image_uris.get(image_name)
     if not image_uri:
         log_error(f"No image URI for service {service_name} (image: {image_name})")
-        return None
-
-    task_def_arn = register_task_definition(ctx, service_name, image_uri)
-
-    exists = (
-        service_exists(ctx.ecs_client, ctx.cluster_name, service_name) if not ctx.dry_run else True
-    )
-
-    if not exists:
-        create_service(ctx, service_name, task_def_arn)
-        log_status(service_name, "service created")
-        return task_def_arn
+        return ServiceDeployOutcome()
 
     dep_cfg = _get_deployment_config(ctx.infra_config, svc_config)
 
-    # Disable AZ rebalancing if using max_percent <= 100 (AWS doesn't support it)
-    if dep_cfg.max_percent <= 100 and not ctx.dry_run:
-        _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
-
     if ctx.dry_run:
+        task_def_arn = register_task_definition(ctx, service_name, image_uri)
         print(
             f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
             f"aws ecs update-service --service {service_name} "
@@ -532,17 +726,40 @@ def _deploy_one_service(ctx, service_name: str, svc_config: dict, image_uris: di
             f"maxPercent={dep_cfg.max_percent}%, "
             f"circuitBreaker={dep_cfg.circuit_breaker}"
         )
-        return task_def_arn
+        return ServiceDeployOutcome(task_def_arn=task_def_arn)
+
+    live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, service_name)
+    state_hash = _compute_service_state_hash(ctx, service_name, image_uri, dep_cfg)
+
+    if (
+        live_service is not None
+        and not force_deploy
+        and _service_is_unchanged(ctx, service_name, state_hash, live_service)
+    ):
+        log_status(service_name, "unchanged, skipping")
+        return ServiceDeployOutcome(state_hash=state_hash, skipped=True)
+
+    task_def_arn = register_task_definition(ctx, service_name, image_uri)
+
+    if live_service is None:
+        create_service(ctx, service_name, task_def_arn)
+        log_status(service_name, "service created")
+        return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
+
+    # Disable AZ rebalancing if using max_percent <= 100 (AWS doesn't support it)
+    if dep_cfg.max_percent <= 100:
+        _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
     if not _update_service(ctx, service_name, task_def_arn, dep_cfg):
-        return None
-    return task_def_arn
+        return ServiceDeployOutcome()
+    return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
 
 
 def deploy_services(
     ctx,
     image_uris: dict[str, str],
-) -> dict[str, str]:
+    force_deploy: bool = False,
+) -> DeployedServices:
     """Register task definitions and deploy all services (create or update).
 
     Every service is attempted even after one fails -- stopping halfway leaves
@@ -553,11 +770,12 @@ def deploy_services(
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         image_uris: Dictionary mapping image names to ECR URIs.
+        force_deploy: Deploy every service even when unchanged.
 
     Returns:
-        Mapping of service name to the task definition ARN it was deployed
-        with. ``wait_for_stable`` uses this to verify each service actually
-        ends up running the revision this deploy registered.
+        DeployedServices: what was updated (name -> task definition ARN, for
+        ``wait_for_stable``'s identity check), the per-service state hashes
+        (stored after stability), and which services were skipped unchanged.
 
     Raises:
         RuntimeError: If any service could not be deployed, naming all of them.
@@ -567,19 +785,23 @@ def deploy_services(
     services = ctx.config.get("services", {})
     log_debug(f"Services to deploy: {list(services.keys())}")
 
-    updated: dict[str, str] = {}
+    deployed = DeployedServices()
     failed: list[str] = []
     for name, svc_config in services.items():
-        task_def_arn = _deploy_one_service(ctx, name, svc_config, image_uris)
-        if task_def_arn is None:
+        outcome = _deploy_one_service(ctx, name, svc_config, image_uris, force_deploy)
+        if outcome.skipped:
+            deployed.skipped.append(name)
+        elif outcome.failed:
             failed.append(name)
         else:
-            updated[name] = task_def_arn
+            deployed.updated[name] = outcome.task_def_arn
+            if outcome.state_hash is not None:
+                deployed.state_hashes[name] = outcome.state_hash
 
     if failed:
         raise RuntimeError(f"Failed to deploy service(s): {', '.join(failed)}")
 
-    return updated
+    return deployed
 
 
 def _resolve_migration_image(ctx, migration_service: str, image_uris: dict[str, str]) -> str | None:

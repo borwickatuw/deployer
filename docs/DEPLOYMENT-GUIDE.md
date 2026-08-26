@@ -263,6 +263,27 @@ The script will:
 1. Create/update ECS services
 1. Wait for services to stabilize
 
+### Unchanged services are skipped
+
+A service whose intended state (task definition, deployment configuration,
+service registries) hashes identically to its last stable deploy — and which
+is still healthy and running that exact task-definition revision — is not
+redeployed. The deploy logs `<service> [unchanged, skipping]` and registers
+no new revision. Any out-of-band change (console edit, emergency pin,
+rollback) fails the live-state check and forces a normal redeploy.
+
+Use `--force-deploy` to roll every service regardless:
+
+```bash
+uv run python bin/deploy.py deploy myapp-staging --force-deploy
+```
+
+You need it when the intended state is unchanged but the deploy must still
+roll tasks — after rotating a secret's *value* in SSM (the task definition
+only references the name), or to restart services via a deploy.
+(`--force-build` does not help here: image tags are content-addressed, so a
+forced rebuild of unchanged sources produces the same tag and the same hash.)
+
 ______________________________________________________________________
 
 ## Verification

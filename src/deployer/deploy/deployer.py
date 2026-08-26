@@ -20,6 +20,7 @@ from deployer.deploy.images import build_and_push_images, ecr_login
 from deployer.deploy.service import (
     deploy_services,
     start_migrations,
+    store_service_state_hashes,
     wait_for_migrations,
     wait_for_stable,
 )
@@ -356,9 +357,10 @@ class Deployer:
             migration_task = start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
         print()
 
-        # Step 5: Deploy services (triggers ECS to pull images)
+        # Step 5: Deploy services (triggers ECS to pull images). Unchanged,
+        # healthy services are skipped unless --force-deploy.
         with timer.step("deploy_services"):
-            updated_services = deploy_services(self.ctx, image_uris)
+            deployed = deploy_services(self.ctx, image_uris, force_deploy=self.options.force_deploy)
         print()
 
         # Step 6: Wait for migrations to complete
@@ -375,12 +377,18 @@ class Deployer:
             raise
         print()
 
-        # Step 7: Wait for services to stabilize (parallel). Each service must
-        # end up with PRIMARY running the revision deploy_services registered
-        # for it — a circuit-breaker rollback otherwise reads as success.
+        # Step 7: Wait for services to stabilize (parallel). Only the services
+        # this deploy actually updated are waited on, and each must end up
+        # with PRIMARY running the revision deploy_services registered for it
+        # — a circuit-breaker rollback otherwise reads as success.
         with timer.step("wait_for_stable"):
-            health_failures = wait_for_stable(self.ctx, updated_services)
+            health_failures = wait_for_stable(self.ctx, deployed.updated)
         print()
+
+        # Step 8: Persist per-service state hashes, only now that stability is
+        # proven — a hash stored before wait_for_stable would let a failed
+        # deploy skip its own retry. No-op on dry runs (no hashes computed).
+        store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)
 
         timer.finish()
 
@@ -409,6 +417,11 @@ def common_deploy_options(func):
         "--force-build",
         is_flag=True,
         help="Force rebuilding images even if unchanged (skip cache check)",
+    )
+    @click.option(
+        "--force-deploy",
+        is_flag=True,
+        help="Roll every service even if unchanged (secret rotation, restart-via-deploy)",
     )
     @click.option("--skip-ecr-check", is_flag=True, help="Skip the ECR repository existence check")
     @click.option("--skip-secrets-check", is_flag=True, help="Skip the SSM secrets existence check")

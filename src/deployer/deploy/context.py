@@ -21,15 +21,21 @@ class EnvironmentTarget:
 
 @dataclass(frozen=True)
 class DeployOptions:
-    """The three flags that control how a deploy behaves.
+    """The flags that control how a deploy behaves.
 
     They arrive together from ``common_deploy_options`` and stay together all
     the way into Deployer.
+
+    ``force_deploy`` exists because secret rotation and deploy-to-restart both
+    produce a state hash identical to the stored one, so the skip-unchanged
+    check would turn those deploys into no-ops (``--force-build`` cannot help:
+    image tags are content-addressed).
     """
 
     dry_run: bool = False
     force: bool = False
     force_build: bool = False
+    force_deploy: bool = False
 
 
 @dataclass(frozen=True)

@@ -245,6 +245,7 @@ Options:
   --dry-run              Show what would be done without making changes
   --force                Deploy even if infrastructure is unavailable
   --force-build          Force rebuilding images even if unchanged
+  --force-deploy         Roll every service even if unchanged (secret rotation, restarts)
   --skip-ecr-check       Skip ECR repository existence check
   --skip-secrets-check   Skip SSM secrets existence check
   --skip-cluster-check   Skip ECS cluster existence check

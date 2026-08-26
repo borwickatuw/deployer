@@ -47,6 +47,7 @@ from click.testing import CliRunner
 from deployer.deploy import deployer as deployer_mod
 from deployer.deploy.context import DeployOptions
 from deployer.deploy.deployer import Deployer, InfraStatus, common_deploy_options
+from deployer.deploy.service import DeployedServices
 from deployer.timing import DeploymentTimer, get_timer, set_timer
 
 APP_NAME = "testapp"
@@ -62,9 +63,14 @@ MIGRATION_TASK = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task/{ECR_PREFIX}/deadbeef"
 UPDATED_SERVICES = {
     "web": f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{APP_NAME}-{ENVIRONMENT}-web:9"
 }
+DEPLOYED_SERVICES = DeployedServices(
+    updated=dict(UPDATED_SERVICES), state_hashes={"web": "a" * 64}, skipped=[]
+)
 
 # The order deploy() calls them in. Note that the timer step name for
 # create_database_extensions is "create_extensions", not the function name.
+# store_service_state_hashes is called but not timed (it is milliseconds and
+# a no-op on dry runs, whose deploys compute no hashes).
 STEP_NAMES = (
     "ecr_login",
     "build_and_push_images",
@@ -73,6 +79,7 @@ STEP_NAMES = (
     "deploy_services",
     "wait_for_migrations",
     "wait_for_stable",
+    "store_service_state_hashes",
 )
 TIMER_STEP_NAMES = [
     "ecr_login",
@@ -183,7 +190,7 @@ class _StepRecorder:
         self.returns: dict[str, object] = {
             "build_and_push_images": IMAGE_URIS,
             "start_migrations": MIGRATION_TASK,
-            "deploy_services": UPDATED_SERVICES,
+            "deploy_services": DEPLOYED_SERVICES,
             "wait_for_stable": [],
         }
         self.raises: dict[str, Exception] = {}
@@ -703,7 +710,7 @@ class TestDeploySteps:
     Every test runs on both timer arms via the `timer` fixture.
     """
 
-    def test_the_seven_steps_run_in_order(self, make_deployer, steps, timer):
+    def test_the_eight_steps_run_in_order(self, make_deployer, steps, timer):
         make_deployer(timer=timer).deploy()
 
         assert steps.names == list(STEP_NAMES)
@@ -745,11 +752,17 @@ class TestDeploySteps:
                 (deployer.ctx, IMAGE_URIS),
                 {"source_dir": deployer.source_dir},
             ),
-            ("deploy_services", (deployer.ctx, IMAGE_URIS), {}),
+            ("deploy_services", (deployer.ctx, IMAGE_URIS), {"force_deploy": False}),
             ("wait_for_migrations", (aws["ecs"], MIGRATION_TASK), {}),
-            # deploy_services' return value scopes the wait and carries the
+            # deploy_services' updated map scopes the wait and carries the
             # per-service expected task-definition ARNs (rollback detection).
             ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES), {}),
+            # Hashes are stored only after stability, excluding health failures.
+            (
+                "store_service_state_hashes",
+                (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, []),
+                {},
+            ),
         ]
 
     def test_a_clean_run_returns_the_image_uris_and_no_failures(self, make_deployer, timer, capsys):
@@ -803,6 +816,7 @@ class TestDeploySteps:
             "",
             "[wait_for_stable]",
             "",
+            "[store_service_state_hashes]",
             "Deployment complete!",
         ]
 
@@ -826,6 +840,14 @@ class TestDeploySteps:
 
         assert steps.calls[1][2]["force_build"] is True
         assert steps.calls[1][2]["dry_run"] is False
+
+    def test_force_deploy_reaches_only_the_deploy_services_step(self, make_deployer, steps, timer):
+        make_deployer(options=DeployOptions(force_deploy=True), timer=timer).deploy()
+
+        deploy_call = next(call for call in steps.calls if call[0] == "deploy_services")
+        assert deploy_call[2]["force_deploy"] is True
+        image_call = next(call for call in steps.calls if call[0] == "build_and_push_images")
+        assert image_call[2]["force_build"] is False
 
 
 class TestDeployInfrastructureGuard:
@@ -945,6 +967,16 @@ class TestDeployHealthChecks:
         assert "  Services may still become healthy - check the AWS console." in out
         assert "Deployment complete!" not in out
 
+    def test_health_failures_are_passed_to_hash_storage(self, make_deployer, steps, timer):
+        """store_service_state_hashes must see the failure list — otherwise
+        'redeploy after exit 2' silently no-ops on a stored hash."""
+        steps.returns["wait_for_stable"] = ["web"]
+
+        make_deployer(timer=timer).deploy()
+
+        store_call = next(call for call in steps.calls if call[0] == "store_service_state_hashes")
+        assert store_call[1] == (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, ["web"])
+
     def test_no_failures_reports_success(self, make_deployer, steps, timer, capsys):
         steps.returns["wait_for_stable"] = []
 
@@ -1054,7 +1086,7 @@ class TestDeployTimerArmsAgree:
 
 
 class TestCommonDeployOptions:
-    """Characterization pins for the decorator's six flags."""
+    """Characterization pins for the decorator's seven flags."""
 
     def _command(self):
         @click.command()
@@ -1065,7 +1097,7 @@ class TestCommonDeployOptions:
 
         return cmd
 
-    def test_all_six_flags_default_to_false(self):
+    def test_all_seven_flags_default_to_false(self):
         result = CliRunner().invoke(self._command(), [])
 
         assert result.exit_code == 0
@@ -1074,6 +1106,7 @@ class TestCommonDeployOptions:
                 "dry_run=False",
                 "force=False",
                 "force_build=False",
+                "force_deploy=False",
                 "skip_cluster_check=False",
                 "skip_ecr_check=False",
                 "skip_secrets_check=False",
@@ -1087,6 +1120,7 @@ class TestCommonDeployOptions:
                 "--dry-run",
                 "--force",
                 "--force-build",
+                "--force-deploy",
                 "--skip-ecr-check",
                 "--skip-secrets-check",
                 "--skip-cluster-check",
@@ -1095,6 +1129,7 @@ class TestCommonDeployOptions:
 
         assert result.exit_code == 0
         assert "dry_run=True" in result.output
+        assert "force_deploy=True" in result.output
         assert "skip_cluster_check=True" in result.output
 
     def test_the_help_text_lists_the_flags(self):

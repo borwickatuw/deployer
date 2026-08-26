@@ -118,6 +118,7 @@ def deploy(
     dry_run,
     force,
     force_build,
+    force_deploy,
     skip_ecr_check,
     skip_secrets_check,
     skip_cluster_check,
@@ -165,7 +166,9 @@ def deploy(
                 skip_cluster_check=skip_cluster_check,
                 skip_audit=ignore_audit,
             ),
-            options=DeployOptions(dry_run=dry_run, force=force, force_build=force_build),
+            options=DeployOptions(
+                dry_run=dry_run, force=force, force_build=force_build, force_deploy=force_deploy
+            ),
             timer=timer,
             timing_output=Path(timing_output) if timing_output else None,
             ecr_hint=True,

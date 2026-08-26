@@ -95,14 +95,20 @@ from botocore.exceptions import ClientError
 from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.service import (
+    DeployedServices,
     DeploymentConfig,
     DeploymentError,
+    _compute_service_state_hash,
     _ensure_az_rebalancing_disabled,
     _get_deployment_config,
+    _service_is_unchanged,
     create_service,
     deploy_services,
+    get_stored_service_state,
     register_task_definition,
     service_exists,
+    store_service_state,
+    store_service_state_hashes,
 )
 from deployer.utils.logging import is_verbose, set_verbose
 
@@ -1115,26 +1121,33 @@ class TestDeployServices:
 
     def test_empty_service_map_logs_only_the_banner(self, aws, capsys):
         ctx = _ctx(aws, services={})
-        assert deploy_services(ctx, {}) == {}
+        assert deploy_services(ctx, {}) == DeployedServices()
         assert aws.client.operations == []
         assert _lines(capsys.readouterr().out) == ["Deploying ECS services..."]
 
     def test_returns_the_registered_arn_per_service(self, aws):
-        """The return value is what wait_for_stable verifies PRIMARY against."""
+        """The updated map is what wait_for_stable verifies PRIMARY against."""
         _make_service(aws, "web")
         ctx = _ctx(aws, services={"web": {}, "worker": {}})
-        updated = deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
-        assert set(updated) == {"web", "worker"}
-        assert updated["web"] == aws.client.all_params("update_service")[0]["taskDefinition"]
+        deployed = deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
+        assert set(deployed.updated) == {"web", "worker"}
+        assert deployed.updated["web"] == (
+            aws.client.all_params("update_service")[0]["taskDefinition"]
+        )
         # The create branch reports its ARN too.
-        assert updated["worker"] == aws.client.params("create_service")["taskDefinition"]
+        assert deployed.updated["worker"] == aws.client.params("create_service")["taskDefinition"]
+        # Both carry a state hash for post-stability storage; nothing skipped.
+        assert set(deployed.state_hashes) == {"web", "worker"}
+        assert deployed.skipped == []
 
-    def test_dry_run_returns_the_fabricated_arns(self, aws):
+    def test_dry_run_returns_the_fabricated_arns_and_no_hashes(self, aws):
         ctx = _ctx(aws, dry_run=True)
-        updated = deploy_services(ctx, {"web": IMAGE_URI})
-        assert updated == {
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+        assert deployed.updated == {
             "web": f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:dry-run"
         }
+        # Dry runs never hash (and never read SSM), so nothing to store later.
+        assert deployed.state_hashes == {}
 
     def test_missing_image_uri_skips_the_service_and_fails_the_deploy(self, aws, capsys):
         """A skipped service is a service that was not deployed.
@@ -1174,11 +1187,13 @@ class TestDeployServices:
     # -- must-pin #8: create vs update -----------------------------------
 
     def test_absent_service_takes_the_create_branch(self, aws, capsys):
+        # The describe now comes first: the skip-unchanged check needs the
+        # live service state before a new task-definition revision exists.
         ctx = _ctx(aws)
         deploy_services(ctx, {"web": IMAGE_URI})
         assert aws.client.operations == [
-            "register_task_definition",
             "describe_services",
+            "register_task_definition",
             "create_service",
         ]
         # create_service() logs its own success line and deploy_services() logs
@@ -1210,8 +1225,8 @@ class TestDeployServices:
         ctx = _ctx(aws)
         deploy_services(ctx, {"web": IMAGE_URI})
         assert aws.client.operations == [
-            "register_task_definition",
             "describe_services",
+            "register_task_definition",
             "update_service",
         ]
         assert _lines(capsys.readouterr().out) == [
@@ -1303,8 +1318,8 @@ class TestDeployServices:
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 100}})
         deploy_services(ctx, {"web": IMAGE_URI})
         assert aws.client.operations == [
+            "describe_services",  # live-service lookup (exists + skip check)
             "register_task_definition",
-            "describe_services",  # service_exists
             "describe_services",  # _ensure_az_rebalancing_disabled
             "update_service",
         ]
@@ -1346,8 +1361,8 @@ class TestDeployServices:
         )
         deploy_services(ctx, {"web": IMAGE_URI})
         assert aws.client.operations == [
+            "describe_services",  # live-service lookup (exists + skip check)
             "register_task_definition",
-            "describe_services",  # service_exists
             "describe_services",  # _ensure_az_rebalancing_disabled
             "update_service",
         ]
@@ -1520,6 +1535,270 @@ class TestDeployServices:
         with pytest.raises(ValueError, match="below minimum"):
             deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
         assert aws.client.operations == []
+
+
+class _HealthyLiveEcs:
+    """Answers describe_services with a crafted healthy service; everything
+    else (register_task_definition, update_service) delegates to the real
+    moto-backed recording client. moto always reports runningCount=0, so a
+    healthy live state has to be injected to reach the skip decision."""
+
+    def __init__(self, delegate, live_service: dict):
+        self._delegate = delegate
+        self.live_service = live_service
+
+    def describe_services(self, **kwargs):
+        return {"services": [self.live_service]}
+
+    def __getattr__(self, name):
+        return getattr(self._delegate, name)
+
+
+def _healthy_live_service(task_def_arn: str) -> dict:
+    return {
+        "serviceName": "web",
+        "status": "ACTIVE",
+        "taskDefinition": task_def_arn,
+        "deployments": [{"status": "PRIMARY", "runningCount": 1, "desiredCount": 1}],
+    }
+
+
+def _state_hash_for(ctx, service_name: str, image_uri: str) -> str:
+    """The hash _deploy_one_service would compute for this service."""
+    dep_cfg = _get_deployment_config(
+        ctx.infra_config, ctx.config.get("services", {}).get(service_name, {})
+    )
+    return _compute_service_state_hash(ctx, service_name, image_uri, dep_cfg)
+
+
+class TestSkipUnchangedServices:
+    """The skip-unchanged decision: hash gate, live-state gates, escape hatches."""
+
+    def test_unchanged_healthy_service_is_skipped(self, aws, capsys):
+        arn = "arn:aws:ecs:us-west-2:123456789012:task-definition/testapp-staging-web:5"
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, _healthy_live_service(arn)))
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == ["web"]
+        assert deployed.updated == {}
+        # Nothing registered, nothing updated: the delegate saw no calls.
+        assert aws.client.operations == []
+        assert "  web [unchanged, skipping]" in _lines(capsys.readouterr().out)
+
+    def test_skipped_service_still_carries_its_state_hash_privately(self, aws):
+        """A skipped service is absent from state_hashes — its stored hash is
+        already correct, and rewriting it after wait_for_stable would be a
+        pointless SSM write."""
+        arn = "arn:aws:ecs:us-west-2:123456789012:task-definition/testapp-staging-web:5"
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, _healthy_live_service(arn)))
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert "web" not in deployed.state_hashes
+
+    def test_force_deploy_rolls_an_unchanged_service(self, aws):
+        arn = _make_service(aws)
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, _healthy_live_service(arn)))
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI}, force_deploy=True)
+
+        assert deployed.skipped == []
+        assert "web" in deployed.updated
+        assert "update_service" in aws.client.operations
+
+    def test_no_stored_state_deploys(self, aws):
+        arn = _make_service(aws)
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, _healthy_live_service(arn)))
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == []
+        assert "update_service" in aws.client.operations
+
+    def test_changed_hash_deploys(self, aws):
+        arn = _make_service(aws)
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, _healthy_live_service(arn)))
+        store_service_state(APP, ENVIRONMENT, "web", "0" * 64, arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == []
+        assert "update_service" in aws.client.operations
+
+    def test_live_arn_drift_deploys(self, aws):
+        """The live-state gate: a console change, emergency pin, or late
+        rollback moved the service off the stored ARN — redeploy, don't
+        silently skip."""
+        arn = _make_service(aws)
+        drifted = _healthy_live_service(arn.replace(":1", ":99"))
+        ctx = _ctx(aws, ecs_client=_HealthyLiveEcs(aws.client, drifted))
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == []
+        assert "update_service" in aws.client.operations
+
+    def test_moto_zero_running_fails_the_health_gate(self, aws):
+        """Straight moto (runningCount always 0): matching hash and ARN are
+        not enough — an unhealthy service redeploys."""
+        arn = _make_service(aws)
+        ctx = _ctx(aws)
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), arn)
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == []
+        assert "update_service" in aws.client.operations
+
+    @pytest.mark.parametrize(
+        "deployments",
+        [
+            pytest.param(
+                [
+                    {"status": "PRIMARY", "runningCount": 1, "desiredCount": 1},
+                    {"status": "ACTIVE", "runningCount": 1, "desiredCount": 1},
+                ],
+                id="rollout-in-flight",
+            ),
+            pytest.param(
+                [{"status": "ACTIVE", "runningCount": 1, "desiredCount": 1}], id="no-primary"
+            ),
+            pytest.param(
+                [{"status": "PRIMARY", "runningCount": 1, "desiredCount": 2}], id="under-replicated"
+            ),
+            pytest.param(
+                [{"status": "PRIMARY", "runningCount": 0, "desiredCount": 0}], id="scaled-to-zero"
+            ),
+            pytest.param([], id="no-deployments"),
+        ],
+    )
+    def test_unsettled_live_state_is_not_unchanged(self, aws, deployments):
+        ctx = _ctx(aws)
+        arn = "arn:td:5"
+        current_hash = "f" * 64
+        store_service_state(APP, ENVIRONMENT, "web", current_hash, arn)
+        live = _healthy_live_service(arn)
+        live["deployments"] = deployments
+
+        assert _service_is_unchanged(ctx, "web", current_hash, live) is False
+
+    def test_settled_live_state_is_unchanged(self, aws):
+        ctx = _ctx(aws)
+        store_service_state(APP, ENVIRONMENT, "web", "f" * 64, "arn:td:5")
+
+        assert _service_is_unchanged(ctx, "web", "f" * 64, _healthy_live_service("arn:td:5"))
+
+    def test_dry_run_bypasses_the_skip_check(self, aws, capsys):
+        """Dry runs narrate the update they would send and never read SSM —
+        the skip decision needs live state a dry run must not depend on."""
+        ctx = _ctx(aws, dry_run=True)
+        store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), "arn")
+
+        deployed = deploy_services(ctx, {"web": IMAGE_URI})
+
+        assert deployed.skipped == []
+        assert "web" in deployed.updated
+        assert aws.client.operations == []  # not even the live-state describe
+        assert "update-service" in _plain(capsys.readouterr().out)
+
+
+class TestServiceStateHash:
+    """Determinism and sensitivity of the intended-state hash."""
+
+    def test_identical_inputs_hash_identically(self, aws):
+        ctx = _ctx(aws)
+        assert _state_hash_for(ctx, "web", IMAGE_URI) == _state_hash_for(ctx, "web", IMAGE_URI)
+
+    def test_environment_dict_order_does_not_change_the_hash(self, aws):
+        """environment/secrets lists are sorted before hashing — dict-order
+        lists would otherwise cause false redeploys."""
+        base = _ctx(aws)
+        cfg1 = {"services": {"web": {}}, "environment": {"A": "1", "B": "2"}}
+        cfg2 = {"services": {"web": {}}, "environment": {"B": "2", "A": "1"}}
+        h1 = _compute_service_state_hash(
+            replace(base, config=cfg1), "web", IMAGE_URI, DeploymentConfig()
+        )
+        h2 = _compute_service_state_hash(
+            replace(base, config=cfg2), "web", IMAGE_URI, DeploymentConfig()
+        )
+        assert h1 == h2
+
+    def test_image_uri_changes_the_hash(self, aws):
+        ctx = _ctx(aws)
+        assert _state_hash_for(ctx, "web", IMAGE_URI) != _state_hash_for(
+            ctx, "web", IMAGE_URI.replace("abc123", "def456")
+        )
+
+    def test_deployment_config_changes_the_hash(self, aws):
+        ctx = _ctx(aws)
+        h_default = _compute_service_state_hash(ctx, "web", IMAGE_URI, DeploymentConfig())
+        h_override = _compute_service_state_hash(
+            ctx, "web", IMAGE_URI, DeploymentConfig(min_healthy=0, max_percent=100)
+        )
+        assert h_default != h_override
+
+    def test_environment_value_changes_the_hash(self, aws):
+        base = _ctx(aws)
+        cfg1 = {"services": {"web": {}}, "environment": {"A": "1"}}
+        cfg2 = {"services": {"web": {}}, "environment": {"A": "2"}}
+        assert _compute_service_state_hash(
+            replace(base, config=cfg1), "web", IMAGE_URI, DeploymentConfig()
+        ) != _compute_service_state_hash(
+            replace(base, config=cfg2), "web", IMAGE_URI, DeploymentConfig()
+        )
+
+
+class TestServiceStateStorage:
+    """SSM storage of (hash, ARN) per service, post-stability only."""
+
+    def test_round_trip(self, aws):
+        assert store_service_state(APP, ENVIRONMENT, "web", "h1", "arn:1") is True
+        assert get_stored_service_state(APP, ENVIRONMENT, "web") == ("h1", "arn:1")
+
+    def test_absent_parameter_reads_none(self, aws):
+        assert get_stored_service_state(APP, ENVIRONMENT, "web") is None
+
+    def test_unparseable_stored_value_reads_none(self, aws):
+        from deployer.aws import ssm as ssm_module
+
+        ssm_module.put_parameter(
+            name=f"/{APP}/{ENVIRONMENT}/service-state-hash-web", value="not json"
+        )
+        assert get_stored_service_state(APP, ENVIRONMENT, "web") is None
+
+    def test_store_service_state_hashes_stores_each_updated_service(self, aws):
+        deployed = DeployedServices(
+            updated={"web": "arn:1", "worker": "arn:2"},
+            state_hashes={"web": "h1", "worker": "h2"},
+        )
+        store_service_state_hashes(APP, ENVIRONMENT, deployed, [])
+
+        assert get_stored_service_state(APP, ENVIRONMENT, "web") == ("h1", "arn:1")
+        assert get_stored_service_state(APP, ENVIRONMENT, "worker") == ("h2", "arn:2")
+
+    def test_health_check_failures_are_excluded(self, aws):
+        """Storing a failed service's hash would make 'redeploy after exit 2'
+        silently no-op."""
+        deployed = DeployedServices(
+            updated={"web": "arn:1", "worker": "arn:2"},
+            state_hashes={"web": "h1", "worker": "h2"},
+        )
+        store_service_state_hashes(APP, ENVIRONMENT, deployed, ["worker"])
+
+        assert get_stored_service_state(APP, ENVIRONMENT, "web") == ("h1", "arn:1")
+        assert get_stored_service_state(APP, ENVIRONMENT, "worker") is None
+
+    def test_denied_write_warns_and_returns_false(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "deployer.aws.ssm.put_parameter", lambda **_kwargs: (False, "AccessDenied")
+        )
+        assert store_service_state(APP, ENVIRONMENT, "web", "h", "arn") is False
+        assert "Failed to store service state hash for web" in _plain(capsys.readouterr().out)
 
 
 class TestHealthCheckConfigSource:

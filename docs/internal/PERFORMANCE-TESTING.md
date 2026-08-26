@@ -330,6 +330,69 @@ layers keep their digests, so the subsequent push uploads nothing.
 
 ______________________________________________________________________
 
+## Implemented: Per-Service Deployment-Strategy Override
+
+**Status: IMPLEMENTED (2026-08-26)**
+
+`[services.X]` in deploy.toml accepts `minimum_healthy_percent` /
+`maximum_percent`, overlaid per key on the environment's `[deployment]`
+section (see CONFIG-REFERENCE.md). This is what let havoc-staging adopt the
+start-first rollout (100/200, `wait_for_stable` 171s → 78s in havoc's
+2026-08-26 deploy-speed investigation) permanently: its single-replica
+celery-beat service pins 0/100 so two beats never overlap during a rollout,
+while every other service rolls start-first.
+
+## Implemented: Stability Hardening (Crash Loops, Rollbacks)
+
+**Status: IMPLEMENTED (2026-08-26)**
+
+`wait_for_stable` no longer accepts one `running == desired` poll as
+stability. The same investigation caught it declaring a crash-looping
+service (beat, ~15s task lifetime) stable off a briefly-RUNNING task; the
+circuit breaker failed the deployment a minute after the deployer exited 0,
+and with `circuit_breaker_rollback` the rolled-back service looked exactly
+like success. Three changes:
+
+- Success requires **two consecutive qualifying polls** of the same
+  deployment id with `failedTasks` not increasing (~+15s per deploy, all
+  services in parallel).
+- `rolloutState == FAILED` on **any** deployment in the list raises
+  immediately with the `rolloutStateReason`.
+- Each service must settle on the **task-definition ARN this deploy
+  registered** (`deploy_services` returns the map); a settled PRIMARY on any
+  other ARN raises naming both — the check a rollback cannot evade.
+
+Requiring `rolloutState == COMPLETED` instead was rejected: it waits out the
+old task's ALB drain (40–60s) for no additional signal.
+
+## Implemented: Skip Unchanged Services
+
+**Status: IMPLEMENTED (2026-08-26)**
+
+`deploy_services` hashes each service's intended state — the full task
+definition (environment/secrets lists sorted by name), deployment
+configuration, and service registries — and skips register + update when all
+of: the hash matches the one stored at the last stable deploy (SSM
+`/<app>/<env>/service-state-hash-<service>`), the live service still runs
+the stored task-definition ARN, and it is settled and healthy (one PRIMARY
+deployment, running == desired > 0). The live-state gate makes console
+edits, emergency pins, and late rollbacks self-heal into a redeploy instead
+of a silent skip. Hashes are stored only **after** `wait_for_stable`
+passes, excluding services on the health-failure (exit 2) list, so a failed
+deploy never skips its own retry. `wait_for_stable` waits only on the
+services actually updated.
+
+Escape hatch: `--force-deploy` rolls everything (secret-value rotation and
+restart-via-deploy hash identically; `--force-build` cannot help because
+image tags are content-addressed).
+
+In practice (havoc): web/celery/beat/consumer share the web image whose
+VERSION stamp changes every commit, so the skip pays off for
+cantaloupe/transcoder — exactly where restarts hurt (mid-transcode jobs,
+the IIIF server).
+
+______________________________________________________________________
+
 ## Future Optimization Targets
 
 Additional optimizations not yet implemented:

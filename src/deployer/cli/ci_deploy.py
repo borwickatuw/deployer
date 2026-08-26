@@ -219,6 +219,7 @@ def main(
     dry_run,
     force,
     force_build,
+    force_deploy,
     skip_ecr_check,
     skip_secrets_check,
     skip_cluster_check,
@@ -280,7 +281,9 @@ def main(
                 skip_cluster_check=skip_cluster_check,
                 skip_audit=True,
             ),
-            options=DeployOptions(dry_run=dry_run, force=force, force_build=force_build),
+            options=DeployOptions(
+                dry_run=dry_run, force=force, force_build=force_build, force_deploy=force_deploy
+            ),
         )
     )
 
