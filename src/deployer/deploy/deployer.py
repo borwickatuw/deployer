@@ -370,13 +370,16 @@ class Deployer:
             )
         print()
 
-        # Step 3: Create database extensions (if declared)
+        # Step 3: Create database extensions (if declared); skipped when the
+        # declared extensions and target database match the last deploy's.
         with timer.step("create_extensions"):
             create_database_extensions(
                 config=self.config,
                 env_config=self.env_config,
                 region=self.region,
                 dry_run=self.options.dry_run,
+                app_name=self.app_name,
+                environment=self.environment,
             )
 
         # Step 4: Start migrations (non-blocking)

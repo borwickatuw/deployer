@@ -444,3 +444,126 @@ class TestAdviceBlocks:
             f"  {Colors.YELLOW}⚠{Colors.NC} DRY RUN: Would invoke Lambda "
             f"'{EXTENSIONS_LAMBDA}' to create extensions: ['unaccent']"
         )
+
+
+@pytest.mark.usefixtures("mocked_aws")
+class TestExtensionsSkip:
+    """SSM-backed skip: unchanged extensions + database → no Lambda invocation."""
+
+    CONFIG = {"database": {"extensions": ["unaccent", "pg_bigm"]}}
+    ENV_CONFIG = {
+        "database": {
+            "extensions_lambda": EXTENSIONS_LAMBDA,
+            "host": "db.example.com",
+            "name": "myapp",
+        }
+    }
+
+    def _invoke_ok(self, mock_boto3):
+        mock_payload = MagicMock()
+        mock_payload.read.return_value = json.dumps(
+            {"status": "success", "extensions": ["unaccent", "pg_bigm"]}
+        ).encode()
+        mock_boto3.client.return_value.invoke.return_value = {"Payload": mock_payload}
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_first_run_invokes_and_stores(self, mock_boto3, capsys):
+        self._invoke_ok(mock_boto3)
+
+        create_database_extensions(
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+
+        mock_boto3.client.return_value.invoke.assert_called_once()
+        from deployer.aws import ssm
+
+        stored, _ = ssm.get_parameter("/myapp/staging/db-extensions")
+        assert json.loads(stored) == {
+            "db": ["db.example.com", "myapp"],
+            "extensions": ["pg_bigm", "unaccent"],
+        }
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_second_run_skips_the_lambda(self, mock_boto3, capsys):
+        self._invoke_ok(mock_boto3)
+        create_database_extensions(
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+        mock_boto3.client.return_value.invoke.reset_mock()
+
+        create_database_extensions(
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+
+        mock_boto3.client.return_value.invoke.assert_not_called()
+        assert _lines(capsys)[-1] == _success("Extensions unchanged (pg_bigm, unaccent), skipping")
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_changed_extensions_invoke_again(self, mock_boto3):
+        self._invoke_ok(mock_boto3)
+        create_database_extensions(
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+        mock_boto3.client.return_value.invoke.reset_mock()
+
+        grown = {"database": {"extensions": ["unaccent", "pg_bigm", "pg_trgm"]}}
+        create_database_extensions(
+            grown, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+
+        mock_boto3.client.return_value.invoke.assert_called_once()
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_different_database_invokes_again(self, mock_boto3):
+        """A restored or re-pointed database must not inherit the skip."""
+        self._invoke_ok(mock_boto3)
+        create_database_extensions(
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+        )
+        mock_boto3.client.return_value.invoke.reset_mock()
+
+        moved = {
+            "database": {
+                "extensions_lambda": EXTENSIONS_LAMBDA,
+                "host": "db2.example.com",
+                "name": "myapp",
+            }
+        }
+        create_database_extensions(
+            self.CONFIG, moved, "us-west-2", app_name="myapp", environment="staging"
+        )
+
+        mock_boto3.client.return_value.invoke.assert_called_once()
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_without_app_and_environment_no_ssm_is_touched(self, mock_boto3):
+        """Callers that don't identify the deployment get no skip and no SSM."""
+        self._invoke_ok(mock_boto3)
+
+        create_database_extensions(self.CONFIG, self.ENV_CONFIG, "us-west-2")
+
+        from deployer.aws import ssm
+
+        stored, _ = ssm.get_parameter("/myapp/staging/db-extensions")
+        assert stored is None
+
+    @patch("deployer.deploy.extensions.boto3")
+    def test_failed_lambda_stores_nothing(self, mock_boto3):
+        mock_payload = MagicMock()
+        mock_payload.read.return_value = json.dumps(
+            {"errorType": "Boom", "errorMessage": "nope"}
+        ).encode()
+        mock_boto3.client.return_value.invoke.return_value = {
+            "Payload": mock_payload,
+            "FunctionError": "Unhandled",
+        }
+
+        with pytest.raises(RuntimeError):
+            create_database_extensions(
+                self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            )
+
+        from deployer.aws import ssm
+
+        stored, _ = ssm.get_parameter("/myapp/staging/db-extensions")
+        assert stored is None

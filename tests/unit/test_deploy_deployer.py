@@ -751,6 +751,8 @@ class TestDeploySteps:
                     "env_config": deployer.env_config,
                     "region": REGION,
                     "dry_run": False,
+                    "app_name": APP_NAME,
+                    "environment": ENVIRONMENT,
                 },
             ),
             (

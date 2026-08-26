@@ -12,7 +12,29 @@ import json
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from ..aws import ssm
 from ..utils import log, log_error, log_success, log_warning, print_with_advice
+
+
+def _extensions_state_param_name(app_name: str, environment: str) -> str:
+    """SSM parameter recording the extensions last created for a database."""
+    return f"/{app_name}/{environment}/db-extensions"
+
+
+def _current_extensions_state(env_config: dict, extensions: list[str]) -> str:
+    """The declared extensions plus the database they were created in.
+
+    Including the database identity makes a pointed-at-a-new-database deploy
+    re-run the Lambda instead of skipping on a stale record.
+    """
+    database = env_config.get("database", {})
+    return json.dumps(
+        {
+            "db": [database.get("host"), database.get("name")],
+            "extensions": sorted(extensions),
+        },
+        sort_keys=True,
+    )
 
 
 def create_database_extensions(
@@ -20,6 +42,8 @@ def create_database_extensions(
     env_config: dict,
     region: str,
     dry_run: bool = False,
+    app_name: str | None = None,
+    environment: str | None = None,
 ) -> None:
     """Invoke the db-users Lambda to create PostgreSQL extensions.
 
@@ -28,6 +52,9 @@ def create_database_extensions(
         env_config: Resolved config.toml dict (has env_config["database"]["extensions_lambda"])
         region: AWS region
         dry_run: If True, log what would happen without invoking
+        app_name: Application name; with environment, enables the SSM-backed
+            skip when the declared extensions and database are unchanged.
+        environment: Environment name (see app_name).
 
     Raises:
         RuntimeError: If the Lambda invocation fails or returns an error
@@ -46,12 +73,30 @@ def create_database_extensions(
         )
         return
 
+    state = None
+    if app_name and environment:
+        state = _current_extensions_state(env_config, extensions)
+        stored, _error = ssm.get_parameter(_extensions_state_param_name(app_name, environment))
+        if stored == state:
+            log_success(f"Extensions unchanged ({', '.join(sorted(extensions))}), skipping")
+            return
+
     response = _invoke_extensions_lambda(lambda_name, extensions, region)
     _raise_on_function_error(response, lambda_name)
 
     result = json.loads(response["Payload"].read().decode())
     created = result.get("extensions", [])
     log_success(f"Extensions ready: {', '.join(created)}")
+
+    if state is not None:
+        success, error = ssm.put_parameter(
+            name=_extensions_state_param_name(app_name, environment),
+            value=state,
+            description="Extensions created by the last deploy (skip detection)",
+            overwrite=True,
+        )
+        if not success:
+            log_warning(f"Failed to store extensions state: {error}")
 
 
 def _require_lambda_name(env_config: dict, extensions: list[str]) -> str:
