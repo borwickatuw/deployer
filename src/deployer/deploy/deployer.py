@@ -14,7 +14,7 @@ import click
 from botocore.exceptions import BotoCoreError, ClientError
 
 from deployer.config import parse_deploy_config
-from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig
+from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig, StabilityConfig
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
 from deployer.deploy.service import (
@@ -78,10 +78,36 @@ def _build_infra_config(env_config: dict) -> InfraConfig:
             "maximum_percent": deployment.get("maximum_percent", 200),
             "circuit_breaker_enabled": deployment.get("circuit_breaker_enabled", False),
             "circuit_breaker_rollback": deployment.get("circuit_breaker_rollback", True),
+            "poll_interval": deployment.get("poll_interval", 15),
         },
         # Tofu's `health_check_config` output, wired into config.toml as
         # [services].health_check -- see docs/CONFIG-REFERENCE.md.
         health_check_config=env_config.get("services", {}).get("health_check", {}),
+    )
+
+
+# Total time wait_for_stable gives a service before declaring a timeout.
+# Fixed regardless of poll cadence: a faster poll_interval buys detection
+# granularity, not a shorter deadline.
+STABILITY_TIMEOUT_SECONDS = 600
+
+
+def _build_stability_config(infra_config: InfraConfig) -> StabilityConfig:
+    """Build the wait_for_stable polling config from [deployment] settings.
+
+    Raises:
+        ValueError: If poll_interval is not an integer in 1-60. Values below
+            ~5s mostly re-read the same ECS snapshot, but are allowed; the
+            settle window's strength is independent of the poll cadence
+            (StabilityConfig.settle_seconds).
+    """
+    poll = infra_config.deployment_config.get("poll_interval", 15)
+    if isinstance(poll, bool) or not isinstance(poll, int) or not 1 <= poll <= 60:
+        raise ValueError(
+            f"[deployment] poll_interval must be an integer between 1 and 60 seconds, got {poll!r}"
+        )
+    return StabilityConfig(
+        poll_interval=poll, max_attempts=max(1, round(STABILITY_TIMEOUT_SECONDS / poll))
     )
 
 
@@ -139,6 +165,7 @@ class Deployer:
 
         # Infrastructure config for ECS deployment
         self.infra_config = _build_infra_config(env_config)
+        self.stability_config = _build_stability_config(self.infra_config)
 
         # AWS clients
         self.ecs = boto3.client("ecs")
@@ -382,7 +409,7 @@ class Deployer:
         # with PRIMARY running the revision deploy_services registered for it
         # — a circuit-breaker rollback otherwise reads as success.
         with timer.step("wait_for_stable"):
-            health_failures = wait_for_stable(self.ctx, deployed.updated)
+            health_failures = wait_for_stable(self.ctx, deployed.updated, self.stability_config)
         print()
 
         # Step 8: Persist per-service state hashes, only now that stability is

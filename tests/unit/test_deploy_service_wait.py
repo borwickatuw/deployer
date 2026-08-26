@@ -647,7 +647,7 @@ class TestWaitForTargetGroupHealthy:
 # _wait_for_service_stable -- MUST-PIN 2, 3, 4, 9
 # ===========================================================================
 
-FAST = StabilityConfig(poll_interval=1, max_attempts=3, failure_threshold=3)
+FAST = StabilityConfig(poll_interval=1, max_attempts=3, failure_threshold=3, settle_seconds=1)
 
 
 class TestStableSuccess:
@@ -683,7 +683,7 @@ class TestStableSuccess:
                 _stable_response(2, 2, rollout_state="COMPLETED"),
             ]
         )
-        _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 5, 3))
+        _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 5, 3, 1))
         printed = [line for line in _lines(capsys.readouterr().out) if line.startswith("  web: ")]
         assert printed == ["  web: running=0/2", "  web: running=2/2"]
 
@@ -893,6 +893,37 @@ class TestStableSettleWindow:
         assert len(client.calls_to("describe_services")) == 3
         assert sleeps == [1, 1]
 
+    def test_settle_spans_settle_seconds_not_poll_intervals(self, sleeps):
+        """At a fast poll cadence the window needs enough confirming polls to
+        cover settle_seconds — 1s polls with a 3s settle take 4 polls, so a
+        short-lived crash-looper can't be confirmed by two near-instant reads."""
+        stable = _describe_services(
+            deployments=[_deployment(running=1, desired=1) | {"id": "ecs-svc/1"}]
+        )
+        client = ScriptedClient(describe_services=stable)
+        cfg = StabilityConfig(poll_interval=1, max_attempts=10, settle_seconds=3)
+        assert cfg.settle_polls == 3
+        assert _wait_for_service_stable(_ctx(client), "web", cfg) is None
+        assert len(client.calls_to("describe_services")) == 4
+        assert sleeps == [1, 1, 1]
+
+    def test_mid_window_failure_growth_restarts_the_whole_window(self, sleeps):
+        """A failedTasks bump on any confirming poll discards the progress made,
+        not just that poll."""
+
+        def poll(failed):
+            return _describe_services(
+                deployments=[_deployment(running=1, desired=1, failed=failed) | {"id": "d1"}]
+            )
+
+        client = ScriptedClient(describe_services=[poll(0), poll(0), poll(1), poll(1), poll(1)])
+        cfg = StabilityConfig(
+            poll_interval=1, max_attempts=10, failure_threshold=99, settle_seconds=2
+        )
+        assert _wait_for_service_stable(_ctx(client), "web", cfg) is None
+        # 2 polls of the first window, the bump restarting it, then 2 confirms.
+        assert len(client.calls_to("describe_services")) == 5
+
     def test_a_non_qualifying_poll_resets_the_window(self, sleeps):
         """qualify → dip → qualify is not two consecutive successes."""
         qualifying = _describe_services(
@@ -902,7 +933,7 @@ class TestStableSettleWindow:
             deployments=[_deployment(running=0, desired=1, pending=1) | {"id": "ecs-svc/1"}]
         )
         client = ScriptedClient(describe_services=[qualifying, dip, qualifying, qualifying])
-        assert _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 6, 99)) is None
+        assert _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 6, 99, 1)) is None
         assert len(client.calls_to("describe_services")) == 4
 
 
@@ -1128,7 +1159,7 @@ class TestStableNoProgress:
         )
         assert (
             _wait_for_service_stable(
-                _ctx(client), "web", StabilityConfig(1, 10, failure_threshold=99)
+                _ctx(client), "web", StabilityConfig(1, 10, failure_threshold=99, settle_seconds=1)
             )
             is None
         )

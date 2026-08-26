@@ -774,6 +774,7 @@ ECS deployment configuration. Optional - controls how ECS deploys new task revis
 | `circuit_breaker_rollback` | boolean | true    | Automatically rollback on deployment failure (requires circuit breaker).                                                   |
 | `maximum_percent`          | number  | 200     | Maximum percentage of tasks during deployment. Use 100 for staging (no extra capacity), 200 for production (rolling).      |
 | `minimum_healthy_percent`  | number  | 100     | Minimum percentage of healthy tasks to maintain during deployment. Use 0 for staging (faster), 100 for production (safer). |
+| `poll_interval`            | integer | 15      | Seconds between `wait_for_stable` polls (1–60). Lower values detect readiness sooner; the ~600s deadline and the 15s crash-loop settle window are unaffected. 5 is a good staging value; below ~5s mostly re-reads the same ECS snapshot. |
 
 `minimum_healthy_percent` and `maximum_percent` can be overridden per service
 in the application's deploy.toml (`[services.X] minimum_healthy_percent = 0`),

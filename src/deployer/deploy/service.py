@@ -1384,13 +1384,13 @@ def _wait_for_service_stable(
     """Wait for a single service to stabilize.
 
     Success requires the criterion (running == desired > 0, nothing pending,
-    PRIMARY running ``expected_arn``) to hold on **two consecutive polls** of
-    the same deployment with ``failedTasks`` not increasing between them. One
-    poll is not enough: a crash loop whose tasks live ~15s can show
-    running == desired on every poll with a different task each time -- that
-    is exactly how a crash-looping beat once passed the deploy, only for the
-    circuit breaker to fail it a minute after the deployer exited 0. Costs
-    one extra poll interval per service, all services in parallel.
+    PRIMARY running ``expected_arn``) to hold across a settle window: the
+    first qualifying poll plus ``stability.settle_polls`` consecutive
+    confirming polls of the same deployment with ``failedTasks`` not
+    increasing, spanning ~``settle_seconds``. One poll is not enough: a crash
+    loop whose tasks live ~15s can show running == desired on every poll with
+    a different task each time. Costs ~settle_seconds per service, all
+    services in parallel.
 
     Args:
         ctx: DeploymentContext with shared deployment parameters.
@@ -1406,9 +1406,9 @@ def _wait_for_service_stable(
     """
     last_status = ""
     consecutive_failures = 0
-    # (deployment id, failedTasks) from the previous poll iff it met the
-    # success criterion; None otherwise. Success needs two in a row.
-    settling: tuple[str | None, int] | None = None
+    # (deployment id, failedTasks at window start, confirming polls seen) for
+    # the current run of qualifying polls; None after any non-qualifying poll.
+    settling: tuple[str | None, int, int] | None = None
 
     for _ in range(1, stability.max_attempts + 1):
         service = _describe_service_or_raise(ctx, service_name)
@@ -1444,13 +1444,17 @@ def _wait_for_service_stable(
 
         if running == desired and pending == 0 and running > 0:
             _check_expected_task_definition(deployment, service_name, expected_arn)
-            current = (deployment.get("id"), failed)
-            if settling is not None and settling[0] == current[0] and failed <= settling[1]:
-                log_success(f"{service_name} (stable)")
-                return
-            # First qualifying poll (or the id changed, or failures grew):
-            # (re)start the settle window.
-            settling = current
+            dep_id = deployment.get("id")
+            if settling is None or settling[0] != dep_id or failed > settling[1]:
+                # First qualifying poll (or the id changed, or failures
+                # grew): (re)start the settle window.
+                settling = (dep_id, failed, 0)
+            else:
+                confirmed = settling[2] + 1
+                if confirmed >= stability.settle_polls:
+                    log_success(f"{service_name} (stable)")
+                    return
+                settling = (settling[0], settling[1], confirmed)
         else:
             settling = None
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -114,8 +115,20 @@ class DeploymentContext:
 
 @dataclass(frozen=True)
 class StabilityConfig:
-    """Polling configuration for ECS service stability checks."""
+    """Polling configuration for ECS service stability checks.
+
+    ``settle_seconds`` is deliberately independent of ``poll_interval``: the
+    settle window only detects a crash loop if the confirming observation is
+    far enough from the first to catch a short-lived task flapping (or its
+    failedTasks climbing). Faster polling must not shrink that distance.
+    """
 
     poll_interval: int = 15
     max_attempts: int = 40
     failure_threshold: int = 3
+    settle_seconds: int = 15
+
+    @property
+    def settle_polls(self) -> int:
+        """Confirming polls required after the first qualifying poll."""
+        return max(1, math.ceil(self.settle_seconds / self.poll_interval))

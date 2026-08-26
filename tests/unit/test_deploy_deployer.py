@@ -45,8 +45,13 @@ from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
 from deployer.deploy import deployer as deployer_mod
-from deployer.deploy.context import DeployOptions
-from deployer.deploy.deployer import Deployer, InfraStatus, common_deploy_options
+from deployer.deploy.context import DeployOptions, StabilityConfig
+from deployer.deploy.deployer import (
+    Deployer,
+    InfraStatus,
+    _build_stability_config,
+    common_deploy_options,
+)
 from deployer.deploy.service import DeployedServices
 from deployer.timing import DeploymentTimer, get_timer, set_timer
 
@@ -345,6 +350,7 @@ class TestDeployerInit:
             "maximum_percent": 200,
             "circuit_breaker_enabled": False,
             "circuit_breaker_rollback": True,
+            "poll_interval": 15,
         }
         assert infra_config.subnet_ids == ["subnet-1", "subnet-2"]
         assert infra_config.database_url is None
@@ -756,7 +762,7 @@ class TestDeploySteps:
             ("wait_for_migrations", (aws["ecs"], MIGRATION_TASK), {}),
             # deploy_services' updated map scopes the wait and carries the
             # per-service expected task-definition ARNs (rollback detection).
-            ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES), {}),
+            ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES, StabilityConfig()), {}),
             # Hashes are stored only after stability, excluding health failures.
             (
                 "store_service_state_hashes",
@@ -1083,6 +1089,48 @@ class TestDeployTimerArmsAgree:
         assert timed[0] == untimed[0] == []
         assert timed[1] == untimed[1]
         assert run_timer.report.steps == []
+
+
+class TestBuildStabilityConfig:
+    """[deployment] poll_interval → StabilityConfig, with a fixed 600s deadline."""
+
+    def _infra(self, make_deployer, **deployment):
+        env_config = _env_config()
+        env_config["deployment"] = deployment
+        return make_deployer(env_config=env_config).infra_config
+
+    def test_default_is_fifteen_second_polls(self, make_deployer):
+        assert _build_stability_config(self._infra(make_deployer)) == StabilityConfig()
+
+    def test_poll_interval_is_wired_from_deployment_config(self, make_deployer):
+        cfg = _build_stability_config(self._infra(make_deployer, poll_interval=5))
+        assert cfg.poll_interval == 5
+        # The deadline stays ~600s: faster polls mean more attempts.
+        assert cfg.max_attempts == 120
+        assert cfg.poll_interval * cfg.max_attempts == 600
+
+    def test_deployer_passes_its_stability_config_to_the_wait(self, make_deployer, steps):
+        env_config = _env_config()
+        env_config["deployment"] = {"poll_interval": 5}
+        make_deployer(env_config=env_config).deploy()
+
+        wait_call = next(call for call in steps.calls if call[0] == "wait_for_stable")
+        assert wait_call[1][2].poll_interval == 5
+
+    @pytest.mark.parametrize("bad", [0, -1, 61, "5", 5.0, True])
+    def test_invalid_poll_interval_fails_at_init(self, make_deployer, bad):
+        env_config = _env_config()
+        env_config["deployment"] = {"poll_interval": bad}
+        with pytest.raises(ValueError, match="poll_interval"):
+            make_deployer(env_config=env_config)
+
+    def test_settle_polls_scale_with_the_interval(self):
+        # settle_seconds is independent of the poll cadence: faster polling
+        # buys detection granularity, never a shorter settle window.
+        assert StabilityConfig(poll_interval=15).settle_polls == 1
+        assert StabilityConfig(poll_interval=5).settle_polls == 3
+        assert StabilityConfig(poll_interval=1).settle_polls == 15
+        assert StabilityConfig(poll_interval=60).settle_polls == 1
 
 
 class TestCommonDeployOptions:
