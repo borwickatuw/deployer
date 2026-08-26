@@ -92,6 +92,25 @@ interruptible = true
 
         assert raw["services"]["worker"]["interruptible"] is True
 
+    def test_additional_contexts_in_raw_dict(self, tmp_path):
+        """Test additional_contexts roundtrips through get_raw_dict.
+
+        The production deploy path builds images from get_raw_dict()'s output,
+        so a field dropped here silently never reaches `docker build`.
+        """
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[images.web]
+context = "web"
+additional_contexts = { shared = "shared" }
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+        raw = config.get_raw_dict()
+
+        assert raw["images"]["web"]["additional_contexts"] == {"shared": "shared"}
+
 
 class TestDeployConfigImages:
     """Tests for DeployConfig.images (replaces get_deploy_images)."""

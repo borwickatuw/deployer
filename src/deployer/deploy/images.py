@@ -101,7 +101,7 @@ def should_ignore(file_path: Path, context_path: Path, patterns: list[str]) -> b
     return False
 
 
-def _context_files(context_path: Path, dockerfile: str, patterns: list[str]) -> list[Path]:
+def _context_files(context_path: Path, dockerfile: str | None, patterns: list[str]) -> list[Path]:
     """The context files whose path and content feed the hash, in sorted order.
 
     Two files are excluded that .dockerignore does not have to name. The
@@ -117,13 +117,16 @@ def _context_files(context_path: Path, dockerfile: str, patterns: list[str]) -> 
 
     Args:
         context_path: Path to the build context directory.
-        dockerfile: Name of the selected Dockerfile.
+        dockerfile: Name of the selected Dockerfile, or None when the context
+            has no Dockerfile selection.
         patterns: Ignore patterns from parse_dockerignore.
 
     Returns:
         Files to hash, sorted by their path relative to the context.
     """
-    excluded = {context_path / dockerfile, context_path / ".dockerignore"}
+    excluded = {context_path / ".dockerignore"}
+    if dockerfile is not None:
+        excluded.add(context_path / dockerfile)
 
     return sorted(
         (
@@ -137,7 +140,7 @@ def _context_files(context_path: Path, dockerfile: str, patterns: list[str]) -> 
     )
 
 
-def compute_context_hash(context_path: Path, dockerfile: str) -> str:
+def compute_context_hash(context_path: Path, dockerfile: str | None) -> str:
     """Compute a hash of the build context for cache detection.
 
     The hash covers the selected Dockerfile under its own prefix, then the path
@@ -146,7 +149,9 @@ def compute_context_hash(context_path: Path, dockerfile: str) -> str:
 
     Args:
         context_path: Path to the build context directory.
-        dockerfile: Name of the Dockerfile.
+        dockerfile: Name of the Dockerfile, or None for a context that has no
+            Dockerfile selection (a named additional context) — every file then
+            hashes as ordinary content.
 
     Returns:
         Short hash string (12 characters, like git short hash).
@@ -156,11 +161,12 @@ def compute_context_hash(context_path: Path, dockerfile: str) -> str:
     patterns = parse_dockerignore(context_path)
 
     # Hash the Dockerfile first, under a prefix that records the selection
-    dockerfile_path = context_path / dockerfile
-    if dockerfile_path.exists():
-        with open(dockerfile_path, "rb") as f:
-            hasher.update(b"Dockerfile:")
-            hasher.update(f.read())
+    if dockerfile is not None:
+        dockerfile_path = context_path / dockerfile
+        if dockerfile_path.exists():
+            with open(dockerfile_path, "rb") as f:
+                hasher.update(b"Dockerfile:")
+                hasher.update(f.read())
 
     # Hash each remaining file (path + content)
     for file_path in _context_files(context_path, dockerfile, patterns):
@@ -255,6 +261,7 @@ class ImageBuildSpec(NamedTuple):
     should_push: bool
     build_args: dict
     target: str | None
+    additional_contexts: dict[str, Path] = {}
 
 
 def _resolve_context(image_name: str, source_dir: Path, context: str) -> Path:
@@ -278,6 +285,38 @@ def _resolve_context(image_name: str, source_dir: Path, context: str) -> Path:
     resolved = source_dir / context
     if not resolved.is_dir():
         raise RuntimeError(f"Image '{image_name}': build context '{resolved}' is not a directory.")
+    return resolved
+
+
+def _resolve_additional_contexts(
+    image_name: str, source_dir: Path, additional_contexts: dict[str, str]
+) -> dict[str, Path]:
+    """Resolve an image's named additional build contexts, checking each exists.
+
+    These are deploy.toml's ``additional_contexts`` — the counterpart of
+    docker-compose's ``build.additional_contexts`` — and become
+    ``--build-context name=path`` flags for ``COPY --from=name`` stages.
+
+    Args:
+        image_name: Name of the image, for error messages.
+        source_dir: Root of the source tree that each path is relative to.
+        additional_contexts: Mapping of context name to path from deploy.toml.
+
+    Returns:
+        Mapping of context name to resolved directory.
+
+    Raises:
+        RuntimeError: If any path is not an existing directory.
+    """
+    resolved = {}
+    for name, context in additional_contexts.items():
+        path = source_dir / context
+        if not path.is_dir():
+            raise RuntimeError(
+                f"Image '{image_name}': additional context '{name}' path '{path}' "
+                "is not a directory."
+            )
+        resolved[name] = path
     return resolved
 
 
@@ -312,6 +351,9 @@ def _resolve_image_spec(
             should_push=image_config.push,
             build_args=image_config.get_build_args(environment),
             target=image_config.get_target(environment),
+            additional_contexts=_resolve_additional_contexts(
+                image_name, source_dir, image_config.additional_contexts
+            ),
         )
 
     # Legacy dict support - inline the logic
@@ -322,6 +364,9 @@ def _resolve_image_spec(
         should_push=image_config.get("push", True),
         build_args=merge_build_args(image_name, image_config.get("build_args", {}), environment),
         target=target_config.get(environment) if isinstance(target_config, dict) else target_config,
+        additional_contexts=_resolve_additional_contexts(
+            image_name, source_dir, image_config.get("additional_contexts", {})
+        ),
     )
 
 
@@ -329,7 +374,8 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
     """Compute the content-addressed cache tag for one image.
 
     The tag starts as a hash of the build context, then is re-hashed together
-    with the build args and target so that changing either yields a new tag.
+    with the build args, target, and any additional contexts so that changing
+    any of them yields a new tag.
 
     Args:
         spec: The resolved build inputs for the image.
@@ -345,6 +391,8 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
         hash_modifiers.append(f"args:{args_str}")
     if spec.target:
         hash_modifiers.append(f"target:{spec.target}")
+    for name, path in sorted(spec.additional_contexts.items()):
+        hash_modifiers.append(f"context:{name}:{compute_context_hash(path, None)}")
 
     if hash_modifiers:
         combined = f"{content_hash}:{';'.join(hash_modifiers)}"
@@ -386,6 +434,10 @@ def _docker_build_cmd(spec: ImageBuildSpec, local_tag: str) -> list[str]:
     # Add build arguments
     for key, value in spec.build_args.items():
         build_cmd.extend(["--build-arg", f"{key}={value}"])
+
+    # Add named additional contexts (for COPY --from=name stages)
+    for name, path in spec.additional_contexts.items():
+        build_cmd.extend(["--build-context", f"{name}={path}"])
 
     build_cmd.append(str(spec.context))
     return build_cmd

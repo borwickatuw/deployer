@@ -122,6 +122,24 @@ def audit_images(
                 f"not found in deploy.toml [images]"
             )
 
+    # Check that each compose service's named additional contexts are carried
+    # over to the deploy.toml image built from the same context — a Dockerfile
+    # with COPY --from=<name> builds locally but fails in deploy without them
+    for context, service_name in compose_contexts.items():
+        image_name = deploy_contexts.get(context)
+        if image_name is None:
+            continue
+        deploy_additional = {
+            name: path.lstrip("./")
+            for name, path in deploy_images[image_name].additional_contexts.items()
+        }
+        for ctx_name, ctx_path in compose_services[service_name]["additional_contexts"].items():
+            if deploy_additional.get(ctx_name) != ctx_path.lstrip("./"):
+                issues.append(
+                    f"Additional context '{ctx_name}={ctx_path}' (from service "
+                    f"'{service_name}') not found in deploy.toml [images.{image_name}]"
+                )
+
     return issues
 
 

@@ -119,13 +119,14 @@ source = "."
 
 Each image is defined as a subsection: `[images.web]`, `[images.worker]`, etc.
 
-| Field        | Type    | Required | Default      | Description                                                        |
-| ------------ | ------- | -------- | ------------ | ------------------------------------------------------------------ |
-| `context`    | string  | Yes      | -            | Build context path relative to `source`.                           |
-| `depends_on` | array   | No       | `[]`         | List of image names that must be built before this one.            |
-| `dockerfile` | string  | No       | `Dockerfile` | Dockerfile path relative to `context`.                             |
-| `push`       | boolean | No       | `true`       | Whether to push to ECR. Set to `false` for local-only base images. |
-| `target`     | string  | No       | -            | Docker build target for multi-stage builds.                        |
+| Field                 | Type    | Required | Default      | Description                                                        |
+| --------------------- | ------- | -------- | ------------ | ------------------------------------------------------------------ |
+| `additional_contexts` | table   | No       | `{}`         | Named build contexts (`{name = "path"}`) for `COPY --from=name`.   |
+| `context`             | string  | Yes      | -            | Build context path relative to `source`.                           |
+| `depends_on`          | array   | No       | `[]`         | List of image names that must be built before this one.            |
+| `dockerfile`          | string  | No       | `Dockerfile` | Dockerfile path relative to `context`.                             |
+| `push`                | boolean | No       | `true`       | Whether to push to ECR. Set to `false` for local-only base images. |
+| `target`              | string  | No       | -            | Docker build target for multi-stage builds.                        |
 
 **Example:**
 
@@ -168,6 +169,23 @@ depends_on = ["myapp-base"]
 This allows Dockerfiles to use `FROM myapp-base` to inherit from local base images.
 
 **Note:** The image key name (e.g., `myapp-base` in `[images.myapp-base]`) becomes the local tag name. Your Dockerfile's `FROM` statement must match this name.
+
+#### Additional Build Contexts
+
+When a Dockerfile copies from a directory outside its build context (e.g., a `shared/` directory used by several images), docker-compose supplies it via `build.additional_contexts`. The deploy.toml counterpart is `additional_contexts` — paths are relative to `source`, and each entry becomes a `--build-context name=path` flag:
+
+```toml
+[images.web]
+context = "web"
+additional_contexts = { shared = "shared" }
+```
+
+```dockerfile
+# In web/Dockerfile
+COPY --from=shared . /app/shared/
+```
+
+The contents of each additional context are included in the image's content hash, so editing the shared directory triggers a rebuild. The `audit` command reports compose `additional_contexts` that are missing from the matching deploy.toml image.
 
 #### Multi-Stage Build Targets
 
@@ -301,7 +319,7 @@ LOG_LEVEL = "INFO"
 1. `[environment]` - base values
 1. `[environment.{env}]` - environment-specific overrides
 
-The environment name comes from the first argument passed to the deploy script (e.g., `uv run python bin/deploy.py myapp-staging`).
+The environment name comes from the first argument passed to the deploy script (e.g., `uv run python bin/deploy.py deploy myapp-staging`).
 
 #### Service-Specific Environment Variables
 

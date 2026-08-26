@@ -166,7 +166,14 @@ class TestAuditImages:
 
     def test_all_accounted_for(self):
         """Test no issues when all images accounted for."""
-        compose = {"web": {"has_build": True, "build_context": "web", "profiles": []}}
+        compose = {
+            "web": {
+                "has_build": True,
+                "build_context": "web",
+                "additional_contexts": {},
+                "profiles": [],
+            }
+        }
         images = {"web": ImageConfig(name="web", context="web")}
         config = AuditConfig(ignore_services=set(), ignore_images=set())
         assert audit_images(compose, images, config) == []

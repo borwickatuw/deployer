@@ -59,6 +59,27 @@ def _env_file_var_names(config: dict[str, Any], base_dir: Path) -> list[str]:
     return names
 
 
+def _parse_additional_contexts(raw: list | dict) -> dict[str, str]:
+    """Normalize a build section's additional_contexts to a name→path mapping.
+
+    Compose accepts either a mapping ({name: path}) or a list of
+    "name=path" strings.
+
+    Args:
+        raw: The additional_contexts value from a service's build section.
+
+    Returns:
+        Dictionary mapping context names to their paths.
+    """
+    if isinstance(raw, dict):
+        return {name: str(path) for name, path in raw.items()}
+    contexts = {}
+    for item in raw:
+        name, _, path = str(item).partition("=")
+        contexts[name] = path
+    return contexts
+
+
 # YAML values can be str, list, or dict  (re-evaluate-by: 2026-11 review)
 # pysmelly: ignore isinstance-chain
 def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) -> dict[str, dict]:
@@ -80,6 +101,7 @@ def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) 
         services[name] = {
             "has_build": "build" in config,
             "build_context": None,
+            "additional_contexts": {},
             "dockerfile": None,
             "ports": config.get("ports", []),
             "environment": [],
@@ -94,6 +116,9 @@ def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) 
             elif isinstance(build, dict):
                 services[name]["build_context"] = build.get("context", ".")
                 services[name]["dockerfile"] = build.get("dockerfile")
+                services[name]["additional_contexts"] = _parse_additional_contexts(
+                    build.get("additional_contexts", {})
+                )
 
         # Extract environment variables
         env = config.get("environment", [])

@@ -162,6 +162,51 @@ class TestGetComposeServices:
         assert "DEBUG" in result["app"]["environment"]
         assert "PORT" in result["app"]["environment"]
 
+    def test_additional_contexts_as_list(self):
+        """Test additional_contexts in the list-of-"name=path" form."""
+        compose = {
+            "services": {
+                "app": {
+                    "build": {
+                        "context": "./app",
+                        "additional_contexts": ["shared=./shared"],
+                    },
+                },
+            }
+        }
+
+        result = get_compose_services(compose)
+        assert result["app"]["additional_contexts"] == {"shared": "./shared"}
+
+    def test_additional_contexts_as_dict(self):
+        """Test additional_contexts in the mapping form."""
+        compose = {
+            "services": {
+                "app": {
+                    "build": {
+                        "context": "./app",
+                        "additional_contexts": {"shared": "./shared"},
+                    },
+                },
+            }
+        }
+
+        result = get_compose_services(compose)
+        assert result["app"]["additional_contexts"] == {"shared": "./shared"}
+
+    def test_no_additional_contexts_is_an_empty_mapping(self):
+        """Test that the key is always present, even without a build dict."""
+        compose = {
+            "services": {
+                "app": {"build": "./app"},
+                "db": {"image": "postgres:15"},
+            }
+        }
+
+        result = get_compose_services(compose)
+        assert result["app"]["additional_contexts"] == {}
+        assert result["db"]["additional_contexts"] == {}
+
 
 class TestDeployConfigServices:
     """Tests for DeployConfig.services (replaces get_deploy_services)."""
@@ -229,6 +274,21 @@ context = "."
 """)
         config = parse_deploy_config(tmp_path / "deploy.toml")
         assert config.images["app"].dockerfile == "Dockerfile"
+
+    def test_additional_contexts_parse_without_warnings(self, tmp_path):
+        """Test that additional_contexts is a known [images.*] key."""
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[images.app]
+context = "app"
+additional_contexts = { shared = "shared" }
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        assert config.images["app"].additional_contexts == {"shared": "shared"}
+        assert config.get_warnings() == []
 
 
 class TestDeployConfigEnvVars:
@@ -409,7 +469,12 @@ class TestAuditImages:
         # The audit function normalizes "./something" to "something"
         # and "." becomes empty string, so we use a subdir context
         compose_services = {
-            "web": {"has_build": True, "build_context": "./web", "profiles": []},
+            "web": {
+                "has_build": True,
+                "build_context": "./web",
+                "additional_contexts": {},
+                "profiles": [],
+            },
         }
         deploy_images = {
             "web": ImageConfig(name="web", context="web"),
@@ -425,7 +490,12 @@ class TestAuditImages:
     def test_missing_image_context(self):
         """Test detection of missing build context in deploy.toml."""
         compose_services = {
-            "web": {"has_build": True, "build_context": "./web", "profiles": []},
+            "web": {
+                "has_build": True,
+                "build_context": "./web",
+                "additional_contexts": {},
+                "profiles": [],
+            },
         }
         deploy_images = {
             "api": ImageConfig(name="api", context="./api"),
@@ -438,6 +508,44 @@ class TestAuditImages:
         issues = audit_images(compose_services, deploy_images, audit_config)
         assert len(issues) == 1
         assert "web" in issues[0]
+
+    def test_matching_additional_contexts_pass(self):
+        """No issue when deploy.toml carries the compose additional context."""
+        compose_services = {
+            "web": {
+                "has_build": True,
+                "build_context": "./web",
+                "additional_contexts": {"shared": "./shared"},
+                "profiles": [],
+            },
+        }
+        deploy_images = {
+            "web": ImageConfig(name="web", context="web", additional_contexts={"shared": "shared"}),
+        }
+        audit_config = AuditConfig(ignore_services=set(), ignore_images=set())
+
+        issues = audit_images(compose_services, deploy_images, audit_config)
+        assert issues == []
+
+    def test_missing_additional_context_is_reported(self):
+        """A compose additional context absent from deploy.toml is an issue."""
+        compose_services = {
+            "web": {
+                "has_build": True,
+                "build_context": "./web",
+                "additional_contexts": {"shared": "./shared"},
+                "profiles": [],
+            },
+        }
+        deploy_images = {
+            "web": ImageConfig(name="web", context="web"),
+        }
+        audit_config = AuditConfig(ignore_services=set(), ignore_images=set())
+
+        issues = audit_images(compose_services, deploy_images, audit_config)
+        assert len(issues) == 1
+        assert "shared=./shared" in issues[0]
+        assert "images.web" in issues[0]
 
     def test_build_service_without_a_context_is_skipped(self):
         """A build service reporting no context contributes no expectation."""

@@ -90,8 +90,17 @@ class ImageConfig:
     depends_on: list[str] = field(default_factory=list)
     target: str | dict[str, str] | None = field(default=None, repr=False)
     build_args: dict[str, Any] = field(default_factory=dict, repr=False)
+    additional_contexts: dict[str, str] = field(default_factory=dict, repr=False)
 
-    _KNOWN_KEYS = {"context", "dockerfile", "target", "push", "depends_on", "build_args"}
+    _KNOWN_KEYS = {
+        "context",
+        "dockerfile",
+        "target",
+        "push",
+        "depends_on",
+        "build_args",
+        "additional_contexts",
+    }
 
     def get_target(self, environment: str) -> str | None:
         """Get the Docker build target for this image.
@@ -322,6 +331,8 @@ class DeployConfig:
                 img_dict["target"] = img.target
             if img.build_args:
                 img_dict["build_args"] = img.build_args
+            if img.additional_contexts:
+                img_dict["additional_contexts"] = img.additional_contexts
             result["images"][name] = img_dict
 
         for name, svc in self.services.items():

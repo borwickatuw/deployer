@@ -123,6 +123,7 @@ def _expected_tag(
     dockerfile: str = "Dockerfile",
     build_args: dict | None = None,
     target: str | None = None,
+    additional_contexts: dict | None = None,
 ) -> str:
     """Recompute the cache tag the way build_and_push_images does.
 
@@ -136,6 +137,8 @@ def _expected_tag(
         modifiers.append(f"args:{args_str}")
     if target:
         modifiers.append(f"target:{target}")
+    for name, path in sorted((additional_contexts or {}).items()):
+        modifiers.append(f"context:{name}:{compute_context_hash(path, None)}")
     if modifiers:
         combined = f"{content_hash}:{';'.join(modifiers)}"
         return hashlib.sha256(combined.encode()).hexdigest()[:12]
@@ -1427,6 +1430,77 @@ class TestBuildAndPushDeployConfig:
 
         argv = run.argv[0]
         assert argv[argv.index("-f") + 1] == str(source_dir / "web" / "Dockerfile")
+
+
+class TestAdditionalContexts:
+    """Named additional contexts: the --build-context flag, the cache tag,
+    and the fail-fast on a missing directory."""
+
+    @pytest.fixture
+    def shared_dir(self, source_dir):
+        """A real ``shared`` directory next to the build contexts."""
+        shared = source_dir / "shared"
+        shared.mkdir()
+        (shared / "constants.py").write_text("X = 1\n")
+        return shared
+
+    def test_the_flag_is_emitted_with_the_resolved_path(self, source_dir, shared_dir, run):
+        config = _dict_config(web={"context": "web", "additional_contexts": {"shared": "shared"}})
+
+        _build(config, source_dir)
+
+        argv = run.argv[0]
+        assert argv[argv.index("--build-context") + 1] == f"shared={shared_dir}"
+        assert argv[-1] == str(source_dir / "web")
+
+    def test_no_additional_contexts_means_no_flag(self, source_dir, run):
+        _build(_dict_config(web={"context": "web"}), source_dir)
+
+        assert "--build-context" not in run.argv[0]
+
+    def test_the_image_config_arm_agrees_with_the_dict_arm(
+        self, source_dir, shared_dir, run, capsys
+    ):
+        _build(
+            _dict_config(web={"context": "web", "additional_contexts": {"shared": "shared"}}),
+            source_dir,
+        )
+        dict_argv = run.argv[:]
+        dict_out = capsys.readouterr().out
+
+        run.calls.clear()
+        config = _deploy_config(
+            web=ImageConfig(name="web", context="web", additional_contexts={"shared": "shared"})
+        )
+        _build(config, source_dir)
+
+        assert run.argv == dict_argv
+        assert capsys.readouterr().out == dict_out
+
+    def test_the_context_contents_reach_the_cache_tag(self, source_dir, shared_dir, run):
+        config = _dict_config(web={"context": "web", "additional_contexts": {"shared": "shared"}})
+
+        _build(config, source_dir)
+
+        tag = _expected_tag(source_dir / "web", additional_contexts={"shared": shared_dir})
+        assert run.argv[0][run.argv[0].index("-t") + 1].endswith(f":{tag}")
+
+    def test_editing_the_shared_context_changes_the_tag(self, source_dir, shared_dir, run):
+        config = _dict_config(web={"context": "web", "additional_contexts": {"shared": "shared"}})
+        _build(config, source_dir)
+        first = run.argv[0][run.argv[0].index("-t") + 1]
+
+        (shared_dir / "constants.py").write_text("X = 2\n")
+        run.calls.clear()
+        _build(config, source_dir)
+
+        assert run.argv[0][run.argv[0].index("-t") + 1] != first
+
+    def test_a_missing_context_directory_raises_naming_image_and_context(self, source_dir):
+        config = _dict_config(web={"context": "web", "additional_contexts": {"shared": "nope"}})
+
+        with pytest.raises(RuntimeError, match="Image 'web': additional context 'shared'"):
+            _build(config, source_dir)
 
 
 class TestBuildArgsDispatchAgrees:
