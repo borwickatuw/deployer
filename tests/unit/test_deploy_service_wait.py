@@ -79,10 +79,6 @@ Stubbing follows 53d-2a's recorded rule — outermost boundary only, never a
   seam every ``aws`` CLI caller funnels through.
 * The migrations hash runs against a **real** git repo under ``tmp_path``.
 
-``service.py`` does not import ``..timing`` and must not start: 53e-3b's
-``NullTimer`` has no ``_current_step``, so wiring ``get_timer()`` into these
-polling loops would reproduce the ``AttributeError`` already pinned in
-``test_deploy_images.py``. Nothing here introduces it.
 """
 
 import re
@@ -1450,6 +1446,57 @@ class TestWaitForStable:
         with pytest.raises(DeploymentError) as exc_info:
             wait_for_stable(ctx, {"web": TASK_DEF_NEW})
         assert exc_info.value.error_type == "rollback_detected"
+
+
+@pytest.mark.usefixtures("mocked_aws")
+class TestWaitForStableTiming:
+    """Per-service timing sub-steps under the wait_for_stable timer step."""
+
+    @pytest.fixture
+    def timer(self):
+        from deployer.timing import DeploymentTimer, set_timer
+
+        run_timer = DeploymentTimer("timing-test")
+        run_timer.start()
+        set_timer(run_timer)
+        yield run_timer
+        set_timer(None)
+
+    def test_each_service_records_a_sub_step(self, sleeps, timer):
+        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
+        with timer.step("wait_for_stable") as step:
+            assert wait_for_stable(ctx) == []
+        assert sorted(sub.name for sub in step.sub_steps) == ["web", "worker"]
+        assert all(sub.success for sub in step.sub_steps)
+        assert all(sub.end_time >= sub.start_time for sub in step.sub_steps)
+
+    def test_a_failed_wait_marks_its_sub_step(self, sleeps, timer):
+        client = ScriptedClient(describe_services={"services": []})
+        ctx = _ctx(client, config={"services": {"web": {}}})
+        with timer.step("wait_for_stable") as step:
+            with pytest.raises(DeploymentError):
+                wait_for_stable(ctx)
+        (sub,) = step.sub_steps
+        assert sub.name == "web"
+        assert sub.success is False
+        assert "not found in cluster" in sub.error
+
+    def test_no_open_step_records_nothing(self, sleeps, timer):
+        """Outside a step() context the wait runs untimed — the images.py
+        guard, so direct callers never trip the sub_step precondition."""
+        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        ctx = _ctx(client, config={"services": {"web": {}}})
+        assert wait_for_stable(ctx) == []
+        assert timer.report.steps == []
+
+    def test_no_timer_at_all_still_works(self, sleeps):
+        from deployer.timing import set_timer
+
+        set_timer(None)
+        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        ctx = _ctx(client, config={"services": {"web": {}}})
+        assert wait_for_stable(ctx) == []
 
 
 # ===========================================================================

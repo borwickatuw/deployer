@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 
 from ..aws import ssm
 from ..aws.cloudwatch import get_task_logs
+from ..timing import get_timer
 from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
 from .context import DeploymentContext, InfraConfig, StabilityConfig
 from .migrations import should_skip_migrations, store_migrations_hash
@@ -1129,6 +1130,36 @@ def _wait_for_service_and_targets(
         )
 
 
+def _timed_wait_for_service_and_targets(
+    ctx: DeploymentContext,
+    elbv2_client,
+    service_name: str,
+    stability: StabilityConfig,
+    expected_arn: str | None,
+) -> ServiceWaitResult:
+    """Run one service's wait under a per-service timing sub-step.
+
+    Runs in a worker thread: ``sub_steps.append`` is atomic under the GIL and
+    the parent step stays open until the executor joins.
+    """
+    timer = get_timer()
+    if not (timer and timer.in_step):
+        return _wait_for_service_and_targets(
+            ctx, elbv2_client, service_name, stability, expected_arn
+        )
+
+    with timer.sub_step(service_name) as sub:
+        result = _wait_for_service_and_targets(
+            ctx, elbv2_client, service_name, stability, expected_arn
+        )
+    # The context manager stamps success=True on clean exit; a captured wait
+    # failure is a clean exit, so restate it on the recorded timing.
+    if not result.success and result.error is not None:
+        sub.success = False
+        sub.error = str(result.error)
+    return result
+
+
 def wait_for_stable(
     ctx: DeploymentContext,
     updated_services: dict[str, str] | None = None,
@@ -1184,7 +1215,7 @@ def wait_for_stable(
     with ThreadPoolExecutor(max_workers=len(service_arns)) as executor:
         futures = {
             executor.submit(
-                _wait_for_service_and_targets,
+                _timed_wait_for_service_and_targets,
                 ctx,
                 elbv2_client,
                 service_name,

@@ -72,10 +72,6 @@ survive code motion inside the package. Concretely:
   unreachable through moto. Everything else in that function is pinned twice,
   once against the stub and once against moto.
 
-``service.py`` does not import ``..timing`` and this file does not make it start:
-53e-3b's ``NullTimer`` has no ``_current_step``, so a ``get_timer()`` here would
-reproduce the ``AttributeError`` already pinned in ``test_deploy_images.py``.
-
 Phase 53f-1 added ``TestHealthCheckConfigSource`` at the end of the file. It is
 the odd one out here: it drives ``_build_infra_config`` -- the real producer,
 which lives in ``deployer.py`` -- into ``create_service``. 53f-1 pinned that the
