@@ -191,13 +191,15 @@ data "aws_iam_policy_document" "permissions" {
     resources = ["*"]
   }
 
-  # SSM - Read/write migrations hash (scoped to this project)
+  # SSM - Read/write the skip-detection hashes (scoped to this project):
+  # migrations hash and the per-service state hashes (skip-unchanged-services)
   statement {
     sid     = "SSMMigrationsHash"
     effect  = "Allow"
     actions = ["ssm:GetParameter", "ssm:PutParameter"]
     resources = [
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_prefix}/*/last-migrations-hash",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_prefix}/*/service-state-hash-*",
     ]
   }
 

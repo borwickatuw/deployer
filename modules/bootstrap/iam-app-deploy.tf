@@ -141,14 +141,16 @@ data "aws_iam_policy_document" "app_deploy" {
     resources = ["*"]
   }
 
-  # SSM - Read/write migrations hash for skip detection
+  # SSM - Read/write the skip-detection hashes: migrations hash and the
+  # per-service state hashes (deployer skip-unchanged-services feature)
   statement {
     sid     = "SSMMigrationsHash"
     effect  = "Allow"
     actions = ["ssm:GetParameter", "ssm:PutParameter"]
     resources = flatten([
       for prefix in var.project_prefixes : [
-        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/last-migrations-hash"
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/last-migrations-hash",
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/service-state-hash-*",
       ]
     ])
   }
