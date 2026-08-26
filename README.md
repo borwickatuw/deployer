@@ -51,7 +51,7 @@ uv run python bin/init.py environment --app-name myapp --template standalone-sta
 **4. Deploy:**
 
 ```bash
-uv run python bin/deploy.py myapp-staging
+uv run python bin/deploy.py deploy myapp-staging
 ```
 
 Deployer builds your Docker image, pushes it to ECR, runs migrations, and updates ECS services with zero-downtime rolling deployment.

@@ -127,7 +127,7 @@ Created: environments/otherapp-staging/main.tf
 uv run python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 
 # 4. Deploy application
-uv run python bin/deploy.py myapp-staging
+uv run python bin/deploy.py deploy myapp-staging
 ```
 
 ## Configuration
@@ -364,7 +364,7 @@ To migrate an existing standalone environment to shared infrastructure:
    uv run python bin/link-environments.py existingapp-staging /path/to/existingapp/deploy.toml
 
    # Update DNS to point to shared ALB and deploy
-   uv run python bin/deploy.py existingapp-staging
+   uv run python bin/deploy.py deploy existingapp-staging
    ```
 
 1. **Decommission old infrastructure**

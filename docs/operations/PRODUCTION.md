@@ -101,7 +101,7 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 
    ```bash
    uv run python bin/link-environments.py myapp-production ../myapp/deploy.toml
-   uv run python bin/deploy.py myapp-production
+   uv run python bin/deploy.py deploy myapp-production
    ```
 
 1. **Run migrations**:

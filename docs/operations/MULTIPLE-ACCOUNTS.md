@@ -125,10 +125,10 @@ Once configured, the deployer scripts automatically use the correct profile for 
 
 ```bash
 # Deploys to staging account
-uv run python bin/deploy.py myapp-staging
+uv run python bin/deploy.py deploy myapp-staging
 
 # Deploys to production account
-uv run python bin/deploy.py myapp-production
+uv run python bin/deploy.py deploy myapp-production
 
 # Infrastructure changes
 bin/tofu.sh rollout myapp-staging

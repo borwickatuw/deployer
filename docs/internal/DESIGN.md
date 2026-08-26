@@ -222,7 +222,7 @@ cd deployer
 uv run python bin/link-environments.py myapp-staging /path/to/app/deploy.toml
 
 # Deploy (uses linked deploy.toml)
-uv run python bin/deploy.py myapp-staging
+uv run python bin/deploy.py deploy myapp-staging
 ```
 
 The environment's `config.toml` contains `${tofu:...}` placeholders that are resolved at deploy time by fetching outputs from OpenTofu. This eliminates the need to manually export environment variables.

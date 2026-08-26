@@ -154,7 +154,7 @@ If you see permission errors when running migrations:
    If missing, run a deployment to register it:
 
    ```bash
-   uv run python bin/deploy.py myapp-staging
+   uv run python bin/deploy.py deploy myapp-staging
    ```
 
 ### Permission Denied on DML Operations

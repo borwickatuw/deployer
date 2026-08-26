@@ -238,7 +238,7 @@ ______________________________________________________________________
 ### Dry Run First
 
 ```bash
-uv run python bin/deploy.py myapp-staging --dry-run
+uv run python bin/deploy.py deploy myapp-staging --dry-run
 ```
 
 This shows:
@@ -250,7 +250,7 @@ This shows:
 ### Deploy
 
 ```bash
-uv run python bin/deploy.py myapp-staging
+uv run python bin/deploy.py deploy myapp-staging
 ```
 
 Note: Requires environment to be linked via `link-environments.py`, or use `--deploy-toml` flag.
