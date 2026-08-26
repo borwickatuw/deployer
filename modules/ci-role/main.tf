@@ -200,6 +200,7 @@ data "aws_iam_policy_document" "permissions" {
     resources = [
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_prefix}/*/last-migrations-hash",
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_prefix}/*/service-state-hash-*",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_prefix}/*/db-extensions",
     ]
   }
 

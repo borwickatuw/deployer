@@ -151,6 +151,7 @@ data "aws_iam_policy_document" "app_deploy" {
       for prefix in var.project_prefixes : [
         "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/last-migrations-hash",
         "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/service-state-hash-*",
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${prefix}/*/db-extensions",
       ]
     ])
   }
