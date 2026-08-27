@@ -32,6 +32,7 @@ htmlcov/
 # Lambda build artifacts
 **/handler.zip
 **/lambda.zip
+**/lambda-*.zip
 
 # Lambda pip dependencies (installed at build time)
 modules/db-users/lambda/pg8000/

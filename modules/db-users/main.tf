@@ -220,20 +220,29 @@ resource "null_resource" "lambda_dependencies" {
   # landing in lambda/ is a gitignored build artifact, like the pip installs.
   provisioner "local-exec" {
     command = <<-EOT
+      rm -f ${path.module}/lambda-*.zip
       pip install -r ${path.module}/lambda/requirements.txt -t ${path.module}/lambda --upgrade --quiet
+      find ${path.module}/lambda -name __pycache__ -type d -prune -exec rm -rf {} +
       cp ${path.module}/../lambda-shared/db_common.py ${path.module}/lambda/db_common.py
     EOT
   }
 }
 
-# Package the Lambda function code
+# Package the Lambda function code.
+#
+# The dependency on the install step must be the id reference in output_path,
+# never depends_on: an explicit depends_on defers a data source's read to
+# apply on every run, which re-uploads the Lambda on every apply forever. The
+# id reference defers the read only when the install actually re-runs.
+#
+# The find in the provisioner keeps the zip deterministic: pip byte-compiles
+# into per-package __pycache__ dirs that this excludes list doesn't reach
+# (excludes are exact paths, top level only), and .pyc files embed mtimes.
 data "archive_file" "lambda" {
   type        = "zip"
   source_dir  = "${path.module}/lambda"
-  output_path = "${path.module}/lambda.zip"
+  output_path = "${path.module}/lambda-${null_resource.lambda_dependencies.id}.zip"
   excludes    = ["requirements.txt", "__pycache__"]
-
-  depends_on = [null_resource.lambda_dependencies]
 }
 
 # Lambda function to create database users
