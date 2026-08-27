@@ -220,17 +220,13 @@ resource "null_resource" "lambda_dependencies" {
   triggers = {
     requirements = filemd5("${path.module}/lambda/requirements.txt")
     shared       = filemd5("${path.module}/../lambda-shared/db_common.py")
+    script       = filemd5("${path.module}/../lambda-shared/install-deps.sh")
   }
 
   # db_common.py is the single tracked copy (modules/lambda-shared/); the copy
   # landing in lambda/ is a gitignored build artifact, like the pip installs.
   provisioner "local-exec" {
-    command = <<-EOT
-      rm -f ${path.module}/lambda-*.zip
-      pip install -r ${path.module}/lambda/requirements.txt -t ${path.module}/lambda --upgrade --quiet
-      find ${path.module}/lambda -name __pycache__ -type d -prune -exec rm -rf {} +
-      cp ${path.module}/../lambda-shared/db_common.py ${path.module}/lambda/db_common.py
-    EOT
+    command = "sh ${path.module}/../lambda-shared/install-deps.sh ${path.module}"
   }
 }
 
@@ -240,15 +236,22 @@ resource "null_resource" "lambda_dependencies" {
 # never depends_on: an explicit depends_on defers a data source's read to
 # apply on every run, which re-uploads the Lambda on every apply forever. The
 # id reference defers the read only when the install actually re-runs.
-#
-# The find in the provisioner keeps the zip deterministic: pip byte-compiles
-# into per-package __pycache__ dirs that this excludes list doesn't reach
-# (excludes are exact paths, top level only), and .pyc files embed mtimes.
 data "archive_file" "lambda" {
   type        = "zip"
   source_dir  = "${path.module}/lambda"
   output_path = "${path.module}/lambda-${null_resource.lambda_dependencies.id}.zip"
-  excludes    = ["requirements.txt", "__pycache__"]
+  excludes    = ["requirements.txt", "__pycache__", ".deps-installed"]
+
+  lifecycle {
+    # On a fresh checkout the gitignored pip artifacts are missing, but the
+    # install triggers still match the recorded state, so nothing would
+    # reinstall them and this zip would silently ship without its
+    # dependencies.
+    precondition {
+      condition     = fileexists("${path.module}/lambda/.deps-installed")
+      error_message = "Lambda dependencies are not installed in ${path.module}/lambda. Run `make lambda-deps` in the deployer repo."
+    }
+  }
 }
 
 # Lambda function to create database and users

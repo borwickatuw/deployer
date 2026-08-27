@@ -24,6 +24,11 @@ help: ## Show this help
 install: ## Install dependencies (incl. dev group; default-groups is [])
 	@uv sync --group dev
 
+.PHONY: lambda-deps
+lambda-deps: ## Install db lambda bundle pip deps (needed once per fresh checkout)
+	@sh modules/lambda-shared/install-deps.sh modules/db-users
+	@sh modules/lambda-shared/install-deps.sh modules/db-on-shared-rds
+
 # =============================================================================
 # Code Quality
 # =============================================================================
