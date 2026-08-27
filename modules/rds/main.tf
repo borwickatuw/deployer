@@ -175,6 +175,10 @@ resource "aws_db_parameter_group" "main" {
   parameter {
     name  = "rds.force_ssl"
     value = "1"
+    # AWS reports this parameter's apply method as pending-reboot and ignores
+    # attempts to change it to the provider default (immediate), so anything
+    # else here is a perpetual plan diff.
+    apply_method = "pending-reboot"
   }
 
   tags = {
