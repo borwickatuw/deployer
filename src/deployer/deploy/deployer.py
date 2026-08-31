@@ -420,17 +420,20 @@ class Deployer:
             health_failures = wait_for_stable(self.ctx, deployed.updated, self.stability_config)
         print()
 
-        # Step 8: Bring Application Auto Scaling in line with the scaling
+        # Step 8: Persist per-service state hashes, only now that stability is
+        # proven — a hash stored before wait_for_stable would let a failed
+        # deploy skip its own retry. No-op on dry runs (no hashes computed).
+        # Before the autoscaling step: the services ARE stable, and a failing
+        # policy apply (e.g. an IAM gap) must not force full service rolls on
+        # every retry — the retry re-runs autoscaling either way.
+        store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)
+
+        # Step 9: Bring Application Auto Scaling in line with the scaling
         # config. After stability: a first deploy must create the service
         # before a scalable target can reference it.
         with timer.step("apply_autoscaling"):
             apply_autoscaling(self.ctx, self.scaling_config, self.autoscaling, self.cloudwatch)
         print()
-
-        # Step 9: Persist per-service state hashes, only now that stability is
-        # proven — a hash stored before wait_for_stable would let a failed
-        # deploy skip its own retry. No-op on dry runs (no hashes computed).
-        store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)
 
         timer.finish()
 

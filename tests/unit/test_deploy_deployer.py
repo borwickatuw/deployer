@@ -84,8 +84,8 @@ STEP_NAMES = (
     "deploy_services",
     "wait_for_migrations",
     "wait_for_stable",
-    "apply_autoscaling",
     "store_service_state_hashes",
+    "apply_autoscaling",
 )
 TIMER_STEP_NAMES = [
     "ecr_login",
@@ -769,6 +769,14 @@ class TestDeploySteps:
             # deploy_services' updated map scopes the wait and carries the
             # per-service expected task-definition ARNs (rollback detection).
             ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES, StabilityConfig()), {}),
+            # Hashes are stored only after stability, excluding health
+            # failures — and before the autoscaling step, so a failing policy
+            # apply doesn't force full service rolls on every retry.
+            (
+                "store_service_state_hashes",
+                (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, []),
+                {},
+            ),
             (
                 "apply_autoscaling",
                 (
@@ -777,12 +785,6 @@ class TestDeploySteps:
                     aws["application-autoscaling"],
                     aws["cloudwatch"],
                 ),
-                {},
-            ),
-            # Hashes are stored only after stability, excluding health failures.
-            (
-                "store_service_state_hashes",
-                (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, []),
                 {},
             ),
         ]
@@ -838,9 +840,9 @@ class TestDeploySteps:
             "",
             "[wait_for_stable]",
             "",
+            "[store_service_state_hashes]",
             "[apply_autoscaling]",
             "",
-            "[store_service_state_hashes]",
             "Deployment complete!",
         ]
 
