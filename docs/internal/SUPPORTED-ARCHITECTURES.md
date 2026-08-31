@@ -81,12 +81,12 @@ These should work with the [generic framework guide](../scenarios/generic.md):
 
 ### Core Infrastructure
 
-| Service     | Purpose                         | Module                                       | Required |
-| ----------- | ------------------------------- | -------------------------------------------- | -------- |
+| Service     | Purpose                         | Module                                                | Required |
+| ----------- | ------------------------------- | ----------------------------------------------------- | -------- |
 | ECS Fargate | Container orchestration         | `modules/ecs-cluster` (services created by deploy.py) | Yes      |
-| ALB         | Load balancing, SSL termination | `modules/alb`                                | Yes      |
-| VPC         | Networking                      | `modules/vpc`                                | Yes      |
-| ECR         | Container registry              | `modules/ecr`                                | Yes      |
+| ALB         | Load balancing, SSL termination | `modules/alb`                                         | Yes      |
+| VPC         | Networking                      | `modules/vpc`                                         | Yes      |
+| ECR         | Container registry              | `modules/ecr`                                         | Yes      |
 
 ### Data Stores
 

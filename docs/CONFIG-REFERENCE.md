@@ -243,19 +243,19 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 
 **Note:** Sizing fields (`cpu`, `memory`, `replicas`, `load_balanced`) are configured in OpenTofu tfvars, not here.
 
-| Field                     | Type    | Required | Description                                                                                         |
-| ------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `command`                 | array   | No       | Container command override.                                                                         |
-| `health_check_path`       | string  | No       | ALB health check endpoint.                                                                          |
-| `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                               |
-| `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. |
-| `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.               |
-| `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                  |
-| `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                |
+| Field                     | Type    | Required | Description                                                                                                                                                     |
+| ------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                 | array   | No       | Container command override.                                                                                                                                     |
+| `health_check_path`       | string  | No       | ALB health check endpoint.                                                                                                                                      |
+| `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                                                                                           |
+| `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`.                                                             |
+| `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.                                                                           |
+| `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                                                                              |
+| `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                                                                            |
 | `min_replicas`            | integer | No       | Replica floor (default 1). Declare `0` only for services safe at zero (pull-based queue workers); required before an environment may scale the service to zero. |
-| `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.               |
-| `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                    |
-| `port`                    | integer | No       | Container port (for load-balanced services).                                                        |
+| `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.                                                                           |
+| `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                                                                                |
+| `port`                    | integer | No       | Container port (for load-balanced services).                                                                                                                    |
 
 `minimum_healthy_percent` / `maximum_percent` override the environment's
 `[deployment]` rollout strategy **per key** for one service: a service setting
@@ -714,10 +714,10 @@ Core ECS infrastructure references.
 
 Service configuration from OpenTofu.
 
-| Field          | Tofu Output           | Description                                        |
-| -------------- | --------------------- | -------------------------------------------------- |
-| `config`       | `service_config`      | JSON map of service sizing (cpu, memory, replicas) |
-| `health_check` | `health_check_config` | JSON health check defaults                         |
+| Field          | Tofu Output           | Description                                            |
+| -------------- | --------------------- | ------------------------------------------------------ |
+| `config`       | `service_config`      | JSON map of service sizing (cpu, memory, replicas)     |
+| `health_check` | `health_check_config` | JSON health check defaults                             |
 | `scaling`      | `scaling_config`      | JSON map of queue-depth auto-scaling (min, max, steps) |
 
 #### `[database]`
@@ -770,12 +770,12 @@ ECS deployment configuration. Optional - controls how ECS deploys new task revis
 
 **Important:** These settings significantly impact deployment behavior. Staging environments can use aggressive settings for faster deployments. Production environments should use conservative defaults (or omit this section entirely).
 
-| Field                      | Type    | Default | Description                                                                                                                |
-| -------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `circuit_breaker_enabled`  | boolean | false   | Enable deployment circuit breaker for faster failure detection.                                                            |
-| `circuit_breaker_rollback` | boolean | true    | Automatically rollback on deployment failure (requires circuit breaker).                                                   |
-| `maximum_percent`          | number  | 200     | Maximum percentage of tasks during deployment. Use 100 for staging (no extra capacity), 200 for production (rolling).      |
-| `minimum_healthy_percent`  | number  | 100     | Minimum percentage of healthy tasks to maintain during deployment. Use 0 for staging (faster), 100 for production (safer). |
+| Field                      | Type    | Default | Description                                                                                                                                                                                                                               |
+| -------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `circuit_breaker_enabled`  | boolean | false   | Enable deployment circuit breaker for faster failure detection.                                                                                                                                                                           |
+| `circuit_breaker_rollback` | boolean | true    | Automatically rollback on deployment failure (requires circuit breaker).                                                                                                                                                                  |
+| `maximum_percent`          | number  | 200     | Maximum percentage of tasks during deployment. Use 100 for staging (no extra capacity), 200 for production (rolling).                                                                                                                     |
+| `minimum_healthy_percent`  | number  | 100     | Minimum percentage of healthy tasks to maintain during deployment. Use 0 for staging (faster), 100 for production (safer).                                                                                                                |
 | `poll_interval`            | integer | 15      | Seconds between `wait_for_stable` polls (1–60). Lower values detect readiness sooner; the ~600s deadline and the 15s crash-loop settle window are unaffected. 5 is a good staging value; below ~5s mostly re-reads the same ECS snapshot. |
 
 `minimum_healthy_percent` and `maximum_percent` can be overridden per service
@@ -958,11 +958,11 @@ services = {
 Map of queue-depth auto-scaling configurations. Only define for services
 that should auto-scale (queue-consuming workers).
 
-| Field   | Type | Required | Description                                                        |
-| ------- | ---- | -------- | ------------------------------------------------------------------ |
-| `min`   | number | Yes    | Minimum task count. Must be ≥ the service's deploy.toml `min_replicas`. |
-| `max`   | number | Yes    | Maximum task count — the cost ceiling (`max` × task size).         |
-| `steps` | list   | Yes    | Scale-out steps `{depth, workers}`: at queue depth ≥ `depth`, run `workers` tasks. Strictly increasing in both fields. |
+| Field   | Type   | Required | Description                                                                                                            |
+| ------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `min`   | number | Yes      | Minimum task count. Must be ≥ the service's deploy.toml `min_replicas`.                                                |
+| `max`   | number | Yes      | Maximum task count — the cost ceiling (`max` × task size).                                                             |
+| `steps` | list   | Yes      | Scale-out steps `{depth, workers}`: at queue depth ≥ `depth`, run `workers` tasks. Strictly increasing in both fields. |
 
 How it works (all convention, enacted by deploy.py — see
 `src/deployer/deploy/autoscaling.py`):
