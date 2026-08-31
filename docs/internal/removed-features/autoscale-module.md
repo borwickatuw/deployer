@@ -1,5 +1,11 @@
 # Autoscale Module (Python)
 
+> **Do not restore this.** Queue-depth autoscaling now exists for real:
+> the `scaling` tfvars variable, enacted by `src/deployer/deploy/autoscaling.py`,
+> injects `AUTOSCALE_NAMESPACE`/`AUTOSCALE_SERVICES` and applies the
+> Application Auto Scaling policies. This page stays only as the record of
+> the earlier, never-wired attempt.
+
 ## What it did
 
 Python resource module (`src/deployer/modules/autoscale.py`) that supported queue-depth autoscaling for ECS services. When an app declared `[autoscale] services = ["transcoder"]`, the module validated config and injected `AUTOSCALE_NAMESPACE` and `AUTOSCALE_SERVICES` environment variables.
