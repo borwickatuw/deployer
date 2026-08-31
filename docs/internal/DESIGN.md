@@ -34,7 +34,7 @@ OpenTofu holds **sizing and capacity** that varies by environment:
 
 - CPU and memory allocation
 - Replica counts
-- Auto-scaling policies (min/max replicas, CPU targets)
+- Queue-depth auto-scaling bounds (min/max capacity, scale-out steps)
 - Health check timing (intervals, thresholds)
 - Load balancer configuration
 - Infrastructure sizing (RDS instance class, Redis node type)
@@ -86,7 +86,7 @@ services = {
   }
 }
 scaling = {
-  web = { min_replicas = 2, max_replicas = 10, cpu_target = 70 }
+  worker = { min = 0, max = 2, steps = [{ depth = 1, workers = 1 }] }
 }
 ```
 
@@ -154,24 +154,35 @@ Application configuration lives in:
 
 - `deploy.toml` in each application repository (not in deployer)
 
-## The Gray Area: ECS Services and Task Definitions
+## The Boundary: ECS Services, Task Definitions, and Scaling
 
 ECS services and task definitions sit between infrastructure and application:
 
 - **Task definitions** describe *how* to run containers (image, CPU, memory, environment variables)
 - **Services** describe *how many* containers to run and how to route traffic
 
-Currently, OpenTofu creates the initial ECS services and task definitions. The deploy script then updates them by:
+**deploy.py owns both, end to end.** OpenTofu never touches them. Every
+deploy registers a fresh task definition revision
+(`register_task_definition`), then creates the service if it does not exist
+(`create_service`) or starts a new deployment of it (`update_service`).
+OpenTofu provides the surroundings a service plugs into — cluster, target
+groups, security groups, IAM roles, log group — and hands their identifiers
+to deploy.py through the resolved `config.toml`.
 
-1. Pushing new images to ECR (same tag, e.g., `latest`)
-1. Calling `update_service` with `forceNewDeployment=True`
+The dividing rule is **rate of change**: OpenTofu owns what changes rarely
+and independently of app code (network, database, cluster, roles); deploy.py
+owns resources whose lifecycle tracks the application's deploy cadence
+(task definitions, services, scaling policies).
 
-ECS detects the new image digest and performs a rolling deployment.
-
-For more complex scenarios (changing CPU/memory, adding environment variables), you would either:
-
-- Update the OpenTofu configuration and run `tofu apply`
-- Or extend deploy.py to register new task definition revisions
+**Tuneables are declared in tfvars and enacted by whichever side owns the
+resource.** Service sizing (`services` variable) and queue-depth scaling
+(`scaling` variable) are environment config: they pass through a tofu output
+into `config.toml`, and deploy.py enacts them on the resources it owns. That
+keeps one reviewable home for capacity and cost bounds without giving tofu a
+dependency on resources that don't exist until first deploy — a scaling
+policy can only target a service that already exists, which is also why
+deploy.py applies scaling *after* services stabilize
+(`deploy/autoscaling.py`).
 
 ## Workflow
 

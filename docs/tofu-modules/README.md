@@ -11,7 +11,6 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 | [alb](alb.md)                 | Application Load Balancer with HTTPS, Cognito auth, and path-based routing |
 | [ecr](ecr.md)                 | ECR repositories with image scanning and lifecycle policies                |
 | [ecs-cluster](ecs-cluster.md) | ECS Fargate cluster with Container Insights and capacity providers         |
-| [ecs-service](ecs-service.md) | ECS Fargate service with task definition, IAM roles, and CloudWatch logs   |
 | [vpc](vpc.md)                 | VPC with public/private subnets, NAT Gateway, and VPC Flow Logs            |
 
 ## Database

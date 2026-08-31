@@ -83,7 +83,7 @@ These should work with the [generic framework guide](../scenarios/generic.md):
 
 | Service     | Purpose                         | Module                                       | Required |
 | ----------- | ------------------------------- | -------------------------------------------- | -------- |
-| ECS Fargate | Container orchestration         | `modules/ecs-cluster`, `modules/ecs-service` | Yes      |
+| ECS Fargate | Container orchestration         | `modules/ecs-cluster` (services created by deploy.py) | Yes      |
 | ALB         | Load balancing, SSL termination | `modules/alb`                                | Yes      |
 | VPC         | Networking                      | `modules/vpc`                                | Yes      |
 | ECR         | Container registry              | `modules/ecr`                                | Yes      |

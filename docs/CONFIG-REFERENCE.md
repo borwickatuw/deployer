@@ -252,6 +252,7 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 | `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.               |
 | `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                  |
 | `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                |
+| `min_replicas`            | integer | No       | Replica floor (default 1). Declare `0` only for services safe at zero (pull-based queue workers); required before an environment may scale the service to zero. |
 | `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.               |
 | `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                    |
 | `port`                    | integer | No       | Container port (for load-balanced services).                                                        |
@@ -292,6 +293,7 @@ path_pattern = "/api/*"
 image = "transcoder"
 min_cpu = 512      # Deployment fails if environment sets cpu < 512
 min_memory = 1024  # Deployment fails if environment sets memory < 1024
+min_replicas = 0   # Pull-based queue worker: environments may scale it to zero
 ```
 
 ### `[environment]`
@@ -716,7 +718,7 @@ Service configuration from OpenTofu.
 | -------------- | --------------------- | -------------------------------------------------- |
 | `config`       | `service_config`      | JSON map of service sizing (cpu, memory, replicas) |
 | `health_check` | `health_check_config` | JSON health check defaults                         |
-| `scaling`      | `scaling_config`      | JSON map of auto-scaling config                    |
+| `scaling`      | `scaling_config`      | JSON map of queue-depth auto-scaling (min, max, steps) |
 
 #### `[database]`
 
@@ -953,13 +955,31 @@ services = {
 
 ### `scaling` Variable
 
-Map of auto-scaling configurations. Only define for services that should auto-scale.
+Map of queue-depth auto-scaling configurations. Only define for services
+that should auto-scale (queue-consuming workers).
 
-| Field          | Type   | Required | Description                                     |
-| -------------- | ------ | -------- | ----------------------------------------------- |
-| `cpu_target`   | number | No       | Target CPU utilization percentage. Default: 70. |
-| `max_replicas` | number | Yes      | Maximum task count.                             |
-| `min_replicas` | number | Yes      | Minimum task count.                             |
+| Field   | Type | Required | Description                                                        |
+| ------- | ---- | -------- | ------------------------------------------------------------------ |
+| `min`   | number | Yes    | Minimum task count. Must be ≥ the service's deploy.toml `min_replicas`. |
+| `max`   | number | Yes    | Maximum task count — the cost ceiling (`max` × task size).         |
+| `steps` | list   | Yes    | Scale-out steps `{depth, workers}`: at queue depth ≥ `depth`, run `workers` tasks. Strictly increasing in both fields. |
+
+How it works (all convention, enacted by deploy.py — see
+`src/deployer/deploy/autoscaling.py`):
+
+- The application's scheduled task publishes a `queue_depth` metric every
+  60s to CloudWatch namespace `{app}-{environment}`, dimension
+  `Service={service}`. deploy.py injects `AUTOSCALE_NAMESPACE` and
+  `AUTOSCALE_SERVICES` into every task definition whenever this variable is
+  non-empty — the scaling block is the single switch.
+- deploy.py registers an Application Auto Scaling target bounded by
+  `min`/`max` and creates one exact-capacity step policy + alarm per step,
+  plus a scale-in-to-`min` alarm that fires after the queue has been empty
+  for 15 minutes.
+- Alarms treat missing data as not-breaching, so a stopped environment
+  (staging scheduler) never scales itself back up.
+- Workers holding a job set ECS task scale-in protection, so scaling in
+  waits for a busy task to go idle rather than wasting its job.
 
 **Example:**
 
@@ -967,17 +987,13 @@ Map of auto-scaling configurations. Only define for services that should auto-sc
 # Staging - no auto-scaling
 scaling = {}
 
-# Production - auto-scale web and api
+# Scale the transcoder on its queue: 1 worker while anything is queued,
+# 2 workers for a batch of 25+, never more than 2 (cost ceiling).
 scaling = {
-  web = {
-    min_replicas = 2
-    max_replicas = 10
-    cpu_target   = 70
-  }
-  api = {
-    min_replicas = 2
-    max_replicas = 8
-    cpu_target   = 80
+  transcoder = {
+    min   = 0
+    max   = 2
+    steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
   }
 }
 ```
@@ -1106,10 +1122,10 @@ services = {
 }
 
 scaling = {
-  web = {
-    min_replicas = 2
-    max_replicas = 10
-    cpu_target   = 70
+  worker = {
+    min   = 0
+    max   = 2
+    steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
   }
 }
 ```

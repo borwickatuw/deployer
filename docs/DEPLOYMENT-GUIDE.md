@@ -188,6 +188,18 @@ services = {
     health_check_path = "/health/"
   }
 }
+
+# Queue-depth auto-scaling (optional). Only for queue-consuming workers;
+# the service must declare min_replicas = 0 in deploy.toml before min = 0
+# is allowed. deploy.py enacts this as step scaling policies — see
+# CONFIG-REFERENCE.md "scaling Variable" for how it works.
+scaling = {
+  worker = {
+    min   = 0
+    max   = 2
+    steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
+  }
+}
 ```
 
 ### 4. Apply Infrastructure

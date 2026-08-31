@@ -85,10 +85,10 @@ services = {
 }
 
 scaling = {
-  web = {
-    min_replicas = 1
-    max_replicas = 4
-    cpu_target   = 70
+  worker = {
+    min   = 0
+    max   = 2
+    steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
   }
 }
 ```
