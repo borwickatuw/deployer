@@ -88,11 +88,13 @@ services = {
 # Auto-Scaling (enabled for production)
 # ------------------------------------------------------------------------------
 
+# Queue-depth auto-scaling: steps maps queue depth to worker count.
+# Cost ceiling = max x task size. See docs/CONFIG-REFERENCE.md.
 scaling = {
-  web = {
-    min_replicas = 2
-    max_replicas = 10
-    cpu_target   = 70
+  worker = {
+    min   = 0
+    max   = 2
+    steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
   }
 }
 

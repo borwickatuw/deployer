@@ -231,6 +231,26 @@ class TestGetServiceSizing:
 
         assert "CPU (256) is below minimum required (512)" in str(exc_info.value)
 
+    def test_replicas_below_default_floor_fails(self):
+        """Without min_replicas in deploy.toml, the floor defaults to 1."""
+        config = {"services": {"web": {}}}
+        service_config = {"web": {"cpu": 256, "memory": 512, "replicas": 0}}
+
+        with pytest.raises(ValueError) as exc_info:
+            get_service_sizing("web", config, service_config)
+
+        assert "replicas (0) is below minimum required (1)" in str(exc_info.value)
+        assert "terraform.tfvars" in str(exc_info.value)
+
+    def test_min_replicas_zero_allows_zero_replicas(self):
+        """A service declaring min_replicas = 0 may be sized to zero."""
+        config = {"services": {"transcoder": {"min_replicas": 0}}}
+        service_config = {"transcoder": {"cpu": 256, "memory": 512, "replicas": 0}}
+
+        sizing = get_service_sizing("transcoder", config, service_config)
+
+        assert sizing["replicas"] == 0
+
 
 class TestResolveLegacyPlaceholders:
     """Tests for _resolve_legacy_placeholders function (backward compatibility)."""

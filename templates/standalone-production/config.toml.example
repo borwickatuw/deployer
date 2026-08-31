@@ -87,7 +87,7 @@ ecr_prefix = "${tofu:ecr_prefix}"
 # This is a JSON map from terraform.tfvars
 config = "${tofu:service_config}"
 
-# Auto-scaling configuration (min_replicas, max_replicas, cpu_target)
+# Queue-depth auto-scaling configuration (min, max, steps)
 # This is a JSON map from terraform.tfvars
 scaling = "${tofu:scaling_config}"
 

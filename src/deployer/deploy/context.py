@@ -111,6 +111,10 @@ class DeploymentContext:
     account_id: str
     env_config: dict
     dry_run: bool = False
+    # The environment's queue-depth scaling map ({service: {min, max, steps}}).
+    # Read by the autoscaling apply step and by get_environment_variables,
+    # which injects AUTOSCALE_NAMESPACE/AUTOSCALE_SERVICES when it is set.
+    scaling_config: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

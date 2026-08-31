@@ -14,6 +14,7 @@ import click
 from botocore.exceptions import BotoCoreError, ClientError
 
 from deployer.config import parse_deploy_config
+from deployer.deploy.autoscaling import apply_autoscaling, validate_scaling_config
 from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig, StabilityConfig
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
@@ -162,6 +163,7 @@ class Deployer:
         # Service config from environment config.toml
         self.service_config = services.get("config", {})
         self.scaling_config = services.get("scaling", {})
+        validate_scaling_config(self.config, self.scaling_config)
 
         # Infrastructure config for ECS deployment
         self.infra_config = _build_infra_config(env_config)
@@ -172,6 +174,8 @@ class Deployer:
         self.ecr = boto3.client("ecr")
         self.rds = boto3.client("rds")
         self.sts = boto3.client("sts")
+        self.autoscaling = boto3.client("application-autoscaling")
+        self.cloudwatch = boto3.client("cloudwatch")
 
         # Get AWS account info
         self.account_id = self.sts.get_caller_identity()["Account"]
@@ -205,6 +209,7 @@ class Deployer:
             account_id=self.account_id,
             env_config=self.env_config,
             dry_run=self.options.dry_run,
+            scaling_config=self.scaling_config,
         )
 
     def print_service_config(self) -> None:
@@ -415,7 +420,14 @@ class Deployer:
             health_failures = wait_for_stable(self.ctx, deployed.updated, self.stability_config)
         print()
 
-        # Step 8: Persist per-service state hashes, only now that stability is
+        # Step 8: Bring Application Auto Scaling in line with the scaling
+        # config. After stability: a first deploy must create the service
+        # before a scalable target can reference it.
+        with timer.step("apply_autoscaling"):
+            apply_autoscaling(self.ctx, self.scaling_config, self.autoscaling, self.cloudwatch)
+        print()
+
+        # Step 9: Persist per-service state hashes, only now that stability is
         # proven — a hash stored before wait_for_stable would let a failed
         # deploy skip its own retry. No-op on dry runs (no hashes computed).
         store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)

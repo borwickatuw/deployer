@@ -204,6 +204,9 @@ def status_env(monkeypatch):
     )
     monkeypatch.setattr(ops.rds, "get_status", lambda _id: env["rds_status"])
     monkeypatch.setattr(ops, "get_rds_snapshots", lambda _id, **_kw: env["snapshots"])
+    monkeypatch.setattr(
+        ops, "_describe_live_scaling", lambda _cluster, _service: "live: min=2, max=8"
+    )
     return env
 
 
@@ -213,7 +216,13 @@ class TestCmdStatus:
     def test_every_section_is_rendered(self, status_env, capsys):
         status_env["config"] = {
             "services": {
-                "scaling": {"web": {"min_replicas": 2, "max_replicas": 8, "cpu_target": 60}}
+                "scaling": {
+                    "web": {
+                        "min": 2,
+                        "max": 8,
+                        "steps": [{"depth": 1, "workers": 2}, {"depth": 25, "workers": 8}],
+                    }
+                }
             }
         }
 
@@ -232,7 +241,8 @@ class TestCmdStatus:
         assert "Recent Snapshots:" in out
         assert "rds:myapp-2026-08-07" in out
         assert "2026-08-07 06:00 UTC" in out
-        assert "  web: min=2, max=8, cpu_target=60%" in out
+        assert "  web: min=2, max=8 (depth>=1 -> 2, depth>=25 -> 8)" in out
+        assert "    live: min=2, max=8" in out
 
     def test_sections_appear_in_report_order(self, status_env, capsys):
         status_env["config"] = {"services": {"scaling": {"web": {}}}}
@@ -244,7 +254,7 @@ class TestCmdStatus:
             "Recent Task Definitions:",
             f"RDS Instance: {RDS_ID}",
             "Recent Snapshots:",
-            "Auto-Scaling Configuration:",
+            "Auto-Scaling Configuration (queue depth):",
         ]
         assert [out.index(h) for h in headings] == sorted(out.index(h) for h in headings)
 
@@ -252,7 +262,7 @@ class TestCmdStatus:
         status_env["config"] = {"services": {"scaling": {"web": {}}}}
 
         assert ops.cmd_status(ENV) == 0
-        assert "  web: min=?, max=?, cpu_target=?%" in capsys.readouterr().out
+        assert "  web: min=?, max=? (no steps)" in capsys.readouterr().out
 
     def test_absent_scaling_config_prints_no_section(self, status_env, capsys):
         assert ops.cmd_status(ENV) == 0

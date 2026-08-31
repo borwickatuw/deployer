@@ -84,12 +84,15 @@ variable "services" {
 
 variable "scaling" {
   type = map(object({
-    min_replicas = number
-    max_replicas = number
-    cpu_target   = optional(number, 70)
+    min = number
+    max = number
+    steps = list(object({
+      depth   = number
+      workers = number
+    }))
   }))
   default     = {}
-  description = "Auto-scaling policies per service"
+  description = "Queue-depth auto-scaling per service (min/max capacity, scale-out steps)"
 }
 
 variable "health_check" {

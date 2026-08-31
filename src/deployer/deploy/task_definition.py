@@ -10,6 +10,7 @@ from deployer.modules import (
 )
 from deployer.utils import log_debug
 
+from .autoscaling import autoscale_namespace
 from .context import DeploymentContext
 
 
@@ -156,6 +157,19 @@ def get_service_sizing(
             f"for the {service_name} service."
         )
 
+    # min_replicas (default 1) is the app-declared replica floor. A service
+    # that is safe at zero (pull-based queue worker) declares min_replicas = 0;
+    # everything else may not be configured down to nothing. The same floor
+    # bounds a scaling block's min (autoscaling.validate_scaling_config).
+    min_replicas = base_config.get("min_replicas", 1)
+    if merged["replicas"] < min_replicas:
+        raise ValueError(
+            f"Service '{service_name}' replicas ({merged['replicas']}) is below minimum "  # noqa: S608 — not SQL
+            f"required ({min_replicas}) from deploy.toml.\n"
+            f"  Update terraform.tfvars to set replicas >= {min_replicas} "
+            f"for the {service_name} service."
+        )
+
     # Validate Fargate CPU/memory combination
     validate_fargate_sizing(merged["cpu"], merged["memory"], service_name)
 
@@ -218,6 +232,14 @@ def get_environment_variables(
         # Service + environment override
         service_env_override = service_env.get(environment, {})
         merged.update(service_env_override)
+
+    # A scaling block in the environment's tfvars is the single autoscaling
+    # switch: it injects the metric namespace and the scaled service list,
+    # overriding the "" defaults deploy.toml documents. There is no second
+    # config location to keep in agreement (see deploy/autoscaling.py).
+    if ctx.scaling_config:
+        merged["AUTOSCALE_NAMESPACE"] = autoscale_namespace(ctx.app_name, ctx.environment)
+        merged["AUTOSCALE_SERVICES"] = ",".join(sorted(ctx.scaling_config))
 
     # Resolve service URL references like ${services.api.url}
     # and internal URLs like ${services.web.internal_url}

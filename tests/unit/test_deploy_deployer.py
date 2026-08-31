@@ -84,6 +84,7 @@ STEP_NAMES = (
     "deploy_services",
     "wait_for_migrations",
     "wait_for_stable",
+    "apply_autoscaling",
     "store_service_state_hashes",
 )
 TIMER_STEP_NAMES = [
@@ -94,6 +95,7 @@ TIMER_STEP_NAMES = [
     "deploy_services",
     "wait_for_migrations",
     "wait_for_stable",
+    "apply_autoscaling",
 ]
 
 # A deploy.toml that produces NO config warnings. The pre-existing init test
@@ -229,6 +231,8 @@ def aws(monkeypatch):
     clients = {"ecs": SimpleNamespace(name="ecs"), "ecr": SimpleNamespace(name="ecr")}
     clients["rds"] = _FakeRds()
     clients["sts"] = _FakeSts()
+    clients["application-autoscaling"] = SimpleNamespace(name="application-autoscaling")
+    clients["cloudwatch"] = SimpleNamespace(name="cloudwatch")
     monkeypatch.setattr(deployer_mod.boto3, "client", lambda name: clients[name])
     monkeypatch.setattr(
         deployer_mod.boto3.session, "Session", lambda: SimpleNamespace(region_name=REGION)
@@ -765,6 +769,16 @@ class TestDeploySteps:
             # deploy_services' updated map scopes the wait and carries the
             # per-service expected task-definition ARNs (rollback detection).
             ("wait_for_stable", (deployer.ctx, UPDATED_SERVICES, StabilityConfig()), {}),
+            (
+                "apply_autoscaling",
+                (
+                    deployer.ctx,
+                    deployer.scaling_config,
+                    aws["application-autoscaling"],
+                    aws["cloudwatch"],
+                ),
+                {},
+            ),
             # Hashes are stored only after stability, excluding health failures.
             (
                 "store_service_state_hashes",
@@ -823,6 +837,8 @@ class TestDeploySteps:
             "[wait_for_migrations]",
             "",
             "[wait_for_stable]",
+            "",
+            "[apply_autoscaling]",
             "",
             "[store_service_state_hashes]",
             "Deployment complete!",

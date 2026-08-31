@@ -472,14 +472,36 @@ def _print_recent_snapshots(rds_id: str) -> None:
         print(f"  {snap['id']:<50} {snap_type:<10} {created}")
 
 
-def _print_scaling_config(scaling_config: dict) -> None:
-    """Print each service's auto-scaling bounds and CPU target."""
-    print(f"{Colors.BLUE}Auto-Scaling Configuration:{Colors.NC}")
+def _describe_live_scaling(cluster_name: str, service_name: str) -> str:
+    """Describe the live scalable target for one service, in one line."""
+    try:
+        client = boto3.client("application-autoscaling")
+        targets = client.describe_scalable_targets(
+            ServiceNamespace="ecs",
+            ResourceIds=[f"service/{cluster_name}/{service_name}"],
+            ScalableDimension="ecs:service:DesiredCount",
+        ).get("ScalableTargets", [])
+    except Exception as e:  # noqa: BLE001 — read-only report, keep printing
+        return f"live: unable to read ({e})"
+
+    if not targets:
+        return "live: no scalable target registered (deploy applies it)"
+    target = targets[0]
+    return f"live: min={target['MinCapacity']}, max={target['MaxCapacity']}"
+
+
+def _print_scaling_config(scaling_config: dict, cluster_name: str | None) -> None:
+    """Print each service's queue-depth scaling bounds, steps, and live state."""
+    print(f"{Colors.BLUE}Auto-Scaling Configuration (queue depth):{Colors.NC}")
     for name, cfg in scaling_config.items():
-        min_r = cfg.get("min_replicas", "?")
-        max_r = cfg.get("max_replicas", "?")
-        target = cfg.get("cpu_target", "?")
-        print(f"  {name}: min={min_r}, max={max_r}, cpu_target={target}%")
+        min_r = cfg.get("min", "?")
+        max_r = cfg.get("max", "?")
+        steps = ", ".join(
+            f"depth>={s.get('depth', '?')} -> {s.get('workers', '?')}" for s in cfg.get("steps", [])
+        )
+        print(f"  {name}: min={min_r}, max={max_r} ({steps or 'no steps'})")
+        if cluster_name:
+            print(f"    {_describe_live_scaling(cluster_name, name)}")
 
 
 def _print_ecs_sections(environment: str, cluster_name: str) -> None:
@@ -531,7 +553,7 @@ def cmd_status(environment: str) -> int:
 
     scaling_config = config.get("services", {}).get("scaling", {})
     if scaling_config:
-        _print_scaling_config(scaling_config)
+        _print_scaling_config(scaling_config, cluster_name)
         print()
 
     return 0

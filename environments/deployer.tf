@@ -146,15 +146,21 @@ variable "services" {
   description = "Service sizing configuration (cpu, memory, replicas)"
 }
 
-# Auto-scaling configuration - typically only used in production
+# Queue-depth auto-scaling bounds per service, enacted by deploy.py as
+# Application Auto Scaling step policies. steps maps queue depth to worker
+# count, e.g. [{depth = 1, workers = 1}, {depth = 25, workers = 2}].
+# Cost ceiling = max x the service's task size.
 variable "scaling" {
   type = map(object({
-    min_replicas = number
-    max_replicas = number
-    cpu_target   = optional(number, 70)
+    min = number
+    max = number
+    steps = list(object({
+      depth   = number
+      workers = number
+    }))
   }))
   default     = {}
-  description = "Auto-scaling policies per service"
+  description = "Queue-depth auto-scaling per service (min/max capacity, scale-out steps)"
 }
 
 # Health check settings — staging-optimized defaults, override in tfvars for production
