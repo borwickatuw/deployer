@@ -77,6 +77,29 @@ resource "aws_iam_policy" "ecs_role_boundary" {
         ])
       },
       {
+        Sid      = "AllowAutoscaleMetricPublish"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "cloudwatch:namespace" = [
+              for prefix in var.project_prefixes : "${prefix}-*"
+            ]
+          }
+        }
+      },
+      {
+        Sid    = "AllowTaskScaleInProtection"
+        Effect = "Allow"
+        Action = ["ecs:UpdateTaskProtection"]
+        Resource = flatten([
+          for prefix in var.project_prefixes : [
+            "arn:aws:ecs:us-west-2:${data.aws_caller_identity.current.account_id}:task/${prefix}-*/*"
+          ]
+        ])
+      },
+      {
         Sid    = "AllowSESForEmail"
         Effect = "Allow"
         Action = [

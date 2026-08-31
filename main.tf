@@ -399,6 +399,36 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
+# Queue-depth autoscaling signals: the app publishes its queue depth and
+# protects busy workers from scale-in. It can signal, never scale — the
+# scaling decisions live in Application Auto Scaling policies applied by
+# deploy.py, bounded by the environment's tfvars.
+resource "aws_iam_role_policy" "ecs_task_autoscale_signals" {
+  name = "${local.name_prefix}-ecs-autoscale-signals"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = local.name_prefix
+          }
+        }
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:UpdateTaskProtection"]
+        Resource = "arn:aws:ecs:${var.aws_region}:*:task/${local.name_prefix}-cluster/*"
+      }
+    ]
+  })
+}
+
 # Allow ALB to reach ECS tasks on application ports
 resource "aws_security_group_rule" "alb_to_ecs" {
   for_each                 = local.alb_ingress_ports

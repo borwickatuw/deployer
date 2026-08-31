@@ -370,6 +370,7 @@ data "aws_iam_policy_document" "infra_admin_iam" {
       variable = "iam:AWSServiceName"
       values = [
         "ecs.amazonaws.com",
+        "ecs.application-autoscaling.amazonaws.com",
         "elasticloadbalancing.amazonaws.com",
         "rds.amazonaws.com",
         "elasticache.amazonaws.com"

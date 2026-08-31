@@ -58,6 +58,51 @@ data "aws_iam_policy_document" "app_deploy" {
     ])
   }
 
+  # Application Auto Scaling - queue-depth scaling policies. These actions
+  # support no resource-level permissions; the blast radius is bounded by the
+  # alarm scoping below and the scalable targets' own min/max.
+  statement {
+    sid    = "ApplicationAutoScaling"
+    effect = "Allow"
+    actions = [
+      "application-autoscaling:RegisterScalableTarget",
+      "application-autoscaling:DeregisterScalableTarget",
+      "application-autoscaling:PutScalingPolicy",
+      "application-autoscaling:DeleteScalingPolicy",
+      "application-autoscaling:Describe*"
+    ]
+    resources = ["*"]
+  }
+
+  # CloudWatch alarms that drive the scaling policies (scoped to projects)
+  statement {
+    sid    = "CloudWatchScalingAlarms"
+    effect = "Allow"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:DescribeAlarms"
+    ]
+    resources = flatten([
+      for prefix in var.project_prefixes : [
+        "arn:aws:cloudwatch:${var.region}:${data.aws_caller_identity.current.account_id}:alarm:${prefix}-*"
+      ]
+    ])
+  }
+
+  # IAM - service-linked role Application Auto Scaling needs on first use
+  statement {
+    sid       = "AutoScalingServiceLinkedRole"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values   = ["ecs.application-autoscaling.amazonaws.com"]
+    }
+  }
+
   # ECR - Authorization
   statement {
     sid       = "ECRAuth"
