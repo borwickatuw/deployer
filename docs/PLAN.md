@@ -11,6 +11,13 @@ Phase 52 (container-level health checks for non-HTTP services). **Phase 53
 (the pysmelly subphase arc, 53a–53p) closed 2026-08-25** — its record is in
 claude-meta `docs/PLAN-ARCHIVE.md`.
 
+Cross-repo arc in progress: claude-meta docs/PLAN.md **Phase 70**
+(queue-depth autoscaling). deployer's pieces — the `scaling` tfvars schema,
+`deploy/autoscaling.py` apply step, IAM grants, and the `min_replicas`
+floor — landed 2026-08-31; the environment applies and staging verification
+(70c/70e) are pending. The boundary rule it settled is recorded in
+[docs/internal/DESIGN.md](internal/DESIGN.md).
+
 Per-finding dispositions for the Phase 53 arc are in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md); size and simplification
 candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
