@@ -144,6 +144,10 @@ class ServiceConfig:
     path_pattern: str | None = None
     min_cpu: int | None = None
     min_memory: int | None = None
+    # Replica floor (None = 1). Declare 0 only for pull-based queue workers
+    # that are safe at zero; required before an environment may autoscale
+    # the service to nothing.
+    min_replicas: int | None = None
     interruptible: bool = False
     # Per-service override of the environment's [deployment] rollout strategy.
     # Same key names as config.toml's [deployment] section; None inherits the
@@ -161,6 +165,7 @@ class ServiceConfig:
         "environment",
         "min_cpu",
         "min_memory",
+        "min_replicas",
         "interruptible",
         "minimum_healthy_percent",
         "maximum_percent",
@@ -389,6 +394,8 @@ class DeployConfig:
                 svc_dict["min_cpu"] = svc.min_cpu
             if svc.min_memory is not None:
                 svc_dict["min_memory"] = svc.min_memory
+            if svc.min_replicas is not None:
+                svc_dict["min_replicas"] = svc.min_replicas
             if svc.interruptible:
                 svc_dict["interruptible"] = svc.interruptible
             # service.py reads these off the raw dict, not ServiceConfig; a

@@ -92,6 +92,28 @@ interruptible = true
 
         assert raw["services"]["worker"]["interruptible"] is True
 
+    def test_min_replicas_roundtrips_without_warnings(self, tmp_path):
+        """min_replicas parses as a known key and survives get_raw_dict.
+
+        The scaling validation reads it off the raw dict; when the field was
+        missing from ServiceConfig, get_raw_dict silently dropped it and a
+        declared min_replicas = 0 still validated against the default floor
+        of 1 (observed on a 2026-08-31 staging deploy).
+        """
+        (tmp_path / "deploy.toml").write_text("""
+[application]
+name = "test"
+
+[services.transcoder]
+image = "transcoder"
+min_replicas = 0
+""")
+        config = parse_deploy_config(tmp_path / "deploy.toml")
+
+        assert config.get_warnings() == []
+        assert config.services["transcoder"].min_replicas == 0
+        assert config.get_raw_dict()["services"]["transcoder"]["min_replicas"] == 0
+
     def test_deployment_override_fields_parse(self, tmp_path):
         """Per-service rollout override keys parse without warnings."""
         (tmp_path / "deploy.toml").write_text("""
