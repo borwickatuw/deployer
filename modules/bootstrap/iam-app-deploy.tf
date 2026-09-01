@@ -74,20 +74,28 @@ data "aws_iam_policy_document" "app_deploy" {
     resources = ["*"]
   }
 
-  # CloudWatch alarms that drive the scaling policies (scoped to projects)
+  # CloudWatch alarms that drive the scaling policies. Writes are scoped to
+  # project prefixes; DescribeAlarms must be unscoped — an AlarmNamePrefix
+  # query authorizes against alarm:*, so a name-scoped resource never matches.
   statement {
     sid    = "CloudWatchScalingAlarms"
     effect = "Allow"
     actions = [
       "cloudwatch:PutMetricAlarm",
-      "cloudwatch:DeleteAlarms",
-      "cloudwatch:DescribeAlarms"
+      "cloudwatch:DeleteAlarms"
     ]
     resources = flatten([
       for prefix in var.project_prefixes : [
         "arn:aws:cloudwatch:${var.region}:${data.aws_caller_identity.current.account_id}:alarm:${prefix}-*"
       ]
     ])
+  }
+
+  statement {
+    sid       = "CloudWatchDescribeAlarms"
+    effect    = "Allow"
+    actions   = ["cloudwatch:DescribeAlarms"]
+    resources = ["*"]
   }
 
   # IAM - service-linked role Application Auto Scaling needs on first use
