@@ -38,6 +38,15 @@ data "aws_iam_policy_document" "infra_admin_compute" {
     resources = ["*"]
   }
 
+  # Application Auto Scaling - read-only, for ops.py's live scaling state.
+  # Writes belong to the deploy role: deploy.py enacts scaling policies.
+  statement {
+    sid       = "ApplicationAutoScalingRead"
+    effect    = "Allow"
+    actions   = ["application-autoscaling:Describe*"]
+    resources = ["*"]
+  }
+
   # Service Discovery (Cloud Map) - for ECS service-to-service communication
   statement {
     sid       = "ServiceDiscovery"
