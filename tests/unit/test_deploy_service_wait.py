@@ -694,7 +694,8 @@ class TestStableSuccess:
             _wait_for_service_stable(_ctx(client), "web", FAST)
 
     def test_zero_running_is_not_success(self, sleeps):
-        """0/0 satisfies ``running == desired`` but fails ``running > 0``."""
+        """0/0 fails ``running > 0``; without a COMPLETED rollout the
+        scale-to-zero route (``TestStableScaleToZero``) doesn't fire either."""
         client = ScriptedClient(describe_services=_stable_response(0, 0))
         with pytest.raises(RuntimeError):
             _wait_for_service_stable(_ctx(client), "web", FAST)
@@ -708,13 +709,15 @@ class TestStableSuccess:
 
 
 class TestStableRolloutState:
-    """rolloutState after the hardening: FAILED raises, nothing else gates.
+    """rolloutState for a *running* service: FAILED raises, nothing else gates.
 
     The pre-hardening pin (``TestStableSuccessIgnoresRolloutState``) recorded
     a tautological clause that consulted rolloutState for nothing; it is
     deliberately overturned. Requiring COMPLETED was considered and rejected:
     it waits out the old task's drain (40-60s) for no signal the settle
-    window doesn't already give.
+    window doesn't already give. The exception is desired == 0, where the
+    settle window has nothing to observe and COMPLETED *does* gate — see
+    ``TestStableScaleToZero``.
     """
 
     @pytest.mark.parametrize("rollout_state", ["COMPLETED", "IN_PROGRESS", "", "GARBAGE", None])
@@ -935,6 +938,87 @@ class TestStableSettleWindow:
         client = ScriptedClient(describe_services=[qualifying, dip, qualifying, qualifying])
         assert _wait_for_service_stable(_ctx(client), "web", StabilityConfig(1, 6, 99, 1)) is None
         assert len(client.calls_to("describe_services")) == 4
+
+
+class TestStableScaleToZero:
+    """desired == 0 succeeds on ECS's rollout verdict, not the settle window.
+
+    Queue-depth autoscaling can hold a worker's desiredCount at 0 across a
+    deploy; requiring ``running > 0`` made ``wait_for_stable`` ride out the
+    full timeout at running=0/0 while ECS showed the PRIMARY rollout
+    COMPLETED. With no tasks there is nothing for the settle window to
+    observe, so COMPLETED gates this route (contrast
+    ``TestStableRolloutState``, where gating on it was rejected for running
+    services).
+    """
+
+    def test_completed_rollout_at_zero_succeeds_immediately(self, sleeps, capsys):
+        client = ScriptedClient(describe_services=_stable_response(0, 0, rollout_state="COMPLETED"))
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+        assert sleeps == []  # no settle window: nothing to observe at 0 tasks
+        assert "web (stable, scaled to zero)" in _plain(capsys.readouterr().out)
+
+    def test_in_progress_rollout_keeps_polling(self, sleeps):
+        client = ScriptedClient(
+            describe_services=[
+                _stable_response(0, 0, rollout_state="IN_PROGRESS"),
+                _stable_response(0, 0, rollout_state="COMPLETED"),
+            ]
+        )
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+        assert sleeps == [1]
+
+    def test_status_line_names_the_rollout_state(self, sleeps, capsys):
+        client = ScriptedClient(describe_services=_stable_response(0, 0, rollout_state="COMPLETED"))
+        _wait_for_service_stable(_ctx(client), "web", FAST)
+        assert "  web: running=0/0, rollout=COMPLETED" in _lines(capsys.readouterr().out)
+
+    def test_never_completed_times_out_with_rollout_in_the_status(self, sleeps):
+        client = ScriptedClient(
+            describe_services=_stable_response(0, 0, rollout_state="IN_PROGRESS")
+        )
+        with pytest.raises(RuntimeError) as exc_info:
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+        assert str(exc_info.value).endswith("Last status: running=0/0, rollout=IN_PROGRESS")
+
+    def test_missing_rollout_state_is_not_success(self, sleeps):
+        """No fallback: a deployment without rolloutState polls to timeout
+        (with UNKNOWN in the status) rather than guessing stability."""
+        client = ScriptedClient(describe_services=_stable_response(0, 0, rollout_state=None))
+        with pytest.raises(RuntimeError, match=r"rollout=UNKNOWN"):
+            _wait_for_service_stable(_ctx(client), "web", FAST)
+
+    def test_expected_arn_is_still_enforced(self, sleeps):
+        """A circuit-breaker rollback at zero still settles COMPLETED on the
+        old ARN; the identity check must fire here too."""
+        deployment = _deployment(running=0, desired=0, rollout_state="COMPLETED") | {
+            "taskDefinition": TASK_DEF_OLD
+        }
+        client = ScriptedClient(describe_services=_describe_services(deployments=[deployment]))
+        with pytest.raises(DeploymentError) as exc_info:
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW)
+        assert exc_info.value.error_type == "rollback_detected"
+
+    def test_matching_arn_succeeds(self, sleeps):
+        deployment = _deployment(running=0, desired=0, rollout_state="COMPLETED") | {
+            "taskDefinition": TASK_DEF_NEW
+        }
+        client = ScriptedClient(describe_services=_describe_services(deployments=[deployment]))
+        assert (
+            _wait_for_service_stable(_ctx(client), "web", FAST, expected_arn=TASK_DEF_NEW) is None
+        )
+
+    def test_draining_old_task_is_not_the_zero_route(self, sleeps):
+        """running=1 at desired=0 (old task draining) qualifies for neither
+        success route; the loop keeps polling until the drain finishes."""
+        client = ScriptedClient(
+            describe_services=[
+                _stable_response(1, 0, rollout_state="IN_PROGRESS"),
+                _stable_response(0, 0, rollout_state="COMPLETED"),
+            ]
+        )
+        assert _wait_for_service_stable(_ctx(client), "web", FAST) is None
+        assert sleeps == [1]
 
 
 class TestStableLookupFailures:

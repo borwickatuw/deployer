@@ -1392,6 +1392,11 @@ def _wait_for_service_stable(
     a different task each time. Costs ~settle_seconds per service, all
     services in parallel.
 
+    A scale-to-zero service (desired == 0, e.g. held there by queue-depth
+    autoscaling) instead succeeds as soon as PRIMARY reports rolloutState
+    COMPLETED and runs ``expected_arn``: with no tasks there is nothing for
+    the settle window to observe, so ECS's own rollout verdict is the signal.
+
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         service_name: Name of the service.
@@ -1433,6 +1438,10 @@ def _wait_for_service_stable(
         status = f"running={running}/{desired}"
         if failed > 0:
             status += f", failed={failed}"
+        if desired == 0:
+            # At 0/0 the counts never change; the rollout state is the only
+            # progress signal (and the only clue in a timeout message).
+            status += f", rollout={deployment.get('rolloutState', 'UNKNOWN')}"
 
         # Only print if status changed
         if status != last_status:
@@ -1455,6 +1464,16 @@ def _wait_for_service_stable(
                     log_success(f"{service_name} (stable)")
                     return
                 settling = (settling[0], settling[1], confirmed)
+        elif running == 0 and desired == 0 and pending == 0:
+            # Scale-to-zero: queue-depth autoscaling can hold desiredCount at
+            # 0 across a deploy. With no tasks the settle window has nothing
+            # to observe, so ECS's rollout verdict gates instead — PRIMARY
+            # COMPLETED means the new task definition is what a scale-up runs.
+            settling = None
+            if deployment.get("rolloutState") == "COMPLETED":
+                _check_expected_task_definition(deployment, service_name, expected_arn)
+                log_success(f"{service_name} (stable, scaled to zero)")
+                return
         else:
             settling = None
 
