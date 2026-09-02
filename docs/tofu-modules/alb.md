@@ -31,6 +31,7 @@ module "alb" {
 | public_subnet_ids        | list(string) | Public subnet IDs for the ALB               |
 | certificate_arn          | string       | ACM certificate ARN (enables HTTPS)         |
 | cognito_auth             | object       | Cognito auth config (optional)              |
+| unauthenticated_path_patterns | list(string) | Paths forwarded without Cognito auth (app must enforce its own access) |
 | additional_target_groups | map(object)  | Path-based routing target groups            |
 | deletion_protection      | bool         | Enable deletion protection (default: false) |
 | idle_timeout             | number       | Idle timeout in seconds (default: 60)       |

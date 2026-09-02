@@ -25,6 +25,27 @@ Apply the changes:
 ./bin/tofu.sh rollout myapp-staging
 ```
 
+### Cognito Bypass Paths
+
+Some paths must be reachable without a Cognito session — cross-origin
+fetches and framed pages die on the 302 to amazoncognito.com. List them in
+`unauthenticated_path_patterns` and the ALB forwards them straight to the
+default target group ahead of the authenticate action:
+
+```hcl
+unauthenticated_path_patterns = [
+  "/works/*/manifest.json",
+  "/embed/*",
+]
+```
+
+**Invariant: every listed path must enforce its own access control in the
+application.** Cognito on staging is environment gatekeeping, not access
+control — do not list a path that would serve restricted content to an
+anonymous request. ALB caps 5 path patterns per listener rule, so the list
+is chunked into rules at priority 1000+ (after the health-check rule and
+the service-route band, so service routes like `/iiif/*` still win).
+
 ### Managing Users
 
 ```bash

@@ -138,6 +138,9 @@ module "alb" {
   # Prefer external cognito_auth if provided, otherwise use local pool if enabled
   cognito_auth = local.cognito_auth_config
 
+  # Paths that bypass Cognito (each enforces its own access in the app)
+  unauthenticated_path_patterns = var.unauthenticated_path_patterns
+
   # Additional target groups for path-based routing (derived from services variable)
   additional_target_groups = local.service_routes_with_priority
 }

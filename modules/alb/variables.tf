@@ -99,6 +99,17 @@ variable "access_logs_prefix" {
   default     = "alb-logs"
 }
 
+variable "unauthenticated_path_patterns" {
+  description = "Path patterns forwarded to the default target group without Cognito authentication. Only meaningful when Cognito auth is enabled. Every listed path must enforce its own access control in the application."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for p in var.unauthenticated_path_patterns : startswith(p, "/")])
+    error_message = "Each unauthenticated path pattern must start with '/'."
+  }
+}
+
 variable "additional_target_groups" {
   description = "Additional target groups with path-based routing rules"
   type = map(object({

@@ -185,6 +185,12 @@ variable "cognito_auth" {
   default = null
 }
 
+variable "unauthenticated_path_patterns" {
+  description = "ALB path patterns forwarded to the app without Cognito authentication. Every listed path must enforce its own access control in the application."
+  type        = list(string)
+  default     = []
+}
+
 # Load balancer configuration
 
 variable "health_check" {

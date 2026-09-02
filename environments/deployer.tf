@@ -88,6 +88,12 @@ variable "cognito_auth_enabled" {
   description = "Enable shared Cognito authentication from bootstrap. Requires bootstrap_state_config."
 }
 
+variable "unauthenticated_path_patterns" {
+  type        = list(string)
+  default     = []
+  description = "ALB path patterns forwarded to the app without Cognito authentication. Every listed path must enforce its own access control in the application."
+}
+
 # ------------------------------------------------------------------------------
 # Variables
 # ------------------------------------------------------------------------------
@@ -345,6 +351,9 @@ module "infrastructure" {
     user_pool_client_id = data.terraform_remote_state.bootstrap[0].outputs.cognito_app_clients[var.project_name].client_id
     user_pool_domain    = data.terraform_remote_state.bootstrap[0].outputs.cognito_domain
   } : null
+
+  # Paths that bypass Cognito (each enforces its own access in the app)
+  unauthenticated_path_patterns = var.unauthenticated_path_patterns
 
   # Health check settings (override defaults in tfvars for production)
   health_check = var.health_check

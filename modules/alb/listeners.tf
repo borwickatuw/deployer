@@ -97,6 +97,30 @@ resource "aws_lb_listener_rule" "health_check" {
   }
 }
 
+# Cognito bypass rules for paths that enforce their own access control in
+# the application (cross-site IIIF manifests, embeds, and their assets).
+# ALB caps path_pattern at 5 values per rule, so patterns are chunked into
+# as many rules as needed. Priority 1000+ stays clear of the health-check
+# rule (1) and the service-route band (10, 20, ...), so service routes like
+# cantaloupe's /iiif/* still win for their paths.
+resource "aws_lb_listener_rule" "unauthenticated" {
+  count = local.https_enabled && local.auth_enabled ? length(chunklist(var.unauthenticated_path_patterns, 5)) : 0
+
+  listener_arn = aws_lb_listener.https_with_auth[0].arn
+  priority     = 1000 + count.index
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.default.arn
+  }
+
+  condition {
+    path_pattern {
+      values = chunklist(var.unauthenticated_path_patterns, 5)[count.index]
+    }
+  }
+}
+
 # ------------------------------------------------------------------------------
 # Path-Based Routing Rules (for additional target groups)
 # ------------------------------------------------------------------------------
