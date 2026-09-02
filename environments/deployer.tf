@@ -514,6 +514,11 @@ output "s3_originals_bucket" {
   description = "S3 bucket name for original uploads"
 }
 
+output "s3_cache_bucket" {
+  value       = try(module.infrastructure.s3_bucket_names["cache"], null)
+  description = "S3 bucket name for disposable derivative caches (e.g. Cantaloupe tiles)"
+}
+
 # ECS
 output "ecs_cluster_name" {
   value = module.infrastructure.ecs_cluster_name

@@ -72,7 +72,9 @@ resource "aws_iam_policy" "ecs_role_boundary" {
             "arn:aws:s3:::${prefix}-*-media-*",
             "arn:aws:s3:::${prefix}-*-media-*/*",
             "arn:aws:s3:::${prefix}-*-originals-*",
-            "arn:aws:s3:::${prefix}-*-originals-*/*"
+            "arn:aws:s3:::${prefix}-*-originals-*/*",
+            "arn:aws:s3:::${prefix}-*-cache-*",
+            "arn:aws:s3:::${prefix}-*-cache-*/*"
           ]
         ])
       },
