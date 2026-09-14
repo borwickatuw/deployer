@@ -82,7 +82,8 @@ uv run python bin/emergency.py rollback myapp-production --service web
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
 - [HOWTO-PUBLISH.md](docs/internal/HOWTO-PUBLISH.md) - Publishing to the public repository
-- [SOMEDAY-MAYBE.md](docs/internal/SOMEDAY-MAYBE.md) - Future improvement ideas
+- [someday-maybe/](docs/someday-maybe/) - Future improvement ideas, one file per idea
+- [PLAN-METHOD.md](docs/PLAN-METHOD.md) - The plan workflow: what each state, key and transition means
 - Scenario guides: [Django](docs/scenarios/django.md), [Rails](docs/scenarios/rails.md), [Generic](docs/scenarios/generic.md), [CI/CD](docs/scenarios/ci-cd.md), [Passive Deployer](docs/scenarios/passive-deployer.md)
 
 ## Generic Codebase
@@ -168,3 +169,25 @@ Read [docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md) before running pysme
 ```
 claude-idea deployer "Description of the pattern or improvement"
 ```
+
+## Plan Lifecycle
+
+Managed by [fileplan](https://pypi.org/project/fileplan/) via `plan.toml`
+at the repo root; [docs/PLAN-METHOD.md](docs/PLAN-METHOD.md) defines every
+state, key and transition.
+
+```
+uv run fileplan                    # the workflow: states + transitions
+uv run fileplan list               # someday-maybe/plan items + register state
+```
+
+| Location                                              | Holds                                                |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| [docs/someday-maybe/](docs/someday-maybe/)            | Ideas kept, nothing committed to                     |
+| [docs/plan/](docs/plan/)                              | Active phases, one file each, numbered from 1        |
+| [docs/plan-archive/](docs/plan-archive/)              | Recent full records of closed phases                 |
+| [docs/PLAN-ARCHIVE.md](docs/PLAN-ARCHIVE.md)          | The register: `## N. Title` summaries of closed work |
+| [PLAN-ARCHIVE-2026-09.md](docs/PLAN-ARCHIVE-2026-09.md) | Rotated segment: everything closed pre-conversion  |
+
+Cross-repo arcs queued against deployer keep **claude-meta's** phase
+numbers; the pointers live in docs/PLAN-METHOD.md.

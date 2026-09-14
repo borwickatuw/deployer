@@ -47,10 +47,11 @@ renames a claude-meta phase.
 ## someday-maybe
 
 Deep backlog: ideas for future improvements that aren't urgent. An idea
-kept, with no current commitment — the state this repo's
-`docs/internal/SOMEDAY-MAYBE.md` used to be, one file per idea. Items land
-here when something is worth remembering but nothing has been promised:
-enhancement sketches, deferred Checkov findings, alternatives considered.
+kept, with no current commitment — the state the repo's old monolithic
+someday-maybe list under `docs/internal/` used to be, now one file per
+idea. Items land here when something is worth remembering but nothing has
+been promised: enhancement sketches, deferred Checkov findings,
+alternatives considered.
 
 Each item carries the shape the old list used: current state, the proposed
 enhancement, an implementation approach, and a complexity estimate

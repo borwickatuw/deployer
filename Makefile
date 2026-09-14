@@ -130,7 +130,8 @@ security-bandit: ## Run bandit Python security linter
 #     CKV_AWS_91 (ALB access logging - opt-in via var.access_logs_enabled)
 #   VPC flow logs IAM policy (Resource=* required for CloudWatch Logs):
 #     CKV_AWS_290 (IAM write without constraints), CKV_AWS_355 (IAM * resource)
-#   Deferred - need infrastructure changes (see docs/SOMEDAY-MAYBE.md):
+#   Deferred - need infrastructure changes
+#   (see docs/someday-maybe/checkov-deferred-items.md):
 #     CKV_AWS_161 (RDS IAM auth),
 #     CKV_AWS_157 (RDS Multi-AZ - configurable per env), CKV_AWS_293 (RDS deletion
 #       protection - configurable per env),

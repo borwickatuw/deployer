@@ -123,7 +123,7 @@ def create_user(conn, user: DbUser) -> None:
     # Usernames are deliberately NOT identifier-quoted: existing roles were
     # created unquoted, so PostgreSQL folded them to lowercase. Quoting now would
     # retarget CREATE USER/GRANT on any environment whose name_prefix has
-    # uppercase. See claude-meta PLAN.md Phase 53a.
+    # uppercase. See claude-meta Phase 53a.
     conn.run(f"CREATE USER {user.username} WITH PASSWORD {escape_literal(user.password)}")
 
 
