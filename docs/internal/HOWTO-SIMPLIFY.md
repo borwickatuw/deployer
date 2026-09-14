@@ -130,7 +130,7 @@ five Phase 42-2 suppressions had never taken effect due to comment placement —
 four relocated, one (`generate_bootstrap` unused-default) fixed for real.
 
 **The per-finding work is queued as Phase 53 (subphases 53a–53i) in
-claude-meta `docs/PLAN.md`** — one finding-type × one subsystem per
+claude-meta `docs/plan/`** — one finding-type × one subsystem per
 operator-gated session, duplicate-block extraction before long-function
 decomposition. 53a (db-\* Lambda twins), 53b (CLI boilerplate), 53c
 (`src/deployer` dedup), 53d-1 (the `bin/` deploy.toml-resolution family) and

@@ -6,12 +6,12 @@ Active work items. For completed phases, see
 _No repo-local phases yet._ This file exists so cross-repo backlog has a
 visible home in-repo (fleet convention).
 
-Cross-repo backlog queued against this repo: claude-meta docs/PLAN.md
+Cross-repo backlog queued against this repo: claude-meta `docs/plan/`
 Phase 52 (container-level health checks for non-HTTP services). **Phase 53
 (the pysmelly subphase arc, 53a–53p) closed 2026-08-25** — its record is in
-claude-meta `docs/PLAN-ARCHIVE.md`.
+claude-meta `docs/PLAN-ARCHIVE-2026-09.md`.
 
-Cross-repo arc in progress: claude-meta docs/PLAN.md **Phase 70**
+Cross-repo arc in progress: claude-meta `docs/plan/` **Phase 70**
 (queue-depth autoscaling). deployer's pieces — the `scaling` tfvars schema,
 `deploy/autoscaling.py` apply step, IAM grants, and the `min_replicas`
 floor — landed 2026-08-31; the environment applies and staging verification

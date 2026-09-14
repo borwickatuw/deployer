@@ -2051,7 +2051,7 @@ still fire. Mapped now:
 
 **9 of the 12 still fire.** A thirteenth, unlisted by the split — 53b's
 `foo-equals-foo` on `deploy.py:167` `run_deploy_pipeline` — also cleared, by
-53c's `DeployOptions`; claude-meta `docs/PLAN.md` already records that one.
+53c's `DeployOptions`; claude-meta `docs/plan/` already records that one.
 The remaining 11 settled findings come from 53g's skip list, re-verified above.
 
 **This is the drift the withdrawn split could not express**, and the reason a
@@ -4018,7 +4018,7 @@ found that **`_get_legacy_secrets` does not exist at HEAD**: `deploy/task_defini
 holds only `_resolve_legacy_placeholders`, and the `secretsmanager:` prefix
 logic now lives in `modules/secrets.py:35`. Phase 69's member 1 and its
 "same file, should move together" sequencing are both anchored to a function
-that is gone. Filed against Phase 69 in claude-meta `docs/PLAN.md`; **not
+that is gone. Filed against Phase 69 in claude-meta `docs/plan/`; **not
 re-derived here**, because inventing a replacement anchor for another phase is
 the same error as writing its record for it.
 
