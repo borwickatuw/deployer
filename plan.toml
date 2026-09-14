@@ -1,0 +1,49 @@
+# The someday-maybe -> plan -> plan-archive workflow, declared for fileplan.
+# Each `doc` pointer resolves to a heading in docs/PLAN-METHOD.md, which is
+# where these words get their meaning; fileplan checks the pointers on every
+# run. Run `uv run fileplan` to see what this file declares.
+#
+# `local/` holds fileplan session state (lock, claims) and is gitignored.
+
+[states.someday-maybe]
+path = "docs/someday-maybe"
+doc  = "docs/PLAN-METHOD.md#someday-maybe"
+
+[states.plan]
+path         = "docs/plan"
+doc          = "docs/PLAN-METHOD.md#plan"
+capabilities = ["numbered"]
+archive      = "docs/PLAN-ARCHIVE.md"
+first-number = 1
+
+[states.plan-archive]
+path = "docs/plan-archive"
+doc  = "docs/PLAN-METHOD.md#plan-archive"
+
+[keys.closed]
+doc  = "docs/PLAN-METHOD.md#closed"
+help = "The date the phase was closed out, YYYY-MM-DD."
+
+[transitions.capture]
+doc  = "docs/PLAN-METHOD.md#capture"
+help = "File an idea in someday-maybe."
+to   = "someday-maybe"
+
+[transitions.promote]
+doc  = "docs/PLAN-METHOD.md#promote"
+help = "Commit to an idea: move it into the plan with a phase number."
+from = "someday-maybe"
+to   = "plan"
+
+[transitions.scope]
+doc  = "docs/PLAN-METHOD.md#scope"
+help = "Open a phase directly in the plan (review findings, carry-forwards)."
+to   = "plan"
+
+[transitions.archive]
+doc      = "docs/PLAN-METHOD.md#archive"
+help     = "Close a phase: record the outcome in its body, then move it to the archive."
+from     = "plan"
+to       = "plan-archive"
+sets     = ["closed"]
+archives = true
