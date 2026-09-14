@@ -273,7 +273,10 @@ data "aws_iam_policy_document" "infra_admin_iam" {
     condition {
       test     = "StringEquals"
       variable = "iam:PermissionsBoundary"
-      values   = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"]
+      values = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary",
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-scheduler-role-boundary",
+      ]
     }
   }
 

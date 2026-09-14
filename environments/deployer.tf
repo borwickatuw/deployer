@@ -284,15 +284,20 @@ variable "cache_enabled" {
 
 # Scheduler
 variable "stop_schedule" {
-  type        = string
-  default     = "cron(0 3 ? * TUE-SAT *)"
-  description = "Cron expression for stopping the environment (UTC)"
+  type    = string
+  default = "cron(0 1 ? * TUE-SAT *)"
+  # 01:00 UTC = 6 PM PDT / 5 PM PST the prior evening. EventBridge cron is
+  # UTC-only, so the Pacific hour drifts one hour across DST; both land
+  # after the 2 PM PT end of the workday, so the drift is harmless.
+  description = "Cron expression for stopping the environment (UTC). ~6 PM PT."
 }
 
 variable "start_schedule" {
-  type        = string
-  default     = "cron(0 15 ? * MON-FRI *)"
-  description = "Cron expression for starting the environment (UTC)"
+  type    = string
+  default = "cron(0 12 ? * MON-FRI *)"
+  # 12:00 UTC = 5 AM PDT / 4 AM PST. Both land at or before the 5 AM PT
+  # start of the workday; winter comes up an hour earlier, which is safe.
+  description = "Cron expression for starting the environment (UTC). ~5 AM PT."
 }
 
 variable "scheduler_enabled" {
@@ -423,8 +428,10 @@ module "scheduler" {
   # Set to false to disable automatic scheduling
   enabled = var.scheduler_enabled
 
-  # Required permissions boundary for IAM role creation
-  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
+  # Control-plane boundary — NOT the ECS task boundary. The scheduler is a
+  # Lambda that scales services and stops RDS; the task boundary excludes
+  # ecs:UpdateService and rds:*, which silently denied every start/stop.
+  permissions_boundary = data.terraform_remote_state.bootstrap[0].outputs.scheduler_role_boundary_arn
 }
 
 # ------------------------------------------------------------------------------

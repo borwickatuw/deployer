@@ -14,6 +14,12 @@ output "ecs_role_boundary_arn" {
   description = "ARN of the ECS role permissions boundary policy"
 }
 
+# Scheduler permissions boundary (control-plane Lambda, not a task role)
+output "scheduler_role_boundary_arn" {
+  value       = aws_iam_policy.scheduler_role_boundary.arn
+  description = "ARN of the staging-scheduler role permissions boundary policy"
+}
+
 # Account info
 output "account_id" {
   value       = data.aws_caller_identity.current.account_id
