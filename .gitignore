@@ -62,8 +62,10 @@ modules/db-on-shared-rds/lambda/db_common.py
 *.swp
 *.swo
 
-# Claude Code
-.claude/
+# Claude Code (the skills directory and settings.json are tracked)
+.claude/*
+!.claude/skills/
+!.claude/settings.json
 
 # OS
 .DS_Store
