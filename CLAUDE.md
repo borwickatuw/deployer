@@ -181,13 +181,13 @@ uv run fileplan                    # the workflow: states + transitions
 uv run fileplan list               # someday-maybe/plan items + register state
 ```
 
-| Location                                              | Holds                                                |
-| ----------------------------------------------------- | ---------------------------------------------------- |
-| [docs/someday-maybe/](docs/someday-maybe/)            | Ideas kept, nothing committed to                     |
-| [docs/plan/](docs/plan/)                              | Active phases, one file each, numbered from 1        |
-| [docs/plan-archive/](docs/plan-archive/)              | Recent full records of closed phases                 |
-| [docs/PLAN-ARCHIVE.md](docs/PLAN-ARCHIVE.md)          | The register: `## N. Title` summaries of closed work |
-| [PLAN-ARCHIVE-2026-09.md](docs/PLAN-ARCHIVE-2026-09.md) | Rotated segment: everything closed pre-conversion  |
+| Location                                                | Holds                                                |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| [docs/someday-maybe/](docs/someday-maybe/)              | Ideas kept, nothing committed to                     |
+| [docs/plan/](docs/plan/)                                | Active phases, one file each, numbered from 1        |
+| [docs/plan-archive/](docs/plan-archive/)                | Recent full records of closed phases                 |
+| [docs/PLAN-ARCHIVE.md](docs/PLAN-ARCHIVE.md)            | The register: `## N. Title` summaries of closed work |
+| [PLAN-ARCHIVE-2026-09.md](docs/PLAN-ARCHIVE-2026-09.md) | Rotated segment: everything closed pre-conversion    |
 
 Cross-repo arcs queued against deployer keep **claude-meta's** phase
 numbers; the pointers live in docs/PLAN-METHOD.md.
