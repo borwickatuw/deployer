@@ -1,6 +1,6 @@
 # deployer Plan (Archive)
 
-Completed phases. For active work, see [PLAN.md](PLAN.md).
+Completed phases. For active work, see [plan/](plan/).
 
 Every phase here was queued from claude-meta `docs/PLAN.md`; deployer has
 no repo-local phases yet. Per-finding dispositions for the whole Phase 53
@@ -110,8 +110,8 @@ not re-deferred as generic leave-standings — and 53e-1 cleared both.
 
 ### 53e — `deploy/` pipeline decomposition (slices 1–2 of 5)
 
-Slices 53e-3 through 53e-5 are still open; see [PLAN.md](PLAN.md) for the
-split table and what is next.
+Slices 53e-3 through 53e-5 are still open; see `docs/PLAN.md` for the split
+table and what is next.
 
 #### 53e-1 — `extensions.py` + `setup_profiles.py`
 
@@ -299,8 +299,8 @@ ADR. The count was verified at 32 before and after 53i-2a, diffed as a finding
 set rather than as a total.
 
 Outcomes: every subphase now has an adjudication entry in
-[docs/internal/PYSMELLY.md](internal/PYSMELLY.md), with 53a–53e also in
-[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md). **The 53f/53g register gap is closed**
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md), with 53a–53e also
+recorded above in this segment. **The 53f/53g register gap is closed**
 (2026-08-18): both shipped in the 2026-08-13 unattended run without an
 entry, 53h-1 and 53h-2 did not fill it, and it blocked 53i — which cannot
 be scoped against a settled/open split that does not exist. §53f and §53g

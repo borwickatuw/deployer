@@ -17,8 +17,8 @@ working notes and go unformatted by design.
 
 ## Cross-repo backlog
 
-_No repo-local phases yet._ This file exists so cross-repo backlog has a
-visible home in-repo (fleet convention).
+deployer has no repo-local phases yet; the cross-repo backlog queued against
+this repo is recorded below.
 
 Cross-repo backlog queued against this repo: claude-meta `docs/plan/`
 Phase 52 (container-level health checks for non-HTTP services). **Phase 53
