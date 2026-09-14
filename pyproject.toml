@@ -39,6 +39,9 @@ dev = [
     # Code analysis
     "vulture",
     "radon",
+    # Plan lifecycle: docs/plan, docs/someday-maybe, docs/plan-archive
+    # (declared in plan.toml, meanings in docs/PLAN-METHOD.md).
+    "fileplan>=0.5.1",
     # Include test dependencies for local dev
     {include-group = "test"},
 ]
