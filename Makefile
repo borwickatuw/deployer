@@ -206,11 +206,11 @@ clean: ## Remove build artifacts and caches
 	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
 
-# The three fileplan state directories are excluded: mdformat escapes
-# Markdown punctuation inside an item's `+++` TOML head (a trailing `_`
-# becomes `\_`), which corrupts the head so fileplan refuses the file.
-# .claude/skills is excluded for the same reason: mdformat rewrites a
-# SKILL.md's YAML frontmatter into a horizontal rule.
+# The three fileplan state directories are excluded from the Markdown
+# formatter below: it escapes punctuation inside an item's `+++` TOML head
+# (a trailing `_` becomes `\_`), which corrupts the head so fileplan
+# refuses the file. .claude/skills is excluded for the same reason —
+# formatting rewrites a SKILL.md's YAML frontmatter into a horizontal rule.
 .PHONY: format-docs
 format-docs: ## Format markdown files
 	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
