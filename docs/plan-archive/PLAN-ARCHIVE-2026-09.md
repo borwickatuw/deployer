@@ -1,10 +1,10 @@
 # deployer Plan (Archive)
 
-Completed phases. For active work, see [plan/](plan/).
+Completed phases. For active work, see [plan/](../plan/).
 
 Every phase here was queued from claude-meta `docs/PLAN.md`; deployer has
 no repo-local phases yet. Per-finding dispositions for the whole Phase 53
-arc live in [docs/internal/PYSMELLY.md](internal/PYSMELLY.md), which is
+arc live in [docs/internal/PYSMELLY.md](../internal/PYSMELLY.md), which is
 the register — these entries are the outcome summaries.
 
 ## Phase 53: pysmelly subphase backlog

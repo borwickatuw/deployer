@@ -12,10 +12,10 @@ To add ideas to this list:
 
 ______________________________________________________________________
 
-~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert when there are unused secrets~~ Moved to [PLAN-ARCHIVE-2026-09.md](../PLAN-ARCHIVE-2026-09.md).
+~~We have a secrets audit already but I always forget to use it. Maybe deploy.py should alert when there are unused secrets~~ Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md).
 
 ______________________________________________________________________
 
 ### ~~Remove Django Default Commands Fallback~~
 
-Moved to [PLAN-ARCHIVE-2026-09.md](../PLAN-ARCHIVE-2026-09.md).
+Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md).

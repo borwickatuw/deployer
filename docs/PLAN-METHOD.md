@@ -23,7 +23,7 @@ this repo is recorded below.
 Cross-repo backlog queued against this repo: claude-meta `docs/plan/`
 Phase 52 (container-level health checks for non-HTTP services). **Phase 53
 (the pysmelly subphase arc, 53a–53p) closed 2026-08-25** — its record is in
-claude-meta `docs/PLAN-ARCHIVE-2026-09.md`.
+claude-meta `docs/plan-archive/PLAN-ARCHIVE-2026-09.md`.
 
 Cross-repo arc in progress: claude-meta `docs/plan/` **Phase 70**
 (queue-depth autoscaling). deployer's pieces — the `scaling` tfvars schema,
@@ -65,7 +65,7 @@ record the rejection with rationale in [DECISIONS.md](internal/DECISIONS.md).
 ## plan
 
 Active work committed to, one item per phase. The state is `numbered`, with
-[PLAN-ARCHIVE.md](PLAN-ARCHIVE.md) as its register: every item carries a
+[PLAN-ARCHIVE.md](plan-archive/PLAN-ARCHIVE.md) as its register: every item carries a
 `number` key in its head, minted automatically at entry as one more than the
 highest number anywhere — live items, register headings, or the register
 floor (`first-number`, which stands in for everything rotated out).
@@ -87,11 +87,11 @@ shared header or a cross-item table — the file is the unit.
 Recent full records of closed phases, one file each, moved here whole by
 `archive`. The body keeps the full working record; the `closed` key says
 when. The durable record is the `## N. Title` heading that `archive` mints
-in the register, [PLAN-ARCHIVE.md](PLAN-ARCHIVE.md) — once that heading
+in the register, [PLAN-ARCHIVE.md](plan-archive/PLAN-ARCHIVE.md) — once that heading
 exists (summarized from the item's body), the file here is freely prunable.
 
 Everything deployer closed before adopting fileplan lives in the rotated
-segment [PLAN-ARCHIVE-2026-09.md](PLAN-ARCHIVE-2026-09.md), which stays as
+segment [PLAN-ARCHIVE-2026-09.md](plan-archive/PLAN-ARCHIVE-2026-09.md), which stays as
 the historical record — nothing rewrites it. Those entries are
 claude-meta-numbered (`## Phase 53:`, `## Phase 54:`) or unnumbered, which
 is why they were rotated out whole rather than reheaded into this repo's
@@ -127,10 +127,10 @@ queued.
 Close a phase out. Before running it: write the outcome into the item's body
 (what shipped, final counts, SHAs — the record register entries have always
 carried). `archive` then mints a `## N. Title` heading at its ordered place
-in the register ([PLAN-ARCHIVE.md](PLAN-ARCHIVE.md)), stamps
-[closed](#closed), and moves the file to `docs/plan-archive/`. After the
+in the register ([PLAN-ARCHIVE.md](plan-archive/PLAN-ARCHIVE.md)), stamps
+[closed](#closed), and moves the file to `docs/plan-archive/items/`. After the
 move, condense the outcome into a short summary under the minted heading
-with a pointer to where the full record lives; the `docs/plan-archive/`
+with a pointer to where the full record lives; the `docs/plan-archive/items/`
 file may then be deleted at any point.
 
 ## Rotating the register
@@ -138,7 +138,7 @@ file may then be deleted at any point.
 PLAN-ARCHIVE.md stays bounded by rotation. When it grows long:
 
 1. Cut the **oldest contiguous** `## N.` entries out into a dated segment,
-   `docs/PLAN-ARCHIVE-<YYYY-MM>.md` (create it with an H1 and a one-line
+   `docs/plan-archive/PLAN-ARCHIVE-<YYYY-MM>.md` (create it with an H1 and a one-line
    preamble; the entries move verbatim).
 1. Raise `first-number` in `plan.toml` to the number of the first entry
    **kept**.
@@ -150,6 +150,6 @@ held by a live item or a remaining register heading — rotation trails the
 slowest open arc. A floor above a live item's number is refused when the
 next heading is minted.
 
-**Prune rule:** files in `docs/plan-archive/` are deletable once their
+**Prune rule:** files in `docs/plan-archive/items/` are deletable once their
 register heading exists; the register (plus rotated segments) is the
 durable record.

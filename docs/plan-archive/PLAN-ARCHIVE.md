@@ -5,7 +5,7 @@ The register of closed phases, maintained by fileplan (`plan.toml`
 minted by `archive` at its ordered place. Each entry carries a short
 summary of the outcome and a pointer to the full record. The register
 stays bounded by rotation (see
-[PLAN-METHOD.md](PLAN-METHOD.md#rotating-the-register)): the oldest
+[PLAN-METHOD.md](../PLAN-METHOD.md#rotating-the-register)): the oldest
 entries are cut into dated segment files and `first-number` is raised.
 
 The register is empty and the floor is 1, because deployer has never had
@@ -17,5 +17,5 @@ claude-meta numbers or unnumbered, so they were rotated out whole rather
 than reheaded into this register; nothing here re-mints them. The first
 heading minted below will be `## 1.`.
 
-Live items are one file each in [plan/](plan/); what each state and
-transition means is in [PLAN-METHOD.md](PLAN-METHOD.md).
+Live items are one file each in [plan/](../plan/); what each state and
+transition means is in [PLAN-METHOD.md](../PLAN-METHOD.md).

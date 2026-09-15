@@ -13,11 +13,14 @@ doc  = "docs/PLAN-METHOD.md#someday-maybe"
 path         = "docs/plan"
 doc          = "docs/PLAN-METHOD.md#plan"
 capabilities = ["numbered"]
-archive      = "docs/PLAN-ARCHIVE.md"
+archive      = "docs/plan-archive/PLAN-ARCHIVE.md"
 first-number = 1
 
+# Everything archive-shaped lives under docs/plan-archive/: the register
+# (PLAN-ARCHIVE.md), its rotated segments, and items/ — the flat state
+# directory `archive` moves closed item files into.
 [states.plan-archive]
-path = "docs/plan-archive"
+path = "docs/plan-archive/items"
 doc  = "docs/PLAN-METHOD.md#plan-archive"
 
 [keys.closed]

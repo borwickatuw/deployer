@@ -41,7 +41,7 @@ availability_critical = 99.0      # Page at 99.0%
 
 ### ~~Incident Response Tooling~~
 
-Moved to [PLAN-ARCHIVE-2026-09.md](../PLAN-ARCHIVE-2026-09.md).
+Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md).
 
 ### Postmortem Automation
 
@@ -97,6 +97,6 @@ uv run python bin/ops.py myapp-production slo
 | Enhancement                         | Value  | Effort | Priority                                       |
 | ----------------------------------- | ------ | ------ | ---------------------------------------------- |
 | SLOs in config.toml                 | High   | Medium | 1                                              |
-| ~~Incident start/resolve commands~~ |        |        | Moved to [PLAN-ARCHIVE-2026-09.md](../PLAN-ARCHIVE-2026-09.md) |
+| ~~Incident start/resolve commands~~ |        |        | Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md) |
 | Error budget dashboard              | Medium | Medium | 2                                              |
 | Postmortem automation               | Low    | High   | 3                                              |
