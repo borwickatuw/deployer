@@ -99,7 +99,11 @@ register.
 
 ## closed
 
-The date the phase was closed out, `YYYY-MM-DD`. Stamped by `archive`.
+The date the phase was closed out, `YYYY-MM-DD`. **Passed to `archive` as
+`--closed`, not filled in by it** — a run without the flag archives the item
+with no stamp and says nothing. `archive` is terminal, so there is no later
+transition whose `requires` could catch the miss; the date that has to
+survive is the one opening the register entry (see [archive](#archive)).
 
 ## source
 
