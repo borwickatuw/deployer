@@ -1,5 +1,7 @@
 # What If Azure?
 
+**Status: abandoned exploration** — we do not plan to target Azure; kept as the feasibility record.
+
 An analysis of whether this deployer's AWS architecture could be mapped to Azure, covering every AWS service in use, its Azure equivalent, and where the gaps are.
 
 ## TL;DR

@@ -523,7 +523,7 @@ ______________________________________________________________________
 
 **Decision:** The deploy.toml format is a cloud-agnostic protocol describing what to deploy. This project (`deployer`, effectively `deployer-aws`) owns the spec. A hypothetical `deployer-azure` would follow it.
 
-**Context:** Analysis of Azure feasibility (see [WHATIF-AZURE.md](../internal/WHATIF-AZURE.md)) showed that deploy.toml is almost entirely cloud-agnostic -- it describes images, services, commands, env vars, and migrations with no cloud coupling. The only cloud-specific element is the `[secrets]` URI format. This makes deploy.toml a natural shared contract between cloud implementations.
+**Context:** Analysis of Azure feasibility (see [WHATIF-AZURE.md](abandoned/WHATIF-AZURE.md)) showed that deploy.toml is almost entirely cloud-agnostic -- it describes images, services, commands, env vars, and migrations with no cloud coupling. The only cloud-specific element is the `[secrets]` URI format. This makes deploy.toml a natural shared contract between cloud implementations.
 
 **Alternatives considered:**
 
