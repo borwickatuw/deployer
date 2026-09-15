@@ -103,9 +103,13 @@ to       = "plan-archive"
 sets     = ["closed"]
 archives = true
 
-# Where a claim's owner comes from. CLAUDE_PID is set by Claude Code and is
-# the real `claude` pid, which is what lets fileplan probe a claim as
-# alive/dead. In a plain shell nothing is set, the probe reports `unknown`,
-# and claims never auto-free — free one with `fileplan release ITEM`.
+# Who a claim belongs to. `pid` names the environment variables searched, in
+# order, for this session's process id; CLAUDE_PID is set by Claude Code and
+# is the real `claude` pid, which is what lets fileplan probe a claim as
+# alive/dead. In a shell where none of the named variables is set, a claiming
+# run REFUSES rather than taking an unowned claim — "a claim that cannot name
+# the session holding it is not a claim" — and says what to export. So there
+# is no such thing here as a claim with no owner.
+# Free a claim you hold with `fileplan release ITEM`.
 [identity]
 pid = ["CLAUDE_PID"]
