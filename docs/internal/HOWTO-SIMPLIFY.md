@@ -92,7 +92,7 @@ docstrings against 81 lines removed from `run_audit`'s body.
 | Document                         | Lines | Notes                                       |
 | -------------------------------- | ----- | ------------------------------------------- |
 | `docs/CONFIG-REFERENCE.md`       | 1073  | Reference doc; large but may be appropriate |
-| `docs/internal/SOMEDAY-MAYBE.md` | 607   | Above threshold; review for completed items |
+| `docs/someday-maybe/` (split from docs/internal/SOMEDAY-MAYBE.md 2026-09-14) | per-item | Review items for completed work |
 | `docs/internal/DECISIONS.md`     | 556   | Approaching ADR/ migration threshold        |
 | `docs/internal/DESIGN.md`        | 410   | Design rationale; at guide threshold        |
 
