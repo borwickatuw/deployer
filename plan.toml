@@ -27,6 +27,18 @@ doc  = "docs/PLAN-METHOD.md#plan-archive"
 doc  = "docs/PLAN-METHOD.md#closed"
 help = "The date the phase was closed out, YYYY-MM-DD."
 
+[keys.source]
+doc  = "docs/PLAN-METHOD.md#source"
+help = "The repo whose session captured the idea (provenance, not destination)."
+
+[keys.captured]
+doc  = "docs/PLAN-METHOD.md#captured"
+help = "The date the idea was captured, YYYY-MM-DD."
+
+[keys.draft]
+doc  = "docs/PLAN-METHOD.md#draft"
+help = "Repo-relative path of the design document the item decides from."
+
 [transitions.capture]
 doc  = "docs/PLAN-METHOD.md#capture"
 help = "File an idea in someday-maybe."

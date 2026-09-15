@@ -101,12 +101,42 @@ register.
 
 The date the phase was closed out, `YYYY-MM-DD`. Stamped by `archive`.
 
+## source
+
+The repo whose session captured the idea — provenance, not destination
+(the fleet-standard key from claude-meta's capture point). An idea refiled
+from claude-meta's `docs/ideas/` keeps this stamp.
+
+## captured
+
+The date the idea was captured, `YYYY-MM-DD`. Stamped at capture; kept on
+refile.
+
+## draft
+
+The design document an item decides from: a repo-relative path into
+`docs/drafts/`. Optional — an item whose body says everything needs none.
+
+`docs/drafts/` holds future-state design only: plans and ideas for work
+not yet built. A draft is **deleted when it is 100% implemented** — its
+durable content refactored into the current-state docs
+([DESIGN.md](internal/DESIGN.md), [ARCHITECTURE.md](internal/ARCHITECTURE.md),
+the phase's archive record) first; nothing may reference a draft that
+shipped. A draft abandoned rather than built moves to an `abandoned/` home
+or is deleted with its rationale recorded in
+[DECISIONS.md](internal/DECISIONS.md). fileplan does not validate the
+path; keeping items and drafts pointing at each other is review work.
+
 ## capture
 
 File an idea into someday-maybe. Write the idea shape into the body —
 current state, proposed enhancement, implementation approach, complexity —
 and note where the idea came from (a review session, an operator
 conversation, a finding that was deliberately not scoped).
+
+Ideas for deployer are captured cross-repo with `claude-idea deployer "…"`,
+which files them in claude-meta's `docs/ideas/`; repo-local ideas are
+written straight into `docs/someday-maybe/` by this transition.
 
 ## promote
 
