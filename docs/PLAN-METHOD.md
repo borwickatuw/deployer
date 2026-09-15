@@ -153,16 +153,59 @@ carry-forward work items and deployer's slice of a cross-repo arc that the
 repo decides to track on its own number — commitments the moment they are
 queued.
 
+## session-verbs
+
+Four `plan → plan` verbs track the work *inside* a phase, so its status is
+counted rather than narrated:
+
+| Verb       | What a run does                                             |
+| ---------- | ----------------------------------------------------------- |
+| `start`    | Take this item's claim for the session                      |
+| `subphase` | Write one sub-phase bullet into the body (`--title --last`) |
+| `finish`   | Mark one sub-phase done (`--note`)                          |
+| `drop`     | Mark one absorbed or abandoned (`--note`)                   |
+
+Every row then carries `claimed-by`/`claim-status` and
+`sub-phases`/`sub-phases-left`/`next-sub-phase`:
+
+```bash
+uv run fileplan list --state plan --lacks claimed-by        # unclaimed
+uv run fileplan list --state plan --has 'sub-phases-left>0' # work left
+uv run fileplan list --state plan --has 'stale-days>=30'    # gone cold
+```
+
+A held item **refuses every transition for another session** at the `--check`
+stage. A claim is that session's hold and nothing frees it automatically:
+`archive` frees it at close-out, and `uv run fileplan release ITEM` frees your
+own or a dead local one — never a live claim and never another host's. A row
+reading `claim-status` `dead`, `elsewhere` or `unknown` gets reported by name,
+not cleared on sight.
+
+Sub-phases are named `{number}-{ordinal}` (1-1, 1-2), against this repo's own
+numbering — not the `53a`/`70c` lettering that appears in
+[Cross-repo backlog](#cross-repo-backlog), which is claude-meta's and which
+fileplan never reads.
+
+Full rationale: claude-meta `docs/PLAN-METHOD.md` and
+`best-practices/FILEPLAN.md` Practices 13-14.
+
 ## archive
 
 Close a phase out. Before running it: write the outcome into the item's body
 (what shipped, final counts, SHAs — the record register entries have always
 carried). `archive` then mints a `## N. Title` heading at its ordered place
-in the register ([PLAN-ARCHIVE.md](plan-archive/PLAN-ARCHIVE.md)), stamps
-[closed](#closed), and moves the file to `docs/plan-archive/items/`. After the
-move, condense the outcome into a short summary under the minted heading
-with a pointer to where the full record lives; the `docs/plan-archive/items/`
-file may then be deleted at any point.
+in the register ([PLAN-ARCHIVE.md](plan-archive/PLAN-ARCHIVE.md)) and moves
+the file to `docs/plan-archive/items/`. Pass the date — `archive` **takes**
+[closed](#closed) rather than supplying it, and a run without `--closed`
+archives silently:
+
+```bash
+uv run fileplan archive ITEM --closed YYYY-MM-DD
+```
+
+After the move, condense the outcome into a short summary under the minted
+heading with a pointer to where the full record lives; the
+`docs/plan-archive/items/` file may then be deleted at any point.
 
 ## Rotating the register
 

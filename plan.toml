@@ -12,9 +12,18 @@ doc  = "docs/PLAN-METHOD.md#someday-maybe"
 [states.plan]
 path         = "docs/plan"
 doc          = "docs/PLAN-METHOD.md#plan"
-capabilities = ["numbered"]
+capabilities = ["numbered", "claimed", "bulleted", "dated"]
 archive      = "docs/plan-archive/PLAN-ARCHIVE.md"
 first-number = 1
+
+# `bulleted`: sub-phase status is counted out of the body rather than
+# narrated. `{ordinal}` is required by fileplan — there is no letter token,
+# so sub-phases are named 1-1, 1-2. The 53a/70c lettering that appears in
+# this repo's cross-repo prose is claude-meta's own numbering, which
+# fileplan never reads.
+sub-phases        = "Sub-phases"
+sub-phase-name    = "{number}-{ordinal}"
+sub-phase-pending = "**pending** — the sub-phases are not written yet"
 
 # Everything archive-shaped lives under docs/plan-archive/: the register
 # (PLAN-ARCHIVE.md), its rotated segments, and items/ — the flat state
@@ -55,6 +64,37 @@ doc  = "docs/PLAN-METHOD.md#scope"
 help = "Open a phase directly in the plan (review findings, carry-forwards)."
 to   = "plan"
 
+# The four session verbs. All four point at one #session-verbs heading:
+# fileplan allows transitions to share a doc pointer, and the canonical
+# prose lives in claude-meta rather than in sixteen copies of it.
+[transitions.start]
+doc    = "docs/PLAN-METHOD.md#session-verbs"
+help   = "Pick a plan item up for this session: take its claim."
+from   = "plan"
+to     = "plan"
+claims = true
+
+[transitions.subphase]
+doc   = "docs/PLAN-METHOD.md#session-verbs"
+help  = "Write one sub-phase into a plan item's body."
+from  = "plan"
+to    = "plan"
+mints = true
+
+[transitions.finish]
+doc   = "docs/PLAN-METHOD.md#session-verbs"
+help  = "Mark one sub-phase done."
+from  = "plan"
+to    = "plan"
+marks = "done"
+
+[transitions.drop]
+doc   = "docs/PLAN-METHOD.md#session-verbs"
+help  = "Mark one sub-phase dropped: absorbed elsewhere or abandoned."
+from  = "plan"
+to    = "plan"
+marks = "dropped"
+
 [transitions.archive]
 doc      = "docs/PLAN-METHOD.md#archive"
 help     = "Close a phase: record the outcome in its body, then move it to the archive."
@@ -62,3 +102,10 @@ from     = "plan"
 to       = "plan-archive"
 sets     = ["closed"]
 archives = true
+
+# Where a claim's owner comes from. CLAUDE_PID is set by Claude Code and is
+# the real `claude` pid, which is what lets fileplan probe a claim as
+# alive/dead. In a plain shell nothing is set, the probe reports `unknown`,
+# and claims never auto-free — free one with `fileplan release ITEM`.
+[identity]
+pid = ["CLAUDE_PID"]
