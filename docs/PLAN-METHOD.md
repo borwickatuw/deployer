@@ -130,9 +130,10 @@ path; keeping items and drafts pointing at each other is review work.
 ## capture
 
 File an idea into someday-maybe. Write the idea shape into the body —
-current state, proposed enhancement, implementation approach, complexity —
-and note where the idea came from (a review session, an operator
-conversation, a finding that was deliberately not scoped).
+current state, proposed enhancement, implementation approach, complexity
+(Low/Medium/High/Very High), any dependencies or prerequisites — and note
+where the idea came from (a review session, an operator conversation, a
+finding that was deliberately not scoped).
 
 Ideas for deployer are captured cross-repo with `claude-idea deployer "…"`,
 which files them in claude-meta's `docs/ideas/`; repo-local ideas are
