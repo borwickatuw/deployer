@@ -100,9 +100,8 @@ The `local/` directory is gitignored and may contain real project names — that
 
 ## Design Principles
 
-**One canonical location for each config value**: Every configuration value should have exactly one correct place to live. Don't add fallback logic that checks multiple locations - this creates ambiguity about where values come from and masks configuration errors.
-
-**Fail fast with clear errors**: If required configuration is missing, fail immediately with a helpful error message rather than silently falling back to defaults or alternative sources.
+One canonical location per config value, and fail fast with a clear error — the
+general statements live in `~/.claude/CLAUDE.md`. What they mean here:
 
 Example: `ecr_prefix` belongs in the environment's config.toml (infrastructure), not deploy.toml (app structure). The deploy script requires it from config.toml and fails with a clear error if missing.
 
