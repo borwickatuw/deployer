@@ -167,12 +167,13 @@ security-bandit: ## Run bandit Python security linter
 #     CKV_AWS_91 (ALB access logging - opt-in via var.access_logs_enabled)
 #   VPC flow logs IAM policy (Resource=* required for CloudWatch Logs):
 #     CKV_AWS_290 (IAM write without constraints), CKV_AWS_355 (IAM * resource)
-#   Deferred - need infrastructure changes
-#   (see docs/someday-maybe/checkov-deferred-items.md):
-#     CKV_AWS_161 (RDS IAM auth),
+#   Deferred - valid findings that need infrastructure changes:
+#     CKV_AWS_161 (RDS IAM auth - the apps authenticate with a password, so
+#       enabling it needs app-side changes first),
 #     CKV_AWS_157 (RDS Multi-AZ - configurable per env), CKV_AWS_293 (RDS deletion
 #       protection - configurable per env),
-#     CKV_AWS_149 (SecretsManager CMK), CKV_AWS_51 (ECR immutable tags)
+#     CKV_AWS_149 (SecretsManager CMK), CKV_AWS_51 (ECR immutable tags - the
+#       deploy workflow pushes a `latest` tag)
 #   S3 public access block checks (CKV_AWS_53-56) - conditional on var.public:
 #     CKV_AWS_53, CKV_AWS_54, CKV_AWS_55, CKV_AWS_56
 #   CI role IAM statements require Resource=* (AWS API design, not restrictable):
