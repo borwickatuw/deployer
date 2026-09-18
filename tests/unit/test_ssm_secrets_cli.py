@@ -190,7 +190,7 @@ class TestCmdPut:
     def test_from_file_reads_the_file(self, monkeypatch, tmp_path):
         calls = self._capture_put(monkeypatch)
         secret_file = tmp_path / "secret.txt"
-        secret_file.write_text("from-disk")
+        secret_file.write_text("from-disk", encoding="utf-8")
 
         assert ssm_cli.cmd_put("myapp-staging", "SECRET_KEY", None, str(secret_file), None) == 0
         assert calls[0]["value"] == "from-disk"

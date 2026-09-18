@@ -265,9 +265,9 @@ class TestCmdBootstrapWrites:
         _answer_bootstrap(monkeypatch)
         assert init_cli.cmd_bootstrap(dry_run=False) == 0
         env_path = env_dir / "bootstrap-staging"
-        assert (env_path / "main.tf").read_text() == BOOTSTRAP_FILES["main.tf"]
+        assert (env_path / "main.tf").read_text(encoding="utf-8") == BOOTSTRAP_FILES["main.tf"]
         script = env_path / "import-existing.sh"
-        assert script.read_text() == BOOTSTRAP_FILES["import-existing.sh"]
+        assert script.read_text(encoding="utf-8") == BOOTSTRAP_FILES["import-existing.sh"]
         mode = script.stat().st_mode
         assert mode & stat.S_IXUSR and mode & stat.S_IXGRP and mode & stat.S_IXOTH
         out = capsys.readouterr().out
@@ -383,7 +383,7 @@ def migrate_env(monkeypatch, env_dir):
     """Create a bootstrap directory with a main.tf, and stub the uncommenter."""
     env_path = env_dir / "bootstrap-staging"
     env_path.mkdir(parents=True)
-    (env_path / "main.tf").write_text("# BOOTSTRAP-BACKEND-START\n")
+    (env_path / "main.tf").write_text("# BOOTSTRAP-BACKEND-START\n", encoding="utf-8")
     monkeypatch.setattr(init_cli, "uncomment_backend_block", lambda _c: 'backend "s3" {}\n')
     return env_path
 
@@ -394,7 +394,7 @@ class TestCmdBootstrapMigrate:
     def test_writes_the_uncommented_backend(self, capsys, migrate_env):
         """Test that main.tf is rewritten with the backend block enabled."""
         assert init_cli.cmd_bootstrap_migrate("bootstrap-staging", dry_run=False) == 0
-        assert (migrate_env / "main.tf").read_text() == 'backend "s3" {}\n'
+        assert (migrate_env / "main.tf").read_text(encoding="utf-8") == 'backend "s3" {}\n'
 
     def test_next_steps_are_numbered_in_order(self, capsys, migrate_env):
         """Test the three-step migration checklist, in order."""
@@ -421,7 +421,9 @@ class TestCmdBootstrapMigrate:
         out = capsys.readouterr().out
         assert f"Would update: {migrate_env / 'main.tf'}" in out
         assert 'backend "s3" {}' in out
-        assert (migrate_env / "main.tf").read_text() == "# BOOTSTRAP-BACKEND-START\n"
+        assert (migrate_env / "main.tf").read_text(
+            encoding="utf-8"
+        ) == "# BOOTSTRAP-BACKEND-START\n"
 
     def test_missing_main_tf_returns_1(self, capsys, env_dir):
         """Test that a bootstrap directory without main.tf is reported by path."""
@@ -469,7 +471,7 @@ def compose_stubs(monkeypatch):
 def _compose(tmp_path):
     """Write a docker-compose.yml and return its path."""
     path = tmp_path / "docker-compose.yml"
-    path.write_text("services:\n  web:\n    image: nginx\n")
+    path.write_text("services:\n  web:\n    image: nginx\n", encoding="utf-8")
     return path
 
 
@@ -480,7 +482,7 @@ class TestCmdDeployToml:
         """Test that deploy.toml lands beside docker-compose.yml."""
         compose = _compose(tmp_path)
         assert init_cli.cmd_deploy_toml(str(compose), None, None, False) == 0
-        assert (tmp_path / "deploy.toml").read_text() == "[application]\n"
+        assert (tmp_path / "deploy.toml").read_text(encoding="utf-8") == "[application]\n"
         assert f"Generated: {tmp_path / 'deploy.toml'}" in capsys.readouterr().out
 
     def test_output_option_overrides_the_destination(self, tmp_path, capsys, compose_stubs):
@@ -489,7 +491,7 @@ class TestCmdDeployToml:
         target = tmp_path / "elsewhere.toml"
         assert init_cli.cmd_deploy_toml(str(compose), None, str(target), False) == 0
         capsys.readouterr()
-        assert target.read_text() == "[application]\n"
+        assert target.read_text(encoding="utf-8") == "[application]\n"
 
     def test_next_steps_are_numbered_in_order(self, tmp_path, capsys, compose_stubs):
         """Test the two-step follow-up, naming the generated app in the command."""
@@ -723,7 +725,7 @@ class TestCmdEnvironmentGeneration:
     def test_generator_arguments(self, tmp_path, capsys, environment_stubs):
         """Test that every CLI option reaches generate_environment()."""
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text("[application]\n")
+        deploy_toml.write_text("[application]\n", encoding="utf-8")
         assert (
             _environment(
                 "myapp",
@@ -755,7 +757,7 @@ class TestCmdEnvironmentGeneration:
         out = capsys.readouterr().out
         env_path = env_dir / "myapp-staging"
         for filename in ENVIRONMENT_FILE_NAMES:
-            assert (env_path / filename).read_text() == f"# {filename}\n"
+            assert (env_path / filename).read_text(encoding="utf-8") == f"# {filename}\n"
             assert f"Created: {env_path / filename}" in out
 
     def test_standalone_creates_symlinks_and_deployer_tf(

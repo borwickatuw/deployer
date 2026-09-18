@@ -86,7 +86,7 @@ class TestIncidentNoteAndResolve:
 
     def _open_incident(self, monkeypatch, tmp_path) -> Path:
         incident = tmp_path / "2026-08-13-0900-web-500s.md"
-        incident.write_text(_incident("09:00 Incident started"))
+        incident.write_text(_incident("09:00 Incident started"), encoding="utf-8")
         monkeypatch.setattr(ops, "_require_open_incident", lambda: incident)
         return incident
 
@@ -94,7 +94,7 @@ class TestIncidentNoteAndResolve:
         incident = self._open_incident(monkeypatch, tmp_path)
         assert ops.cmd_incident_note("scaled web to 4") == 0
 
-        body = incident.read_text()
+        body = incident.read_text(encoding="utf-8")
         timeline = body.split("## Timeline\n")[1].split("\n\n## Resolution")[0]
         assert "Incident started" in timeline
         assert "scaled web to 4" in timeline
@@ -104,7 +104,7 @@ class TestIncidentNoteAndResolve:
         incident = self._open_incident(monkeypatch, tmp_path)
         assert ops.cmd_incident_resolve() == 0
 
-        body = incident.read_text()
+        body = incident.read_text(encoding="utf-8")
         assert "Status: RESOLVED" in body
         assert "Status: OPEN" not in body
 
@@ -118,7 +118,7 @@ class TestIncidentNoteAndResolve:
         ops.cmd_incident_note("first note")
         ops.cmd_incident_resolve()
 
-        timeline = incident.read_text().split("## Resolution\n")[0]
+        timeline = incident.read_text(encoding="utf-8").split("## Resolution\n")[0]
         assert timeline.index("first note") < timeline.index("Incident resolved")
         assert "Incident started" in timeline
 
@@ -742,7 +742,7 @@ class TestCmdIncidentStart:
 
     def _written(self, incidents_dir) -> str:
         (path,) = list(incidents_dir.glob("*.md"))
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
 
     def test_the_running_services_are_captured_as_the_initial_state(
         self, env_config, incidents_dir, monkeypatch

@@ -99,7 +99,7 @@ def resolve_config(environment: str) -> dict:
     config_toml_path = env_path / "config.toml"
     if not config_toml_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_toml_path}")
-    config_toml_content = config_toml_path.read_text()
+    config_toml_content = config_toml_path.read_text(encoding="utf-8")
 
     # Get tofu outputs for hashing (before resolution)
     tofu_outputs = get_all_tofu_outputs(env_path)
@@ -150,7 +150,7 @@ def verify_config(environment: str, resolved_config: dict) -> bool:
     # Check config.toml hash
     stored_config_hash = meta.get("config_toml_hash")
     if stored_config_hash:
-        config_content = (env_path / "config.toml").read_text()
+        config_content = (env_path / "config.toml").read_text(encoding="utf-8")
         current_config_hash = _compute_hash(config_content)
         if current_config_hash != stored_config_hash:
             return False
@@ -270,11 +270,11 @@ def cli(environment, output_file, push_s3, verify, verify_file):
         log_error(str(e))
         sys.exit(1)
 
-    output_json = json.dumps(resolved, indent=2)
+    output_json = json.dumps(resolved, indent=2, ensure_ascii=False)
 
     if output_file:
         output_path = Path(output_file)
-        output_path.write_text(output_json + "\n")
+        output_path.write_text(output_json + "\n", encoding="utf-8")
         log_success(f"Resolved config written to {output_path}")
         meta = resolved["_meta"]
         log(f"  Environment: {meta['environment']}")

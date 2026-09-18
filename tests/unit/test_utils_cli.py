@@ -196,16 +196,16 @@ class TestResolveDeployTomlOrExit:
 
     def test_explicit_flag_wins_over_the_link_registry(self, tmp_path, monkeypatch):
         explicit = tmp_path / "explicit.toml"
-        explicit.write_text("")
+        explicit.write_text("", encoding="utf-8")
         linked = tmp_path / "linked.toml"
-        linked.write_text("")
+        linked.write_text("", encoding="utf-8")
         monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", lambda _env: linked)
 
         assert self._resolve("myapp-staging", str(explicit)) == explicit.resolve()
 
     def test_explicit_flag_prints_the_link_tip(self, tmp_path, capsys):
         explicit = tmp_path / "deploy.toml"
-        explicit.write_text("")
+        explicit.write_text("", encoding="utf-8")
 
         self._resolve("myapp-staging", str(explicit))
 
@@ -215,14 +215,14 @@ class TestResolveDeployTomlOrExit:
 
     def test_explicit_flag_expands_user_and_resolves(self, tmp_path, monkeypatch):
         explicit = tmp_path / "deploy.toml"
-        explicit.write_text("")
+        explicit.write_text("", encoding="utf-8")
         monkeypatch.setenv("HOME", str(tmp_path))
 
         assert self._resolve("myapp-staging", "~/deploy.toml") == explicit.resolve()
 
     def test_falls_back_to_the_link_registry(self, tmp_path, monkeypatch, capsys):
         linked = tmp_path / "linked.toml"
-        linked.write_text("")
+        linked.write_text("", encoding="utf-8")
         monkeypatch.setattr(cli_utils, "get_linked_deploy_toml", lambda _env: linked)
 
         assert self._resolve("myapp-staging", None) == linked
@@ -278,7 +278,7 @@ class TestResolveDeployTomlOrExit:
 
     def test_wrong_suffix_exits_1(self, tmp_path, capsys):
         wrong = tmp_path / "deploy.yaml"
-        wrong.write_text("")
+        wrong.write_text("", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
             self._resolve("myapp-staging", str(wrong))
         assert exc_info.value.code == 1
@@ -447,7 +447,7 @@ class TestIterDeployedEnvironments:
         env_path = tmp_path / name
         env_path.mkdir()
         if deployed:
-            (env_path / "terraform.tfstate").write_text("{}")
+            (env_path / "terraform.tfstate").write_text("{}", encoding="utf-8")
         return env_path
 
     def test_yields_only_deployed(self, monkeypatch, tmp_path, capsys):

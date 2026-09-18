@@ -46,7 +46,7 @@ def stub_pipeline(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "Deployer", StubDeployer)
 
     deploy_toml = tmp_path / "deploy.toml"
-    deploy_toml.write_text("")
+    deploy_toml.write_text("", encoding="utf-8")
     return deploy_toml
 
 
@@ -141,7 +141,7 @@ class TestTimingReport:
         output = tmp_path / "timing.json"
         _run(stub_pipeline, timer=DeploymentTimer("deploy-test"), timing_output=output)
         assert output.exists()
-        assert "deploy-test" in output.read_text()
+        assert "deploy-test" in output.read_text(encoding="utf-8")
         assert "Timing saved to" in capsys.readouterr().out
 
     def test_output_path_ignored_without_a_timer(self, stub_pipeline, tmp_path):

@@ -196,9 +196,9 @@ class TestEnvironmentGetAllEnvironments:
         from deployer.utils import get_all_environments
 
         (tmp_path / "test-staging").mkdir()
-        (tmp_path / "test-staging" / "config.toml").write_text("")
+        (tmp_path / "test-staging" / "config.toml").write_text("", encoding="utf-8")
         (tmp_path / "test-production").mkdir()
-        (tmp_path / "test-production" / "config.toml").write_text("")
+        (tmp_path / "test-production" / "config.toml").write_text("", encoding="utf-8")
 
         result = get_all_environments(tmp_path)
 

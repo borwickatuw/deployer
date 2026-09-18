@@ -34,7 +34,8 @@ class TestDeployConfigServices:
 
     def test_extract_services(self, tmp_path):
         """Test extracting services from deploy config."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -44,7 +45,9 @@ port = 8000
 
 [services.worker]
 image = "worker"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert "web" in config.services
@@ -54,13 +57,14 @@ image = "worker"
 
     def test_empty_services(self, tmp_path):
         """Test with no services."""
-        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"', encoding="utf-8")
         config = parse_deploy_config(tmp_path / "deploy.toml")
         assert config.services == {}
 
     def test_interruptible_flag(self, tmp_path):
         """Test interruptible flag parsing."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -71,7 +75,9 @@ port = 8000
 [services.worker]
 image = "web"
 interruptible = true
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.services["web"].interruptible is False
@@ -79,14 +85,17 @@ interruptible = true
 
     def test_interruptible_in_raw_dict(self, tmp_path):
         """Test interruptible flag roundtrips through get_raw_dict."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [services.worker]
 image = "web"
 interruptible = true
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         raw = config.get_raw_dict()
 
@@ -100,14 +109,17 @@ interruptible = true
         declared min_replicas = 0 still validated against the default floor
         of 1 (observed on a 2026-08-31 staging deploy).
         """
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [services.transcoder]
 image = "transcoder"
 min_replicas = 0
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.get_warnings() == []
@@ -116,7 +128,8 @@ min_replicas = 0
 
     def test_deployment_override_fields_parse(self, tmp_path):
         """Per-service rollout override keys parse without warnings."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -124,7 +137,9 @@ name = "test"
 image = "web"
 minimum_healthy_percent = 0
 maximum_percent = 100
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.services["beat"].minimum_healthy_percent == 0
@@ -132,13 +147,16 @@ maximum_percent = 100
         assert config.get_warnings() == []
 
     def test_deployment_override_fields_default_to_none(self, tmp_path):
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [services.web]
 image = "web"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.services["web"].minimum_healthy_percent is None
@@ -151,7 +169,8 @@ image = "web"
         silently never reaches ECS — the exact dual-beat hazard the override
         exists to close.
         """
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -162,7 +181,9 @@ maximum_percent = 100
 
 [services.web]
 image = "web"
-""")
+""",
+            encoding="utf-8",
+        )
         raw = parse_deploy_config(tmp_path / "deploy.toml").get_raw_dict()
 
         assert raw["services"]["beat"]["minimum_healthy_percent"] == 0
@@ -173,13 +194,16 @@ image = "web"
 
     def test_zero_minimum_healthy_percent_survives_the_raw_dict(self, tmp_path):
         """0 is falsy; the raw-dict emission must test `is not None`, not truth."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [services.beat]
 minimum_healthy_percent = 0
-""")
+""",
+            encoding="utf-8",
+        )
         raw = parse_deploy_config(tmp_path / "deploy.toml").get_raw_dict()
 
         assert raw["services"]["beat"]["minimum_healthy_percent"] == 0
@@ -200,20 +224,24 @@ minimum_healthy_percent = 0
         """Fail fast: ECS rejects these values only mid-deploy, and
         _update_service would swallow that ClientError into a vague
         per-service failure."""
-        (tmp_path / "deploy.toml").write_text(f"""
+        (tmp_path / "deploy.toml").write_text(
+            f"""
 [application]
 name = "test"
 
 [services.beat]
 {toml_line}
-""")
+""",
+            encoding="utf-8",
+        )
         with pytest.raises(ValueError, match=match):
             parse_deploy_config(tmp_path / "deploy.toml")
 
     def test_100_100_is_only_rejected_when_both_are_set_by_the_service(self, tmp_path):
         """A service pinning just one side to 100 is legal — the other side
         comes from the environment, which parse time cannot see."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -222,7 +250,9 @@ minimum_healthy_percent = 100
 
 [services.worker]
 maximum_percent = 100
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.services["web"].minimum_healthy_percent == 100
@@ -234,14 +264,17 @@ maximum_percent = 100
         The production deploy path builds images from get_raw_dict()'s output,
         so a field dropped here silently never reaches `docker build`.
         """
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [images.web]
 context = "web"
 additional_contexts = { shared = "shared" }
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         raw = config.get_raw_dict()
 
@@ -253,7 +286,8 @@ class TestDeployConfigImages:
 
     def test_extract_images(self, tmp_path):
         """Test extracting images from deploy config."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -264,7 +298,9 @@ dockerfile = "Dockerfile.web"
 [images.base]
 context = "./base"
 push = false
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert "web" in config.images
@@ -276,13 +312,16 @@ push = false
 
     def test_default_dockerfile(self, tmp_path):
         """Test default Dockerfile value."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [images.app]
 context = "."
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         assert config.images["app"].dockerfile == "Dockerfile"
 
@@ -292,7 +331,8 @@ class TestDeployConfigEnvVars:
 
     def test_extract_env_vars(self, tmp_path):
         """Test extracting environment variables."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -304,7 +344,9 @@ DEBUG = "true"
 
 [secrets]
 names = ["API_KEY"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -313,13 +355,16 @@ names = ["API_KEY"]
 
     def test_module_injected_database_vars(self, tmp_path):
         """Test that database module vars are included."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [database]
 type = "postgresql"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -331,13 +376,16 @@ type = "postgresql"
 
     def test_module_injected_cache_vars(self, tmp_path):
         """Test that cache module vars are included."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [cache]
 type = "redis"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -345,14 +393,17 @@ type = "redis"
 
     def test_module_injected_storage_vars(self, tmp_path):
         """Test that storage module vars are included."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [storage]
 type = "s3"
 buckets = ["media", "originals"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -366,13 +417,16 @@ buckets = ["media", "originals"]
 
     def test_module_injected_secrets_vars(self, tmp_path):
         """Test that secrets module vars are included."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [secrets]
 names = ["SECRET_KEY", "API_TOKEN"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -381,7 +435,8 @@ names = ["SECRET_KEY", "API_TOKEN"]
 
     def test_all_modules_combined(self, tmp_path):
         """Test that all modules work together."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -400,7 +455,9 @@ buckets = ["media"]
 
 [secrets]
 names = ["SECRET_KEY"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -421,7 +478,8 @@ class TestDeployConfigAudit:
 
     def test_extract_audit_config(self, tmp_path):
         """Test extracting audit configuration."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -429,7 +487,9 @@ name = "test"
 ignore_services = ["db"]
 service_mapping = { app = "web" }
 ignore_env_vars = ["DEBUG"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         audit = config.audit
 
@@ -439,7 +499,7 @@ ignore_env_vars = ["DEBUG"]
 
     def test_empty_audit_config(self, tmp_path):
         """Test with no audit config."""
-        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"', encoding="utf-8")
         config = parse_deploy_config(tmp_path / "deploy.toml")
         audit = config.audit
         assert audit.ignore_services == set()
@@ -511,7 +571,8 @@ class TestGetComposeServices:
         """Vars from env_file must be seen by the audit, or removing a
         variable from a shared env file is never flagged."""
         (tmp_path / "django.env").write_text(
-            "# comment\n\nDB_HOST=postgres\nexport LOG_LEVEL=INFO\nEMPTY=\n"
+            "# comment\n\nDB_HOST=postgres\nexport LOG_LEVEL=INFO\nEMPTY=\n",
+            encoding="utf-8",
         )
         compose = {
             "services": {
@@ -532,8 +593,8 @@ class TestGetComposeServices:
 
     def test_env_file_list_and_mapping_forms(self, tmp_path):
         """env_file accepts a list of strings or {path: ...} mappings."""
-        (tmp_path / "a.env").write_text("FROM_A=1\n")
-        (tmp_path / "b.env").write_text("FROM_B=2\n")
+        (tmp_path / "a.env").write_text("FROM_A=1\n", encoding="utf-8")
+        (tmp_path / "b.env").write_text("FROM_B=2\n", encoding="utf-8")
         compose = {
             "services": {
                 "app": {

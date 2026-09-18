@@ -142,7 +142,7 @@ def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
             dockerfile_path = compose_path.parent / context / dockerfile
             if dockerfile_path.exists():
                 try:
-                    return dockerfile_path.read_text()
+                    return dockerfile_path.read_text(encoding="utf-8")
                 except Exception:  # noqa: BLE001, S110 — best-effort Dockerfile read
                     pass
     return None

@@ -139,7 +139,7 @@ def create_checkpoint(
     )
 
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(checkpoint.to_dict(), f, indent=2)
+        json.dump(checkpoint.to_dict(), f, indent=2, ensure_ascii=False)
 
     return checkpoint
 

@@ -81,8 +81,12 @@ def temp_project_dir(
         project_dir = Path(tmpdir)
 
         # Copy fixtures
-        (project_dir / "deploy.toml").write_text(sample_deploy_toml.read_text())
-        (project_dir / "docker-compose.yml").write_text(sample_docker_compose.read_text())
+        (project_dir / "deploy.toml").write_text(
+            sample_deploy_toml.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (project_dir / "docker-compose.yml").write_text(
+            sample_docker_compose.read_text(encoding="utf-8"), encoding="utf-8"
+        )
 
         yield project_dir
 

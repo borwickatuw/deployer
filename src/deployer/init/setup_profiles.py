@@ -51,7 +51,7 @@ def _find_existing_profiles(config_path: Path) -> list[str]:
     if not config_path.exists():
         return []
 
-    content = config_path.read_text()
+    content = config_path.read_text(encoding="utf-8")
     found = []
     for profile_name in ROLE_PROFILES:
         if f"[profile {profile_name}]" in content:

@@ -132,6 +132,12 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
+# PLW1514 (text I/O without an explicit encoding) is still a ruff preview rule.
+# explicit-preview-rules keeps preview mode from switching on every other
+# preview rule at the same time: only preview rules named in `select` run.
+preview = true
+explicit-preview-rules = true
+
 # Focused rule selection for deployer.
 # Excluded categories with rationale (per claude-meta lessons learned):
 # - FBT: boolean-trap. Click CLI options use bool flags throughout bin/ scripts;
@@ -159,6 +165,7 @@ select = [
     "PLC",    # convention
     "PLE",    # error
     "PLW",    # warning
+    "PLW1514", # preview: open()/read_text()/write_text() without encoding=
 ]
 
 [tool.ruff.lint.mccabe]

@@ -88,7 +88,7 @@ def load_all_templates(template_name: str) -> dict[str, str]:
     for path in sorted(template_dir.iterdir()):
         if path.is_file() and path.name.endswith(".example"):
             output_name = path.name.removesuffix(".example")
-            files[output_name] = path.read_text()
+            files[output_name] = path.read_text(encoding="utf-8")
 
     if not files:
         raise FileNotFoundError(f"No .example files found in template: {template_dir}")

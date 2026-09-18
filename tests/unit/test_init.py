@@ -353,7 +353,9 @@ class TestParseServicesSizing:
         every newly generated environment inherits) or a key crept into the
         file above the services block.
         """
-        content = (get_deployer_root() / "templates" / template / filename).read_text()
+        content = (get_deployer_root() / "templates" / template / filename).read_text(
+            encoding="utf-8"
+        )
         assert parse_services_sizing(content) == expected
 
     def test_defaults_when_not_found(self):
@@ -488,7 +490,8 @@ class TestGenerateEnvironment:
         deploy_toml.write_text(
             '[application]\nname = "testapp"\n\n'
             '[services.web]\nport = 3000\nhealth_check_path = "/ready"\n\n'
-            "[services.worker]\n"
+            "[services.worker]\n",
+            encoding="utf-8",
         )
 
         with patch.dict(os.environ, {"DEPLOYER_ENVIRONMENTS_DIR": str(self.env_dir)}):
@@ -554,7 +557,8 @@ class TestUpdateServices:
             "    port = 8000\n"
             "  }\n"
             "}\n\n"
-            "scaling = {}\n"
+            "scaling = {}\n",
+            encoding="utf-8",
         )
 
         self.deploy_toml = tmp_path / "deploy.toml"
@@ -562,7 +566,8 @@ class TestUpdateServices:
             '[application]\nname = "testapp"\n\n'
             '[services.web]\nport = 8000\nhealth_check_path = "/health/"\n\n'
             '[services.api]\nport = 3000\nhealth_check_path = "/ready"\n\n'
-            "[services.worker]\n"
+            "[services.worker]\n",
+            encoding="utf-8",
         )
 
         with patch.dict(os.environ, {"DEPLOYER_ENVIRONMENTS_DIR": str(self.env_dir)}):
@@ -599,7 +604,7 @@ class TestUpdateServices:
         assert "api = {" in captured.out
 
         # File should be unchanged
-        content = self.services_file.read_text()
+        content = self.services_file.read_text(encoding="utf-8")
         assert "api" not in content
 
     def test_missing_env(self, tmp_path):

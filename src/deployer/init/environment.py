@@ -51,7 +51,7 @@ def get_next_listener_priority(env_type: str) -> int:
         if not tfvars_path.exists():
             continue
         try:
-            content = tfvars_path.read_text()
+            content = tfvars_path.read_text(encoding="utf-8")
             match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
             if match:
                 existing_priorities.append(int(match.group(1)))
@@ -269,7 +269,7 @@ def update_services(
     for candidate in ("services.auto.tfvars", "terraform.tfvars"):
         path = env_dir / candidate
         if path.exists():
-            content = path.read_text()
+            content = path.read_text(encoding="utf-8")
             if re.search(r"^services\s*=\s*\{", content, re.MULTILINE):
                 target_file = path
                 break
@@ -280,7 +280,7 @@ def update_services(
             "Expected services.auto.tfvars or terraform.tfvars."
         )
 
-    content = target_file.read_text()
+    content = target_file.read_text(encoding="utf-8")
 
     # Parse existing sizing as defaults
     default_sizing = parse_services_sizing(content)
@@ -297,7 +297,7 @@ def update_services(
         print(updated)
         return None
 
-    target_file.write_text(updated)
+    target_file.write_text(updated, encoding="utf-8")
     print(f"Updated: {target_file}")
     return updated
 

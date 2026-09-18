@@ -81,13 +81,16 @@ class TestCheckEcrRepositories:
         del config["infrastructure"]["ecr_prefix"]
 
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text("""
+        deploy_toml.write_text(
+            """
 [application]
 name = "test"
 
 [images.web]
 context = "."
-""")
+""",
+            encoding="utf-8",
+        )
         deploy_config = parse_deploy_config(deploy_toml)
 
         # Should not raise
@@ -100,13 +103,16 @@ context = "."
         mock_validate.return_value = ["test-web"]
 
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text("""
+        deploy_toml.write_text(
+            """
 [application]
 name = "test"
 
 [images.web]
 context = "."
-""")
+""",
+            encoding="utf-8",
+        )
         deploy_config = parse_deploy_config(deploy_toml)
 
         with pytest.raises(PreflightError):
@@ -119,13 +125,16 @@ context = "."
         mock_validate.return_value = []
 
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text("""
+        deploy_toml.write_text(
+            """
 [application]
 name = "test"
 
 [images.web]
 context = "."
-""")
+""",
+            encoding="utf-8",
+        )
         deploy_config = parse_deploy_config(deploy_toml)
 
         # Should not raise
@@ -190,7 +199,7 @@ class TestRunPreflightChecks:
     def test_invalid_config_fails(self, tmp_path):
         """Should fail immediately with invalid env config."""
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text('[application]\nname = "test"')
+        deploy_toml.write_text('[application]\nname = "test"', encoding="utf-8")
         deploy_config = parse_deploy_config(deploy_toml)
 
         with pytest.raises(PreflightError, match="Missing required field"):
@@ -210,7 +219,7 @@ class TestRunPreflightChecks:
     ):
         """With all checks skipped, only config validation runs."""
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text('[application]\nname = "test"')
+        deploy_toml.write_text('[application]\nname = "test"', encoding="utf-8")
         deploy_config = parse_deploy_config(deploy_toml)
 
         options = PreflightOptions(
@@ -246,7 +255,7 @@ class TestCheckSecretsStyle:
     @staticmethod
     def _config(tmp_path, toml: str):
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}')
+        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}', encoding="utf-8")
         return parse_deploy_config(deploy_toml)
 
     def test_the_names_form_passes(self, tmp_path):
@@ -301,7 +310,8 @@ class TestCheckSecretsStyle:
         deploy_toml = tmp_path / "deploy.toml"
         deploy_toml.write_text(
             '[application]\nname = "test"\n'
-            '[secrets]\nSECRET_KEY = "ssm:/a"\n'  # pragma: allowlist secret
+            '[secrets]\nSECRET_KEY = "ssm:/a"\n',  # pragma: allowlist secret
+            encoding="utf-8",
         )
         with pytest.raises(PreflightError, match="explicit-path form"):
             run_preflight_checks(
@@ -326,7 +336,9 @@ class TestCheckEnvironmentSecretsOverlap:
     @staticmethod
     def _config(tmp_path, toml: str):
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text(f'[application]\nname = "test"\nsource = "."\n{toml}')
+        deploy_toml.write_text(
+            f'[application]\nname = "test"\nsource = "."\n{toml}', encoding="utf-8"
+        )
         return parse_deploy_config(deploy_toml)
 
     def test_disjoint_names_pass(self, tmp_path):
@@ -436,7 +448,8 @@ class TestCheckEnvironmentSecretsOverlap:
         deploy_toml.write_text(
             '[application]\nname = "test"\nsource = "."\n'
             '[secrets]\nnames = ["SECRET_KEY"]\n'
-            '[environment]\nSECRET_KEY = "hardcoded"\n'  # pragma: allowlist secret
+            '[environment]\nSECRET_KEY = "hardcoded"\n',  # pragma: allowlist secret
+            encoding="utf-8",
         )
         with pytest.raises(PreflightError, match="both secrets and environment variables"):
             run_preflight_checks(
@@ -469,7 +482,7 @@ class TestCheckModules:
     @staticmethod
     def _config(tmp_path, toml: str):
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}')
+        deploy_toml.write_text(f'[application]\nname = "test"\n{toml}', encoding="utf-8")
         return parse_deploy_config(deploy_toml)
 
     def test_a_deploy_toml_declaring_no_modules_passes(self, tmp_path):

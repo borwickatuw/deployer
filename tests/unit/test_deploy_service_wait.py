@@ -1653,7 +1653,9 @@ def _migration_ecs_client(**extra) -> ScriptedClient:
 def migrations_repo(tmp_path: Path) -> Path:
     """A real git repo with one migration file, for the real hashing path."""
     (tmp_path / "app" / "migrations").mkdir(parents=True)
-    (tmp_path / "app" / "migrations" / "0001_initial.py").write_text("# migration\n")
+    (tmp_path / "app" / "migrations" / "0001_initial.py").write_text(
+        "# migration\n", encoding="utf-8"
+    )
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)  # noqa: S607
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)  # noqa: S607
     return tmp_path

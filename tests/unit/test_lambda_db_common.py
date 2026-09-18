@@ -388,7 +388,7 @@ def test_get_secret_raises_on_missing_secret(mocked_aws):
 
 def _imported_from_db_common(path: Path) -> set[str]:
     """Names each twin pulls in via ``from db_common import ...``."""
-    tree = ast.parse(path.read_text(), filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return {
         alias.name
         for node in ast.walk(tree)
@@ -414,7 +414,7 @@ def test_twin_imports_resolve_against_the_canonical_module(index_path):
 @pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)
 def test_twins_do_not_redefine_shared_helpers(index_path):
     """A twin that re-declares a shared helper has started diverging again."""
-    tree = ast.parse(index_path.read_text(), filename=str(index_path))
+    tree = ast.parse(index_path.read_text(encoding="utf-8"), filename=str(index_path))
     defined = {
         node.name
         for node in tree.body
@@ -430,7 +430,8 @@ def test_twins_do_not_redefine_shared_helpers(index_path):
 def test_shared_module_stays_import_light():
     """db_common ships in a bundle whose only pip deps are boto3 and pg8000."""
     tree = ast.parse(
-        (MODULES_DIR / "lambda-shared" / "db_common.py").read_text(), filename="db_common.py"
+        (MODULES_DIR / "lambda-shared" / "db_common.py").read_text(encoding="utf-8"),
+        filename="db_common.py",
     )
     roots = set()
     for node in ast.walk(tree):

@@ -132,7 +132,7 @@ ENV_CONFIG = {"secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"}}
 def write_deploy_toml(tmp_path: Path, body: str) -> Path:
     """Write a real deploy.toml so parse_deploy_config runs for real."""
     path = tmp_path / "deploy.toml"
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
     return path
 
 

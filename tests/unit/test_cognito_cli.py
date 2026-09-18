@@ -141,9 +141,9 @@ def environments(tmp_path, monkeypatch):
         env_dir = tmp_path / name
         env_dir.mkdir()
         # get_all_environments() identifies an environment by its config.toml.
-        (env_dir / "config.toml").write_text("")
+        (env_dir / "config.toml").write_text("", encoding="utf-8")
         if deployed:
-            (env_dir / "terraform.tfstate").write_text("{}")
+            (env_dir / "terraform.tfstate").write_text("{}", encoding="utf-8")
         configs[name] = config
         return env_dir
 

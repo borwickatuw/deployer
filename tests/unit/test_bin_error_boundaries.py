@@ -152,7 +152,9 @@ class TestResolveConfigLoad:
         """A real environment directory with a config.toml, ready to resolve."""
         env_path = tmp_path / ENV
         env_path.mkdir()
-        (env_path / "config.toml").write_text('[infrastructure]\ncluster_name = "c"\n')
+        (env_path / "config.toml").write_text(
+            '[infrastructure]\ncluster_name = "c"\n', encoding="utf-8"
+        )
         monkeypatch.setattr(resolve_config, "get_environment_path", lambda _e: env_path)
         monkeypatch.setattr(resolve_config, "get_all_tofu_outputs", lambda _p: {})
         return env_path

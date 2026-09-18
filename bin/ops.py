@@ -925,7 +925,7 @@ def _get_open_incident() -> Path | None:
     if not INCIDENTS_DIR.exists():
         return None
     for path in sorted(INCIDENTS_DIR.glob("*.md"), reverse=True):
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         if "Status: OPEN" in content:
             return path
     return None
@@ -976,7 +976,7 @@ Status: OPEN
 ## Resolution
 """
 
-    filepath.write_text(content)
+    filepath.write_text(content, encoding="utf-8")
     log_success(f"Incident started: {filepath.name}")
     return 0
 
@@ -1003,7 +1003,10 @@ def _append_timeline_note(content: str, text: str, when: datetime) -> str:
 def cmd_incident_note(text: str) -> int:
     """Add a note to the most recent open incident."""
     incident = _require_open_incident()
-    incident.write_text(_append_timeline_note(incident.read_text(), text, datetime.now()))
+    incident.write_text(
+        _append_timeline_note(incident.read_text(encoding="utf-8"), text, datetime.now()),
+        encoding="utf-8",
+    )
     log_success(f"Note added to {incident.name}")
     return 0
 
@@ -1013,7 +1016,7 @@ def cmd_incident_resolve() -> int:
     incident = _require_open_incident()
     now = datetime.now()
 
-    content = incident.read_text().replace("Status: OPEN", "Status: RESOLVED")
+    content = incident.read_text(encoding="utf-8").replace("Status: OPEN", "Status: RESOLVED")
     # Order matters: the note goes in before the Resolved: line lands under the
     # heading, so the note anchor still sees the untouched heading.
     content = _append_timeline_note(content, "Incident resolved", now)
@@ -1022,7 +1025,7 @@ def cmd_incident_resolve() -> int:
         f"{RESOLUTION_HEADING}Resolved: {now.isoformat(timespec='seconds')}\n",
     )
 
-    incident.write_text(content)
+    incident.write_text(content, encoding="utf-8")
     log_success(f"Incident resolved: {incident.name}")
     return 0
 
@@ -1040,7 +1043,7 @@ def cmd_incident_list() -> int:
 
     open_count = 0
     for path in files[:20]:  # Show last 20
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         first_line = content.split("\n")[0]
         title = first_line.replace("# Incident: ", "")
 

@@ -185,9 +185,9 @@ class TestSecretDetection:
         # Pinned, not endorsed: generate_deploy_toml calls
         # get_compose_services() without base_dir, so env_file entries are
         # skipped entirely and a secret declared only in .env is missed.
-        (tmp_path / ".env").write_text("SECRET_KEY=x\n")
+        (tmp_path / ".env").write_text("SECRET_KEY=x\n", encoding="utf-8")
         (tmp_path / "docker-compose.yml").write_text(
-            _COMPOSE_WITH_DOCKERFILE + "    env_file: .env\n"
+            _COMPOSE_WITH_DOCKERFILE + "    env_file: .env\n", encoding="utf-8"
         )
         config = generate_deploy_toml(
             compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
@@ -480,8 +480,10 @@ class TestMigrations:
         assert config["migrations"]["service"] == "api_gateway"
 
     def test_the_dockerfile_is_read_for_framework_detection(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM python\nCMD gunicorn myapp.wsgi\n")
-        (tmp_path / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE)
+        (tmp_path / "Dockerfile").write_text(
+            "FROM python\nCMD gunicorn myapp.wsgi\n", encoding="utf-8"
+        )
+        (tmp_path / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE, encoding="utf-8")
         config = generate_deploy_toml(
             compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
         )
@@ -489,7 +491,7 @@ class TestMigrations:
 
     def test_an_unreadable_dockerfile_is_ignored_rather_than_raising(self, tmp_path):
         (tmp_path / "Dockerfile").mkdir()  # a directory read_text() cannot read
-        (tmp_path / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE)
+        (tmp_path / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE, encoding="utf-8")
         config = generate_deploy_toml(
             compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
         )
@@ -524,15 +526,21 @@ class TestDockerfileProbeWithoutAnExplicitDockerfile:
     def test_a_compose_file_without_an_explicit_dockerfile_is_generated(
         self, tmp_path, build_block
     ):
-        (tmp_path / "docker-compose.yml").write_text(f"services:\n  web:\n{build_block}")
+        (tmp_path / "docker-compose.yml").write_text(
+            f"services:\n  web:\n{build_block}", encoding="utf-8"
+        )
         config = generate_deploy_toml(
             compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
         )
         assert set(config["services"]) == {"web"}
 
     def test_the_default_dockerfile_is_probed_for_framework_detection(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM python\nCMD gunicorn myapp.wsgi\n")
-        (tmp_path / "docker-compose.yml").write_text("services:\n  web:\n    build: .\n")
+        (tmp_path / "Dockerfile").write_text(
+            "FROM python\nCMD gunicorn myapp.wsgi\n", encoding="utf-8"
+        )
+        (tmp_path / "docker-compose.yml").write_text(
+            "services:\n  web:\n    build: .\n", encoding="utf-8"
+        )
         config = generate_deploy_toml(
             compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
         )
@@ -578,7 +586,7 @@ class TestGenerateEntryPoint:
     def test_an_omitted_app_name_comes_from_the_compose_directory(self, tmp_path):
         project = tmp_path / "some-project"
         project.mkdir()
-        (project / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE)
+        (project / "docker-compose.yml").write_text(_COMPOSE_WITH_DOCKERFILE, encoding="utf-8")
         config = generate_deploy_toml(
             compose_path=project / "docker-compose.yml", app_name=None, compose_data=None
         )

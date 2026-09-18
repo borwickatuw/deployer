@@ -159,7 +159,7 @@ This is infrastructure code. Security focus areas:
 
 Run `make security` (bandit + uv audit + detect-secrets + checkov) before committing.
 
-## Posture: accessibility
+## Posture: accessibility and i18n
 
 Deployer is a CLI plus OpenTofu modules — no web app, no GUI, no templating
 framework. The entire HTML surface is the CloudFront 503 page built in
@@ -172,6 +172,16 @@ An environment that supplies its own `error_page_content` to the
 supplying environment's responsibility, not this repo's. See
 [docs/internal/DECISIONS.md](docs/internal/DECISIONS.md) "The accessibility
 surface is one static error page".
+
+**UI translation: N/A** — there is no UI to translate, and the CLI output is
+read by the operator running the deploy. **Character-set support: implemented**
+— every text read and write passes `encoding="utf-8"` explicitly rather than
+inheriting the host locale, which ruff's `PLW1514` enforces. The artifacts an
+operator reads back (`emergency` checkpoints, the timing report, the resolved
+config JSON) use `ensure_ascii=False`, so non-ASCII values in a `deploy.toml`
+or a tofu output arrive readable instead of `\uXXXX`-escaped. JSON that is
+hashed or handed to an AWS API keeps the default escaping: those strings are
+compared byte-for-byte, not read.
 
 ## pysmelly
 

@@ -259,7 +259,7 @@ def _write_bootstrap_files(env_path: Path, files: dict[str, str]) -> None:
     env_path.mkdir(parents=True, exist_ok=True)
     for filename, content in files.items():
         filepath = env_path / filename
-        filepath.write_text(content)
+        filepath.write_text(content, encoding="utf-8")
         print(f"Created: {filepath}")
 
     import_script = env_path / "import-existing.sh"
@@ -356,7 +356,7 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
         print(f"Error: {main_tf} not found.", file=sys.stderr)
         return 1
 
-    content = main_tf.read_text()
+    content = main_tf.read_text(encoding="utf-8")
 
     with exit_on(ValueError):
         updated = uncomment_backend_block(content)
@@ -365,7 +365,7 @@ def cmd_bootstrap_migrate(env_name: str, dry_run: bool) -> int:
         _print_dry_run_preview(f"Would update: {main_tf}", updated)
         return 0
 
-    main_tf.write_text(updated)
+    main_tf.write_text(updated, encoding="utf-8")
     print(f"S3 backend enabled in {main_tf}")
     print()
     _numbered_steps(
@@ -426,7 +426,7 @@ def cmd_deploy_toml(from_compose, app_name, output, dry_run) -> int:
         return 0
 
     # Write file
-    output_path.write_text(content)
+    output_path.write_text(content, encoding="utf-8")
     print(f"Generated: {output_path}")
     print()
     _numbered_steps(
@@ -527,7 +527,7 @@ def _write_environment_files(env_path: Path, files: dict[str, str], template_nam
 
     env_path.mkdir(parents=True, exist_ok=True)
     for filepath, content in files.items():
-        Path(filepath).write_text(content)
+        Path(filepath).write_text(content, encoding="utf-8")
         print(f"Created: {filepath}")
 
     if is_standalone and create_deployer_tf_symlink(env_path):

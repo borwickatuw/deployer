@@ -85,7 +85,7 @@ class TestFindExistingProfiles:
 
     def test_empty_config(self, tmp_path):
         config_path = tmp_path / "config"
-        config_path.write_text("")
+        config_path.write_text("", encoding="utf-8")
         assert _find_existing_profiles(config_path) == []
 
     def test_finds_existing_profiles(self, tmp_path):
@@ -95,7 +95,8 @@ class TestFindExistingProfiles:
             "role_arn = arn:aws:iam::123:role/deployer-app-deploy\n"
             "\n"
             "[profile deployer-infra]\n"
-            "role_arn = arn:aws:iam::123:role/deployer-infra-admin\n"
+            "role_arn = arn:aws:iam::123:role/deployer-infra-admin\n",
+            encoding="utf-8",
         )
         found = _find_existing_profiles(config_path)
         assert "deployer-app" in found
@@ -104,7 +105,7 @@ class TestFindExistingProfiles:
 
     def test_ignores_non_deployer_profiles(self, tmp_path):
         config_path = tmp_path / "config"
-        config_path.write_text("[profile default]\nregion = us-west-2\n")
+        config_path.write_text("[profile default]\nregion = us-west-2\n", encoding="utf-8")
         assert _find_existing_profiles(config_path) == []
 
 
@@ -116,7 +117,7 @@ class TestCmdSetupProfiles:
     ):
         """An existing deployer profile is a no-write warning, not an error."""
         aws_config.parent.mkdir(parents=True)
-        aws_config.write_text("[profile deployer-app]\nregion = us-west-2\n")
+        aws_config.write_text("[profile deployer-app]\nregion = us-west-2\n", encoding="utf-8")
 
         assert cmd_setup_profiles(dry_run=False) == 0
 
@@ -127,7 +128,9 @@ class TestCmdSetupProfiles:
         ]
         assert "Generated config (not written):" in captured.out
         assert "[profile deployer-cognito]" in captured.out
-        assert aws_config.read_text() == "[profile deployer-app]\nregion = us-west-2\n"
+        assert (
+            aws_config.read_text(encoding="utf-8") == "[profile deployer-app]\nregion = us-west-2\n"
+        )
 
     def test_dry_run_previews_without_writing(self, aws_config, setup_stubs, capsys):
         """Dry run names the destination and prints the config it would append."""
@@ -155,7 +158,7 @@ class TestCmdSetupProfiles:
         """A missing ~/.aws is created, and the config is written without a leading blank."""
         assert cmd_setup_profiles(dry_run=False) == 0
 
-        written = aws_config.read_text()
+        written = aws_config.read_text(encoding="utf-8")
         assert written.startswith("[profile deployer]\n")
         assert f"role_arn = arn:aws:iam::{ACCOUNT_ID}:role/deployer-app-deploy" in written
         assert f"Profiles written to {aws_config}" in capsys.readouterr().out
@@ -163,11 +166,11 @@ class TestCmdSetupProfiles:
     def test_appends_a_separator_to_a_non_empty_file(self, aws_config, setup_stubs):
         """An existing unrelated config keeps its content and gains a blank separator."""
         aws_config.parent.mkdir(parents=True)
-        aws_config.write_text("[profile default]\nregion = us-east-1\n")
+        aws_config.write_text("[profile default]\nregion = us-east-1\n", encoding="utf-8")
 
         assert cmd_setup_profiles(dry_run=False) == 0
 
-        assert aws_config.read_text().startswith(
+        assert aws_config.read_text(encoding="utf-8").startswith(
             "[profile default]\nregion = us-east-1\n\n[profile deployer]\n"
         )
 
@@ -197,4 +200,4 @@ class TestCmdSetupProfiles:
             "  aws_access_key_id = YOUR_ACCESS_KEY",
             "  aws_secret_access_key = YOUR_SECRET_KEY",
         ]
-        assert "[profile work]" in aws_config.read_text()
+        assert "[profile work]" in aws_config.read_text(encoding="utf-8")

@@ -69,14 +69,16 @@ def generated_deploy_toml(tmp_path):
     This is bin/init.py's cmd_deploy_toml with the argument parsing and the
     file-location logic removed -- generate, format, write, parse.
     """
-    (tmp_path / "docker-compose.yml").write_text(COMPOSE)
-    (tmp_path / "Dockerfile").write_text("FROM python:3.12\nCMD gunicorn myapp.wsgi\n")
+    (tmp_path / "docker-compose.yml").write_text(COMPOSE, encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text(
+        "FROM python:3.12\nCMD gunicorn myapp.wsgi\n", encoding="utf-8"
+    )
 
     config = generate_deploy_toml(
         compose_path=tmp_path / "docker-compose.yml", app_name=APP, compose_data=None
     )
     deploy_toml = tmp_path / "deploy.toml"
-    deploy_toml.write_text(format_deploy_toml(config))
+    deploy_toml.write_text(format_deploy_toml(config), encoding="utf-8")
     return parse_deploy_config(deploy_toml)
 
 
@@ -163,7 +165,7 @@ class TestTheOriginalBugShape:
     @staticmethod
     def _hand_written(tmp_path, body: str):
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text(f'[application]\nname = "{APP}"\n{body}')
+        deploy_toml.write_text(f'[application]\nname = "{APP}"\n{body}', encoding="utf-8")
         return parse_deploy_config(deploy_toml)
 
     #: Explicit [secrets] *and* a module section. Both are typed fields, so

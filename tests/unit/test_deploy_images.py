@@ -279,8 +279,8 @@ def source_dir(tmp_path):
     for name in ("web", "base"):
         context = tmp_path / name
         context.mkdir()
-        (context / "Dockerfile").write_text(f"FROM scratch\n# {name}\n")
-        (context / "app.py").write_text(f"print('{name}')\n")
+        (context / "Dockerfile").write_text(f"FROM scratch\n# {name}\n", encoding="utf-8")
+        (context / "app.py").write_text(f"print('{name}')\n", encoding="utf-8")
     return tmp_path
 
 
@@ -467,40 +467,42 @@ class TestParseDockerignore:
         assert parse_dockerignore(tmp_path) == [".git"]
 
     def test_git_is_always_first_then_the_file_in_order(self, tmp_path):
-        (tmp_path / ".dockerignore").write_text("node_modules\n*.pyc\nbuild/\n")
+        (tmp_path / ".dockerignore").write_text("node_modules\n*.pyc\nbuild/\n", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git", "node_modules", "*.pyc", "build/"]
 
     def test_blank_lines_and_comments_are_skipped(self, tmp_path):
-        (tmp_path / ".dockerignore").write_text("\n# a comment\n\n  *.log  \n#another\n")
+        (tmp_path / ".dockerignore").write_text(
+            "\n# a comment\n\n  *.log  \n#another\n", encoding="utf-8"
+        )
 
         assert parse_dockerignore(tmp_path) == [".git", "*.log"]
 
     def test_a_hash_that_is_not_the_first_character_is_kept(self, tmp_path):
-        (tmp_path / ".dockerignore").write_text("foo#bar\n")
+        (tmp_path / ".dockerignore").write_text("foo#bar\n", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git", "foo#bar"]
 
     def test_negation_lines_survive_parsing(self, tmp_path):
         """parse_dockerignore does not filter ``!``; should_ignore skips them later."""
-        (tmp_path / ".dockerignore").write_text("*\n!keep.txt\n")
+        (tmp_path / ".dockerignore").write_text("*\n!keep.txt\n", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git", "*", "!keep.txt"]
 
     def test_a_dockerignore_listing_git_yields_it_once(self, tmp_path):
         """The implicit ``.git`` and an explicit one collapse to a single pattern."""
-        (tmp_path / ".dockerignore").write_text(".git\n")
+        (tmp_path / ".dockerignore").write_text(".git\n", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git"]
 
     def test_an_ordinary_repeated_pattern_is_de_duplicated_too(self, tmp_path):
         """De-duplication is not special-cased to ``.git``; first occurrence wins."""
-        (tmp_path / ".dockerignore").write_text("*.log\nbuild/\n*.log\n")
+        (tmp_path / ".dockerignore").write_text("*.log\nbuild/\n*.log\n", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git", "*.log", "build/"]
 
     def test_an_empty_dockerignore_yields_only_git(self, tmp_path):
-        (tmp_path / ".dockerignore").write_text("")
+        (tmp_path / ".dockerignore").write_text("", encoding="utf-8")
 
         assert parse_dockerignore(tmp_path) == [".git"]
 
@@ -563,7 +565,7 @@ class TestComputeContextHash:
     """Pins for the content hash that drives the ECR cache tag."""
 
     def test_the_hash_is_twelve_hex_characters(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
 
         digest = compute_context_hash(tmp_path, "Dockerfile")
 
@@ -574,8 +576,8 @@ class TestComputeContextHash:
         for name in ("a", "b"):
             context = tmp_path / name
             context.mkdir()
-            (context / "Dockerfile").write_text("FROM scratch\n")
-            (context / "app.py").write_text("x = 1\n")
+            (context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+            (context / "app.py").write_text("x = 1\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path / "a", "Dockerfile") == compute_context_hash(
             tmp_path / "b", "Dockerfile"
@@ -584,51 +586,51 @@ class TestComputeContextHash:
     def test_creation_order_does_not_change_the_hash(self, tmp_path):
         first = tmp_path / "first"
         first.mkdir()
-        (first / "z.py").write_text("z\n")
-        (first / "a.py").write_text("a\n")
+        (first / "z.py").write_text("z\n", encoding="utf-8")
+        (first / "a.py").write_text("a\n", encoding="utf-8")
 
         second = tmp_path / "second"
         second.mkdir()
-        (second / "a.py").write_text("a\n")
-        (second / "z.py").write_text("z\n")
+        (second / "a.py").write_text("a\n", encoding="utf-8")
+        (second / "z.py").write_text("z\n", encoding="utf-8")
 
         assert compute_context_hash(first, "Dockerfile") == compute_context_hash(
             second, "Dockerfile"
         )
 
     def test_changing_the_dockerfile_changes_the_hash(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
-        (tmp_path / "Dockerfile").write_text("FROM alpine\n")
+        (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_a_missing_dockerfile_is_not_an_error(self, tmp_path):
-        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
 
         assert len(compute_context_hash(tmp_path, "Dockerfile")) == 12
 
     def test_naming_a_different_dockerfile_changes_the_hash(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / "Dockerfile.dev").write_text("FROM alpine\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / "Dockerfile.dev").write_text("FROM alpine\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") != compute_context_hash(
             tmp_path, "Dockerfile.dev"
         )
 
     def test_changing_a_context_file_changes_the_hash(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
-        (tmp_path / "app.py").write_text("x = 2\n")
+        (tmp_path / "app.py").write_text("x = 2\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_renaming_a_file_changes_the_hash(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / "app.py").rename(tmp_path / "main.py")
@@ -636,63 +638,63 @@ class TestComputeContextHash:
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_nested_files_are_included(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
         nested = tmp_path / "pkg" / "deep"
         nested.mkdir(parents=True)
-        (nested / "mod.py").write_text("y = 1\n")
+        (nested / "mod.py").write_text("y = 1\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_an_ignored_file_does_not_affect_the_hash(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / ".dockerignore").write_text("*.log\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
-        (tmp_path / "noisy.log").write_text("lots of noise\n")
+        (tmp_path / "noisy.log").write_text("lots of noise\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_git_contents_are_excluded_without_a_dockerignore(self, tmp_path):
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
         git = tmp_path / ".git"
         git.mkdir()
-        (git / "HEAD").write_text("ref: refs/heads/main\n")
+        (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_a_comment_only_dockerignore_edit_does_not_bust_the_tag(self, tmp_path):
         """.dockerignore is build metadata, not build input: it is excluded from
         the walk, so an edit that changes no file selection changes no digest."""
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / ".dockerignore").write_text("*.log\n")
-        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
-        (tmp_path / ".dockerignore").write_text("*.log\n# a comment\n")
+        (tmp_path / ".dockerignore").write_text("*.log\n# a comment\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_a_real_ignore_set_change_still_busts_the_tag(self, tmp_path):
         """The half that proves the exclusion did not go too far: a pattern that
         actually hides a file reaches the digest through the file set."""
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / ".dockerignore").write_text("*.log\n")
-        (tmp_path / "app.py").write_text("x = 1\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
+        (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
-        (tmp_path / ".dockerignore").write_text("*.log\napp.py\n")
+        (tmp_path / ".dockerignore").write_text("*.log\napp.py\n", encoding="utf-8")
 
         assert compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_deleting_the_dockerignore_busts_the_tag(self, tmp_path):
         """The files it hid come back into the walk."""
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
-        (tmp_path / ".dockerignore").write_text("*.log\n")
-        (tmp_path / "noisy.log").write_text("lots of noise\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
+        (tmp_path / "noisy.log").write_text("lots of noise\n", encoding="utf-8")
         before = compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / ".dockerignore").unlink()
@@ -712,9 +714,9 @@ class TestComputeContextHash:
         listed, absent = tmp_path / "listed", tmp_path / "absent"
         for context in (listed, absent):
             context.mkdir()
-            (context / "Dockerfile").write_text("FROM scratch\n")
-            (context / "app.py").write_text("x = 1\n")
-        (listed / ".dockerignore").write_text("Dockerfile\n.dockerignore\n")
+            (context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+            (context / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (listed / ".dockerignore").write_text("Dockerfile\n.dockerignore\n", encoding="utf-8")
 
         assert compute_context_hash(listed, "Dockerfile") == compute_context_hash(
             absent, "Dockerfile"
@@ -724,7 +726,7 @@ class TestComputeContextHash:
         """The Dockerfile reaches the hash only through the ``Dockerfile:``
         prefix, which is what records *which* Dockerfile was selected. It is
         excluded from the context walk, so it is not counted a second time."""
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         hasher = hashlib.sha256()
         hasher.update(b"Dockerfile:")
         hasher.update(b"FROM scratch\n")
@@ -740,11 +742,11 @@ class TestComputeContextHash:
     def test_an_unreadable_file_is_skipped_but_its_path_still_counts(self, tmp_path):
         """The except (PermissionError, OSError) arm: content is skipped, but the
         ``\\n<path>:`` header was already fed to the hasher before the open."""
-        (tmp_path / "Dockerfile").write_text("FROM scratch\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         without = compute_context_hash(tmp_path, "Dockerfile")
 
         secret = tmp_path / "secret.txt"
-        secret.write_text("classified\n")
+        secret.write_text("classified\n", encoding="utf-8")
         secret.chmod(0o000)
         try:
             with_unreadable = compute_context_hash(tmp_path, "Dockerfile")
@@ -753,7 +755,7 @@ class TestComputeContextHash:
 
         assert with_unreadable != without
         # Content genuinely did not contribute: rewriting it changes nothing.
-        secret.write_text("something else entirely\n")
+        secret.write_text("something else entirely\n", encoding="utf-8")
         secret.chmod(0o000)
         try:
             assert compute_context_hash(tmp_path, "Dockerfile") == with_unreadable
@@ -927,7 +929,7 @@ class TestBuildAndPushRawDict:
         ]
 
     def test_a_custom_dockerfile_name_is_used_for_the_f_flag(self, source_dir, run):
-        (source_dir / "web" / "Dockerfile.prod").write_text("FROM alpine\n")
+        (source_dir / "web" / "Dockerfile.prod").write_text("FROM alpine\n", encoding="utf-8")
         config = _dict_config(web={"context": "web", "dockerfile": "Dockerfile.prod"})
 
         _build(config, source_dir)
@@ -1087,7 +1089,7 @@ class TestBuildAndPushRawDict:
 
     def test_a_context_that_is_a_file_is_rejected(self, source_dir, run):
         """is_dir(), not exists(): docker build needs a directory."""
-        (source_dir / "Dockerfile.web").write_text("FROM scratch\n")
+        (source_dir / "Dockerfile.web").write_text("FROM scratch\n", encoding="utf-8")
         config = _dict_config(web={"context": "Dockerfile.web"})
 
         with pytest.raises(RuntimeError, match="is not a directory"):
@@ -1457,7 +1459,7 @@ class TestAdditionalContexts:
         """A real ``shared`` directory next to the build contexts."""
         shared = source_dir / "shared"
         shared.mkdir()
-        (shared / "constants.py").write_text("X = 1\n")
+        (shared / "constants.py").write_text("X = 1\n", encoding="utf-8")
         return shared
 
     def test_the_flag_is_emitted_with_the_resolved_path(self, source_dir, shared_dir, run):
@@ -1506,7 +1508,7 @@ class TestAdditionalContexts:
         _build(config, source_dir)
         first = run.argv[0][run.argv[0].index("-t") + 1]
 
-        (shared_dir / "constants.py").write_text("X = 2\n")
+        (shared_dir / "constants.py").write_text("X = 2\n", encoding="utf-8")
         run.calls.clear()
         _build(config, source_dir)
 

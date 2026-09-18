@@ -72,7 +72,8 @@ class TestParseDeployConfig:
 
     def test_parse_deploy_config_warnings_for_unknown_keys(self, tmp_path):
         """Test that unknown keys generate warnings."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 unknown_key = "value"
@@ -83,7 +84,9 @@ bad_option = true
 
 [unknown_section]
 foo = "bar"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         warnings = config.get_warnings()
@@ -213,7 +216,8 @@ class TestDeployConfigServices:
 
     def test_extract_services(self, tmp_path):
         """Test extracting services from deploy.toml structure."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -224,7 +228,9 @@ command = ["gunicorn"]
 
 [services.worker]
 image = "worker"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert "web" in config.services
@@ -234,7 +240,7 @@ image = "worker"
 
     def test_empty_services(self, tmp_path):
         """Test with no services defined."""
-        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"', encoding="utf-8")
         config = parse_deploy_config(tmp_path / "deploy.toml")
         assert config.services == {}
 
@@ -244,7 +250,8 @@ class TestDeployConfigImages:
 
     def test_extract_images(self, tmp_path):
         """Test extracting images from deploy.toml structure."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -255,7 +262,9 @@ dockerfile = "Dockerfile"
 [images.worker]
 context = "."
 dockerfile = "Dockerfile.worker"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert "web" in config.images
@@ -265,26 +274,32 @@ dockerfile = "Dockerfile.worker"
 
     def test_default_dockerfile(self, tmp_path):
         """Test that default dockerfile is 'Dockerfile'."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [images.app]
 context = "."
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         assert config.images["app"].dockerfile == "Dockerfile"
 
     def test_additional_contexts_parse_without_warnings(self, tmp_path):
         """Test that additional_contexts is a known [images.*] key."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
 [images.app]
 context = "app"
 additional_contexts = { shared = "shared" }
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
 
         assert config.images["app"].additional_contexts == {"shared": "shared"}
@@ -296,7 +311,8 @@ class TestDeployConfigEnvVars:
 
     def test_extract_env_vars(self, tmp_path):
         """Test extracting environment variables."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -306,7 +322,9 @@ API_URL = "https://api.example.com"
 
 [secrets]
 names = ["SECRET_KEY"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -316,7 +334,8 @@ names = ["SECRET_KEY"]
 
     def test_extract_service_specific_env_vars(self, tmp_path):
         """Test extracting environment variables from service-specific sections."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -333,7 +352,9 @@ image = "api"
 [services.api.environment]
 ENABLE_CACHE = "true"
 DJANGO_URL = "${services.web.url}"
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         result = config.get_all_env_var_names()
 
@@ -347,7 +368,8 @@ class TestDeployConfigAudit:
 
     def test_extract_audit_config(self, tmp_path):
         """Test extracting audit configuration."""
-        (tmp_path / "deploy.toml").write_text("""
+        (tmp_path / "deploy.toml").write_text(
+            """
 [application]
 name = "test"
 
@@ -356,7 +378,9 @@ ignore_services = ["postgres", "redis"]
 service_mapping = { app = "web" }
 ignore_env_vars = ["DEBUG"]
 ignore_images = ["base"]
-""")
+""",
+            encoding="utf-8",
+        )
         config = parse_deploy_config(tmp_path / "deploy.toml")
         audit = config.audit
 
@@ -367,7 +391,7 @@ ignore_images = ["base"]
 
     def test_empty_audit_config(self, tmp_path):
         """Test with no audit config defined."""
-        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"', encoding="utf-8")
         config = parse_deploy_config(tmp_path / "deploy.toml")
         audit = config.audit
 
@@ -677,7 +701,7 @@ class TestRunAudit:
     def test_run_audit_missing_compose_file(self, tmp_path):
         """Test run_audit handles missing docker-compose.yml."""
         # Create only deploy.toml
-        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"')
+        (tmp_path / "deploy.toml").write_text('[application]\nname = "test"', encoding="utf-8")
 
         issue_count, issues = run_audit(tmp_path, verbose=False)
 
@@ -687,7 +711,7 @@ class TestRunAudit:
     def test_run_audit_missing_deploy_toml(self, tmp_path):
         """Test run_audit handles missing deploy.toml."""
         # Create only docker-compose.yml
-        (tmp_path / "docker-compose.yml").write_text("services: {}")
+        (tmp_path / "docker-compose.yml").write_text("services: {}", encoding="utf-8")
 
         issue_count, issues = run_audit(tmp_path, verbose=False)
 
@@ -730,8 +754,8 @@ def _warn(msg: str) -> str:
 
 def _project(tmp_path: Path, compose: str, deploy: str) -> Path:
     """Write a docker-compose.yml and deploy.toml into a fresh directory."""
-    (tmp_path / "docker-compose.yml").write_text(compose)
-    (tmp_path / "deploy.toml").write_text(deploy)
+    (tmp_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
+    (tmp_path / "deploy.toml").write_text(deploy, encoding="utf-8")
     return tmp_path
 
 
@@ -783,8 +807,8 @@ class TestRunAuditOutput:
 
     def test_custom_filenames_are_echoed(self, tmp_path, capsys):
         """Non-default filenames appear in the header and are the files read."""
-        (tmp_path / "compose.prod.yml").write_text(MINIMAL_COMPOSE)
-        (tmp_path / "deploy.prod.toml").write_text(MINIMAL_DEPLOY)
+        (tmp_path / "compose.prod.yml").write_text(MINIMAL_COMPOSE, encoding="utf-8")
+        (tmp_path / "deploy.prod.toml").write_text(MINIMAL_DEPLOY, encoding="utf-8")
 
         run_audit(
             tmp_path,
@@ -980,7 +1004,7 @@ web = { context = ".", dockerfile = "Dockerfile" }
 
     def test_missing_file_reports_before_any_output(self, tmp_path, capsys):
         """The not-found guards run before the header, even when verbose."""
-        (tmp_path / "deploy.toml").write_text(MINIMAL_DEPLOY)
+        (tmp_path / "deploy.toml").write_text(MINIMAL_DEPLOY, encoding="utf-8")
 
         count, issues = run_audit(tmp_path, verbose=True)
 
@@ -990,7 +1014,7 @@ web = { context = ".", dockerfile = "Dockerfile" }
 
     def test_missing_deploy_toml_reports_before_any_output(self, tmp_path, capsys):
         """The deploy.toml guard likewise precedes the header."""
-        (tmp_path / "docker-compose.yml").write_text(MINIMAL_COMPOSE)
+        (tmp_path / "docker-compose.yml").write_text(MINIMAL_COMPOSE, encoding="utf-8")
 
         count, issues = run_audit(tmp_path, verbose=True)
 

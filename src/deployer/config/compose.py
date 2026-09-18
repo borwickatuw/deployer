@@ -47,7 +47,7 @@ def _env_file_var_names(config: dict[str, Any], base_dir: Path) -> list[str]:
                 raise FileNotFoundError(f"env_file not found: {path}")
             continue
 
-        for raw_line in path.read_text().splitlines():
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue

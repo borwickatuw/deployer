@@ -380,7 +380,8 @@ class TestDeployerIntegration:
     def test_deployer_initialization(self, tmp_path, mocker):
         """Test that Deployer initializes correctly with valid config."""
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text("""
+        deploy_toml.write_text(
+            """
 [application]
 name = "testapp"
 source = "."
@@ -388,7 +389,9 @@ source = "."
 [services.web]
 cpu = 256
 memory = 512
-""")
+""",
+            encoding="utf-8",
+        )
 
         mocker.patch("boto3.client")
         mocker.patch("boto3.Session")

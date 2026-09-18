@@ -88,12 +88,12 @@ class DeploymentTimingReport:
 
     def to_json(self, indent: int = 2) -> str:
         """Convert to JSON string."""
-        return json.dumps(self.to_dict(), indent=indent)
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
     def save_json(self, path: Path) -> None:
         """Save report to JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.to_json())
+        path.write_text(self.to_json(), encoding="utf-8")
 
 
 class DeploymentTimer:

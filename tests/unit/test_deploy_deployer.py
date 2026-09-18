@@ -254,7 +254,7 @@ def make_deployer(tmp_path, aws, steps):
 
     def _make(*, toml=CLEAN_TOML, env_config=None, options=None, timer=None):
         config_path = tmp_path / "deploy.toml"
-        config_path.write_text(toml)
+        config_path.write_text(toml, encoding="utf-8")
         return Deployer(
             str(config_path),
             ENVIRONMENT,

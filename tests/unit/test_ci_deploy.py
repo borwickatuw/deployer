@@ -43,7 +43,7 @@ class TestLoadResolvedConfig:
         """Should load and return env_config and meta separately."""
         config = make_resolved_config()
         config_file = tmp_path / "resolved.json"
-        config_file.write_text(json.dumps(config))
+        config_file.write_text(json.dumps(config), encoding="utf-8")
 
         env_config, meta = load_resolved_config(str(config_file))
 
@@ -60,7 +60,7 @@ class TestLoadResolvedConfig:
     def test_invalid_json_raises(self, tmp_path):
         """Should raise ValueError for invalid JSON."""
         config_file = tmp_path / "bad.json"
-        config_file.write_text("not json")
+        config_file.write_text("not json", encoding="utf-8")
 
         with pytest.raises(ValueError, match="Invalid JSON"):
             load_resolved_config(str(config_file))
@@ -68,7 +68,7 @@ class TestLoadResolvedConfig:
     def test_missing_meta_raises(self, tmp_path):
         """Should raise ValueError when _meta block is missing."""
         config_file = tmp_path / "no_meta.json"
-        config_file.write_text(json.dumps({"infrastructure": {}}))
+        config_file.write_text(json.dumps({"infrastructure": {}}), encoding="utf-8")
 
         with pytest.raises(ValueError, match="missing _meta block"):
             load_resolved_config(str(config_file))
@@ -80,7 +80,7 @@ class TestLoadResolvedConfig:
             "infrastructure": {},
         }
         config_file = tmp_path / "partial_meta.json"
-        config_file.write_text(json.dumps(config))
+        config_file.write_text(json.dumps(config), encoding="utf-8")
 
         with pytest.raises(ValueError, match="missing required fields"):
             load_resolved_config(str(config_file))
@@ -88,7 +88,7 @@ class TestLoadResolvedConfig:
     def test_non_dict_raises(self, tmp_path):
         """Should raise ValueError for non-object JSON."""
         config_file = tmp_path / "array.json"
-        config_file.write_text("[1, 2, 3]")
+        config_file.write_text("[1, 2, 3]", encoding="utf-8")
 
         with pytest.raises(ValueError, match="must be a JSON object"):
             load_resolved_config(str(config_file))
@@ -97,7 +97,7 @@ class TestLoadResolvedConfig:
         """The _meta block should NOT appear in env_config."""
         config = make_resolved_config()
         config_file = tmp_path / "resolved.json"
-        config_file.write_text(json.dumps(config))
+        config_file.write_text(json.dumps(config), encoding="utf-8")
 
         env_config, meta = load_resolved_config(str(config_file))
 
@@ -114,7 +114,7 @@ class TestLoadResolvedConfig:
         config["cache"] = {"url": "redis://cache:6379"}
 
         config_file = tmp_path / "resolved.json"
-        config_file.write_text(json.dumps(config))
+        config_file.write_text(json.dumps(config), encoding="utf-8")
 
         env_config, meta = load_resolved_config(str(config_file))
 
@@ -183,10 +183,12 @@ class TestConfigStalenessGate:
             resolved_at = (datetime.now(UTC) - timedelta(hours=age_hours)).isoformat()
 
         deploy_toml = tmp_path / "deploy.toml"
-        deploy_toml.write_text('[application]\nname = "myapp"\n')
+        deploy_toml.write_text('[application]\nname = "myapp"\n', encoding="utf-8")
 
         config_file = tmp_path / "resolved.json"
-        config_file.write_text(json.dumps(make_resolved_config(resolved_at=resolved_at)))
+        config_file.write_text(
+            json.dumps(make_resolved_config(resolved_at=resolved_at)), encoding="utf-8"
+        )
 
         return str(deploy_toml), str(config_file)
 
