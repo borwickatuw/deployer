@@ -487,7 +487,7 @@ seed = ["npm", "run", "seed"]
 
 ```bash
 # Link environment to deploy.toml (one-time, stored in local/environments.toml)
-python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 
 # List available commands (uses linked deploy.toml)
 python bin/ecs-run.py run myapp-staging --list-commands

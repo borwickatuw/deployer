@@ -18,7 +18,7 @@ ______________________________________________________________________
 Link your environment to its deploy.toml so you don't have to specify `--deploy-toml` on every command:
 
 ```bash
-uv run python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+uv run python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 uv run python bin/link-environments.py --list
 ```
 

@@ -26,7 +26,7 @@ If your infrastructure is managed by tofu and you want to resolve values dynamic
 
 ```toml
 [tofu]
-dir = "~/code/myapp/infra/staging"
+dir = "/path/to/myapp/infra/staging"
 ```
 
 This supports absolute paths, relative paths (resolved against the environment directory), and `~` expansion. When set, all `${tofu:...}` placeholders resolve by running `tofu output -json` in that directory instead of the environment directory.
@@ -163,7 +163,7 @@ This config.toml resolves three values from tofu and hardcodes the rest:
 
 ```toml
 [tofu]
-dir = "~/code/myapp/infra/staging"
+dir = "/path/to/myapp/infra/staging"
 
 [aws]
 deploy_profile = "deployer-app"
