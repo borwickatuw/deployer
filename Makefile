@@ -193,6 +193,17 @@ security-updates: ## CVE scan + outdated-package report (quarterly review)
 pysmelly: ## Run pysmelly code smell analysis
 	@uvx pysmelly .
 
+# On-demand only, never in `make check`: vulture exits 3 whenever it reports
+# anything at all, so false positives re-emerge as Protocols grow methods.
+# The --ignore-names list is the canonical one from claude-meta
+# best-practices/PYTHON.md section 14 -- the Python protocol surface vulture
+# is 100%-confident and wrong about. tests/ is excluded: @patch binder names
+# are unused by construction.
+.PHONY: vulture
+vulture: ## Dead-code scan (on-demand; exits 3 on any finding)
+	@uv run vulture $(filter-out tests,$(PY_SOURCES)) --min-confidence 90 \
+		--ignore-names exc_type,exc_val,exc_tb,tb,whence
+
 # =============================================================================
 # Cleanup
 # =============================================================================
