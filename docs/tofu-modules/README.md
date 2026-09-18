@@ -78,3 +78,11 @@ For the deploy.toml resource system (database, cache, storage, etc.), see [Resou
 | [cost-budget](cost-budget.md)             | AWS Budget with email alerts at 80% and 100% of monthly threshold |
 | [ecr-notifications](ecr-notifications.md) | EventBridge rule to SNS for ECR vulnerability scan alerts         |
 | [staging-scheduler](staging-scheduler.md) | Lambda + EventBridge to auto start/stop ECS and RDS on a schedule |
+
+## Not a module
+
+`modules/lambda-shared/` holds no `.tf` at all: it is the tracked copy of the
+Lambda code that `null_resource.lambda_dependencies` copies into the db-users
+and db-on-shared-rds bundles at apply time, plus the pip installer those
+bundles run. Edit it there; the copies under each module's `lambda/` are
+gitignored build artifacts.
