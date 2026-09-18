@@ -326,6 +326,36 @@ class TestParseServicesSizing:
         result = parse_services_sizing(content)
         assert result == {"cpu": 1024, "memory": 2048, "replicas": 3}
 
+    @pytest.mark.parametrize(
+        ("template", "filename", "expected"),
+        [
+            (
+                "standalone-production",
+                "services.auto.tfvars.example",
+                {"cpu": 1024, "memory": 2048, "replicas": 2},
+            ),
+            (
+                "shared-app-staging",
+                "terraform.tfvars.example",
+                {"cpu": 256, "memory": 512, "replicas": 1},
+            ),
+        ],
+    )
+    def test_parses_the_real_templates_this_repo_ships(self, template, filename, expected):
+        """The fixture is the emitter, not a hand-written approximation.
+
+        parse_services_sizing() is never handed a string someone typed; it is
+        handed the content of a tfvars file generated from templates/. Those
+        files align the `=` with padding the hand-written fixture above does
+        not have, and the regex takes the FIRST match in the whole file -- so
+        the pin that matters is against real template content. A failure here
+        means either the templates' web sizing moved (and with it the defaults
+        every newly generated environment inherits) or a key crept into the
+        file above the services block.
+        """
+        content = (get_deployer_root() / "templates" / template / filename).read_text()
+        assert parse_services_sizing(content) == expected
+
     def test_defaults_when_not_found(self):
         result = parse_services_sizing("no relevant content here")
         assert result == {"cpu": 256, "memory": 512, "replicas": 1}
