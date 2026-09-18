@@ -54,7 +54,7 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
         raise SystemExit(1)
 
     infra = load_environment_infrastructure(environment, require_cluster=True, require_rds=True)
-    return infra.config, infra.cluster_name, infra.rds_id
+    return infra.config, infra.require_cluster_name(), infra.require_rds_id()
 
 
 # =============================================================================

@@ -81,6 +81,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from deployer.emergency.rds import RdsInstanceDetails, RestoreResult
+from deployer.utils import EnvironmentInfrastructure
 
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
@@ -110,7 +111,8 @@ class _StubLogger:
 def logger(monkeypatch) -> _StubLogger:
     """Stub the RDS context load so no config file or AWS profile is needed."""
     stub = _StubLogger()
-    ctx = emergency.EmergencyContext(config={}, cluster_name=None, rds_id=RDS_ID, logger=stub)
+    infra = EnvironmentInfrastructure(config={}, cluster_name=None, rds_id=RDS_ID)
+    ctx = emergency.EmergencyContext(infra=infra, logger=stub)
     monkeypatch.setattr(emergency, "_load_emergency_context", lambda _env, **_kw: ctx)
     return stub
 

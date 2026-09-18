@@ -760,14 +760,19 @@ def cmd_ecr(environment: str, verbose: bool) -> int:
     print(f"{Colors.BLUE}ECR Vulnerability Scan Results:{Colors.NC}")
     print()
 
-    service_config = config.get("services", {}).get("config", {})
-    service_names = list(service_config.keys()) if service_config else None
+    # An environment with no [services.config] has no repository names to
+    # build, and describe_repositories with an empty name list answers with
+    # every repository in the account -- which would be reported as this
+    # environment's. Say there is nothing to scan instead.
+    service_names = list(config.get("services", {}).get("config", {}))
+    if not service_names:
+        log_warning(f"No services configured for {environment} - no ECR repositories to scan")
+        return 0
 
     repos = list_repositories_for_environment(environment, service_names)
     if not repos:
         log_warning(f"No ECR repositories found for {environment}")
-        if service_names:
-            log_info(f"Checked: {', '.join(f'{environment}-{s}' for s in service_names)}")
+        log_info(f"Checked: {', '.join(f'{environment}-{s}' for s in service_names)}")
         return 0
 
     total_critical = 0

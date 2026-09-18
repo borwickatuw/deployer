@@ -638,13 +638,24 @@ class TestCmdEcr:
         assert f"No ECR repositories found for {ENV}" in out
         assert f"Checked: {ENV}-web, {ENV}-worker" in out
 
-    def test_no_configured_services_asks_for_every_repository(self, env_config, monkeypatch):
+    def test_no_configured_services_scans_nothing(self, env_config, monkeypatch, capsys):
+        """An environment with no [services.config] has no repositories to ask about.
+
+        This used to pass service_names=None through to
+        list_repositories_for_environment, whose ``for svc in service_names``
+        raises TypeError on None -- the old test stubbed that function out, so
+        the crash was never reached. Empty is also not "ask for everything":
+        describe_repositories with an empty name list answers with every
+        repository in the account.
+        """
         seen = self._ecr(monkeypatch)
 
         assert ops.cmd_ecr(ENV, verbose=False) == 0
-        assert seen == [None]
+        assert seen == []
+        assert f"No services configured for {ENV}" in capsys.readouterr().out
 
     def test_a_repository_with_no_scan_summary_is_skipped(self, env_config, monkeypatch, capsys):
+        env_config["services"] = {"config": {"web": {}}}
         self._ecr(monkeypatch, repos=[f"{ENV}-web"], summaries={})
 
         assert ops.cmd_ecr(ENV, verbose=False) == 0
@@ -653,6 +664,7 @@ class TestCmdEcr:
         assert "  CRITICAL: 0" in out
 
     def test_a_clean_scan_returns_0(self, env_config, monkeypatch, capsys):
+        env_config["services"] = {"config": {"web": {}}}
         self._ecr(monkeypatch, repos=[f"{ENV}-web"], summaries={f"{ENV}-web": self._summary()})
 
         assert ops.cmd_ecr(ENV, verbose=False) == 0
@@ -663,6 +675,7 @@ class TestCmdEcr:
         assert "No critical or high vulnerabilities" in out
 
     def test_high_findings_warn_but_still_return_0(self, env_config, monkeypatch, capsys):
+        env_config["services"] = {"config": {"web": {}}}
         self._ecr(
             monkeypatch,
             repos=[f"{ENV}-web"],
@@ -675,6 +688,7 @@ class TestCmdEcr:
         assert "High severity vulnerabilities found" in out
 
     def test_critical_findings_return_1(self, env_config, monkeypatch, capsys):
+        env_config["services"] = {"config": {"web": {}}}
         self._ecr(
             monkeypatch,
             repos=[f"{ENV}-web"],
@@ -689,6 +703,7 @@ class TestCmdEcr:
     def test_verbose_lists_the_first_five_findings_and_counts_the_rest(
         self, env_config, monkeypatch, capsys
     ):
+        env_config["services"] = {"config": {"web": {}}}
         self._ecr(
             monkeypatch,
             repos=[f"{ENV}-web"],

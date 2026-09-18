@@ -52,14 +52,14 @@ ruff: ## Run ruff linter
 	@echo "=== Ruff Linter ==="
 	@uv run ruff check $(PY_SOURCES)
 
-# src/ only, which is what best-practices/PYTHON.md section 14 specifies and
-# the only tree currently at zero. bin/ still reports errors of the same
-# shapes (str | None reaching a non-optional parameter); widening the target
-# is the next step, not a suppression.
+# src/ and bin/. best-practices/PYTHON.md section 14 specifies src/; bin/ is
+# where the CLI entry points live and carries the same failure shapes
+# (str | None reaching a non-optional parameter), so it is gated too. tests/
+# stays out: monkeypatch stubs are deliberately loose.
 .PHONY: pyright
-pyright: ## Type-check the package
+pyright: ## Type-check the package and the CLI entry points
 	@echo "=== Pyright ==="
-	@uv run --group dev pyright src/
+	@uv run --group dev pyright src/ bin/
 
 .PHONY: lint
 lint: ## Check formatting (black, isort) and lint (ruff, pyright)

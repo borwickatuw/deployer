@@ -34,6 +34,7 @@ from botocore.exceptions import ClientError
 from deployer.emergency import ecs as ecs_module
 from deployer.emergency.checkpoint import Checkpoint, ServiceState
 from deployer.emergency.ecs import compare_task_definitions
+from deployer.utils import EnvironmentInfrastructure
 
 bin_dir = Path(__file__).parent.parent.parent / "bin"
 sys.path.insert(0, str(bin_dir))
@@ -179,9 +180,8 @@ def ecs(monkeypatch):
 def _context(monkeypatch, services: dict, config: dict | None = None) -> _StubLogger:
     """Stub the cluster/context load so no config file or AWS call is needed."""
     logger = _StubLogger()
-    ctx = emergency.EmergencyContext(
-        config=config or {}, cluster_name=CLUSTER, rds_id=None, logger=logger
-    )
+    infra = EnvironmentInfrastructure(config=config or {}, cluster_name=CLUSTER, rds_id=None)
+    ctx = emergency.EmergencyContext(infra=infra, logger=logger)
     monkeypatch.setattr(emergency, "_load_cluster_services", lambda _env: (ctx, services))
     return logger
 
@@ -669,7 +669,8 @@ def _revert_context(monkeypatch, saved: Checkpoint | Exception) -> _StubLogger:
         The logger the command writes its audit lines to.
     """
     logger = _StubLogger()
-    ctx = emergency.EmergencyContext(config={}, cluster_name=CLUSTER, rds_id=None, logger=logger)
+    infra = EnvironmentInfrastructure(config={}, cluster_name=CLUSTER, rds_id=None)
+    ctx = emergency.EmergencyContext(infra=infra, logger=logger)
     monkeypatch.setattr(emergency, "_load_emergency_context", lambda _env, **_kw: ctx)
 
     def _load(_filename: str) -> Checkpoint:

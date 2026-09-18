@@ -47,8 +47,15 @@ from deployer.utils import (
 def resolve_environment(env_name: str) -> tuple[Path, str] | None:
     """Resolve environment name to path and cluster name."""
     env_path, error = validate_environment_deployed(env_name)
-    if error:
+    if error is not None:
         print(f"Error: {error}", file=sys.stderr)
+        return None
+    if env_path is None:
+        print(
+            f"Error: validate_environment_deployed returned neither a path nor a reason "
+            f"for {env_name!r}",
+            file=sys.stderr,
+        )
         return None
 
     try:
@@ -144,14 +151,16 @@ def _run_ecs_command(
     with exit_on(RuntimeError):
         containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
 
-    if not container_name:
-        if not containers:
-            print("Error: No containers found in task definition", file=sys.stderr)
-            return 1
-        container_name = containers[0]["name"]
+    if container_name:
+        target_container = container_name
+    elif containers:
+        target_container = containers[0]["name"]
+    else:
+        print("Error: No containers found in task definition", file=sys.stderr)
+        return 1
 
     print(f"Task definition: {task_definition}")
-    print(f"Container: {container_name}")
+    print(f"Container: {target_container}")
     print(f"Command: {' '.join(command)}")
     print()
 
@@ -160,7 +169,7 @@ def _run_ecs_command(
         cluster_name=cluster_name,
         task_definition=task_definition,
         network_config=network_config,
-        container_name=container_name,
+        container_name=target_container,
         command=command,
         environment=environment,
         ecs_client=ecs_client,
@@ -174,10 +183,10 @@ def _run_ecs_command(
     print(f"Task ARN: {task_arn}")
     print(f"Task ID: {task_id}")
 
-    logs_info = ecs.get_logs_location_from_containers(containers, container_name)
+    logs_info = ecs.get_logs_location_from_containers(containers, target_container)
     if logs_info:
         log_group, stream_prefix = logs_info
-        log_stream = f"{stream_prefix}/{container_name}/{task_id}"
+        log_stream = f"{stream_prefix}/{target_container}/{task_id}"
         print(f"\nLogs: CloudWatch log group '{log_group}', stream '{log_stream}'")
 
     if not wait:
@@ -195,10 +204,11 @@ def _run_ecs_command(
         print(f"\nTask exited with code {exit_code}", file=sys.stderr)
 
     if show_logs and logs_info:
+        log_group, stream_prefix = logs_info
         print("\n" + "=" * 60)
         print("Task Output:")
         print("=" * 60)
-        _display_task_logs(log_group, stream_prefix, container_name, task_id)
+        _display_task_logs(log_group, stream_prefix, target_container, task_id)
 
     return exit_code
 

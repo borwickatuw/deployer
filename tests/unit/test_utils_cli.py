@@ -8,6 +8,7 @@ from deployer.utils import cli as cli_utils
 from deployer.utils.cli import (
     EXIT_DECLINED,
     EnvironmentConfigError,
+    EnvironmentInfrastructure,
     configure_aws_for_operation,
     configure_profile_or_exit,
     confirm_action,
@@ -406,6 +407,19 @@ class TestLoadEnvironmentInfrastructure:
         assert exc_info.value.code == 1
         assert "RDS instance not configured" in capsys.readouterr().out
 
+    def test_require_accessors_return_the_guaranteed_values(self, monkeypatch, tmp_path):
+        """require_cluster=True/require_rds=True are readable as non-optional."""
+        _stub_config(
+            monkeypatch,
+            tmp_path,
+            {"infrastructure": {"cluster_name": "myapp-cluster", "rds_instance_id": "myapp-db"}},
+        )
+        infra = load_environment_infrastructure(
+            "myapp-staging", require_cluster=True, require_rds=True
+        )
+        assert infra.require_cluster_name() == "myapp-cluster"
+        assert infra.require_rds_id() == "myapp-db"
+
     def test_unloadable_config_exits(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setattr(cli_utils, "get_environment_path", lambda env: tmp_path / env)
 
@@ -544,3 +558,27 @@ class TestResolveEnvironmentsOrExit:
 
         assert exc.value.code == 1
         assert "environments dir is not readable" in capsys.readouterr().err
+
+
+class TestEnvironmentInfrastructureAccessors:
+    """The require_* accessors turn the loader's guarantee into a checked one.
+
+    A caller that forgot require_cluster=True / require_rds=True must not read
+    None out as if it were a name: it would reach boto3 as the literal string
+    "None" and describe some other cluster, or no cluster at all.
+    """
+
+    def test_require_cluster_name_raises_when_unset(self):
+        infra = EnvironmentInfrastructure(config={}, cluster_name=None, rds_id="db")
+        with pytest.raises(RuntimeError, match="require_cluster=True"):
+            infra.require_cluster_name()
+
+    def test_require_rds_id_raises_when_unset(self):
+        infra = EnvironmentInfrastructure(config={}, cluster_name="c", rds_id=None)
+        with pytest.raises(RuntimeError, match="require_rds=True"):
+            infra.require_rds_id()
+
+    def test_accessors_pass_the_values_through_when_set(self):
+        infra = EnvironmentInfrastructure(config={}, cluster_name="c", rds_id="db")
+        assert infra.require_cluster_name() == "c"
+        assert infra.require_rds_id() == "db"

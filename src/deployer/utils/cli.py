@@ -33,11 +33,53 @@ class EnvironmentConfigError(Exception):
 
 @dataclass(frozen=True)
 class EnvironmentInfrastructure:
-    """Infrastructure identifiers read from an environment's config.toml."""
+    """Infrastructure identifiers read from an environment's config.toml.
+
+    Both identifiers are optional because ``load_environment_infrastructure``
+    can be called without requiring either. A caller that passed
+    ``require_cluster=True`` / ``require_rds=True`` reads the value back
+    through the matching ``require_*`` accessor, which turns the loader's
+    guarantee into a checked one rather than a comment.
+    """
 
     config: dict
     cluster_name: str | None
     rds_id: str | None
+
+    def require_cluster_name(self) -> str:
+        """Return the ECS cluster name.
+
+        Returns:
+            The cluster name.
+
+        Raises:
+            RuntimeError: If no cluster name is configured. The loader exits
+                before returning when ``require_cluster=True`` and the name is
+                missing, so reaching this is a caller that forgot the flag.
+        """
+        if self.cluster_name is None:
+            raise RuntimeError(
+                "No ECS cluster name in this environment's config; "
+                "load it with require_cluster=True"
+            )
+        return self.cluster_name
+
+    def require_rds_id(self) -> str:
+        """Return the RDS instance ID.
+
+        Returns:
+            The RDS instance ID.
+
+        Raises:
+            RuntimeError: If no RDS instance is configured. The loader exits
+                before returning when ``require_rds=True`` and the ID is
+                missing, so reaching this is a caller that forgot the flag.
+        """
+        if self.rds_id is None:
+            raise RuntimeError(
+                "No RDS instance in this environment's config; load it with require_rds=True"
+            )
+        return self.rds_id
 
 
 def prompt_or_exit(prompt: str) -> str:

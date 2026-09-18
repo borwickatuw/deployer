@@ -106,6 +106,18 @@ class TestResolveEnvironment:
         assert ecs_run.resolve_environment("myapp-staging") is None
         assert "Could not get ECS cluster name" in capsys.readouterr().err
 
+    def test_neither_path_nor_reason_is_reported_as_a_contract_violation(self, monkeypatch, capsys):
+        """(None, None) is not "deployed": say so rather than pass None onward.
+
+        validate_environment_deployed promises (path, None) or (None, reason).
+        Guarding on the reason alone let a (None, None) answer through to
+        load_environment_config(None). Guarding on the path too names the bug.
+        """
+        monkeypatch.setattr(ecs_run, "validate_environment_deployed", lambda _e: (None, None))
+
+        assert ecs_run.resolve_environment("myapp-staging") is None
+        assert "neither a path nor a reason" in capsys.readouterr().err
+
 
 class TestCmdRunArgumentGuards:
     """Tests for cmd_run()'s pre-resolution and post-resolution usage errors."""
@@ -311,3 +323,67 @@ class TestCmdList:
     def test_undeployed_environment_returns_1(self, monkeypatch):
         monkeypatch.setattr(ecs_run, "resolve_environment", lambda _e: None)
         assert ecs_run.cmd_list("myapp-staging") == 1
+
+
+class TestRunEcsCommandContainerResolution:
+    """Tests for _run_ecs_command()'s choice of container.
+
+    The whole body was previously unreachable from tests -- every caller test
+    stubs _run_ecs_command out -- so the container-name resolution had no pin
+    at all.
+    """
+
+    def _stub_aws(self, monkeypatch, containers, *, run_task_arn="arn:aws:ecs:::task/c/abc123"):
+        """Stub every AWS touch _run_ecs_command makes; return the recorded calls."""
+        calls: dict = {}
+
+        monkeypatch.setattr(ecs_run.boto3, "client", lambda _svc: object())
+        monkeypatch.setattr(
+            ecs_run.ecs,
+            "get_service_info",
+            lambda *_a, **_kw: ({"subnets": []}, "myapp-web:7"),
+        )
+        monkeypatch.setattr(ecs_run.ecs, "get_task_containers", lambda *_a, **_kw: containers)
+
+        def _run_task(**kwargs):
+            calls["run_task"] = kwargs
+            return run_task_arn
+
+        monkeypatch.setattr(ecs_run.ecs, "run_task", _run_task)
+
+        def _logs_location(_containers, container_name):
+            calls["logs_container"] = container_name
+            return None
+
+        monkeypatch.setattr(ecs_run.ecs, "get_logs_location_from_containers", _logs_location)
+        monkeypatch.setattr(ecs_run.ecs, "wait_for_task", lambda *_a, **_kw: 0)
+        return calls
+
+    def _invoke(self, container_name):
+        return ecs_run._run_ecs_command(
+            cluster_name="myapp-staging-cluster",
+            service_name="web",
+            container_name=container_name,
+            command=["echo", "hi"],
+        )
+
+    def test_an_explicit_container_name_is_used_as_given(self, monkeypatch):
+        calls = self._stub_aws(monkeypatch, [{"name": "web"}, {"name": "sidecar"}])
+
+        assert self._invoke("sidecar") == 0
+        assert calls["run_task"]["container_name"] == "sidecar"
+        assert calls["logs_container"] == "sidecar"
+
+    def test_no_container_name_takes_the_first_from_the_task_definition(self, monkeypatch):
+        calls = self._stub_aws(monkeypatch, [{"name": "web"}, {"name": "sidecar"}])
+
+        assert self._invoke(None) == 0
+        assert calls["run_task"]["container_name"] == "web"
+        assert calls["logs_container"] == "web"
+
+    def test_no_container_name_and_no_containers_is_an_error(self, monkeypatch, capsys):
+        calls = self._stub_aws(monkeypatch, [])
+
+        assert self._invoke(None) == 1
+        assert "run_task" not in calls
+        assert "No containers found in task definition" in capsys.readouterr().err

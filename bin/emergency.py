@@ -67,6 +67,7 @@ from deployer.emergency.rds import (
 from deployer.utils import (
     EXIT_DECLINED,
     Colors,
+    EnvironmentInfrastructure,
     confirm_action,
     exit_on,
     format_iso,
@@ -234,11 +235,15 @@ def _report_outcome(
 
 @dataclass
 class EmergencyContext:
-    """Shared context loaded at the start of each emergency command."""
+    """Shared context loaded at the start of each emergency command.
 
-    config: dict
-    cluster_name: str | None
-    rds_id: str | None
+    Holds the loaded infrastructure rather than copying its fields, so the
+    ``require_cluster_name()`` / ``require_rds_id()`` guarantees travel with
+    it: a command that asked for a cluster reads the name back through the
+    accessor instead of re-checking for None at every call site.
+    """
+
+    infra: EnvironmentInfrastructure
     logger: EmergencyLogger
 
 
@@ -254,12 +259,7 @@ def _load_emergency_context(
     infra = load_environment_infrastructure(
         environment, require_cluster=require_cluster, require_rds=require_rds
     )
-    return EmergencyContext(
-        config=infra.config,
-        cluster_name=infra.cluster_name,
-        rds_id=infra.rds_id,
-        logger=EmergencyLogger(environment),
-    )
+    return EmergencyContext(infra=infra, logger=EmergencyLogger(environment))
 
 
 def _load_cluster_services(environment: str) -> tuple[EmergencyContext, dict]:
@@ -272,7 +272,7 @@ def _load_cluster_services(environment: str) -> tuple[EmergencyContext, dict]:
         Tuple of (ctx, services).
     """
     ctx = _load_emergency_context(environment, require_cluster=True)
-    services = get_all_services_state(ctx.cluster_name)
+    services = get_all_services_state(ctx.infra.require_cluster_name())
     if not services:
         log_error("No services found in cluster")
         raise SystemExit(1)
@@ -422,7 +422,7 @@ def _checkpoint_and_log(
         action=action,
         reason=reason,
         services=_snapshot_services(services),
-        rds=_capture_rds_state(ctx.rds_id),
+        rds=_capture_rds_state(ctx.infra.rds_id),
     )
     ctx.logger.checkpoint(f"Created {checkpoint.filename}")
     log_success(f"Checkpoint saved: local/checkpoints/{checkpoint.filename}")
@@ -504,13 +504,14 @@ def cmd_rollback(environment: str, service: str | None, revision: int | None, ye
         f"Rolling back {service_name} from revision {current_rev} to {target_revision_num}"
     )
 
-    if not update_service_task_definition(ctx.cluster_name, service_name, target_rev["arn"]):
+    cluster_name = ctx.infra.require_cluster_name()
+    if not update_service_task_definition(cluster_name, service_name, target_rev["arn"]):
         ctx.logger.error(f"Failed to update service {service_name}")
         log_error("Failed to update service")
         return 1
 
     ctx.logger.ecs("update-service returned: deployment in progress")
-    _await_deployment(ctx.cluster_name, service_name, ctx.logger)
+    _await_deployment(cluster_name, service_name, ctx.logger)
 
     cleanup_old_checkpoints(environment=environment)
 
@@ -561,12 +562,12 @@ def cmd_scale(
 ) -> int:
     """Scale ECS services."""
     ctx, services = _load_cluster_services(environment)
-    cluster_name = ctx.cluster_name
+    cluster_name = ctx.infra.require_cluster_name()
     logger = ctx.logger
 
     # Determine what to scale
     if reset:
-        configured_replicas = get_service_replicas_from_config(ctx.config)
+        configured_replicas = get_service_replicas_from_config(ctx.infra.config)
         to_scale = {name: configured_replicas.get(name, 1) for name in services}
     elif service:
         if not _require_service(services, service):
@@ -630,7 +631,7 @@ def _init_rds_command(environment: str, action: str) -> tuple[str, EmergencyLogg
     """Load context for an RDS emergency command."""
     ctx = _load_emergency_context(environment, require_rds=True)
     ctx.logger.action(action)
-    return ctx.rds_id, ctx.logger
+    return ctx.infra.require_rds_id(), ctx.logger
 
 
 def cmd_snapshot(environment: str, no_wait: bool) -> int:
@@ -764,7 +765,7 @@ def cmd_revert(
         return 1
 
     ctx = _load_emergency_context(environment, require_cluster=True)
-    cluster_name = ctx.cluster_name
+    cluster_name = ctx.infra.require_cluster_name()
     logger = ctx.logger
     logger.action("revert")
 
@@ -821,7 +822,7 @@ def cmd_revert(
 def cmd_force_deploy(environment: str, service: str | None, all_services: bool, yes: bool) -> int:
     """Force a new deployment of ECS service(s)."""
     ctx, services = _load_cluster_services(environment)
-    cluster_name = ctx.cluster_name
+    cluster_name = ctx.infra.require_cluster_name()
     logger = ctx.logger
 
     if service:
