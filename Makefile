@@ -163,10 +163,16 @@ security-bandit: ## Run bandit Python security linter
 #     CKV_AWS_192 (WAF Log4j2 rule)
 CHECKOV_SKIP := CKV_AWS_145,CKV_AWS_158,CKV_AWS_136,CKV_AWS_26,CKV_AWS_173,CKV_AWS_354,CKV_AWS_130,CKV_AWS_260,CKV_AWS_382,CKV_AWS_378,CKV_AWS_86,CKV_AWS_68,CKV_AWS_310,CKV_AWS_305,CKV_AWS_374,CKV_AWS_174,CKV2_AWS_42,CKV2_AWS_32,CKV2_AWS_47,CKV_AWS_115,CKV_AWS_116,CKV_AWS_117,CKV_AWS_50,CKV_AWS_272,CKV_AWS_144,CKV_AWS_18,CKV2_AWS_61,CKV2_AWS_62,CKV_AWS_21,CKV2_AWS_5,CKV2_AWS_19,CKV2_AWS_12,CKV2_AWS_23,CKV2_AWS_28,CKV2_AWS_57,CKV2_AWS_6,CKV_AWS_150,CKV_AWS_91,CKV_AWS_290,CKV_AWS_355,CKV_AWS_161,CKV_AWS_157,CKV_AWS_293,CKV_AWS_149,CKV_AWS_51,CKV_AWS_53,CKV_AWS_54,CKV_AWS_55,CKV_AWS_56,CKV_AWS_23,CKV_AWS_356,CKV_AWS_109,CKV_AWS_111,CKV_AWS_107,CKV_AWS_40,CKV_AWS_192
 
+# Scan the whole tree, not just modules/: the root module (main.tf,
+# variables.tf, outputs.tf) and environments/deployer.tf are symlinked into
+# deployer-environments and are live infrastructure too. local/ and
+# .terraform/ are gitignored scratch, so they are excluded to keep the scan
+# reproducible across machines.
 .PHONY: security-checkov
-security-checkov: ## Run Checkov IaC scanner on OpenTofu modules
+security-checkov: ## Run Checkov IaC scanner on all OpenTofu code
 	@echo "=== Checkov IaC Security Scanner ==="
-	@uvx checkov --directory modules --framework terraform --compact --quiet \
+	@uvx checkov --directory . --framework terraform --compact --quiet \
+		--skip-path 'local/' --skip-path '\.terraform/' \
 		--skip-check $(CHECKOV_SKIP)
 
 .PHONY: security-deps
