@@ -27,6 +27,7 @@ here: db-users deliberately composes them differently.
 
 import json
 import logging
+import os
 
 from db_common import (
     DbCredentials,
@@ -43,8 +44,11 @@ from db_common import (
     user_exists,
 )
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# LOG_LEVEL is the fleet-wide level control (claude-meta best-practices/LOGGING.md).
+# An invalid value raises at import, so a typo fails the invocation instead of
+# silently logging at the wrong level.
+logger = logging.getLogger(__name__)
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 
 def create_app_user(conn, user: DbUser, db_name: str) -> None:
@@ -218,6 +222,7 @@ def handler(event, context):  # pysmelly: ignore vestigial-params — context re
     - APP_SECRET_ARN: ARN of the app credentials secret (setup_database only)
     - MIGRATE_SECRET_ARN: ARN of the migrate credentials secret (setup_database only)
     - DB_NAME: Database name
+    - LOG_LEVEL: Python log level (optional; defaults to INFO)
     """
     logger.info(f"Event: {json.dumps(event)}")
 

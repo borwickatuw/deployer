@@ -9,6 +9,7 @@ Environment variables:
     "replicas" key, e.g. {"web": {"replicas": 2}} (main.tf builds it from the
     module's ecs_services variable)
   - RDS_INSTANCE_ID: RDS instance identifier
+  - LOG_LEVEL: Python log level (optional; defaults to INFO)
 
 Event:
   - action: "start" or "stop"
@@ -36,8 +37,11 @@ import time
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# LOG_LEVEL is the fleet-wide level control (claude-meta best-practices/LOGGING.md).
+# An invalid value raises at import, so a typo fails the invocation instead of
+# silently logging at the wrong level.
+logger = logging.getLogger(__name__)
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 ecs_client = boto3.client("ecs")
 rds_client = boto3.client("rds")

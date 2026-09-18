@@ -25,8 +25,11 @@ from dataclasses import dataclass
 import boto3
 import pg8000.native
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# LOG_LEVEL is the fleet-wide level control (claude-meta best-practices/LOGGING.md).
+# An invalid value raises at import, so a typo fails the invocation instead of
+# silently logging at the wrong level.
+logger = logging.getLogger(__name__)
+logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 
 @dataclass(frozen=True)
