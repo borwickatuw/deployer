@@ -14,7 +14,7 @@ MAKEFLAGS += --no-builtin-rules
 
 .PHONY: help
 help: ## Show this help
-	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-25s %s\n", $$1, $$2}'
 
 # =============================================================================
 # Setup
@@ -91,7 +91,7 @@ test-cov: ## Run tests with coverage report
 	@uv run pytest --cov --cov-report=term-missing
 
 .PHONY: check
-check: lint test ## Run lint and tests
+check: lint test format-docs-check ## Run lint, tests, and docs formatting
 	@echo ""
 	@echo "=== All Checks Passed ==="
 
@@ -242,17 +242,20 @@ clean: ## Remove build artifacts and caches
 	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
 
-# The three fileplan state directories are excluded: mdformat escapes
-# Markdown punctuation inside an item's `+++` TOML head (a trailing `_`
-# becomes `\_`), which corrupts the head so fileplan refuses the file.
-# .claude/skills is excluded for the same reason: mdformat rewrites a
-# SKILL.md's YAML frontmatter into a horizontal rule.
+# The three fileplan state directories declared in plan.toml are excluded:
+# mdformat escapes Markdown punctuation inside an item's `+++` TOML head (a
+# trailing `_` becomes `\_`), which corrupts the head so fileplan refuses the
+# file. The exclusion is the state directory itself, not its parent --
+# `[states.plan-archive]` is `docs/plan-archive/items`, so the registers in
+# `docs/plan-archive/` stay formatted. .claude/skills is excluded for a
+# different reason: mdformat rewrites a SKILL.md's YAML frontmatter into a
+# horizontal rule.
 .PHONY: format-docs
 format-docs: ## Format markdown files
 	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive/items' ':!.claude/skills' | xargs -0 mdformat
 
 .PHONY: format-docs-check
 format-docs-check: ## Check markdown formatting without modifying
 	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat --check
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive/items' ':!.claude/skills' | xargs -0 mdformat --check
