@@ -27,7 +27,7 @@ output "account_id" {
 }
 
 output "region" {
-  value       = data.aws_region.current.id
+  value       = data.aws_region.current.region
   description = "AWS region"
 }
 

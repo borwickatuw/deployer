@@ -125,7 +125,7 @@ output "domain" {
 
 output "domain_url" {
   description = "Full Cognito domain URL"
-  value       = "https://${aws_cognito_user_pool_domain.shared.domain}.auth.${data.aws_region.current.id}.amazoncognito.com"
+  value       = "https://${aws_cognito_user_pool_domain.shared.domain}.auth.${data.aws_region.current.region}.amazoncognito.com"
 }
 
 output "app_clients" {
