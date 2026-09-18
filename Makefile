@@ -34,10 +34,12 @@ lambda-deps: ## Install db lambda bundle pip deps (needed once per fresh checkou
 # =============================================================================
 
 # Python trees the formatters and linters own. modules/lambda-shared holds the
-# tracked copy of the db-* Lambda shared code; the per-module lambda/ dirs are
-# NOT here on purpose -- they are build-artifact directories full of pip-vendored
-# packages (and ruff's extend-exclude covers them if they are ever passed).
-PY_SOURCES = bin src tests modules/lambda-shared
+# tracked copy of the db-* Lambda shared code, and modules/staging-scheduler's
+# lambda/ is a single tracked first-party handler.py that tofu's archive_file
+# zips as-is. The db-users and db-on-shared-rds lambda/ dirs are NOT here on
+# purpose -- they are build-artifact directories full of pip-vendored packages
+# (and ruff's extend-exclude covers them if they are ever passed).
+PY_SOURCES = bin src tests modules/lambda-shared modules/staging-scheduler/lambda
 
 .PHONY: format
 format: ## Auto-format code with black and isort
@@ -105,7 +107,7 @@ security: security-bandit security-deps security-secrets security-checkov ## Run
 .PHONY: security-bandit
 security-bandit: ## Run bandit Python security linter
 	@echo "=== Bandit Security Linter ==="
-	@uv run bandit -c pyproject.toml -r bin src modules/lambda-shared -ll
+	@uv run bandit -c pyproject.toml -r $(filter-out tests,$(PY_SOURCES)) -ll
 
 # Checkov skip-check rationale (grouped by category):
 #   KMS encryption not needed (SSE-S3/default sufficient for our use case):
