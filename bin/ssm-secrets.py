@@ -42,9 +42,7 @@ from deployer.core.ssm_secrets import (
     get_secrets_from_deploy_toml,
 )
 from deployer.core.ssm_secrets import parse_environment as _parse_environment
-from deployer.core.ssm_secrets import (
-    ssm_put_commands,
-)
+from deployer.core.ssm_secrets import ssm_put_commands
 from deployer.utils import (
     EnvironmentConfigError,
     advice_block,
