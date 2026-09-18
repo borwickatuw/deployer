@@ -588,7 +588,10 @@ def build_and_push_images(
 
         # Local-only images are tagged with just their name (for FROM references)
         # Pushed images get the ecr_prefix
+        # ecr_uri is the destination this image gets pushed to; it exists
+        # exactly when the image is pushed, which is what the push below tests.
         cache_ref = None
+        ecr_uri = None
         if spec.should_push:
             repo_name = f"{ecr_prefix}-{image_name}"
             local_tag = f"{repo_name}:{tag}"
@@ -608,7 +611,7 @@ def build_and_push_images(
         _run_docker(_docker_build_cmd(spec, local_tag, cache_ref), image_name, "build", dry_run)
         log_success(f"{image_name} (build {tag[:8]})")
 
-        if spec.should_push:
+        if ecr_uri is not None:
             _tag_and_push(local_tag, ecr_uri, image_name, dry_run)
             image_uris[image_name] = ecr_uri
         else:

@@ -180,12 +180,13 @@ class Deployer:
 
         # Get AWS account info
         self.account_id = self.sts.get_caller_identity()["Account"]
-        self.region = boto3.session.Session().region_name
-        if not self.region:
+        region = boto3.Session().region_name
+        if not region:
             raise ValueError(
                 "No AWS region configured. Set AWS_DEFAULT_REGION environment variable "
                 "or configure a default region in your AWS profile."
             )
+        self.region: str = region
 
         # Cluster name from config (supports shared environments) or fallback
         self.cluster_name = infra.get("cluster_name")

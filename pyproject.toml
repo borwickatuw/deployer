@@ -39,6 +39,10 @@ dev = [
     # Code analysis
     "vulture",
     "radon",
+    # Type checking. Pinned in the lock rather than run via uvx: `uvx pyright`
+    # resolves outside the project environment and reports every third-party
+    # import as missing (52 errors vs the real 24 when this was first run).
+    "pyright>=1.1",
     # Plan lifecycle: docs/plan, docs/someday-maybe, docs/plan-archive
     # (declared in plan.toml, meanings in docs/PLAN-METHOD.md).
     "fileplan>=0.5.1",

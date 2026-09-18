@@ -195,6 +195,8 @@ def resolve_deploy_toml_or_exit(
         SystemExit: With code 1 if no deploy.toml can be resolved, the links
             file cannot be parsed, or the resolved path is not a readable
             .toml file.
+        ValueError: If both ``environment`` and ``deploy_toml`` are None --
+            a caller bug, not an operator error.
     """
     if deploy_toml:
         config_path = Path(deploy_toml).expanduser().resolve()
@@ -202,6 +204,14 @@ def resolve_deploy_toml_or_exit(
             print(f"Tip: Run 'python bin/link-environments.py {environment} {config_path}'")
             print(f"     to {link_benefit}\n")
     else:
+        if environment is None:
+            # Documented caller obligation, enforced rather than trusted: the
+            # link registry is keyed by environment, so there is nothing to
+            # look up and "No deploy.toml linked for 'None'" would be a lie.
+            raise ValueError(
+                "resolve_deploy_toml_or_exit needs an environment when deploy_toml is None"
+            )
+
         try:
             config_path = get_linked_deploy_toml(environment)
         except RuntimeError as e:
@@ -435,8 +445,13 @@ def require_validated_environment(env_name: str) -> tuple[Path, dict]:
     from ..core.config import load_environment_config  # noqa: PLC0415
 
     env_path, error = validate_environment_deployed(env_name)
-    if error:
+    if error is not None:
         raise EnvironmentConfigError(error)
+    if env_path is None:
+        raise EnvironmentConfigError(
+            f"validate_environment_deployed returned neither a path nor a reason "
+            f"for {env_name!r}"
+        )
 
     try:
         config = load_environment_config(env_path)

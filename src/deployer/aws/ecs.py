@@ -68,16 +68,15 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[Servi
     Returns:
         List of ServiceInfo objects with name, arn, desired_count, running_count, status.
     """
-    if ecs_client is None:
-        ecs_client = _get_ecs_client()
+    client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
     services = []
-    paginator = ecs_client.get_paginator("list_services")
+    paginator = client.get_paginator("list_services")
 
     try:
         for page in paginator.paginate(cluster=cluster_name):
             if page["serviceArns"]:
-                details = ecs_client.describe_services(
+                details = client.describe_services(
                     cluster=cluster_name, services=page["serviceArns"]
                 )
                 services.extend(_format_service(svc) for svc in details["services"])
@@ -106,11 +105,10 @@ def scale_service(
     Returns:
         True if successful, False otherwise.
     """
-    if ecs_client is None:
-        ecs_client = _get_ecs_client()
+    client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
     try:
-        ecs_client.update_service(
+        client.update_service(
             cluster=cluster_name,
             service=service_name,
             desiredCount=desired_count,
@@ -156,11 +154,10 @@ def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> 
             list meaning both "no containers" and "I could not look" is what
             DECISIONS.md 2026-08-18 "Error Contracts" forbids.
     """
-    if ecs_client is None:
-        ecs_client = _get_ecs_client()
+    client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
     try:
-        response = ecs_client.describe_task_definition(taskDefinition=task_definition)
+        response = client.describe_task_definition(taskDefinition=task_definition)
         containers = response.get("taskDefinition", {}).get("containerDefinitions", [])
         return _format_container_definitions(containers)
     except ClientError as e:
@@ -190,8 +187,7 @@ def run_task(
     Returns:
         Task ARN if successful, None otherwise.
     """
-    if ecs_client is None:
-        ecs_client = _get_ecs_client()
+    client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
     override = {
         "containerOverrides": [
@@ -206,7 +202,7 @@ def run_task(
         override["containerOverrides"][0]["environment"] = environment
 
     try:
-        response = ecs_client.run_task(
+        response = client.run_task(
             cluster=cluster_name,
             taskDefinition=task_definition,
             launchType="FARGATE",

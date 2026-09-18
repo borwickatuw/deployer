@@ -391,7 +391,7 @@ memory = 512
 """)
 
         mocker.patch("boto3.client")
-        mocker.patch("boto3.session.Session")
+        mocker.patch("boto3.Session")
 
         deployment_config = {
             "infrastructure": {

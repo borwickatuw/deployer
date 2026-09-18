@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from deployer.init import template as template_module
+from deployer.init.framework import detect_framework
 from deployer.init.template import (
     _get_templates_dir,
     build_services_block,
@@ -588,3 +589,27 @@ class TestUpdateServices:
                 env_name="testapp-staging",
                 deploy_toml_path=tmp_path / "nonexistent.toml",
             )
+
+
+class TestDetectFramework:
+    """The scoring: env vars weigh 2, Dockerfile hits 1, highest score wins."""
+
+    def test_no_signal_is_none(self):
+        assert detect_framework(env_vars=None, dockerfile_content=None) is None
+        assert detect_framework(env_vars=[], dockerfile_content="") is None
+
+    def test_an_env_var_names_the_framework(self):
+        assert detect_framework(["DJANGO_SETTINGS_MODULE"], None) == "django"
+
+    def test_env_vars_are_matched_case_insensitively(self):
+        assert detect_framework(["rails_env"], None) == "rails"
+
+    def test_dockerfile_content_alone_is_enough(self):
+        assert detect_framework(None, "CMD ['bundle', 'exec', 'rails', 's']") == "rails"
+
+    def test_the_highest_score_wins_not_the_first_match(self):
+        """gunicorn scores django and flask; DJANGO_SECRET_KEY breaks it for django."""
+        assert detect_framework(["DJANGO_SECRET_KEY"], "CMD gunicorn app:app") == "django"
+
+    def test_an_env_var_outweighs_a_lone_dockerfile_hit(self):
+        assert detect_framework(["FASTAPI_ENV"], "CMD next start") == "fastapi"

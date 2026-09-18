@@ -76,7 +76,7 @@ def detect_framework(
 
     # Return the highest scoring framework
     if scores:
-        return max(scores, key=scores.get)
+        return max(scores, key=lambda framework: scores[framework])
     return None
 
 

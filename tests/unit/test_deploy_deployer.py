@@ -235,9 +235,7 @@ def aws(monkeypatch):
     clients["application-autoscaling"] = SimpleNamespace(name="application-autoscaling")
     clients["cloudwatch"] = SimpleNamespace(name="cloudwatch")
     monkeypatch.setattr(deployer_mod.boto3, "client", lambda name: clients[name])
-    monkeypatch.setattr(
-        deployer_mod.boto3.session, "Session", lambda: SimpleNamespace(region_name=REGION)
-    )
+    monkeypatch.setattr(deployer_mod.boto3, "Session", lambda: SimpleNamespace(region_name=REGION))
     return clients
 
 
@@ -308,7 +306,7 @@ class TestDeployerInit:
     def test_no_configured_region_raises(self, make_deployer, monkeypatch):
         """A session with no region is fatal, not a silent default."""
         monkeypatch.setattr(
-            deployer_mod.boto3.session, "Session", lambda: SimpleNamespace(region_name=None)
+            deployer_mod.boto3, "Session", lambda: SimpleNamespace(region_name=None)
         )
 
         with pytest.raises(ValueError, match="No AWS region configured"):

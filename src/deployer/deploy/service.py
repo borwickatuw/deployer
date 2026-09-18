@@ -7,7 +7,8 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import NoReturn
+from pathlib import Path
+from typing import Any, NoReturn
 
 import boto3
 from botocore.exceptions import ClientError
@@ -322,7 +323,7 @@ def _deployment_configuration(dep_cfg: DeploymentConfig) -> dict:
     Returns:
         Dict for the ``deploymentConfiguration`` service parameter.
     """
-    deployment_configuration = {
+    deployment_configuration: dict[str, Any] = {
         "minimumHealthyPercent": dep_cfg.min_healthy,
         "maximumPercent": dep_cfg.max_percent,
     }
@@ -504,16 +505,15 @@ class ServiceDeployOutcome:
     ``task_def_arn`` is set when the service was created or its deployment
     started; None when it was skipped as unchanged or failed. ``state_hash``
     is the intended-state hash (None on dry runs, which never hash).
+
+    The three outcomes are read off the two fields, in this order:
+    ``skipped`` is a deliberate no-op, then no ``task_def_arn`` is a failure,
+    and anything else deployed.
     """
 
     task_def_arn: str | None = None
     state_hash: str | None = None
     skipped: bool = False
-
-    @property
-    def failed(self) -> bool:
-        """A service that was neither deployed nor deliberately skipped."""
-        return self.task_def_arn is None and not self.skipped
 
 
 @dataclass
@@ -792,7 +792,7 @@ def deploy_services(
         outcome = _deploy_one_service(ctx, name, svc_config, image_uris, force_deploy)
         if outcome.skipped:
             deployed.skipped.append(name)
-        elif outcome.failed:
+        elif outcome.task_def_arn is None:
             failed.append(name)
         else:
             deployed.updated[name] = outcome.task_def_arn
@@ -856,7 +856,7 @@ def _migration_network_config(ctx, migration_service: str) -> dict | None:
 def start_migrations(
     ctx,
     image_uris: dict[str, str],
-    source_dir: str | None,
+    source_dir: Path | None,
 ) -> MigrationTask | None:
     """Start database migrations (non-blocking).
 
@@ -866,7 +866,8 @@ def start_migrations(
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         image_uris: Dictionary mapping image names to ECR URIs.
-        source_dir: Path to the application source directory (for migration hashing).
+        source_dir: Resolved path to the application source directory (for
+            migration hashing), or None to always run the migration.
 
     Returns:
         MigrationTask with task ARN and metadata, or None if migrations

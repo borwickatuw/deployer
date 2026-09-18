@@ -188,6 +188,11 @@ class TestResolveDeployTomlOrExit:
     def _resolve(self, environment, deploy_toml):
         return resolve_deploy_toml_or_exit(environment, deploy_toml, **self.HINTS)
 
+    def test_no_environment_and_no_flag_is_a_caller_bug(self):
+        """The link registry is keyed by environment; there is nothing to look up."""
+        with pytest.raises(ValueError, match="needs an environment when deploy_toml is None"):
+            self._resolve(None, None)
+
     def test_explicit_flag_wins_over_the_link_registry(self, tmp_path, monkeypatch):
         explicit = tmp_path / "explicit.toml"
         explicit.write_text("")
@@ -494,6 +499,12 @@ class TestRequireEnvironment:
         env_path, config = require_validated_environment("myapp-staging")
         assert env_path == tmp_path / "myapp-staging"
         assert config == {"app": "x"}
+
+    def test_a_contract_violation_is_not_silently_an_empty_path(self, monkeypatch):
+        """(None, None) is neither an answer nor a reason; say so rather than pass it on."""
+        monkeypatch.setattr(cli_utils, "validate_environment_deployed", lambda _env: (None, None))
+        with pytest.raises(EnvironmentConfigError, match="neither a path nor a reason"):
+            require_validated_environment("myapp-staging")
 
 
 class TestResolveEnvironmentsOrExit:

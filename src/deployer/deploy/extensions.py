@@ -73,13 +73,17 @@ def create_database_extensions(
         )
         return
 
-    state = None
+    # The parameter name and the state it would hold are computed together or
+    # not at all -- skip detection needs an app and an environment to key on.
+    skip_state: tuple[str, str] | None = None
     if app_name and environment:
+        param_name = _extensions_state_param_name(app_name, environment)
         state = _current_extensions_state(env_config, extensions)
-        stored, _error = ssm.get_parameter(_extensions_state_param_name(app_name, environment))
+        stored, _error = ssm.get_parameter(param_name)
         if stored == state:
             log_success(f"Extensions unchanged ({', '.join(sorted(extensions))}), skipping")
             return
+        skip_state = (param_name, state)
 
     response = _invoke_extensions_lambda(lambda_name, extensions, region)
     _raise_on_function_error(response, lambda_name)
@@ -88,9 +92,10 @@ def create_database_extensions(
     created = result.get("extensions", [])
     log_success(f"Extensions ready: {', '.join(created)}")
 
-    if state is not None:
+    if skip_state is not None:
+        param_name, state = skip_state
         success, error = ssm.put_parameter(
-            name=_extensions_state_param_name(app_name, environment),
+            name=param_name,
             value=state,
             description="Extensions created by the last deploy (skip detection)",
             overwrite=True,

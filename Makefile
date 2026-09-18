@@ -52,8 +52,17 @@ ruff: ## Run ruff linter
 	@echo "=== Ruff Linter ==="
 	@uv run ruff check $(PY_SOURCES)
 
+# src/ only, which is what best-practices/PYTHON.md section 14 specifies and
+# the only tree currently at zero. bin/ still reports errors of the same
+# shapes (str | None reaching a non-optional parameter); widening the target
+# is the next step, not a suppression.
+.PHONY: pyright
+pyright: ## Type-check the package
+	@echo "=== Pyright ==="
+	@uv run --group dev pyright src/
+
 .PHONY: lint
-lint: ## Check formatting (black, isort) and lint (ruff)
+lint: ## Check formatting (black, isort) and lint (ruff, pyright)
 	@echo "=== Checking Black Formatting ==="
 	@uv run black --check $(PY_SOURCES)
 	@echo ""
@@ -62,6 +71,8 @@ lint: ## Check formatting (black, isort) and lint (ruff)
 	@echo ""
 	@echo "=== Ruff Linter ==="
 	@uv run ruff check $(PY_SOURCES)
+	@echo ""
+	@$(MAKE) --no-print-directory pyright
 
 # =============================================================================
 # Testing

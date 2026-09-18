@@ -142,7 +142,7 @@ def generate_environment(
         listener_priority = 100
 
     # Build substitution context
-    context = {
+    context: dict[str, str | int] = {
         "env_type": env_type,
         "env_name": env_name,
         "domain": domain,

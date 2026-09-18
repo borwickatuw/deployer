@@ -169,7 +169,7 @@ def _build_images_config(app_services: dict, app_name: str) -> dict:
     return images
 
 
-def _build_services_config(app_services: dict, app_name: str, framework: str) -> dict:
+def _build_services_config(app_services: dict, app_name: str, framework: str | None) -> dict:
     """Build the services section of deploy.toml config."""
     deploy_services = {}
     for name, svc in app_services.items():
@@ -222,7 +222,9 @@ def _build_environment_config(all_env_vars: set) -> tuple[dict, dict]:
     return environment, {"names": secret_names} if secret_names else {}
 
 
-def _build_migrations_config(framework: str, deploy_services: dict, app_name: str) -> dict | None:
+def _build_migrations_config(
+    framework: str | None, deploy_services: dict, app_name: str
+) -> dict | None:
     """Build the migrations section if framework detected."""
     migration_cmd = get_migration_command(framework)
     if not migration_cmd:
@@ -426,7 +428,7 @@ def _format_secrets_section(config: dict) -> list[str]:
     return lines
 
 
-def _format_migrations_section(migrations: dict) -> list[str]:
+def _format_migrations_section(migrations: dict | None) -> list[str]:
     """Format the [migrations] section."""
     if not migrations:
         return []
@@ -440,7 +442,7 @@ def _format_migrations_section(migrations: dict) -> list[str]:
     return lines
 
 
-def _format_audit_section(audit: dict) -> list[str]:
+def _format_audit_section(audit: dict | None) -> list[str]:
     """Format the [audit] section."""
     if not audit:
         return []
