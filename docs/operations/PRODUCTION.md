@@ -30,6 +30,25 @@ These targets assume:
 - Monthly restore testing via `emergency.py restore-db`
 - Emergency procedures documented and practiced
 
+### What Recovery Does Not Cover
+
+The targets above are about the database. Everything else in an environment
+has its own posture, and several pieces have no backup at all:
+
+| Data                        | Posture                                                                                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSM Parameter Store secrets | **No backup.** `bin/ssm-secrets.py` writes them outside OpenTofu, so they are in no state file and no snapshot. Losing the account means re-entering every value.                            |
+| S3 buckets (`modules/s3`)   | The `versioning` variable is opt-in per environment; with it unset, an overwritten or deleted object is gone.                                                                                |
+| ElastiCache                 | Automatic snapshots follow `snapshot_retention_limit`, and cache contents are reconstructible anyway. Anything only in Redis — sessions, queued work — is lost when the cluster is replaced. |
+| ECS task filesystems        | Ephemeral. Anything a container wrote to local disk is gone at the next deploy.                                                                                                              |
+| ECR images                  | The lifecycle policy keeps the newest `lifecycle_policy_count` images, which is also how far back a rollback can reach.                                                                      |
+| In-flight requests          | Lost during a Multi-AZ failover or a deployment's task replacement.                                                                                                                          |
+
+OpenTofu state is the exception that *is* protected: the bootstrap module
+enables versioning on the state bucket (`modules/bootstrap/s3.tf`), so a
+corrupted or truncated state file can be restored from an earlier object
+version.
+
 ### Pre-Deployment Checklist
 
 Before deploying to production, verify:
