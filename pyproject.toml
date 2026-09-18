@@ -74,91 +74,36 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v -ra --strict-markers --tb=short"
 # modules/lambda-shared is on the path so `import db_common` resolves the same
 # way it does from a Lambda bundle root (see modules/lambda-shared/db_common.py).
 pythonpath = ["src", "modules/lambda-shared"]
 
 [tool.coverage.run]
-source = ["src/deployer"]
+# One canonical measurement: every first-party Python tree `make lint` covers,
+# minus tests/ -- the library, the bin/ CLIs, and the two Lambda bundles the
+# unit tests import by path. Because the list lives here and not in `--cov=`
+# flags, bare `uv run pytest --cov` and `make test-cov` report the same number.
+source = [
+    "src",
+    "bin",
+    "modules/lambda-shared",
+    "modules/staging-scheduler/lambda",
+]
 branch = true
 
 [tool.coverage.report]
 # Integration-heavy CLI: most subsystem code is boto3/subprocess wrappers that
-# require real AWS credentials.
+# require real AWS credentials, so a high floor would only be reachable by
+# mocking AWS to itself. The floor is therefore measured, not aspirational:
+# `make test-cov` prints the TOTAL, and the floor sits just under it. Raise it
+# when a run clears it; don't lower it without saying here what was removed.
 #
-# The floor is measured, not aspirational: `make test-cov` reports 59.45% at
-# the commit that finished Phase 53e-4b, so 59 is the floor just under it.
-# Note that `make test-cov` passes `--cov=src --cov=bin`, which OVERRIDES the
-# `[tool.coverage.run] source` setting above — bare `pytest --cov` measures
-# src/deployer only. The floor is set against the `make test-cov` number
-# because that is the gate people actually run.
-#
-# Phase 53b moved CLI boilerplate out of bin/ and into tested src/ helpers:
-# utils/cli.py 0% -> 98% and the new deploy/pipeline.py is at 100%.
-# Phase 53c gave the aws/ package its first tests: cli.py 100%, cognito.py
-# 12% -> 100%, rds.py 18% -> 100%. cloudwatch.py stays at 15% — only its one
-# CLI-based function moved onto the shared surface; the rest is boto3.
-#
-# Phase 53d-1 gave three bin/ scripts their first tests: ssm-secrets.py
-# 0% -> 73%, ecs-run.py 0% -> 61%, capacity-report.py 0% -> 87%.
-#
-# Phase 53d-2a pinned bin/emergency.py's mutating commands before decomposing
-# them: emergency.py 0% -> 57% and ops.py 12% -> 24%. The uncovered half of
-# emergency.py is the RDS side (snapshot, restore-db, revert), which 53d-2a
-# did not touch.
-#
-# Phase 53d-2b pinned bin/init.py's file-writing commands before decomposing
-# cmd_bootstrap and cmd_environment: init.py 0% -> 92%. The repo has no
-# 0%-coverage file left.
-#
-# Phase 53e-1 pinned the two files it refactored before touching them:
-# deploy/extensions.py 94% -> 100% and init/setup_profiles.py 39% -> 100%.
-#
-# Phase 53e-2 did the same for core/audit.py, 66% -> 100%. Its whole gap was
-# run_audit()'s reporting half: every pre-existing test passed verbose=False.
-#
-# Phase 53e-3 pinned deploy/deployer.py before decomposing deploy() and
-# __init__: deployer.py 41% -> 100%.
-#
-# Phase 53e-4a pinned deploy/images.py before decomposing
-# build_and_push_images: images.py 16% -> 100%. Eight of its ten functions had
-# never been executed by a test.
-#
-# Phase 53e-5a pinned deploy/service.py before 53e-5c/5d refactor it, in two
-# parallel units: 5a-1 took the deploy path, 5a-2 the migration + wait path.
-# Together they take service.py 11% -> 99%, and its 120 branches from zero
-# taken to all but one. The floor moves 59 -> 65 against the 65.62% measured
-# with both units in the tree (5a-2 alone measures 63.93%).
-#
-# Phase 53f-1 pinned the *consumers* of the six dict payloads 53f converts to
-# typed objects — the producers were already at 100%, the consumers were the
-# gap. bin/cognito.py 17% -> 53% (print_users_table and cmd_list, which hold
-# every subscript read of format_user's output), bin/emergency.py 57% -> 76%
-# (cmd_restore_db and _print_restore_success, which hold every read of the
-# restore payloads), deploy/task_definition.py 72% -> 86% (_get_legacy_secrets,
-# which had no test at all, and _resolve_legacy_placeholders' numeric arm).
-# The floor moves 65 -> 68 against the 68.47% measured with all three in.
-#
-# Phase 53h-1 pinned the modules/ collect() interface before refactoring it.
-# database.py 54% -> 100% (its whole SSM credential arm and most of validate's
-# error arms had no test), storage.py 78% -> 100%, cache.py 83% -> 100%,
-# secrets.py 71% -> 97%, base.py 82% -> 95%, task_definition.py 84% -> 93%
-# (_build_module_context and both collect_all call sites were uncovered).
-# The floor moves 69 -> 70 against the 70.44% measured with those in.
-#
-# Phase 53h-2a pinned init/deploy_toml.py before changing what `[secrets]`
-# looks like: deploy_toml.py 8% -> 97%, the largest single jump of the 53
-# arc, driven entirely through generate_deploy_toml/format_deploy_toml.
-# preflight.py's check_modules got its first test at the same time. The pins
-# found a live crash on the way in — `_read_dockerfile_content` raised
-# TypeError for any compose file without an explicit `dockerfile:` key.
-# The floor moves 70 -> 74 against the 74.26% measured with those in.
-#
-# Remaining large gap: bin/ops.py (574 statements, 24%) — the widest CLI in the
-# repo, and the only bin/ script whose commands are still mostly unpinned.
+# Largest remaining gap: bin/ops.py, the widest CLI in the repo and the only
+# bin/ script whose commands are still mostly unpinned. `make test-cov` shows
+# its current line; the per-phase history of how the floor got here is in git.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 74
+fail_under = 81
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

@@ -83,12 +83,12 @@ lint: ## Check formatting (black, isort) and lint (ruff, pyright)
 .PHONY: test
 test: ## Run all tests
 	@echo "=== Running Tests ==="
-	@uv run pytest -v
+	@uv run pytest
 
 .PHONY: test-cov
 test-cov: ## Run tests with coverage report
 	@echo "=== Running Tests with Coverage ==="
-	@uv run pytest --cov=src --cov=bin --cov-report=term-missing
+	@uv run pytest --cov --cov-report=term-missing
 
 .PHONY: check
 check: lint test ## Run lint and tests
