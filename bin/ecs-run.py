@@ -68,17 +68,26 @@ def resolve_environment(env_name: str) -> tuple[Path, str] | None:
 def _display_task_logs(
     log_group: str, stream_prefix: str, container_name: str, task_id: str
 ) -> None:
-    """Fetch and display CloudWatch logs for a task."""
-    events = cloudwatch.get_task_logs(
-        log_group=log_group,
-        stream_prefix=stream_prefix,
-        container_name=container_name,
-        task_id=task_id,
-        limit=500,
-    )
+    """Fetch and display CloudWatch logs for a task.
+
+    A log-read failure is reported but does not change the caller's exit code:
+    the task's own exit code is the answer this command returns, and losing the
+    log tail must not disguise a task that succeeded (or failed).
+    """
+    try:
+        events = cloudwatch.get_task_logs(
+            log_group=log_group,
+            stream_prefix=stream_prefix,
+            container_name=container_name,
+            task_id=task_id,
+            limit=500,
+        )
+    except RuntimeError as e:
+        print(f"Error: could not fetch logs: {e}", file=sys.stderr)
+        return
 
     if events is None:
-        print("(Could not fetch logs - stream may not exist yet)", file=sys.stderr)
+        print("(No log stream yet - the task has not written any output)", file=sys.stderr)
         return
 
     if not events:

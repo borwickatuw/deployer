@@ -1,10 +1,11 @@
 """AWS CloudWatch operations."""
 
+import json
 from typing import Any
 
 from botocore.exceptions import ClientError
 
-from .cli import run_aws_json
+from .cli import run_aws
 
 
 def get_log_events(
@@ -22,8 +23,16 @@ def get_log_events(
         limit: Maximum number of events to return (default: 100).
 
     Returns:
-        List of log event dicts with 'timestamp' and 'message' keys,
-        or None if the stream doesn't exist or an error occurred.
+        List of log event dicts with 'timestamp' and 'message' keys. ``[]``
+        when the stream exists but has logged nothing yet, and None when the
+        stream (or its group) does not exist — a task that has not written its
+        first line is a normal answer, not a failure.
+
+    Raises:
+        RuntimeError: if CloudWatch could not be read for any other reason
+            (credentials, permissions, connectivity) or answered with output
+            that is not JSON. A failure to look is never reported as "no logs";
+            the caller decides whether that is fatal.
     """
     args = [
         "logs",
@@ -39,9 +48,18 @@ def get_log_events(
     if start_time:
         args.extend(["--start-time", str(start_time)])
 
-    data = run_aws_json(*args)
-    if data is None:
-        return None
+    success, output = run_aws(*args)
+    if not success:
+        if "ResourceNotFoundException" in output:
+            return None
+        raise RuntimeError(f"Could not read {log_group}/{log_stream} from CloudWatch: {output}")
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"CloudWatch returned output that is not JSON for {log_group}/{log_stream}"
+        ) from exc
 
     return data.get("events", [])
 
@@ -63,7 +81,12 @@ def get_task_logs(
         limit: Maximum number of events to return.
 
     Returns:
-        List of log event dicts, or None if not found.
+        List of log event dicts, ``[]`` if the stream exists but is empty, or
+        None if the task has not created its log stream yet.
+
+    Raises:
+        RuntimeError: if CloudWatch could not be read. See
+            :func:`get_log_events` -- the contract is inherited unchanged.
     """
     # ECS log stream format: {prefix}/{container_name}/{task_id}
     log_stream = f"{stream_prefix}/{container_name}/{task_id}"

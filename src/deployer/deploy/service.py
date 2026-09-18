@@ -993,6 +993,10 @@ def wait_for_migrations(
 def _display_migration_logs(migration_task: MigrationTask, limit: int = 50) -> None:
     """Fetch and display CloudWatch logs for a failed migration task.
 
+    Never fatal: the caller is already raising on the migration failure this
+    tail is meant to explain. A CloudWatch read that fails is reported as a
+    read failure, distinct from a task that genuinely logged nothing.
+
     Args:
         migration_task: The failed migration task.
         limit: Maximum number of log lines to display.
@@ -1026,6 +1030,11 @@ def _display_migration_logs(migration_task: MigrationTask, limit: int = 50) -> N
         else:
             log_warning(f"No logs found. Check CloudWatch log group: {log_group}")
             print(f"  Stream: {stream_prefix}/{container_name}/{task_id}")
+    except RuntimeError as e:
+        # get_log_events raises only when CloudWatch could not be read at all.
+        # Saying so beats "No logs found", which claims the task was silent.
+        log_warning(f"Could not read the migration logs: {e}")
+        print(f"  Check CloudWatch manually: {log_group}")
     except Exception as e:  # noqa: BLE001 — graceful fallback for log fetching
         log_warning(f"Could not fetch logs: {e}")
         print(f"  Check CloudWatch manually: {log_group}")

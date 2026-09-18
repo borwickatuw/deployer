@@ -49,13 +49,10 @@ Nine pins exist specifically to make 53e-5c/5d verifiable:
    repo and a real moto SSM parameter: the migrate task definition is
    registered *even when the migration is skipped*, and ``run_task`` is not
    called (``TestStartMigrationsSkipHash``).
-8. **The ``str | None`` vs ``Path`` annotation mismatch.**
-   ``start_migrations(source_dir: str | None)`` is annotated for ``str``, but
-   ``deployer.py:117`` builds a resolved ``Path`` and
-   ``migrations.should_skip_migrations(source_dir: Path, ...)`` wants a
-   ``Path``. **Production always passes a ``Path``.** The annotation is wrong,
-   not the code: ``compute_migrations_hash`` does ``Path(source_dir).resolve()``
-   so both types work, and ``TestSourceDirTypes`` pins that they agree.
+8. **``source_dir`` accepts both ``str`` and ``Path``.** Production always
+   passes a resolved ``Path`` (``deployer.py`` builds it); the annotation is
+   ``Path | None``. ``compute_migrations_hash`` does ``Path(source_dir).resolve()``
+   so a ``str`` still works, and ``TestSourceDirTypes`` pins that they agree.
 9. **Both polling loops' sleep behaviour** — ``time.sleep`` is stubbed at the
    stdlib module (the ``sleeps`` fixture), and the recorded interval *and*
    call count are asserted for ``_wait_for_service_stable`` and
@@ -2155,16 +2152,33 @@ class TestDisplayMigrationLogs:
         assert f"No logs found. Check CloudWatch log group: /ecs/{APP_NAME}-{ENVIRONMENT}" in out
         assert "Stream: migrate/migrate/abc123def456" in out
 
-    def test_cli_failure_takes_the_same_no_logs_branch(self, aws_cli, capsys):
-        """``get_task_logs`` returns None on failure, which is falsy like ``[]``."""
+    def test_cli_failure_is_reported_as_a_read_failure_not_as_no_logs(self, aws_cli, capsys):
+        """A permissions failure must not read as "the migration was silent"."""
         aws_cli.replies((False, "AccessDeniedException"))
         _display_migration_logs(_migration_task())
-        assert "No logs found." in _plain(capsys.readouterr().out)
 
-    def test_unparseable_output_takes_the_same_branch(self, aws_cli, capsys):
+        out = _plain(capsys.readouterr().out)
+        assert "Could not read the migration logs" in out
+        assert "AccessDeniedException" in out
+        assert "No logs found." not in out
+
+    def test_missing_stream_is_absence_and_says_no_logs_found(self, aws_cli, capsys):
+        """ResourceNotFoundException is the one failure that means absence."""
+        aws_cli.replies((False, "An error occurred (ResourceNotFoundException) ..."))
+        _display_migration_logs(_migration_task())
+
+        out = _plain(capsys.readouterr().out)
+        assert "No logs found." in out
+        assert "Could not read the migration logs" not in out
+
+    def test_unparseable_output_is_reported_as_a_read_failure(self, aws_cli, capsys):
         aws_cli.replies((True, "not json"))
         _display_migration_logs(_migration_task())
-        assert "No logs found." in _plain(capsys.readouterr().out)
+
+        out = _plain(capsys.readouterr().out)
+        assert "Could not read the migration logs" in out
+        assert "not JSON" in out
+        assert "No logs found." not in out
 
     def test_unexpected_exception_is_swallowed(self, monkeypatch, capsys):
         """The blanket ``except Exception`` keeps a log-fetch failure non-fatal."""
