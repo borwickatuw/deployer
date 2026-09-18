@@ -224,9 +224,13 @@ RUN uv sync --frozen --group dev
 # dev dependencies included (debug toolbar, etc.)
 
 FROM base AS prod
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-default-groups
 # production only
 ```
+
+`--no-default-groups`, not `--no-dev`: `--no-dev` is only an alias for
+`--no-group dev`, so in an app whose `[tool.uv] default-groups` also lists
+`test`, the test dependencies bake into the production image.
 
 With the environment-specific configuration above:
 
