@@ -515,6 +515,7 @@ module "cloudfront_alb" {
   }
 
   name_prefix           = local.name_prefix
+  environment           = var.environment
   alb_dns_name          = module.alb.dns_name
   domain_name           = var.domain_name
   route53_zone_id       = var.route53_zone_id

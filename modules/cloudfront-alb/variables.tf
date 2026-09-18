@@ -7,6 +7,16 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "environment" {
+  description = "Environment type ('staging' or 'production'); selects the default error page copy"
+  type        = string
+
+  validation {
+    condition     = contains(["staging", "production"], var.environment)
+    error_message = "environment must be 'staging' or 'production'."
+  }
+}
+
 variable "alb_dns_name" {
   description = "DNS name of the ALB to use as origin"
   type        = string

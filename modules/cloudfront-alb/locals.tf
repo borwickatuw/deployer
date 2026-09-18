@@ -3,6 +3,16 @@
 # ------------------------------------------------------------------------------
 
 locals {
+  # The staging-scheduler stops staging outside business hours, so that bullet
+  # is true only there. On production an outage is never scheduled, and saying
+  # so on the production error page is simply false.
+  error_page_reasons = var.environment == "staging" ? [
+    "Scheduled downtime outside business hours (Pacific Time)",
+    "Deployment or maintenance in progress",
+    ] : [
+    "Deployment or maintenance in progress",
+  ]
+
   error_page_html = var.error_page_content != null ? var.error_page_content : <<-EOF
     <!DOCTYPE html>
     <html lang="en">
@@ -72,11 +82,12 @@ locals {
         <div class="env-badge">${var.name_prefix}</div>
         <h1>Service Temporarily Unavailable</h1>
         <p>
-          This staging environment is currently unavailable. Possible reasons:
+          This service is currently unavailable. Possible reasons:
         </p>
         <ul>
-          <li>Scheduled downtime outside business hours (Pacific Time)</li>
-          <li>Deployment or maintenance in progress</li>
+    %{~for reason in local.error_page_reasons}
+          <li>${reason}</li>
+    %{~endfor}
         </ul>
         <p>
           Please try again later or contact the development team if this is unexpected.

@@ -14,6 +14,7 @@ module "cloudfront" {
   }
 
   name_prefix     = "myapp-production"
+  environment     = "production"
   alb_dns_name    = module.alb.dns_name
   domain_name     = "myapp.example.com"
   route53_zone_id = aws_route53_zone.main.zone_id
@@ -22,14 +23,15 @@ module "cloudfront" {
 
 ## Key Variables
 
-| Variable           | Type   | Description                                      |
-| ------------------ | ------ | ------------------------------------------------ |
-| name_prefix        | string | Prefix for resource names                        |
-| alb_dns_name       | string | DNS name of the ALB origin                       |
-| domain_name        | string | Domain name for the distribution                 |
-| route53_zone_id    | string | Route 53 zone ID for certificate validation      |
-| error_page_content | string | Custom HTML for 503 error page                   |
-| price_class        | string | CloudFront price class (default: PriceClass_100) |
+| Variable           | Type   | Description                                                  |
+| ------------------ | ------ | ------------------------------------------------------------ |
+| name_prefix        | string | Prefix for resource names                                    |
+| environment        | string | `staging` or `production`; picks the default error page copy |
+| alb_dns_name       | string | DNS name of the ALB origin                                   |
+| domain_name        | string | Domain name for the distribution                             |
+| route53_zone_id    | string | Route 53 zone ID for certificate validation                  |
+| error_page_content | string | Custom HTML for 503 error page                               |
+| price_class        | string | CloudFront price class (default: PriceClass_100)             |
 
 Requires an `aws.us_east_1` provider alias (CloudFront certificates must be in us-east-1).
 
