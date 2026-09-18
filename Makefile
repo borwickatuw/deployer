@@ -192,11 +192,23 @@ security-secrets-init: ## Bootstrap/regenerate .secrets.baseline (review the dif
 	@uv run --group dev detect-secrets scan --baseline .secrets.baseline
 
 .PHONY: security-updates
-security-updates: ## CVE scan + outdated-package report (quarterly review)
+security-updates: ## Report only: CVE scan + outdated packages (writes nothing)
 	@echo "=== CVE + adverse-status scan ==="
 	@uv audit
 	@echo "=== Outdated packages ==="
 	@uv pip list --outdated
+
+# NOTE the singular name. `security-update` (this target) REWRITES uv.lock;
+# `security-updates` above only reports. The two names are one character
+# apart because two claude-meta guides name them independently --
+# best-practices/PYTHON.md section 15 for this one, SECURITY.md section 6b
+# for the report. Recovering from the wrong one is `git checkout uv.lock`.
+# Run `make test` after this target, not before committing the lock blind.
+.PHONY: security-update
+security-update: ## Rewrite uv.lock with upgraded deps, then re-sync (run make test after)
+	@echo "=== Upgrading the lockfile (this WRITES uv.lock) ==="
+	@uv lock --upgrade
+	@uv sync --group dev
 
 # =============================================================================
 # Code Analysis
