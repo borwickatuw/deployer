@@ -211,6 +211,7 @@ def _deployment(
     failed: int = 0,
     rollout_state: str | None = "",
     status: str = "PRIMARY",
+    task_definition: str | None = None,
 ) -> dict:
     """Build one ECS deployment dict."""
     deployment = {
@@ -222,6 +223,8 @@ def _deployment(
     }
     if rollout_state is not None:
         deployment["rolloutState"] = rollout_state
+    if task_definition is not None:
+        deployment["taskDefinition"] = task_definition
     return deployment
 
 
@@ -771,6 +774,11 @@ class TestStableRolloutFailed:
 
 TASK_DEF_NEW = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:8"
 TASK_DEF_OLD = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:7"
+
+
+def _updated(*service_names: str) -> dict[str, str]:
+    """An updated-services map shaped like the one ``deploy_services`` returns."""
+    return dict.fromkeys(service_names, TASK_DEF_NEW)
 
 
 class TestStableRollbackDetection:
@@ -1443,21 +1451,22 @@ class TestWaitForStableEarlyExits:
 
     def test_dry_run_returns_empty_and_prints(self, sleeps, capsys):
         result = wait_for_stable(
-            _ctx(ScriptedClient(), config={"services": {"web": {}}}, dry_run=True)
+            _ctx(ScriptedClient(), config={"services": {"web": {}}}, dry_run=True),
+            _updated("web"),
         )
         assert result == []
         out = _plain(capsys.readouterr().out)
         assert "[dry-run] aws ecs wait services-stable" in out
 
-    def test_no_services_returns_empty(self, sleeps):
-        """The early return also protects ThreadPoolExecutor(max_workers=0)."""
-        assert wait_for_stable(_ctx(ScriptedClient(), config={"services": {}})) == []
-
-    def test_no_services_key_returns_empty(self, sleeps):
-        assert wait_for_stable(_ctx(ScriptedClient())) == []
+    def test_no_updated_services_returns_empty(self, sleeps):
+        """Nothing deployed, nothing waited on — the early return also
+        protects ThreadPoolExecutor(max_workers=0), which is a ValueError."""
+        client = ScriptedClient()
+        assert wait_for_stable(_ctx(client, config={"services": {"web": {}}}), {}) == []
+        assert client.calls == []
 
     def test_header_is_logged_before_the_dry_run_check(self, sleeps, capsys):
-        wait_for_stable(_ctx(ScriptedClient(), dry_run=True))
+        wait_for_stable(_ctx(ScriptedClient(), dry_run=True), _updated("web"))
         assert "Waiting for services to stabilize..." in _plain(capsys.readouterr().out)
 
 
@@ -1469,9 +1478,13 @@ class TestWaitForStable:
         # One repeating response, because two workers share this client: it is
         # both "stable" for the stability loop and "not load balanced" for the
         # target-group lookup, so thread interleaving cannot change the outcome.
-        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        client = ScriptedClient(
+            describe_services=_stable_response(
+                1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW
+            )
+        )
         ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
-        assert wait_for_stable(ctx) == []
+        assert wait_for_stable(ctx, _updated("web", "worker")) == []
         # Per service: two stability polls (settle window) + target lookup.
         assert len(client.calls_to("describe_services")) == 6
 
@@ -1484,22 +1497,23 @@ class TestWaitForStable:
             Name="tg", Protocol="HTTP", Port=80, VpcId=vpc_id, TargetType="ip"
         )["TargetGroups"][0]["TargetGroupArn"]
 
+        stable = _stable_response(1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW)
         client = ScriptedClient(
             describe_services=[
-                _stable_response(1, 1, rollout_state="COMPLETED"),
-                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
+                stable,
+                stable,  # settle window
                 _describe_services(load_balancers=[{"targetGroupArn": target_group_arn}]),
             ]
         )
         ctx = _ctx(client, config={"services": {"web": {}}})
-        assert wait_for_stable(ctx) == ["web"]
+        assert wait_for_stable(ctx, _updated("web")) == ["web"]
 
     def test_first_error_wins_and_propagates(self, sleeps):
         """MUST-PIN 5: a failing future re-raises its original exception."""
         client = ScriptedClient(describe_services={"services": []})
         ctx = _ctx(client, config={"services": {"web": {}}})
         with pytest.raises(DeploymentError) as exc_info:
-            wait_for_stable(ctx)
+            wait_for_stable(ctx, _updated("web"))
         assert exc_info.value.error_type == "service_not_found"
 
     def test_every_service_is_visited_even_when_one_fails(self, sleeps):
@@ -1507,7 +1521,7 @@ class TestWaitForStable:
         client = ScriptedClient(describe_services={"services": []})
         ctx = _ctx(client, config={"services": {"web": {}, "worker": {}, "beat": {}}})
         with pytest.raises(DeploymentError):
-            wait_for_stable(ctx)
+            wait_for_stable(ctx, _updated("web", "worker", "beat"))
         assert len(client.calls_to("describe_services")) == 3
 
     def test_the_raised_error_is_one_of_the_failures(self, sleeps):
@@ -1515,37 +1529,20 @@ class TestWaitForStable:
         client = ScriptedClient(describe_services={"services": []})
         ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
         with pytest.raises(DeploymentError) as exc_info:
-            wait_for_stable(ctx)
+            wait_for_stable(ctx, _updated("web", "worker"))
         assert exc_info.value.service_name in {"web", "worker"}
-
-    def test_service_names_come_from_config_services_keys(self, sleeps):
-        """With no updated-services map, every configured service is waited on."""
-        client = ScriptedClient(
-            describe_services=[
-                _stable_response(1, 1, rollout_state="COMPLETED"),
-                _stable_response(1, 1, rollout_state="COMPLETED"),  # settle window
-                _describe_services(),
-            ]
-        )
-        ctx = _ctx(client, config={"services": {"beat": {"image": "web"}}})
-        assert wait_for_stable(ctx) == []
-        assert client.calls_to("describe_services")[0]["services"] == ["beat"]
 
     def test_only_updated_services_are_waited_on(self, sleeps):
         """The map from deploy_services scopes the wait: a skipped service is
         never described."""
-        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        client = ScriptedClient(
+            describe_services=_stable_response(
+                1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW
+            )
+        )
         ctx = _ctx(client, config={"services": {"web": {}, "cantaloupe": {}}})
-        assert wait_for_stable(ctx, {"web": None}) == []
+        assert wait_for_stable(ctx, _updated("web")) == []
         assert all(call["services"] == ["web"] for call in client.calls_to("describe_services"))
-
-    def test_empty_updated_services_returns_immediately(self, sleeps):
-        """Nothing deployed, nothing waited on — also protects
-        ThreadPoolExecutor(max_workers=0)."""
-        client = ScriptedClient()
-        ctx = _ctx(client, config={"services": {"web": {}}})
-        assert wait_for_stable(ctx, {}) == []
-        assert client.calls == []
 
     def test_updated_services_map_carries_the_expected_arn(self, sleeps):
         """A service that settles on a different revision than the map says
@@ -1557,6 +1554,18 @@ class TestWaitForStable:
         ctx = _ctx(client, config={"services": {"web": {}}})
         with pytest.raises(DeploymentError) as exc_info:
             wait_for_stable(ctx, {"web": TASK_DEF_NEW})
+        assert exc_info.value.error_type == "rollback_detected"
+
+    def test_every_waited_service_is_arn_checked(self, sleeps):
+        """The map is required, so no service can slip past the identity
+        check: the one settling on the old revision fails the whole wait."""
+        stable_on_old = _describe_services(
+            deployments=[_deployment(running=1, desired=1, task_definition=TASK_DEF_OLD)]
+        )
+        client = ScriptedClient(describe_services=stable_on_old)
+        ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
+        with pytest.raises(DeploymentError) as exc_info:
+            wait_for_stable(ctx, _updated("web", "worker"))
         assert exc_info.value.error_type == "rollback_detected"
 
 
@@ -1575,10 +1584,14 @@ class TestWaitForStableTiming:
         set_timer(None)
 
     def test_each_service_records_a_sub_step(self, sleeps, timer):
-        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        client = ScriptedClient(
+            describe_services=_stable_response(
+                1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW
+            )
+        )
         ctx = _ctx(client, config={"services": {"web": {}, "worker": {}}})
         with timer.step("wait_for_stable") as step:
-            assert wait_for_stable(ctx) == []
+            assert wait_for_stable(ctx, _updated("web", "worker")) == []
         assert sorted(sub.name for sub in step.sub_steps) == ["web", "worker"]
         assert all(sub.success for sub in step.sub_steps)
         assert all(sub.end_time >= sub.start_time for sub in step.sub_steps)
@@ -1588,7 +1601,7 @@ class TestWaitForStableTiming:
         ctx = _ctx(client, config={"services": {"web": {}}})
         with timer.step("wait_for_stable") as step:
             with pytest.raises(DeploymentError):
-                wait_for_stable(ctx)
+                wait_for_stable(ctx, _updated("web"))
         (sub,) = step.sub_steps
         assert sub.name == "web"
         assert sub.success is False
@@ -1597,18 +1610,26 @@ class TestWaitForStableTiming:
     def test_no_open_step_records_nothing(self, sleeps, timer):
         """Outside a step() context the wait runs untimed — the images.py
         guard, so direct callers never trip the sub_step precondition."""
-        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        client = ScriptedClient(
+            describe_services=_stable_response(
+                1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW
+            )
+        )
         ctx = _ctx(client, config={"services": {"web": {}}})
-        assert wait_for_stable(ctx) == []
+        assert wait_for_stable(ctx, _updated("web")) == []
         assert timer.report.steps == []
 
     def test_no_timer_at_all_still_works(self, sleeps):
         from deployer.timing import set_timer
 
         set_timer(None)
-        client = ScriptedClient(describe_services=_stable_response(1, 1, rollout_state="COMPLETED"))
+        client = ScriptedClient(
+            describe_services=_stable_response(
+                1, 1, rollout_state="COMPLETED", task_definition=TASK_DEF_NEW
+            )
+        )
         ctx = _ctx(client, config={"services": {"web": {}}})
-        assert wait_for_stable(ctx) == []
+        assert wait_for_stable(ctx, _updated("web")) == []
 
 
 # ===========================================================================

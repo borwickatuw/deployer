@@ -1154,7 +1154,7 @@ def _timed_wait_for_service_and_targets(
 
 def wait_for_stable(
     ctx: DeploymentContext,
-    updated_services: dict[str, str] | None = None,
+    updated_services: dict[str, str],
     stability: StabilityConfig = StabilityConfig(),  # noqa: B008
 ) -> list[str]:
     """Wait for deployed services to stabilize with active error detection.
@@ -1173,8 +1173,7 @@ def wait_for_stable(
             Only these services are waited on, and each must end up with
             PRIMARY running its ARN — a circuit-breaker rollback swaps PRIMARY
             back to the healthy *old* revision, which otherwise looks exactly
-            like success. None waits on every configured service with no
-            identity check (direct callers that did not deploy).
+            like success.
         stability: Polling configuration for stability checks.
 
     Returns:
@@ -1190,11 +1189,7 @@ def wait_for_stable(
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs wait services-stable")
         return []
 
-    if updated_services is None:
-        service_arns: dict[str, str | None] = dict.fromkeys(ctx.config.get("services", {}))
-    else:
-        service_arns = dict(updated_services)
-    if not service_arns:
+    if not updated_services:
         # Nothing deployed, nothing to wait for. Also protects
         # ThreadPoolExecutor(max_workers=0), which is a ValueError.
         return []
@@ -1204,7 +1199,7 @@ def wait_for_stable(
     health_check_failures = []
 
     # Wait for all services in parallel
-    with ThreadPoolExecutor(max_workers=len(service_arns)) as executor:
+    with ThreadPoolExecutor(max_workers=len(updated_services)) as executor:
         futures = {
             executor.submit(
                 _timed_wait_for_service_and_targets,
@@ -1214,7 +1209,7 @@ def wait_for_stable(
                 stability,
                 expected_arn,
             ): service_name
-            for service_name, expected_arn in service_arns.items()
+            for service_name, expected_arn in updated_services.items()
         }
 
         # Process results as they complete - first fatal error fails deployment
