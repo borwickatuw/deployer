@@ -19,6 +19,7 @@ advice block is reserved for BotoCoreError, which is the connectivity and
 configuration family it actually describes.
 """
 
+import inspect
 import json
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,8 @@ from deployer.deploy.extensions import create_database_extensions
 from deployer.utils import Colors
 
 EXTENSIONS_LAMBDA = "myapp-staging-create-db-users"
+APP_NAME = "myapp"
+ENVIRONMENT = "staging"
 
 
 def _lines(capsys):
@@ -65,8 +68,26 @@ def _success(message: str) -> str:
     return f"  {message} {Colors.GREEN}[done]{Colors.NC}"
 
 
+@pytest.mark.usefixtures("mocked_aws")
 class TestCreateDatabaseExtensions:
-    """Tests for create_database_extensions()."""
+    """Tests for create_database_extensions().
+
+    The whole class runs against moto: create_database_extensions() reads the
+    SSM skip record on every non-dry-run call, so even the error-path tests
+    reach AWS.
+    """
+
+    def test_app_name_and_environment_are_required(self):
+        """The deployment identity keys the SSM skip record, so it is not optional.
+
+        A default would silently disable the skip for any caller that forgot
+        to pass it — the deploy would re-invoke the Lambda every run.
+        """
+        params = inspect.signature(create_database_extensions).parameters
+
+        for name in ("app_name", "environment"):
+            assert params[name].default is inspect.Parameter.empty
+            assert params[name].kind is inspect.Parameter.KEYWORD_ONLY
 
     def test_skips_when_no_extensions(self):
         """No-op when deploy.toml has no extensions."""
@@ -74,21 +95,27 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {}}
 
         # Should return without doing anything
-        create_database_extensions(config, env_config, "us-west-2")
+        create_database_extensions(
+            config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+        )
 
     def test_skips_when_no_database_section(self):
         """No-op when deploy.toml has no database section."""
         config = {}
         env_config = {}
 
-        create_database_extensions(config, env_config, "us-west-2")
+        create_database_extensions(
+            config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+        )
 
     def test_skips_when_extensions_empty(self):
         """No-op when extensions list is empty."""
         config = {"database": {"type": "postgresql", "extensions": []}}
         env_config = {"database": {}}
 
-        create_database_extensions(config, env_config, "us-west-2")
+        create_database_extensions(
+            config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+        )
 
     def test_fails_fast_when_lambda_missing(self):
         """Fails with clear error when extensions declared but no lambda name."""
@@ -96,7 +123,9 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"host": "db.example.com"}}
 
         with pytest.raises(RuntimeError, match="Missing extensions_lambda"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
     def test_dry_run_skips_invocation(self):
         """Dry run logs but does not invoke Lambda."""
@@ -104,7 +133,14 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
         with patch("deployer.deploy.extensions.boto3") as mock_boto3:
-            create_database_extensions(config, env_config, "us-west-2", dry_run=True)
+            create_database_extensions(
+                config,
+                env_config,
+                "us-west-2",
+                app_name=APP_NAME,
+                environment=ENVIRONMENT,
+                dry_run=True,
+            )
             mock_boto3.client.assert_not_called()
 
     @patch("deployer.deploy.extensions.boto3")
@@ -123,7 +159,9 @@ class TestCreateDatabaseExtensions:
         config = {"database": {"extensions": ["unaccent", "pg_bigm"]}}
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
-        create_database_extensions(config, env_config, "us-west-2")
+        create_database_extensions(
+            config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+        )
 
         mock_boto3.client.assert_called_once_with("lambda", region_name="us-west-2")
         mock_client.invoke.assert_called_once_with(
@@ -152,7 +190,9 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "nonexistent-lambda"}}
 
         with pytest.raises(RuntimeError, match="not found"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
     @patch("deployer.deploy.extensions.boto3")
     def test_handles_access_denied(self, mock_boto3):
@@ -169,7 +209,9 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
         with pytest.raises(RuntimeError, match="Access denied"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
     @patch("deployer.deploy.extensions.boto3")
     def test_handles_lambda_function_error(self, mock_boto3):
@@ -190,7 +232,9 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
         with pytest.raises(RuntimeError, match="Extensions Lambda failed"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
     @patch("deployer.deploy.extensions.boto3")
     def test_handles_generic_client_error(self, mock_boto3):
@@ -207,9 +251,12 @@ class TestCreateDatabaseExtensions:
         env_config = {"database": {"extensions_lambda": "myapp-staging-create-db-users"}}
 
         with pytest.raises(RuntimeError, match="Lambda invocation failed"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
 
+@pytest.mark.usefixtures("mocked_aws")
 class TestAdviceBlocks:
     """Pin the operator-facing advice printed by every failure path."""
 
@@ -247,7 +294,13 @@ class TestAdviceBlocks:
         config = {"database": {"extensions": ["unaccent"]}}
 
         with pytest.raises(RuntimeError, match=match):
-            create_database_extensions(config, {"database": env_config}, "us-west-2")
+            create_database_extensions(
+                config,
+                {"database": env_config},
+                "us-west-2",
+                app_name=APP_NAME,
+                environment=ENVIRONMENT,
+            )
 
         _assert_blank_separated(capsys)
 
@@ -264,7 +317,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="Extensions Lambda failed"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         _assert_blank_separated(capsys)
 
@@ -274,7 +329,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"host": "db.example.com"}}
 
         with pytest.raises(RuntimeError, match="Missing extensions_lambda"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys) == [
             _info("Creating database extensions: unaccent, pg_bigm"),
@@ -305,7 +362,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="not found"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys)[1:] == [
             _error(f"Lambda function '{EXTENSIONS_LAMBDA}' not found."),
@@ -327,7 +386,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="Access denied"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys)[1:] == [
             _error(f"Permission denied invoking Lambda '{EXTENSIONS_LAMBDA}'."),
@@ -348,7 +409,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="Lambda invocation failed"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys)[1:] == [
             _error(
@@ -368,7 +431,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="Failed to invoke extensions Lambda"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys)[1:] == [
             _error(f"Could not reach Lambda '{EXTENSIONS_LAMBDA}': {error}"),
@@ -388,7 +453,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(TypeError, match="not JSON serializable"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert "network connectivity" not in capsys.readouterr().out
 
@@ -407,7 +474,9 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with pytest.raises(RuntimeError, match="Extensions Lambda failed"):
-            create_database_extensions(config, env_config, "us-west-2")
+            create_database_extensions(
+                config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+            )
 
         assert _lines(capsys)[1:] == [
             _error(f"Lambda '{EXTENSIONS_LAMBDA}' returned an error: DatabaseError"),
@@ -428,7 +497,9 @@ class TestAdviceBlocks:
         config = {"database": {"extensions": ["unaccent", "pg_bigm"]}}
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
-        create_database_extensions(config, env_config, "us-west-2")
+        create_database_extensions(
+            config, env_config, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
+        )
 
         assert _lines(capsys)[-1] == _success("Extensions ready: unaccent, pg_bigm")
 
@@ -438,7 +509,14 @@ class TestAdviceBlocks:
         env_config = {"database": {"extensions_lambda": EXTENSIONS_LAMBDA}}
 
         with patch("deployer.deploy.extensions.boto3"):
-            create_database_extensions(config, env_config, "us-west-2", dry_run=True)
+            create_database_extensions(
+                config,
+                env_config,
+                "us-west-2",
+                app_name=APP_NAME,
+                environment=ENVIRONMENT,
+                dry_run=True,
+            )
 
         assert _lines(capsys)[-1] == (
             f"  {Colors.YELLOW}⚠{Colors.NC} DRY RUN: Would invoke Lambda "
@@ -471,7 +549,7 @@ class TestExtensionsSkip:
         self._invoke_ok(mock_boto3)
 
         create_database_extensions(
-            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
 
         mock_boto3.client.return_value.invoke.assert_called_once()
@@ -487,12 +565,12 @@ class TestExtensionsSkip:
     def test_second_run_skips_the_lambda(self, mock_boto3, capsys):
         self._invoke_ok(mock_boto3)
         create_database_extensions(
-            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
         mock_boto3.client.return_value.invoke.reset_mock()
 
         create_database_extensions(
-            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
 
         mock_boto3.client.return_value.invoke.assert_not_called()
@@ -502,13 +580,13 @@ class TestExtensionsSkip:
     def test_changed_extensions_invoke_again(self, mock_boto3):
         self._invoke_ok(mock_boto3)
         create_database_extensions(
-            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
         mock_boto3.client.return_value.invoke.reset_mock()
 
         grown = {"database": {"extensions": ["unaccent", "pg_bigm", "pg_trgm"]}}
         create_database_extensions(
-            grown, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            grown, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
 
         mock_boto3.client.return_value.invoke.assert_called_once()
@@ -518,7 +596,7 @@ class TestExtensionsSkip:
         """A restored or re-pointed database must not inherit the skip."""
         self._invoke_ok(mock_boto3)
         create_database_extensions(
-            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
         mock_boto3.client.return_value.invoke.reset_mock()
 
@@ -530,22 +608,10 @@ class TestExtensionsSkip:
             }
         }
         create_database_extensions(
-            self.CONFIG, moved, "us-west-2", app_name="myapp", environment="staging"
+            self.CONFIG, moved, "us-west-2", app_name=APP_NAME, environment=ENVIRONMENT
         )
 
         mock_boto3.client.return_value.invoke.assert_called_once()
-
-    @patch("deployer.deploy.extensions.boto3")
-    def test_without_app_and_environment_no_ssm_is_touched(self, mock_boto3):
-        """Callers that don't identify the deployment get no skip and no SSM."""
-        self._invoke_ok(mock_boto3)
-
-        create_database_extensions(self.CONFIG, self.ENV_CONFIG, "us-west-2")
-
-        from deployer.aws import ssm
-
-        stored, _ = ssm.get_parameter("/myapp/staging/db-extensions")
-        assert stored is None
 
     @patch("deployer.deploy.extensions.boto3")
     def test_failed_lambda_stores_nothing(self, mock_boto3):
@@ -560,7 +626,11 @@ class TestExtensionsSkip:
 
         with pytest.raises(RuntimeError):
             create_database_extensions(
-                self.CONFIG, self.ENV_CONFIG, "us-west-2", app_name="myapp", environment="staging"
+                self.CONFIG,
+                self.ENV_CONFIG,
+                "us-west-2",
+                app_name=APP_NAME,
+                environment=ENVIRONMENT,
             )
 
         from deployer.aws import ssm

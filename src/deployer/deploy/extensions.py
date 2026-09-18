@@ -41,9 +41,10 @@ def create_database_extensions(
     config: dict,
     env_config: dict,
     region: str,
+    *,
+    app_name: str,
+    environment: str,
     dry_run: bool = False,
-    app_name: str | None = None,
-    environment: str | None = None,
 ) -> None:
     """Invoke the db-users Lambda to create PostgreSQL extensions.
 
@@ -51,10 +52,10 @@ def create_database_extensions(
         config: Raw deploy.toml dict (has config["database"]["extensions"])
         env_config: Resolved config.toml dict (has env_config["database"]["extensions_lambda"])
         region: AWS region
+        app_name: Application name; keys the SSM record backing the
+            skip-when-unchanged check.
+        environment: Environment name; the other half of that key.
         dry_run: If True, log what would happen without invoking
-        app_name: Application name; with environment, enables the SSM-backed
-            skip when the declared extensions and database are unchanged.
-        environment: Environment name (see app_name).
 
     Raises:
         RuntimeError: If the Lambda invocation fails or returns an error
@@ -73,17 +74,12 @@ def create_database_extensions(
         )
         return
 
-    # The parameter name and the state it would hold are computed together or
-    # not at all -- skip detection needs an app and an environment to key on.
-    skip_state: tuple[str, str] | None = None
-    if app_name and environment:
-        param_name = _extensions_state_param_name(app_name, environment)
-        state = _current_extensions_state(env_config, extensions)
-        stored, _error = ssm.get_parameter(param_name)
-        if stored == state:
-            log_success(f"Extensions unchanged ({', '.join(sorted(extensions))}), skipping")
-            return
-        skip_state = (param_name, state)
+    param_name = _extensions_state_param_name(app_name, environment)
+    state = _current_extensions_state(env_config, extensions)
+    stored, _error = ssm.get_parameter(param_name)
+    if stored == state:
+        log_success(f"Extensions unchanged ({', '.join(sorted(extensions))}), skipping")
+        return
 
     response = _invoke_extensions_lambda(lambda_name, extensions, region)
     _raise_on_function_error(response, lambda_name)
@@ -92,16 +88,14 @@ def create_database_extensions(
     created = result.get("extensions", [])
     log_success(f"Extensions ready: {', '.join(created)}")
 
-    if skip_state is not None:
-        param_name, state = skip_state
-        success, error = ssm.put_parameter(
-            name=param_name,
-            value=state,
-            description="Extensions created by the last deploy (skip detection)",
-            overwrite=True,
-        )
-        if not success:
-            log_warning(f"Failed to store extensions state: {error}")
+    success, error = ssm.put_parameter(
+        name=param_name,
+        value=state,
+        description="Extensions created by the last deploy (skip detection)",
+        overwrite=True,
+    )
+    if not success:
+        log_warning(f"Failed to store extensions state: {error}")
 
 
 def _require_lambda_name(env_config: dict, extensions: list[str]) -> str:
