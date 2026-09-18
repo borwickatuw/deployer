@@ -80,6 +80,7 @@ uv run python bin/emergency.py rollback myapp-production --service web
 - [DESIGN.md](docs/internal/DESIGN.md) - Architecture and three-layer config separation
 - [PRODUCTION.md](docs/operations/PRODUCTION.md) - Production operations and maintenance
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [GOVERNANCE.md](docs/GOVERNANCE.md) - Access, risk, continuity and privacy posture
 - [SHARED-ENVIRONMENTS.md](docs/operations/SHARED-ENVIRONMENTS.md) - Multiple apps sharing infrastructure
 - [HOWTO-PUBLISH.md](docs/internal/HOWTO-PUBLISH.md) - Publishing to the public repository
 - [someday-maybe/](docs/someday-maybe/) - Future improvement ideas, one file per idea

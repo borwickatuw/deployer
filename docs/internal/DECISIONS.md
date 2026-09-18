@@ -215,7 +215,9 @@ ______________________________________________________________________
 - Initial setup requires Administrator access (bootstrap problem)
 - Developers must use correct AWS profile for each operation
 
-**See also:** [iam-policies/README.md](../../iam-policies/README.md) for policy details
+**See also:** `modules/bootstrap/` for the policies themselves — the
+2026-01-30 decision below moved them out of the static `iam-policies/` JSON
+files this entry originally pointed at.
 
 ______________________________________________________________________
 
