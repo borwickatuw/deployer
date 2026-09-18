@@ -123,6 +123,7 @@ A single `tofu apply` creates all of this:
 
 | Script                     | Purpose                                                       |
 | -------------------------- | ------------------------------------------------------------- |
+| `bin/a11y.py`              | pa11y check of the CloudFront error page (WCAG 2.1 AA)        |
 | `bin/capacity-report.py`   | ECS right-sizing recommendations                              |
 | `bin/cognito.py`           | Cognito user management                                       |
 | `bin/deploy.py`            | Build images, run migrations, deploy to ECS                   |

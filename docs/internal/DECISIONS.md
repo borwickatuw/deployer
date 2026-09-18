@@ -1020,6 +1020,39 @@ unit that applied it and the closing of the 53j arc.
 
 ______________________________________________________________________
 
+## 2026-09-18: The accessibility surface is one static error page
+
+**Decision:** This repo's WCAG responsibility is the CloudFront 503 page built
+in `modules/cloudfront-alb/locals.tf`, nothing more. It targets WCAG 2.1 Level
+AA and is checked by `make a11y` (pa11y, both environment variants). When an
+environment passes `error_page_content` to the module, that page replaces the
+default wholesale and its accessibility belongs to the supplying environment.
+
+**Alternatives considered:**
+
+- **No accessibility scope at all.** Deployer has no app UI, so the ACCESSIBILITY
+  guide reads N/A at a glance. But the module really does serve HTML to end
+  users of every deployed app, at exactly the moment the app is down — an
+  unusually bad moment to be unreadable.
+- **The full guide harness** — Docker Compose pa11y service against a running
+  server, keyboard/screen-reader checklists, a testing guide. There is no server
+  to run and no interactive element on the page: no links, no buttons, no form
+  controls, so tab order, focus indicators and keyboard traps have no subject.
+
+**Reasoning:** The page is static, non-interactive, and rendered from an
+OpenTofu heredoc rather than served by an app, so the checkable part is markup
+semantics and contrast. `bin/a11y.py` renders the heredoc the way OpenTofu does
+and hands the result to pa11y, which keeps the check honest without inventing a
+web-app testing apparatus around a single file. The renderer models exactly the
+two template constructs the heredoc uses and fails loudly on anything else, so
+the page growing a feature surfaces as a broken check rather than a silently
+wrong one.
+
+**See also:** claude-meta `best-practices/ACCESSIBILITY.md` Practice #8, which
+draws the same fragment-versus-host boundary for storage-scripts' HTML emitters.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown

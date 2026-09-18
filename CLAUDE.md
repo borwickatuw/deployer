@@ -159,6 +159,20 @@ This is infrastructure code. Security focus areas:
 
 Run `make security` (bandit + uv audit + detect-secrets + checkov) before committing.
 
+## Posture: accessibility
+
+Deployer is a CLI plus OpenTofu modules — no web app, no GUI, no templating
+framework. The entire HTML surface is the CloudFront 503 page built in
+`modules/cloudfront-alb/locals.tf` and uploaded to S3, and it targets **WCAG
+2.1 Level AA**. `make a11y` renders both environment variants and runs pa11y
+against them.
+
+An environment that supplies its own `error_page_content` to the
+`cloudfront-alb` module replaces that page wholesale; its accessibility is the
+supplying environment's responsibility, not this repo's. See
+[docs/internal/DECISIONS.md](docs/internal/DECISIONS.md) "The accessibility
+surface is one static error page".
+
 ## pysmelly
 
 Read [docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md) before running pysmelly code smell analysis on this project.

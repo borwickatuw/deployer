@@ -114,6 +114,14 @@ test-cov: ## Run tests with coverage report
 	@echo "=== Running Tests with Coverage ==="
 	@uv run pytest --cov --cov-report=term-missing
 
+# Not part of `check`: pa11y arrives through npx, so this target needs node and
+# the network. The surface it covers is the CloudFront 503 page in
+# modules/cloudfront-alb/locals.tf — the only HTML this repo emits.
+.PHONY: a11y
+a11y: ## Run pa11y (WCAG 2.1 AA) against the rendered CloudFront error page
+	@echo "=== Accessibility (pa11y) ==="
+	@uv run bin/a11y.py
+
 .PHONY: check
 check: lint test format-docs-check ## Run lint, tests, and docs formatting
 	@echo ""
