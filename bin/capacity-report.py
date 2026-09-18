@@ -97,7 +97,9 @@ def _count_ecs_oom(services, cluster_name: str, ecs_client, days: int) -> int:
             task_def = response["taskDefinition"]
             cpu_allocated = int(task_def.get("cpu", 256))
             memory_allocated = int(task_def.get("memory", 512))
-        except Exception:  # noqa: BLE001 — a missing task definition only costs the recommendation
+        # Broad by design (BLE001 is per-file-ignored for bin/): a missing task
+        # definition only costs the recommendation, not the report.
+        except Exception:
             cpu_allocated, memory_allocated = 256, 512
 
         oom_events = get_oom_events(

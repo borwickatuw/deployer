@@ -481,7 +481,9 @@ def _describe_live_scaling(cluster_name: str, service_name: str) -> str:
             ResourceIds=[f"service/{cluster_name}/{service_name}"],
             ScalableDimension="ecs:service:DesiredCount",
         ).get("ScalableTargets", [])
-    except Exception as e:  # noqa: BLE001 — read-only report, keep printing
+    # Broad by design (BLE001 is per-file-ignored for bin/): read-only report,
+    # keep printing.
+    except Exception as e:
         return f"live: unable to read ({e})"
 
     if not targets:
@@ -946,7 +948,7 @@ def cmd_incident_start(environment: str, description: str) -> int:
                     f"- {name}: {state.running_count}/{state.desired_count} running"
                     for name, state in sorted(services.items())
                 )
-    except Exception as e:  # noqa: BLE001 — see below
+    except Exception as e:  # see below
         # Deliberately broad, and deliberately unchanged by Phase 53i-3b. This
         # is honest degradation, not misattribution: the incident file is
         # still written, and it records *why* the state is missing rather than

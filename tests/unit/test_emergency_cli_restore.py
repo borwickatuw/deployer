@@ -340,7 +340,7 @@ class TestCmdRestoreDbPointInTime:
         # Pinned, not endorsed: no tzinfo is attached, so the value handed to
         # boto3 is naive and interpreted as local time by the SDK.
         assert emergency.cmd_restore_db(ENV, snapshot=None, time="2026-08-13T12:00:00") == 0
-        assert restore.from_time[0][1] == datetime(2026, 8, 13, 12, 0)  # noqa: DTZ001
+        assert restore.from_time[0][1] == datetime(2026, 8, 13, 12, 0)
 
     def test_an_unparseable_timestamp_returns_1_before_any_aws_call(self, logger, restore, capsys):
         assert emergency.cmd_restore_db(ENV, snapshot=None, time="yesterday") == 1
