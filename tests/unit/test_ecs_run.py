@@ -282,6 +282,32 @@ class TestCmdList:
         assert "Running: 2/2" in out
         assert "Containers: web, nginx" in out
 
+    def test_an_unreadable_task_definition_reports_itself_in_place(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """The listing keeps rendering, and never reports a failed read as "no containers"."""
+
+        class _Service:
+            name = "web"
+            status = "ACTIVE"
+            running_count = 2
+            desired_count = 2
+            task_definition = "myapp-web:7"
+
+        def boom(_td):
+            raise RuntimeError("AccessDenied")
+
+        monkeypatch.setattr(
+            ecs_run, "resolve_environment", lambda _e: (tmp_path, "myapp-staging-cluster")
+        )
+        monkeypatch.setattr(ecs_run.ecs, "get_services", lambda _cluster: [_Service()])
+        monkeypatch.setattr(ecs_run.ecs, "get_task_containers", boom)
+
+        assert ecs_run.cmd_list("myapp-staging") == 0
+        out = capsys.readouterr().out
+        assert "[+] web" in out
+        assert "Containers: unable to read (AccessDenied)" in out
+
     def test_undeployed_environment_returns_1(self, monkeypatch):
         monkeypatch.setattr(ecs_run, "resolve_environment", lambda _e: None)
         assert ecs_run.cmd_list("myapp-staging") == 1

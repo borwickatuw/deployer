@@ -105,9 +105,14 @@ def _run_ecs_command(
     ecs_client = boto3.client("ecs")
 
     print(f"Getting service configuration for '{service_name}'...")
-    network_config, service_task_def = ecs.get_service_info(
-        cluster_name, service_name, ecs_client=ecs_client
-    )
+    # This command starts a task; aborting with a named reason is the right
+    # answer when the service cannot be read at all (DECISIONS.md 2026-08-18
+    # "Error Contracts"). A genuinely absent service still returns (None, None)
+    # and is handled below.
+    with exit_on(RuntimeError):
+        network_config, service_task_def = ecs.get_service_info(
+            cluster_name, service_name, ecs_client=ecs_client
+        )
 
     if not network_config:
         print(f"Error: Could not get network config for service '{service_name}'", file=sys.stderr)
@@ -127,7 +132,8 @@ def _run_ecs_command(
     else:
         task_definition = service_task_def
 
-    containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
+    with exit_on(RuntimeError):
+        containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
 
     if not container_name:
         if not containers:
@@ -221,7 +227,14 @@ def cmd_list(environment: str) -> int:
 
         task_def = svc.task_definition
         if task_def:
-            containers = ecs.get_task_containers(task_def)
+            # Render boundary: this is a read-only listing, so one unreadable
+            # task definition reports itself in place instead of aborting the
+            # whole list -- and never as "no containers".
+            try:
+                containers = ecs.get_task_containers(task_def)
+            except RuntimeError as e:
+                print(f"      Containers: unable to read ({e})")
+                containers = []
             if containers:
                 container_names = [c["name"] for c in containers]
                 print(f"      Containers: {', '.join(container_names)}")

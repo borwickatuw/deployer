@@ -102,15 +102,22 @@ def _count_ecs_oom(services, cluster_name: str, ecs_client, days: int) -> int:
         except Exception:
             cpu_allocated, memory_allocated = 256, 512
 
-        oom_events = get_oom_events(
-            cluster_name,
-            service.name,
-            since_hours=days * 24,
-            since_datetime=cutoff,
-            ecs_client=ecs_client,
-        )
-
         deploy_str = cutoff.strftime("%Y-%m-%d %H:%M UTC") if cutoff else "unknown"
+
+        # Render boundary (DECISIONS.md 2026-08-18 "Error Contracts"): this is
+        # a read-only report, so one unreadable service reports itself in place
+        # rather than aborting the rest -- and never as "no OOM kills".
+        try:
+            oom_events = get_oom_events(
+                cluster_name,
+                service.name,
+                since_hours=days * 24,
+                since_datetime=cutoff,
+                ecs_client=ecs_client,
+            )
+        except RuntimeError as e:
+            print(f"  {service.name}: unable to check for OOM kills ({e})", file=sys.stderr)
+            continue
 
         if not oom_events:
             print(f"  {service.name}: no OOM kills since deploy ({deploy_str})")
@@ -149,13 +156,18 @@ def _count_log_oom(services, log_group: str, logs_client, start_time, end_time_m
         cutoff = _deployment_cutoff(service.last_deployment_at)
         svc_start = cutoff or start_time
 
-        log_oom_events = search_logs_for_oom(
-            log_group,
-            int(svc_start.timestamp() * 1000),
-            end_time_ms,
-            cloudwatch_client=logs_client,
-            log_stream_prefix=f"{service.name}/",
-        )
+        # Render boundary: same reasoning as _count_ecs_oom above.
+        try:
+            log_oom_events = search_logs_for_oom(
+                log_group,
+                int(svc_start.timestamp() * 1000),
+                end_time_ms,
+                cloudwatch_client=logs_client,
+                log_stream_prefix=f"{service.name}/",
+            )
+        except RuntimeError as e:
+            print(f"  {service.name}: unable to search logs ({e})", file=sys.stderr)
+            continue
 
         if log_oom_events:
             total_oom += len(log_oom_events)

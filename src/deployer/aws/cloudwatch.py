@@ -1,6 +1,5 @@
 """AWS CloudWatch operations."""
 
-import sys
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -94,7 +93,13 @@ def search_logs_for_oom(
         log_stream_prefix: Optional prefix to filter log streams (e.g., "celery/").
 
     Returns:
-        List of OOM event dicts with timestamp, message, and log_stream.
+        List of OOM event dicts with timestamp, message, and log_stream. Empty
+        only when the window genuinely contains no matching events.
+
+    Raises:
+        RuntimeError: If the log group could not be searched. An empty result
+            meaning both "no OOM events" and "I could not look" is what
+            DECISIONS.md 2026-08-18 "Error Contracts" forbids.
     """
     # Patterns that indicate OOM kills
     filter_pattern = (
@@ -120,7 +125,14 @@ def _search_logs_boto3(
     client: Any,
     log_stream_prefix: str | None = None,
 ) -> list[dict]:
-    """Search logs using boto3 client with pagination."""
+    """Search logs using boto3 client with pagination.
+
+    Returns:
+        Matching log events, newest page first. Empty means no matches.
+
+    Raises:
+        RuntimeError: If the log group could not be searched.
+    """
     all_events: list[dict] = []
     max_pages = 10  # Limit pagination to avoid runaway queries
 
@@ -159,8 +171,4 @@ def _search_logs_boto3(
         return all_events
 
     except ClientError as e:
-        print(f"  Warning: Could not search CloudWatch logs: {e}", file=sys.stderr)
-        return []
-    except Exception as e:  # noqa: BLE001 — graceful fallback for log search
-        print(f"  Warning: Unexpected error searching logs: {e}", file=sys.stderr)
-        return []
+        raise RuntimeError(f"Could not search CloudWatch log group '{log_group}': {e}") from e

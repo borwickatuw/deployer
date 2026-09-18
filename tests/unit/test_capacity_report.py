@@ -124,6 +124,40 @@ class TestCountEcsOom:
         assert total == 1
         assert "Current memory: 512MB" in capsys.readouterr().out
 
+    def test_an_unreadable_service_says_so_and_does_not_count_as_clean(self, monkeypatch, capsys):
+        """A failed read must not print the reassuring "no OOM kills" line."""
+
+        def boom(*_a, **_kw):
+            raise RuntimeError("AccessDenied")
+
+        monkeypatch.setattr(capacity, "get_oom_events", boom)
+
+        total = capacity._count_ecs_oom([_Service()], "myapp-cluster", _EcsClient(), 7)
+
+        captured = capsys.readouterr()
+        assert total == 0
+        assert "unable to check for OOM kills (AccessDenied)" in captured.err
+        assert "no OOM kills" not in captured.out
+
+    def test_an_unreadable_service_does_not_stop_the_next_one(self, monkeypatch, capsys):
+        calls = []
+
+        def one_bad(_cluster, service_name, **_kw):
+            calls.append(service_name)
+            if service_name == "web":
+                raise RuntimeError("AccessDenied")
+            return ["e"]
+
+        monkeypatch.setattr(capacity, "get_oom_events", one_bad)
+
+        total = capacity._count_ecs_oom(
+            [_Service("web"), _Service("worker")], "myapp-cluster", _EcsClient(), 7
+        )
+
+        assert calls == ["web", "worker"]
+        assert total == 1
+        assert "worker: 1 OOM kill(s)" in capsys.readouterr().out
+
     def test_the_deployment_cutoff_is_passed_to_get_oom_events(self, monkeypatch):
         seen = {}
 
@@ -166,6 +200,19 @@ class TestCountLogOom:
 
         assert total == 3
         assert "web: 3 OOM event(s) in CloudWatch Logs" in capsys.readouterr().out
+
+    def test_an_unsearchable_log_group_says_so_in_place(self, monkeypatch, capsys):
+        def boom(*_a, **_kw):
+            raise RuntimeError("AccessDenied")
+
+        monkeypatch.setattr(capacity, "search_logs_for_oom", boom)
+
+        total = capacity._count_log_oom(
+            [_Service()], "/ecs/myapp", None, self.WINDOW_START, self.END_MS
+        )
+
+        assert total == 0
+        assert "unable to search logs (AccessDenied)" in capsys.readouterr().err
 
     def test_deployment_time_narrows_the_window(self, monkeypatch):
         seen = {}

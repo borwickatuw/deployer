@@ -148,7 +148,13 @@ def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> 
         ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
-        List of dicts with name, image, essential, and logConfiguration.
+        List of dicts with name, image, essential, and logConfiguration. Empty
+        only when the task definition genuinely declares no containers.
+
+    Raises:
+        RuntimeError: If the task definition could not be described. An empty
+            list meaning both "no containers" and "I could not look" is what
+            DECISIONS.md 2026-08-18 "Error Contracts" forbids.
     """
     if ecs_client is None:
         ecs_client = _get_ecs_client()
@@ -157,8 +163,8 @@ def get_task_containers(task_definition: str, ecs_client: Any | None = None) -> 
         response = ecs_client.describe_task_definition(taskDefinition=task_definition)
         containers = response.get("taskDefinition", {}).get("containerDefinitions", [])
         return _format_container_definitions(containers)
-    except ClientError:
-        return []
+    except ClientError as e:
+        raise RuntimeError(f"Could not describe task definition '{task_definition}': {e}") from e
 
 
 def run_task(
@@ -320,6 +326,12 @@ def get_oom_events(
 
     Returns:
         List of OOM event dicts with task_arn, stopped_at, reason, exit_code.
+        Empty only when the service genuinely had no OOM kills in the window.
+
+    Raises:
+        RuntimeError: If the stopped tasks could not be read. "No OOM kills"
+            is the reassuring answer; it must never stand in for "I could not
+            check" (DECISIONS.md 2026-08-18 "Error Contracts").
     """
     try:
         response = ecs_client.list_tasks(
@@ -341,8 +353,11 @@ def get_oom_events(
             cutoff = datetime.now(UTC) - timedelta(hours=since_hours)
         return _filter_oom_tasks(tasks, cutoff)
 
-    except ClientError:
-        return []
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not read stopped tasks for service '{service_name}' "
+            f"in cluster '{cluster_name}': {e}"
+        ) from e
 
 
 def _filter_oom_tasks(tasks: list[dict], cutoff) -> list[dict]:
@@ -461,8 +476,15 @@ def get_service_info(
         ecs_client: boto3 ECS client.
 
     Returns:
-        Tuple of (network_config, task_definition_arn).
-        Either or both may be None if not found.
+        Tuple of (network_config, task_definition_arn). Either or both are None
+        when the service exists but does not declare that piece; both are None
+        when there is no such service. Absence only -- a read failure raises.
+
+    Raises:
+        RuntimeError: If the service could not be described. (None, None) is
+            the "no such service" answer the caller prints, so a permissions
+            or connectivity failure must not borrow it (DECISIONS.md
+            2026-08-18 "Error Contracts").
     """
     try:
         response = ecs_client.describe_services(
@@ -475,8 +497,10 @@ def get_service_info(
 
         return _extract_service_info(services[0])
 
-    except ClientError:
-        return None, None
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not describe service '{service_name}' in cluster '{cluster_name}': {e}"
+        ) from e
 
 
 def get_logs_location_from_containers(

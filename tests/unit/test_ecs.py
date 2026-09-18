@@ -134,16 +134,15 @@ class TestGetTaskContainers:
         assert result[1]["name"] == "sidecar"
         assert result[1]["essential"] is False
 
-    def test_returns_empty_on_failure(self, mock_ecs_client):
-        """Test returns empty list when API fails."""
+    def test_raises_on_failure_rather_than_reporting_no_containers(self, mock_ecs_client):
+        """A read failure raises; [] is reserved for a genuinely empty task def."""
         mock_ecs_client.describe_task_definition.side_effect = ClientError(
             {"Error": {"Code": "TaskDefinitionNotFound", "Message": "Not found"}},
             "DescribeTaskDefinition",
         )
 
-        result = ecs.get_task_containers("web:42", ecs_client=mock_ecs_client)
-
-        assert result == []
+        with pytest.raises(RuntimeError, match="Could not describe task definition 'web:42'"):
+            ecs.get_task_containers("web:42", ecs_client=mock_ecs_client)
 
     def test_returns_empty_when_no_containers(self, mock_ecs_client):
         """Test returns empty list when no containers defined."""
@@ -385,6 +384,32 @@ class TestGetServices:
         assert result == []
 
 
+class TestGetOomEvents:
+    """Tests for get_oom_events, whose [] must mean "no OOM kills" only."""
+
+    def test_no_stopped_tasks_is_an_empty_list(self, mock_ecs_client):
+        mock_ecs_client.list_tasks.return_value = {"taskArns": []}
+
+        result = ecs.get_oom_events(
+            "test-cluster", "web", since_datetime=None, ecs_client=mock_ecs_client
+        )
+
+        assert result == []
+        mock_ecs_client.describe_tasks.assert_not_called()
+
+    def test_raises_on_failure_rather_than_reporting_no_oom_kills(self, mock_ecs_client):
+        """ "No OOM kills" is the reassuring answer; a failed read must not borrow it."""
+        mock_ecs_client.list_tasks.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Denied"}},
+            "ListTasks",
+        )
+
+        with pytest.raises(RuntimeError, match="Could not read stopped tasks for service 'web'"):
+            ecs.get_oom_events(
+                "test-cluster", "web", since_datetime=None, ecs_client=mock_ecs_client
+            )
+
+
 class TestGetServiceInfo:
     """Tests for get_service_info function (combined network + task def)."""
 
@@ -407,19 +432,15 @@ class TestGetServiceInfo:
         # Verify task definition
         assert task_def == "arn:aws:ecs:us-west-2:123456789:task-definition/web:42"
 
-    def test_returns_none_none_on_failure(self, mock_ecs_client):
-        """Test returns None, None when API fails."""
+    def test_raises_on_failure_rather_than_reporting_no_such_service(self, mock_ecs_client):
+        """A read failure raises; (None, None) is reserved for a missing service."""
         mock_ecs_client.describe_services.side_effect = ClientError(
             {"Error": {"Code": "ServiceException", "Message": "Error"}},
             "DescribeServices",
         )
 
-        network_config, task_def = ecs.get_service_info(
-            "test-cluster", "web", ecs_client=mock_ecs_client
-        )
-
-        assert network_config is None
-        assert task_def is None
+        with pytest.raises(RuntimeError, match="Could not describe service 'web'"):
+            ecs.get_service_info("test-cluster", "web", ecs_client=mock_ecs_client)
 
     def test_returns_none_none_when_no_services(self, mock_ecs_client):
         """Test returns None, None when no services found."""
