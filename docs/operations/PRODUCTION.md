@@ -6,6 +6,7 @@ This guide covers deploying, operating, and maintaining production environments 
 
 1. [Initial Production Deployment](#initial-production-deployment)
 1. [Maintenance Cadences](#maintenance-cadences)
+1. [Alarms and Notifications](#alarms-and-notifications)
 1. [Emergency Procedures](#emergency-procedures)
 1. [Incident Response](#incident-response)
 1. [Related Documentation](#related-documentation)
@@ -146,12 +147,46 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 
 ### Quarterly
 
-| Task                        | Command / Description                         |
-| --------------------------- | --------------------------------------------- |
-| Rotate database credentials | Update in RDS, then SSM Parameter Store       |
-| Review IAM policies         | Audit bootstrap/ policies for least privilege |
-| Test disaster recovery      | `emergency.py restore-db`                     |
-| Update OpenTofu providers   | `bin/tofu.sh init -upgrade myapp-production`  |
+| Task                        | Command / Description                                     |
+| --------------------------- | --------------------------------------------------------- |
+| Rotate database credentials | Update in RDS, then SSM Parameter Store                   |
+| Review IAM policies         | Audit bootstrap/ policies for least privilege             |
+| Test disaster recovery      | `emergency.py restore-db`                                 |
+| Update OpenTofu providers   | `bin/tofu.sh init -upgrade myapp-production`              |
+| Verify alarm notifications  | See [Alarms and Notifications](#alarms-and-notifications) |
+
+______________________________________________________________________
+
+## Alarms and Notifications
+
+`ops.py` is pull-based — it answers questions when someone asks them.
+Production also needs push: something that reaches you when nobody is looking.
+That is the [cloudwatch-alarms module](../tofu-modules/cloudwatch-alarms.md),
+which creates the ALB, RDS, ElastiCache and ECS alarms and the SNS topic they
+publish to. Instantiate it in the production environment's `main.tf`; staging
+does not need it.
+
+**An email subscription is not live until it is confirmed.** AWS sends a
+confirmation link when `tofu apply` first creates the subscription, and until
+someone clicks it the subscription sits in `PendingConfirmation` and every
+alarm fires into nothing. Check after the first apply, and again whenever
+`notification_email` changes:
+
+```bash
+# Subscription state -- PendingConfirmation means alarms are invisible.
+# The topic ARN is the module's sns_topic_arn output; re-export it from the
+# environment's outputs.tf to read it with `bin/tofu.sh output <env> <name>`.
+aws sns list-subscriptions-by-topic --topic-arn "$TOPIC_ARN"
+
+# Alarm inventory and current states
+aws cloudwatch describe-alarms --alarm-name-prefix myapp-production \
+  --query 'MetricAlarms[].{Name:AlarmName,State:StateValue}'
+```
+
+An alarm parked in `INSUFFICIENT_DATA` is as silent as an unconfirmed
+subscription. It usually means the alarm's dimensions no longer match a real
+resource — a renamed ECS service, a replaced RDS instance — so treat it as a
+finding, not as "quiet."
 
 ______________________________________________________________________
 

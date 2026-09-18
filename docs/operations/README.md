@@ -8,6 +8,7 @@ Day-to-day operations for deployed applications. For initial deployment, see [DE
 - [PRODUCTION.md](PRODUCTION.md) — Production monitoring, maintenance, incident response, rollback
 - [SHARED-ENVIRONMENTS.md](SHARED-ENVIRONMENTS.md) — Multiple apps sharing infrastructure
 - [STAGING.md](STAGING.md) — Cognito authentication, cost scheduling, stop/start lifecycle
+- [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) — Diagnosing a deployment or environment that is misbehaving
 
 ______________________________________________________________________
 
