@@ -235,24 +235,6 @@ def _get_live_service(ecs_client, cluster_name: str, service_name: str) -> dict 
     return None
 
 
-def service_exists(ecs_client, cluster_name: str, service_name: str) -> bool:
-    """Check if an ECS service exists.
-
-    Args:
-        ecs_client: boto3 ECS client.
-        cluster_name: Name of the ECS cluster.
-        service_name: Name of the service.
-
-    Returns:
-        True if service exists and is not INACTIVE, False if it is absent or
-        INACTIVE.
-
-    Raises:
-        RuntimeError: If ``describe_services`` fails (see ``_get_live_service``).
-    """
-    return _get_live_service(ecs_client, cluster_name, service_name) is not None
-
-
 def register_task_definition(
     ctx,
     service_name: str,

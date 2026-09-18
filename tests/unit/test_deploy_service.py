@@ -11,7 +11,7 @@ orchestration, so not one line of the module's own bodies was executed.
 
 What is pinned here -- the seven deploy-path functions:
 ``_get_deployment_config``, ``DeploymentError.__init__``,
-``_ensure_az_rebalancing_disabled``, ``service_exists``,
+``_ensure_az_rebalancing_disabled``, ``_get_live_service``,
 ``register_task_definition``, ``create_service`` and ``deploy_services``.
 The wait path (``wait_for_services``/``_wait_for_service_stable`` and friends)
 belongs to ``test_deploy_service_wait.py`` and is deliberately untouched here.
@@ -22,9 +22,9 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
    **interruptible** arms of ``create_service``. The dry-run arms are early
    returns that skip *different* amounts of work in the two functions --
    ``create_service`` returns after building the whole parameter dict, so its
-   network guard still fires under ``--dry-run``; ``deploy_services`` short-circuits
-   ``service_exists`` to ``True`` and therefore prints an **update** even for a
-   service that does not exist.
+   network guard still fires under ``--dry-run``; ``deploy_services`` returns
+   before it ever asks whether the service is live and therefore prints an
+   **update** even for a service that does not exist.
 2. **Circuit breaker on and off**, at both injection points -- ``create_service``
    and the update arm of ``deploy_services``. Both mutate the *already-built*
    ``deploymentConfiguration`` sub-dict in place.
@@ -97,12 +97,12 @@ from deployer.deploy.service import (
     _compute_service_state_hash,
     _ensure_az_rebalancing_disabled,
     _get_deployment_config,
+    _get_live_service,
     _service_is_unchanged,
     create_service,
     deploy_services,
     get_stored_service_state,
     register_task_definition,
-    service_exists,
     store_service_state,
     store_service_state_hashes,
 )
@@ -309,7 +309,7 @@ def _ctx(
 
 
 def _make_service(aws: _Aws, name: str = "web", *, cluster: str = CLUSTER) -> str:
-    """Create a real moto service so ``service_exists`` has something to find."""
+    """Create a real moto service so ``_get_live_service`` has something to find."""
     task_def = aws.client.register_task_definition(
         family=f"{CLUSTER}-{name}",
         networkMode="awsvpc",
@@ -516,7 +516,7 @@ class TestEnsureAzRebalancingDisabled:
     def test_only_the_first_service_is_inspected(self, run):
         # describe_services was asked for one name, but the code indexes [0]
         # unconditionally rather than matching on serviceName the way
-        # service_exists() does.
+        # _get_live_service() does.
         client = _DescribeServicesStub(
             [
                 {"serviceName": "other", "status": "ACTIVE"},
@@ -590,32 +590,34 @@ class TestEnsureAzRebalancingDisabled:
         assert _ensure_az_rebalancing_disabled(aws.client, CLUSTER, "web") is False
 
 
-class TestServiceExists:
-    """``service_exists`` -- name match plus a not-INACTIVE check."""
+class TestGetLiveService:
+    """``_get_live_service`` -- name match plus a not-INACTIVE check."""
 
-    def test_existing_service_is_true(self, aws):
+    def test_existing_service_is_returned(self, aws):
         _make_service(aws)
-        assert service_exists(aws.client, CLUSTER, "web") is True
+        live = _get_live_service(aws.client, CLUSTER, "web")
+        assert live is not None
+        assert live["serviceName"] == "web"
 
-    def test_absent_service_is_false(self, aws):
-        assert service_exists(aws.client, CLUSTER, "web") is False
+    def test_absent_service_is_none(self, aws):
+        assert _get_live_service(aws.client, CLUSTER, "web") is None
 
-    def test_deleted_service_is_false(self, aws):
+    def test_deleted_service_is_none(self, aws):
         _make_service(aws)
         aws.client.delete_service(cluster=CLUSTER, service="web", force=True)
-        assert service_exists(aws.client, CLUSTER, "web") is False
+        assert _get_live_service(aws.client, CLUSTER, "web") is None
 
     def test_missing_cluster_raises_naming_the_cluster(self, aws):
-        # A typo in the cluster name used to be answered False, which is what
+        # A typo in the cluster name used to be answered None, which is what
         # "the service does not exist yet" looks like -- so deploy_services()
         # went on to *create* every service in a cluster that does not exist.
         _make_service(aws)
         with pytest.raises(RuntimeError, match="no-such-cluster"):
-            service_exists(aws.client, "no-such-cluster", "web")
+            _get_live_service(aws.client, "no-such-cluster", "web")
 
     def test_other_service_in_the_response_does_not_match(self):
         client = _DescribeServicesStub([{"serviceName": "worker", "status": "ACTIVE"}])
-        assert service_exists(client, CLUSTER, "web") is False
+        assert _get_live_service(client, CLUSTER, "web") is None
 
     def test_match_is_found_past_the_first_entry(self):
         client = _DescribeServicesStub(
@@ -624,16 +626,20 @@ class TestServiceExists:
                 {"serviceName": "web", "status": "ACTIVE"},
             ]
         )
-        assert service_exists(client, CLUSTER, "web") is True
+        live = _get_live_service(client, CLUSTER, "web")
+        assert live is not None
+        assert live["serviceName"] == "web"
 
-    def test_inactive_named_match_is_false(self):
+    def test_inactive_named_match_is_none(self):
         client = _DescribeServicesStub([{"serviceName": "web", "status": "INACTIVE"}])
-        assert service_exists(client, CLUSTER, "web") is False
+        assert _get_live_service(client, CLUSTER, "web") is None
 
-    def test_draining_named_match_is_true(self):
+    def test_draining_named_match_is_returned(self):
         # Anything that is not the literal "INACTIVE" counts as existing.
         client = _DescribeServicesStub([{"serviceName": "web", "status": "DRAINING"}])
-        assert service_exists(client, CLUSTER, "web") is True
+        live = _get_live_service(client, CLUSTER, "web")
+        assert live is not None
+        assert live["status"] == "DRAINING"
 
     def test_client_error_raises_and_chains(self):
         # describe_services answers a genuinely absent service with an empty
@@ -643,12 +649,12 @@ class TestServiceExists:
         client = _DescribeServicesStub([], error=error)
 
         with pytest.raises(RuntimeError, match="AccessDenied") as exc:
-            service_exists(client, CLUSTER, "web")
+            _get_live_service(client, CLUSTER, "web")
 
         assert exc.value.__cause__ is error
 
     def test_query_shape(self, aws):
-        service_exists(aws.client, CLUSTER, "web")
+        _get_live_service(aws.client, CLUSTER, "web")
         assert aws.client.params("describe_services") == {
             "cluster": CLUSTER,
             "services": ["web"],
@@ -794,7 +800,7 @@ class TestCreateService:
     def test_service_really_exists_afterwards(self, aws):
         arn = _make_service(aws, "seed")
         create_service(_ctx(aws), "web", arn)
-        assert service_exists(aws.client, CLUSTER, "web") is True
+        assert _get_live_service(aws.client, CLUSTER, "web") is not None
 
     def test_desired_count_comes_from_merged_sizing(self, aws):
         arn = _make_service(aws, "seed")
@@ -1165,8 +1171,8 @@ class TestDeployServices:
         ctx = _ctx(aws, services={"web": {}, "worker": {}})
         with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
             deploy_services(ctx, {"worker": IMAGE_URI})
-        assert service_exists(aws.client, CLUSTER, "worker") is True
-        assert service_exists(aws.client, CLUSTER, "web") is False
+        assert _get_live_service(aws.client, CLUSTER, "worker") is not None
+        assert _get_live_service(aws.client, CLUSTER, "web") is None
 
     def test_image_alias_is_honoured(self, aws):
         ctx = _ctx(aws, services={"web": {"image": "app"}})
@@ -1388,7 +1394,7 @@ class TestDeployServices:
         ctx = _ctx(aws, services={"web": {}, "worker": {}})
         with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
             deploy_services(ctx, {"web": IMAGE_URI, "worker": IMAGE_URI})
-        assert service_exists(aws.client, CLUSTER, "worker") is True
+        assert _get_live_service(aws.client, CLUSTER, "worker") is not None
         assert len(aws.client.all_params("update_service")) == 1
 
     def test_every_failed_service_is_named_once(self, aws):
@@ -1437,9 +1443,9 @@ class TestDeployServices:
         assert run.calls == []
 
     def test_dry_run_never_asks_whether_the_service_exists(self, aws, capsys):
-        # `exists` is hard-coded True under --dry-run, so a first-time deploy is
-        # previewed as an *update* of a service that does not exist. The
-        # create_service() path is unreachable under --dry-run.
+        # The dry-run arm returns before _get_live_service() is ever called, so
+        # a first-time deploy is previewed as an *update* of a service that does
+        # not exist. The create_service() path is unreachable under --dry-run.
         ctx = _ctx(aws, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
         out = _plain(capsys.readouterr().out)
