@@ -1,3 +1,9 @@
+# Environment (.env.example is the tracked template; .envrc and .dotenv are
+# the tracked direnv shims that load .env)
+.env
+.env.*
+!.env.example
+
 # OpenTofu / Terraform
 *.tfstate
 *.tfstate.*
@@ -19,7 +25,6 @@ __pycache__/
 *$py.class
 .venv/
 venv/
-.env
 *.egg-info/
 dist/
 build/
