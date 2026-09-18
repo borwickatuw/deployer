@@ -108,7 +108,7 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 1. **Verify infrastructure**:
 
    ```bash
-   uv run python bin/ops.py myapp-production status
+   uv run python bin/ops.py status myapp-production
    ```
 
 1. **Create secrets** (if not already present):
@@ -133,7 +133,7 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
 1. **Verify deployment**:
 
    ```bash
-   uv run python bin/ops.py myapp-production health
+   uv run python bin/ops.py health myapp-production
    ```
 
 ______________________________________________________________________
@@ -144,7 +144,7 @@ ______________________________________________________________________
 
 | Task                | Command                                                          |
 | ------------------- | ---------------------------------------------------------------- |
-| Run full audit      | `uv run python bin/ops.py myapp-production audit`                |
+| Run full audit      | `uv run python bin/ops.py audit myapp-production`                |
 | Check for OOM kills | `uv run python bin/capacity-report.py myapp-production --days 1` |
 
 The `audit` command runs status, health, logs, maintenance, and ECR vulnerability checks in one command.
@@ -154,7 +154,7 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 | Task                       | Command                                                          |
 | -------------------------- | ---------------------------------------------------------------- |
 | Run capacity report        | `uv run python bin/capacity-report.py myapp-production --days 7` |
-| Check RDS/snapshots status | `uv run python bin/ops.py myapp-production status`               |
+| Check RDS/snapshots status | `uv run python bin/ops.py status myapp-production`               |
 
 ### Monthly
 
@@ -162,7 +162,7 @@ The `audit` command runs status, health, logs, maintenance, and ECR vulnerabilit
 | ------------------------------ | ------------------------------------------------------------------------- |
 | Test RDS backup restore        | `emergency.py restore-db` — see [RDS Backup Testing](#rds-backup-testing) |
 | Apply capacity recommendations | Review `capacity-report.py` output and update `terraform.tfvars`          |
-| Check pending maintenance      | `uv run python bin/ops.py myapp-production maintenance`                   |
+| Check pending maintenance      | `uv run python bin/ops.py maintenance myapp-production`                   |
 
 ### Quarterly
 
@@ -222,22 +222,22 @@ All emergency actions are logged to `local/emergency.log`.
 
 ```bash
 # Run full audit (status, health, logs, maintenance, ECR vulnerabilities)
-uv run python bin/ops.py myapp-production audit
+uv run python bin/ops.py audit myapp-production
 
 # View current state (services, task definitions, RDS, snapshots)
-uv run python bin/ops.py myapp-production status
+uv run python bin/ops.py status myapp-production
 
 # Check ALB target health
-uv run python bin/ops.py myapp-production health
+uv run python bin/ops.py health myapp-production
 
 # Scan recent logs for errors
-uv run python bin/ops.py myapp-production logs --minutes 60
+uv run python bin/ops.py logs myapp-production --minutes 60
 
 # Check pending maintenance (RDS, ElastiCache)
-uv run python bin/ops.py myapp-production maintenance
+uv run python bin/ops.py maintenance myapp-production
 
 # Check ECR vulnerability findings
-uv run python bin/ops.py myapp-production ecr
+uv run python bin/ops.py ecr myapp-production
 ```
 
 ### Rollback Deployment
@@ -246,13 +246,13 @@ If a deployment causes issues, roll back to a previous task definition:
 
 ```bash
 # Interactive rollback (shows services, then revisions, prompts for selection)
-uv run python bin/emergency.py myapp-production rollback
+uv run python bin/emergency.py rollback myapp-production
 
 # Direct rollback to previous revision
-uv run python bin/emergency.py myapp-production rollback --service web
+uv run python bin/emergency.py rollback myapp-production --service web
 
 # Rollback to specific revision
-uv run python bin/emergency.py myapp-production rollback --service web --revision 42
+uv run python bin/emergency.py rollback myapp-production --service web --revision 42
 ```
 
 The tool automatically creates a checkpoint before making changes, shows environment variable differences between revisions, and monitors deployment progress.
@@ -260,8 +260,8 @@ The tool automatically creates a checkpoint before making changes, shows environ
 If the rollback was wrong, restore the previous state:
 
 ```bash
-uv run python bin/emergency.py myapp-production revert --list
-uv run python bin/emergency.py myapp-production revert --checkpoint emergency-2026-02-04-120000.json
+uv run python bin/emergency.py revert myapp-production --list
+uv run python bin/emergency.py revert myapp-production --checkpoint emergency-2026-02-04-120000.json
 ```
 
 ### Database Recovery
@@ -270,16 +270,16 @@ Database restore operations create a **new** RDS instance with a `-restore` suff
 
 ```bash
 # Create an emergency snapshot first (recommended)
-uv run python bin/emergency.py myapp-production snapshot
+uv run python bin/emergency.py snapshot myapp-production
 
 # Restore from a specific snapshot
-uv run python bin/emergency.py myapp-production restore-db --snapshot <snapshot-id>
+uv run python bin/emergency.py restore-db myapp-production --snapshot <snapshot-id>
 
 # Point-in-time recovery
-uv run python bin/emergency.py myapp-production restore-db --time "2026-02-04T12:00:00Z"
+uv run python bin/emergency.py restore-db myapp-production --time "2026-02-04T12:00:00Z"
 
 # Interactive (lists available snapshots)
-uv run python bin/emergency.py myapp-production restore-db
+uv run python bin/emergency.py restore-db myapp-production
 ```
 
 After restore completes (10-30 minutes):
@@ -294,13 +294,13 @@ During traffic spikes:
 
 ```bash
 # Scale specific service
-uv run python bin/emergency.py myapp-production scale --service web --count 10
+uv run python bin/emergency.py scale myapp-production --service web --count 10
 
 # Scale all services by multiplier
-uv run python bin/emergency.py myapp-production scale --all --multiplier 2
+uv run python bin/emergency.py scale myapp-production --all --multiplier 2
 
 # Reset to configured replicas (from terraform)
-uv run python bin/emergency.py myapp-production scale --reset
+uv run python bin/emergency.py scale myapp-production --reset
 ```
 
 ### Force New Deployment
@@ -309,10 +309,10 @@ If containers are unhealthy but not being replaced:
 
 ```bash
 # Force new deployment of a specific service
-uv run python bin/emergency.py myapp-production force-deploy --service web
+uv run python bin/emergency.py force-deploy myapp-production --service web
 
 # Force new deployment of all services
-uv run python bin/emergency.py myapp-production force-deploy --all
+uv run python bin/emergency.py force-deploy myapp-production --all
 ```
 
 ### RDS Backup Testing
@@ -321,10 +321,10 @@ Monthly procedure to verify backups are restorable:
 
 ```bash
 # 1. View available snapshots
-uv run python bin/ops.py myapp-production status
+uv run python bin/ops.py status myapp-production
 
 # 2. Restore from a snapshot (creates myapp-production-db-restore instance)
-uv run python bin/emergency.py myapp-production restore-db
+uv run python bin/emergency.py restore-db myapp-production
 
 # 3. Verify connectivity (from bastion or ECS task)
 psql "postgres://user:pass@myapp-production-db-restore.xxxxx.rds.amazonaws.com/myapp" \
@@ -355,7 +355,7 @@ When something goes wrong in production, follow this structured approach.
 1. **Assess the situation**
 
    ```bash
-   uv run python bin/ops.py myapp-production audit
+   uv run python bin/ops.py audit myapp-production
    ```
 
 1. **Determine severity** using definitions above
@@ -364,13 +364,13 @@ When something goes wrong in production, follow this structured approach.
 
    ```bash
    # Rollback if recent deployment caused issue
-   uv run python bin/emergency.py myapp-production rollback --service web
+   uv run python bin/emergency.py rollback myapp-production --service web
 
    # Scale up if capacity issue
-   uv run python bin/emergency.py myapp-production scale --all --multiplier 2
+   uv run python bin/emergency.py scale myapp-production --all --multiplier 2
 
    # Force redeploy if containers unhealthy
-   uv run python bin/emergency.py myapp-production force-deploy --all
+   uv run python bin/emergency.py force-deploy myapp-production --all
    ```
 
 ### During the Incident
@@ -383,8 +383,8 @@ When something goes wrong in production, follow this structured approach.
 1. **Verify service restored**
 
    ```bash
-   uv run python bin/ops.py myapp-production health
-   uv run python bin/ops.py myapp-production logs --minutes 10
+   uv run python bin/ops.py health myapp-production
+   uv run python bin/ops.py logs myapp-production --minutes 10
    ```
 
 1. **Document the incident** with a postmortem for P1 incidents and P2 incidents lasting > 1 hour

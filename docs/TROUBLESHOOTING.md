@@ -67,8 +67,8 @@ ______________________________________________________________________
 Check the current state and recent logs:
 
 ```bash
-uv run python bin/ops.py myapp-staging status
-uv run python bin/ops.py myapp-staging logs --minutes 30
+uv run python bin/ops.py status myapp-staging
+uv run python bin/ops.py logs myapp-staging --minutes 30
 ```
 
 Common causes:
@@ -100,7 +100,7 @@ Common causes:
 1. Check ALB target health:
 
    ```bash
-   uv run python bin/ops.py myapp-staging health
+   uv run python bin/ops.py health myapp-staging
    ```
 
 ______________________________________________________________________
@@ -120,7 +120,7 @@ ______________________________________________________________________
 1. Check the environment status:
 
    ```bash
-   uv run python bin/ops.py myapp-staging status
+   uv run python bin/ops.py status myapp-staging
    ```
 
 ### Permission Denied on DDL Operations
@@ -197,7 +197,7 @@ ______________________________________________________________________
 Verify the ECR repository exists:
 
 ```bash
-uv run python bin/ops.py myapp-staging ecr
+uv run python bin/ops.py ecr myapp-staging
 ```
 
 ______________________________________________________________________
