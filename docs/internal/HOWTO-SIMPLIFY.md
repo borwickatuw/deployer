@@ -66,7 +66,7 @@ a single file.
 
 ## Pysmelly arc
 
-The per-finding work ran as **Phase 53** (subphases 53a–53i) in claude-meta's
+The per-finding work ran as **`fileplan-claude-meta:53`** (subphases 53a–53i) in claude-meta's
 plan tree, one finding-type × one subsystem per operator-gated session, with
 duplicate-block extraction before long-function decomposition. **The arc has
 no open subphase.** Live counts, the per-category live/settled/escalated
