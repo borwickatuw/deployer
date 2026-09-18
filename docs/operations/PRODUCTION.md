@@ -264,6 +264,22 @@ uv run python bin/emergency.py revert myapp-production --list
 uv run python bin/emergency.py revert myapp-production --checkpoint emergency-2026-02-04-120000.json
 ```
 
+### Before a Data-Altering Migration
+
+Point-in-time recovery already covers the window, but "when exactly did the
+migration start?" is a question nobody wants to answer from a deploy log
+during an incident. Take the snapshot deliberately instead, before deploying a
+migration that drops a column, backfills, or rewrites rows:
+
+```bash
+uv run python bin/emergency.py snapshot myapp-production
+```
+
+Deployments run the `[migrations]` command from the app's `deploy.toml` as a
+one-off ECS task before services update (see
+[CONFIG-REFERENCE.md](../CONFIG-REFERENCE.md#migrations)), so the snapshot has
+to be taken before `deploy.py deploy`, not after.
+
 ### Database Recovery
 
 Database restore operations create a **new** RDS instance with a `-restore` suffix. The original database is never modified, so you can compare data, go back to the original, or delete the restore instance if unneeded.
