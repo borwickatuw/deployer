@@ -18,6 +18,7 @@ Usage:
 
 import json
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,10 +26,9 @@ import boto3
 import click
 from botocore.exceptions import ClientError
 
-from deployer.deploy.context import DeployOptions, EnvironmentTarget
+from deployer.deploy.context import EnvironmentTarget
 from deployer.deploy.deployer import common_deploy_options
 from deployer.deploy.pipeline import run_deploy_pipeline
-from deployer.deploy.preflight import PreflightOptions
 from deployer.utils import Colors, log, log_error, log_warning
 
 
@@ -216,13 +216,8 @@ def enforce_max_config_age(meta: dict, max_config_age: float | None, strict: boo
 def main(
     deploy_toml,
     resolved_config,
-    dry_run,
-    force,
-    force_build,
-    force_deploy,
-    skip_ecr_check,
-    skip_secrets_check,
-    skip_cluster_check,
+    options,
+    preflight,
     max_config_age,
     strict,
 ):
@@ -275,15 +270,8 @@ def main(
         run_deploy_pipeline(
             deploy_toml_path,
             EnvironmentTarget(environment, environment_type, env_config),
-            preflight=PreflightOptions(
-                skip_ecr_check=skip_ecr_check,
-                skip_secrets_check=skip_secrets_check,
-                skip_cluster_check=skip_cluster_check,
-                skip_audit=True,
-            ),
-            options=DeployOptions(
-                dry_run=dry_run, force=force, force_build=force_build, force_deploy=force_deploy
-            ),
+            preflight=replace(preflight, skip_audit=True),
+            options=options,
         )
     )
 

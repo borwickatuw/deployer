@@ -8,7 +8,12 @@ from pathlib import Path
 
 from .aws_profile import configure_aws_profile, configure_aws_profile_for_environment
 from .colors import Colors
-from .environment import get_environment_path, validate_environment_deployed
+from .environment import (
+    get_all_environments,
+    get_environment_path,
+    get_environments_dir,
+    validate_environment_deployed,
+)
 from .links import get_linked_deploy_toml
 from .logging import log, log_error, log_error_stderr
 
@@ -321,6 +326,36 @@ def load_environment_infrastructure(
         raise SystemExit(1)
 
     return EnvironmentInfrastructure(config=config, cluster_name=cluster_name, rds_id=rds_id)
+
+
+def resolve_environments_or_exit(environment: str | None) -> list[str]:
+    """Resolve the optional environment argument to the environments to act on.
+
+    The shape every whole-fleet command shares: a named environment selects
+    just itself, no name selects all of them, and neither an unreadable
+    environments directory nor an empty one is silently treated as "nothing
+    to do".
+
+    Args:
+        environment: One environment name, or None to mean "all of them".
+
+    Returns:
+        The environment names to act on. Never empty.
+
+    Raises:
+        SystemExit: With code 1 if the environments directory cannot be read
+            (via ``exit_on``), or if it holds no environments.
+    """
+    with exit_on(RuntimeError):
+        environments = (
+            [environment] if environment else get_all_environments(get_environments_dir())
+        )
+
+    if not environments:
+        print("No environments found.", file=sys.stderr)
+        sys.exit(1)
+
+    return environments
 
 
 def iter_deployed_environments(

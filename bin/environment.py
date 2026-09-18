@@ -31,11 +31,10 @@ from deployer.core.config import (
 from deployer.utils import (
     configure_aws_profile,
     exit_on,
-    get_all_environments,
-    get_environments_dir,
     iter_deployed_environments,
     load_environment_infrastructure,
     log_error,
+    resolve_environments_or_exit,
     validate_environment_deployed,
 )
 
@@ -65,14 +64,7 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
 
 def cmd_status(environment: str | None) -> int:
     """Show status of environments."""
-    with exit_on(RuntimeError):
-        environments = (
-            [environment] if environment else get_all_environments(get_environments_dir())
-        )
-
-    if not environments:
-        print("No environments found.", file=sys.stderr)
-        return 1
+    environments = resolve_environments_or_exit(environment)
 
     for _env_name, env_path in iter_deployed_environments(environments):
         # Load config from config.toml

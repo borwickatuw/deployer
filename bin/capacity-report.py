@@ -31,10 +31,8 @@ from deployer.deploy.task_definition import FARGATE_VALID_MEMORY
 from deployer.utils import (
     Colors,
     configure_aws_profile,
-    exit_on,
-    get_all_environments,
-    get_environments_dir,
     iter_deployed_environments,
+    resolve_environments_or_exit,
 )
 
 
@@ -236,14 +234,7 @@ def cli(environment, days):
     """
     configure_aws_profile("infra")
 
-    with exit_on(RuntimeError):
-        environments = (
-            [environment] if environment else get_all_environments(get_environments_dir())
-        )
-
-    if not environments:
-        print("No environments found.", file=sys.stderr)
-        sys.exit(1)
+    environments = resolve_environments_or_exit(environment)
 
     exit_code = 0
 

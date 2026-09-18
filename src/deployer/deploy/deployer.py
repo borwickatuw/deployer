@@ -18,6 +18,7 @@ from deployer.deploy.autoscaling import apply_autoscaling, validate_scaling_conf
 from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig, StabilityConfig
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
+from deployer.deploy.preflight import PreflightOptions
 from deployer.deploy.service import (
     deploy_services,
     start_migrations,
@@ -450,7 +451,20 @@ class Deployer:
 
 
 def common_deploy_options(func):
-    """Click decorator that adds common deployment options shared by deploy.py and ci-deploy."""
+    """Click decorator adding the deploy flags, collapsed into their two objects.
+
+    The seven flags shared by deploy.py and ci-deploy arrive as click kwargs
+    and reach the command as the two objects the pipeline actually takes:
+    ``options`` (:class:`DeployOptions`) and ``preflight``
+    (:class:`PreflightOptions`). Doing the mapping here is what makes
+    "they arrive together and stay together" true -- both commands used to
+    rebuild the same two constructions by hand from the same flag names.
+
+    ``skip_audit`` is deliberately not among them: it is each command's own
+    policy (deploy.py takes ``--ignore-audit``, ci-deploy always skips, having
+    no docker-compose.yml to audit against), so each sets it with
+    ``dataclasses.replace``.
+    """
 
     @click.option("--dry-run", is_flag=True, help="Show what would be done without making changes")
     @click.option(
@@ -473,7 +487,18 @@ def common_deploy_options(func):
     @click.option("--skip-cluster-check", is_flag=True, help="Skip the ECS cluster existence check")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
+        options = DeployOptions(
+            dry_run=kwargs.pop("dry_run"),
+            force=kwargs.pop("force"),
+            force_build=kwargs.pop("force_build"),
+            force_deploy=kwargs.pop("force_deploy"),
+        )
+        preflight = PreflightOptions(
+            skip_ecr_check=kwargs.pop("skip_ecr_check"),
+            skip_secrets_check=kwargs.pop("skip_secrets_check"),
+            skip_cluster_check=kwargs.pop("skip_cluster_check"),
+        )
+        return func(*args, options=options, preflight=preflight, **kwargs)
 
     return wrapper
 

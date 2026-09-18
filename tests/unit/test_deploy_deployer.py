@@ -52,6 +52,7 @@ from deployer.deploy.deployer import (
     _build_stability_config,
     common_deploy_options,
 )
+from deployer.deploy.preflight import PreflightOptions
 from deployer.deploy.service import DeployedServices
 from deployer.timing import DeploymentTimer, get_timer, set_timer
 
@@ -1154,7 +1155,7 @@ class TestBuildStabilityConfig:
 
 
 class TestCommonDeployOptions:
-    """Characterization pins for the decorator's seven flags."""
+    """Pins for the decorator's seven flags and the two objects they collapse into."""
 
     def _command(self):
         @click.command()
@@ -1171,15 +1172,35 @@ class TestCommonDeployOptions:
         assert result.exit_code == 0
         assert result.output.strip() == str(
             [
-                "dry_run=False",
-                "force=False",
-                "force_build=False",
-                "force_deploy=False",
-                "skip_cluster_check=False",
-                "skip_ecr_check=False",
-                "skip_secrets_check=False",
+                "options=DeployOptions(dry_run=False, force=False, force_build=False, "
+                "force_deploy=False)",
+                "preflight=PreflightOptions(skip_ecr_check=False, skip_secrets_check=False, "
+                "skip_cluster_check=False, skip_audit=False)",
             ]
         )
+
+    def test_the_command_receives_objects_not_loose_flags(self):
+        """The mapping from flag name to dataclass field lives only in the decorator."""
+        seen = {}
+
+        @click.command()
+        @common_deploy_options
+        def cmd(options, preflight):
+            seen["options"] = options
+            seen["preflight"] = preflight
+
+        result = CliRunner().invoke(cmd, ["--force-deploy", "--skip-ecr-check"])
+
+        assert result.exit_code == 0
+        assert seen["options"] == DeployOptions(force_deploy=True)
+        assert seen["preflight"] == PreflightOptions(skip_ecr_check=True)
+
+    def test_skip_audit_is_not_a_shared_flag(self):
+        """Each command sets skip_audit itself; the decorator leaves it False."""
+        result = CliRunner().invoke(self._command(), ["--skip-audit"])
+
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
 
     def test_the_wrapper_forwards_every_flag(self):
         result = CliRunner().invoke(

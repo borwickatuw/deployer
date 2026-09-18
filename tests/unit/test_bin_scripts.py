@@ -189,16 +189,18 @@ class TestStagingRunCommand:
 
 
 class TestEnvironmentGetAllEnvironments:
-    """Test get_all_environments in environment.py."""
+    """Test get_all_environments, which bin/environment.py reaches via utils."""
 
     def test_function_exists_and_works(self, tmp_path):
-        """Verify the function exists in environment.py and works."""
+        """Verify the function works against a directory of environments."""
+        from deployer.utils import get_all_environments
+
         (tmp_path / "test-staging").mkdir()
         (tmp_path / "test-staging" / "config.toml").write_text("")
         (tmp_path / "test-production").mkdir()
         (tmp_path / "test-production" / "config.toml").write_text("")
 
-        result = env_mgr.get_all_environments(tmp_path)
+        result = get_all_environments(tmp_path)
 
         assert "test-staging" in result
         assert "test-production" in result

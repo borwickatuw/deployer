@@ -494,3 +494,42 @@ class TestRequireEnvironment:
         env_path, config = require_validated_environment("myapp-staging")
         assert env_path == tmp_path / "myapp-staging"
         assert config == {"app": "x"}
+
+
+class TestResolveEnvironmentsOrExit:
+    """The selector shape capacity-report.py and environment.py share."""
+
+    def test_a_named_environment_selects_only_itself(self, monkeypatch):
+        def _boom(_dir):
+            raise AssertionError("the environments directory must not be read")
+
+        monkeypatch.setattr(cli_utils, "get_all_environments", _boom)
+        assert cli_utils.resolve_environments_or_exit("myapp-staging") == ["myapp-staging"]
+
+    def test_no_name_selects_every_environment(self, monkeypatch):
+        monkeypatch.setattr(cli_utils, "get_environments_dir", lambda: Path("/envs"))
+        monkeypatch.setattr(cli_utils, "get_all_environments", lambda _dir: ["a", "b"])
+        assert cli_utils.resolve_environments_or_exit(None) == ["a", "b"]
+
+    def test_an_empty_directory_exits_one_rather_than_doing_nothing(self, monkeypatch, capsys):
+        monkeypatch.setattr(cli_utils, "get_environments_dir", lambda: Path("/envs"))
+        monkeypatch.setattr(cli_utils, "get_all_environments", lambda _dir: [])
+
+        with pytest.raises(SystemExit) as exc:
+            cli_utils.resolve_environments_or_exit(None)
+
+        assert exc.value.code == 1
+        assert "No environments found." in capsys.readouterr().err
+
+    def test_an_unreadable_directory_exits_one_with_the_reason(self, monkeypatch, capsys):
+        def _raise(_dir):
+            raise RuntimeError("environments dir is not readable")
+
+        monkeypatch.setattr(cli_utils, "get_environments_dir", lambda: Path("/envs"))
+        monkeypatch.setattr(cli_utils, "get_all_environments", _raise)
+
+        with pytest.raises(SystemExit) as exc:
+            cli_utils.resolve_environments_or_exit(None)
+
+        assert exc.value.code == 1
+        assert "environments dir is not readable" in capsys.readouterr().err

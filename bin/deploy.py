@@ -19,6 +19,7 @@ Usage:
 
 import secrets
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -28,10 +29,9 @@ from deployer.core.config import (
     get_environment_type,
     load_environment_config,
 )
-from deployer.deploy.context import DeployOptions, EnvironmentTarget
+from deployer.deploy.context import EnvironmentTarget
 from deployer.deploy.deployer import common_deploy_options
 from deployer.deploy.pipeline import run_deploy_pipeline
-from deployer.deploy.preflight import PreflightOptions
 from deployer.timing import DeploymentTimer
 from deployer.utils import (
     Colors,
@@ -115,13 +115,8 @@ def deploy(
     environment,
     deploy_toml,
     ignore_audit,
-    dry_run,
-    force,
-    force_build,
-    force_deploy,
-    skip_ecr_check,
-    skip_secrets_check,
-    skip_cluster_check,
+    options,
+    preflight,
     timing_output,
     run_id,
     verbose,
@@ -160,15 +155,8 @@ def deploy(
         run_deploy_pipeline(
             config_path,
             EnvironmentTarget(environment, environment_type, env_config),
-            preflight=PreflightOptions(
-                skip_ecr_check=skip_ecr_check,
-                skip_secrets_check=skip_secrets_check,
-                skip_cluster_check=skip_cluster_check,
-                skip_audit=ignore_audit,
-            ),
-            options=DeployOptions(
-                dry_run=dry_run, force=force, force_build=force_build, force_deploy=force_deploy
-            ),
+            preflight=replace(preflight, skip_audit=ignore_audit),
+            options=options,
             timer=timer,
             timing_output=Path(timing_output) if timing_output else None,
             ecr_hint=True,
