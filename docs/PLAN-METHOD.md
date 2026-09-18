@@ -6,9 +6,20 @@ commands. This document is where each declared name gets its meaning — every
 `doc =` pointer in `plan.toml` resolves to a heading here, and fileplan
 checks the pointers on every run.
 
-Run `uv run fileplan` to see the workflow, `uv run fileplan list` to see what
-is filed. Items are Markdown files with a `+++`-fenced TOML head; the state
-is the directory the file sits in.
+Run from the repo root, where `plan.toml` and `docs/` live:
+
+```bash
+uv run --group dev fileplan       # the workflow: states and transitions
+uv run --group dev fileplan list  # what is filed
+```
+
+`--group dev` is not optional: this project sets `default-groups = []`, so a
+bare `uv run fileplan` installs no dev dependencies and either fails to spawn
+or falls through to whatever `fileplan` happens to be on `PATH` — an
+un-versioned tool, which is exactly what pinning it exists to prevent.
+
+Items are Markdown files with a `+++`-fenced TOML head; the state is the
+directory the file sits in.
 
 The three state directories are excluded from `make format-docs` /
 `format-docs-check`: mdformat escapes Markdown punctuation inside the TOML
@@ -20,19 +31,26 @@ working notes and go unformatted by design.
 deployer has no repo-local phases yet; the cross-repo backlog queued against
 this repo is recorded below.
 
-Cross-repo backlog queued against this repo: claude-meta `docs/plan/`
-Phase 52 (container-level health checks for non-HTTP services). **Phase 53
-(the pysmelly subphase arc, 53a–53p) closed 2026-08-25** — its record is in
-claude-meta `docs/plan-archive/PLAN-ARCHIVE-2026-09.md`.
+Cross-repo work is cited `fileplan-claude-meta:<number>` — the scheme prefix
+makes every citation findable with one `grep -rn 'fileplan-'`, and the number
+is the only identifier claude-meta's register guarantees forever. Link at most
+a stable surface (a state *directory*, the register, a rotated segment), never
+an item file, which moves on every transition.
 
-Cross-repo arc in progress: claude-meta `docs/plan/` **Phase 70**
-(queue-depth autoscaling). deployer's pieces — the `scaling` tfvars schema,
+Cross-repo backlog queued against this repo: `fileplan-claude-meta:52`
+(container-level health checks for non-HTTP services), live in claude-meta
+`docs/plan/`. **`fileplan-claude-meta:53` (the pysmelly subphase arc,
+53a–53p) closed 2026-08-25** — its record is in claude-meta
+`docs/plan-archive/PLAN-ARCHIVE-2026-09.md`.
+
+Cross-repo arc in progress: **`fileplan-claude-meta:70`** (queue-depth
+autoscaling), live in claude-meta `docs/plan/`. deployer's pieces — the `scaling` tfvars schema,
 `deploy/autoscaling.py` apply step, IAM grants, and the `min_replicas`
 floor — landed 2026-08-31; the environment applies and staging verification
 (70c/70e) are pending. The boundary rule it settled is recorded in
 [docs/internal/DESIGN.md](internal/DESIGN.md).
 
-Per-finding dispositions for the Phase 53 arc are in
+Per-finding dispositions for the `fileplan-claude-meta:53` arc are in
 [docs/internal/PYSMELLY.md](internal/PYSMELLY.md); size and simplification
 candidates in [docs/internal/HOWTO-SIMPLIFY.md](internal/HOWTO-SIMPLIFY.md).
 
@@ -173,14 +191,18 @@ Every row then carries `claimed-by`/`claim-status` and
 `sub-phases`/`sub-phases-left`/`next-sub-phase`:
 
 ```bash
-uv run fileplan list --state plan --lacks claimed-by        # unclaimed
-uv run fileplan list --state plan --has 'sub-phases-left>0' # work left
-uv run fileplan list --state plan --has 'stale-days>=30'    # gone cold
+FP="uv run --group dev fileplan"
+$FP list --state plan --lacks claimed-by        # unclaimed
+$FP list --state plan --has 'sub-phases-left>0' # work left
+$FP list --state plan --has 'stale-days>=30'    # gone cold
 ```
 
 A held item **refuses every transition for another session** at the `--check`
-stage. A claim is that session's hold and nothing frees it automatically:
-`archive` frees it at close-out, and `uv run fileplan release ITEM` frees your
+stage. `[identity]` names `CLAUDE_PID`, so in a shell where that is unset a
+claiming run **refuses** rather than taking an ownerless claim, and names what
+to export — there is no claim here that cannot say which session holds it.
+A claim is that session's hold and nothing frees it automatically:
+`archive` frees it at close-out, and `uv run --group dev fileplan release ITEM` frees your
 own or a dead local one — never a live claim and never another host's. A row
 reading `claim-status` `dead`, `elsewhere` or `unknown` gets reported by name,
 not cleared on sight.
@@ -204,7 +226,7 @@ the file to `docs/plan-archive/items/`. Pass the date — `archive` **takes**
 archives silently:
 
 ```bash
-uv run fileplan archive ITEM --closed YYYY-MM-DD
+uv run --group dev fileplan archive ITEM --closed YYYY-MM-DD
 ```
 
 After the move, condense the outcome into a short summary under the minted
@@ -220,7 +242,7 @@ PLAN-ARCHIVE.md stays bounded by rotation. When it grows long:
    preamble; the entries move verbatim).
 1. Raise `first-number` in `plan.toml` to the number of the first entry
    **kept**.
-1. Run `uv run fileplan list` — it must come back gap-free. A missing
+1. Run `uv run --group dev fileplan list` — it must come back gap-free. A missing
    number between the floor and the highest is refused loudly, per number.
 
 **Constraint:** the floor must stay at or below the oldest number still

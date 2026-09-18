@@ -19,7 +19,7 @@ prevent.
 ## 1. Ask for the contract
 
 ```bash
-uv run fileplan <transition> --help
+uv run --group dev fileplan <transition> --help
 ```
 
 What comes back is the options the run takes, and then the contract. The
@@ -35,7 +35,7 @@ transition nobody has ever seen before.
 ## 2. Ask whether this item passes
 
 ```bash
-uv run fileplan <transition> <item> --check
+uv run --group dev fileplan <transition> <item> --check
 ```
 
 Pass whatever options the contract said the run requires; a check is of a

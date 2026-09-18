@@ -176,9 +176,13 @@ at the repo root; [docs/PLAN-METHOD.md](docs/PLAN-METHOD.md) defines every
 state, key and transition.
 
 ```
-uv run fileplan                    # the workflow: states + transitions
-uv run fileplan list               # someday-maybe/plan items + register state
+uv run --group dev fileplan                    # the workflow: states + transitions
+uv run --group dev fileplan list               # someday-maybe/plan items + register state
 ```
+
+`--group dev` is required: this project sets `default-groups = []`, so a bare
+`uv run fileplan` gets no dev dependencies and silently falls back to whatever
+`fileplan` is on `PATH` instead of the pinned version.
 
 | Location                                                             | Holds                                                |
 | -------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -189,4 +193,5 @@ uv run fileplan list               # someday-maybe/plan items + register state
 | [PLAN-ARCHIVE-2026-09.md](docs/plan-archive/PLAN-ARCHIVE-2026-09.md) | Rotated segment: everything closed pre-conversion    |
 
 Cross-repo arcs queued against deployer keep **claude-meta's** phase
-numbers; the pointers live in docs/PLAN-METHOD.md.
+numbers, cited `fileplan-claude-meta:<number>` so one grep finds every
+citation; the pointers live in docs/PLAN-METHOD.md.

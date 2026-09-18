@@ -1,7 +1,7 @@
 # The someday-maybe -> plan -> plan-archive workflow, declared for fileplan.
 # Each `doc` pointer resolves to a heading in docs/PLAN-METHOD.md, which is
 # where these words get their meaning; fileplan checks the pointers on every
-# run. Run `uv run fileplan` to see what this file declares.
+# run. Run `uv run --group dev fileplan` to see what this file declares.
 #
 # `local/` holds fileplan session state (lock, claims) and is gitignored.
 
