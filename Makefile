@@ -63,8 +63,30 @@ pyright: ## Type-check the package and the CLI entry points
 	@echo "=== Pyright ==="
 	@uv run --group dev pyright src/ bin/
 
+.PHONY: tofu-fmt
+tofu-fmt: ## Check OpenTofu formatting (fix with: tofu fmt -recursive .)
+	@echo "=== Checking OpenTofu Formatting ==="
+	@command -v tofu >/dev/null 2>&1 || { \
+		echo "tofu not found on PATH -- see docs/GETTING-STARTED.md"; exit 1; }
+	@tofu fmt -check -recursive . || { \
+		echo "Unformatted. Fix with: tofu fmt -recursive ."; exit 1; }
+
+# Not in `make check`: every directory needs `tofu init` first, which reaches
+# the provider registry over the network. Run it after editing any .tf file.
+# It is what catches a module using a provider argument the version floor in
+# versions.tf cannot supply.
+.PHONY: tofu-validate
+tofu-validate: ## Init (no backend) and validate the root module, environments/ and every module
+	@echo "=== OpenTofu Validate ==="
+	@for d in . environments modules/*/; do \
+		[ -n "$$(ls $$d/*.tf 2>/dev/null)" ] || continue; \
+		echo "--- $$d"; \
+		( cd $$d && tofu init -backend=false -input=false >/dev/null \
+			&& tofu validate -no-color ); \
+	done
+
 .PHONY: lint
-lint: ## Check formatting (black, isort) and lint (ruff, pyright)
+lint: ## Check formatting (black, isort, tofu fmt) and lint (ruff, pyright)
 	@echo "=== Checking Black Formatting ==="
 	@uv run black --check $(PY_SOURCES)
 	@echo ""
@@ -75,6 +97,8 @@ lint: ## Check formatting (black, isort) and lint (ruff, pyright)
 	@uv run ruff check $(PY_SOURCES)
 	@echo ""
 	@$(MAKE) --no-print-directory pyright
+	@echo ""
+	@$(MAKE) --no-print-directory tofu-fmt
 
 # =============================================================================
 # Testing
