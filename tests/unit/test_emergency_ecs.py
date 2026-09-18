@@ -351,6 +351,21 @@ class TestScaleService:
         # A mutator: False is the documented failure sentinel.
         assert scale_service("no-such-cluster", SERVICE, 1) is False
 
+    def test_delegates_to_the_single_implementation(self, monkeypatch):
+        """There is one update_service call for scaling, in deployer.aws.ecs.
+
+        This module used to carry a byte-identical copy of it -- the repo's
+        only pylint R0801 block. The pin is here so a second copy cannot come
+        back without a test going red.
+        """
+        calls = []
+        monkeypatch.setattr(
+            ecs_module.aws_ecs, "scale_service", lambda *args: calls.append(args) or True
+        )
+
+        assert scale_service(CLUSTER, SERVICE, 3) is True
+        assert calls == [(CLUSTER, SERVICE, 3)]
+
 
 class TestForceNewDeployment:
     def test_forces_deployment(self, ecs_cluster):

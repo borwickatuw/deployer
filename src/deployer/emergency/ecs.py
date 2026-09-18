@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 import boto3
 from botocore.exceptions import ClientError
 
+from ..aws import ecs as aws_ecs
 from ..utils import format_iso
 from .checkpoint import ServiceState
 
@@ -412,16 +413,7 @@ def scale_service(
         BotoCoreError: Connectivity and configuration failures are not caught;
             only ClientError is.
     """
-    client = _get_ecs_client()
-    try:
-        client.update_service(
-            cluster=cluster_name,
-            service=service_name,
-            desiredCount=desired_count,
-        )
-        return True
-    except ClientError:
-        return False
+    return aws_ecs.scale_service(cluster_name, service_name, desired_count)
 
 
 def force_new_deployment(

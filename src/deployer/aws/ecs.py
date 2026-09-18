@@ -96,6 +96,9 @@ def scale_service(
 ) -> bool:
     """Scale an ECS service to the desired count.
 
+    The one implementation of this operation: ``emergency.ecs.scale_service``
+    delegates here rather than carrying a second copy.
+
     Args:
         cluster_name: Name of the ECS cluster.
         service_name: Name of the service to scale.
@@ -103,7 +106,12 @@ def scale_service(
         ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
-        True if successful, False otherwise.
+        True if the update was initiated, False if AWS rejected it -- a
+        failure sentinel the caller branches on, not an absence one.
+
+    Raises:
+        BotoCoreError: Connectivity and configuration failures are not caught;
+            only ClientError is.
     """
     client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
