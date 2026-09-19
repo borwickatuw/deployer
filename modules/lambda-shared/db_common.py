@@ -33,6 +33,7 @@ __all__ = [
     "DbCredentials",
     "DbUser",
     "connect",
+    "connect_as_master",
     "create_user",
     "escape_identifier",
     "escape_literal",
@@ -130,6 +131,23 @@ def connect(secret: dict, database: str):
         user=secret["username"],
         password=secret["password"],
     )
+
+
+def connect_as_master(creds: DbCredentials, database: str) -> pg8000.native.Connection:
+    """Open a master connection to ``database``, announcing the endpoint first.
+
+    Both handlers logged the host/port they were about to touch and then
+    connected; pairing the two here means the log line and the connection can
+    never name different endpoints, and every master connection -- including
+    the second one db-on-shared-rds opens against the application database --
+    is announced the same way. Lifetime stays with the caller: this returns a
+    connection, it does not close one.
+    """
+    logger.info(
+        f"Connecting to database '{database}' at "
+        f"{creds.master['host']}:{creds.master['port']} as master"
+    )
+    return connect(creds.master, database)
 
 
 def user_exists(conn, username: str) -> bool:

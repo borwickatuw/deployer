@@ -32,7 +32,7 @@ import os
 from db_common import (
     DbCredentials,
     DbUser,
-    connect,
+    connect_as_master,
     create_user,
     escape_identifier,
     grant_all_on_existing,
@@ -139,14 +139,9 @@ def handle_setup_database() -> dict:
     creds = DbCredentials.from_environment()
     app, migrate, db_name = creds.app, creds.migrate, creds.db_name
 
-    logger.info(
-        f"Setting up database '{db_name}' on shared RDS "
-        f"at {creds.master['host']}:{creds.master['port']}"
-    )
-
     # Step 1: Connect to 'postgres' database to create database and users
     # (We can't connect to a database that doesn't exist yet)
-    conn_admin = connect(creds.master, "postgres")
+    conn_admin = connect_as_master(creds, "postgres")
 
     db_created = False
     try:
@@ -188,9 +183,7 @@ def handle_setup_database() -> dict:
         conn_admin.close()
 
     # Step 2: Connect to the application database to set up schema privileges
-    logger.info(f"Connecting to database '{db_name}' to set up schema privileges")
-
-    conn_app = connect(creds.master, db_name)
+    conn_app = connect_as_master(creds, db_name)
 
     try:
         # Transfer ownership of any existing tables to migrate user

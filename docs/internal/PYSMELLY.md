@@ -120,6 +120,37 @@ and `setup_schema_privileges` twins), 1 × `duplicate-except-blocks`, 1 ×
 `create_extensions` became a single-caller helper in the shared module; it was
 inlined into `handle_create_extensions` rather than suppressed.
 
+#### The `duplicate-blocks` leave-standing is resolved (2026-09-18)
+
+The row above, and the §53l re-verification that later marked it "Holds", both
+judged **one** drafted fix — a `connected_as_master(creds, db)` *context
+manager* — and rejected it for the right reason: it hides a connection lifetime
+that is part of the shared-instance model. That verdict stands for the context
+manager and was carried for a month as if it were a verdict on the finding.
+
+A plain function does not have the problem the context manager had.
+`db_common.connect_as_master(creds, database)` logs the endpoint and **returns**
+a connection; every `try` / `finally: conn.close()` stays exactly where it was,
+in the handler. Both twins' prologues drop from five structurally identical
+statements to four, under `duplicate-blocks`' threshold, and the check reports
+nothing in the repo. Nothing was minted in the trade (repo total 51 → 50; run
+`make pysmelly` to re-derive).
+
+The consolidation also fixed a real inconsistency the duplication was hiding:
+the two twins announced the endpoint in different words, and the second
+connection db-on-shared-rds opens — against the application database, for the
+schema-privilege pass — logged the database name but no host or port at all.
+All three sites now log one line from one place. `create_app_user` /
+`create_migrate_user` and the create-or-update pairing around them stay per
+module, unchanged: that is the privilege composition 53a deliberately left
+divergent, and it is not what the check was pointing at.
+
+Tests: three in `tests/unit/test_lambda_db_common.py` on the helper (named
+database wins over `creds.db_name`, the endpoint reaches the log, the
+connection comes back open), plus a drift guard asserting each twin imports
+`connect_as_master` and not bare `connect` — importing `connect` directly is
+how the announced endpoint and the opened connection would drift apart again.
+
 ### 53b — CLI boilerplate dedup (2026-08-13)
 
 The duplication spread across `bin/` and the `src/deployer` modules those

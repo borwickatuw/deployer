@@ -13,6 +13,7 @@ has, where the module sits next to ``index.py`` at the bundle root.
 
 import ast
 import json
+import logging
 from pathlib import Path
 
 import boto3
@@ -175,6 +176,62 @@ def test_user_exists_uses_a_bound_parameter():
 
 def test_user_exists_false_on_empty_result():
     assert user_exists(FakeConn(), "nobody") is False
+
+
+# ---------------------------------------------------------------------------
+# Connections
+# ---------------------------------------------------------------------------
+
+
+def _creds(db_name: str = "appdb") -> "db_common.DbCredentials":
+    """A credentials bundle with no AWS behind it."""
+    return db_common.DbCredentials(
+        master={
+            "username": "master_user",
+            "password": "master_pw",  # pragma: allowlist secret
+            "host": "db.example.com",
+            "port": "5432",
+        },
+        app=DbUser("app_user", "app_pw"),  # pragma: allowlist secret
+        migrate=DbUser("migrate_user", "migrate_pw"),  # pragma: allowlist secret
+        db_name=db_name,
+    )
+
+
+def test_connect_as_master_opens_the_named_database_with_the_master_secret(monkeypatch):
+    """The database is the argument, never ``creds.db_name`` -- db-on-shared-rds
+    opens 'postgres' first, before its own database exists."""
+    conn = FakeConn()
+    seen = {}
+    monkeypatch.setattr(
+        db_common,
+        "connect",
+        lambda secret, database: seen.update(secret=secret, database=database) or conn,
+    )
+
+    assert db_common.connect_as_master(_creds(), "postgres") is conn
+    assert seen["database"] == "postgres"
+    assert seen["secret"]["username"] == "master_user"
+
+
+def test_connect_as_master_logs_the_endpoint_it_is_about_to_open(monkeypatch, caplog):
+    monkeypatch.setattr(db_common, "connect", lambda *_args: FakeConn())
+
+    with caplog.at_level(logging.INFO, logger="db_common"):
+        db_common.connect_as_master(_creds(), "appdb")
+
+    assert "'appdb'" in caplog.text
+    assert "db.example.com:5432" in caplog.text
+
+
+def test_connect_as_master_leaves_the_connection_open_for_the_caller(monkeypatch):
+    """Lifetime stays in the handler's try/finally; the helper only opens."""
+    conn = FakeConn()
+    monkeypatch.setattr(db_common, "connect", lambda *_args: conn)
+
+    db_common.connect_as_master(_creds(), "appdb")
+
+    assert not conn.closed
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +485,21 @@ def test_declared_vocabulary_is_all_defined():
     """Every name in ``__all__`` exists -- a rename must update the contract."""
     missing = sorted(name for name in db_common.__all__ if not hasattr(db_common, name))
     assert not missing, f"db_common.__all__ names nothing defines: {missing}"
+
+
+@pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)
+def test_twin_opens_master_connections_through_connect_as_master(index_path):
+    """A twin reaching for bare ``connect`` skips the endpoint log line.
+
+    ``connect_as_master`` exists so the announced host/port and the opened
+    connection can never disagree; importing ``connect`` directly is how that
+    pairing came apart in the first place (each twin logged its own line, in
+    its own words, and one of db-on-shared-rds' two connections logged no
+    endpoint at all).
+    """
+    imported = _imported_from_db_common(index_path)
+    assert "connect_as_master" in imported
+    assert "connect" not in imported
 
 
 @pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)

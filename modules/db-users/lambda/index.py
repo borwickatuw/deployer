@@ -25,7 +25,7 @@ import os
 from db_common import (
     DbCredentials,
     DbUser,
-    connect,
+    connect_as_master,
     create_user,
     escape_identifier,
     grant_all_on_existing,
@@ -103,11 +103,7 @@ def handle_create_users() -> dict:
     creds = DbCredentials.from_environment()
     app, migrate, db_name = creds.app, creds.migrate, creds.db_name
 
-    logger.info(
-        f"Connecting to database {db_name} at {creds.master['host']}:{creds.master['port']}"
-    )
-
-    conn = connect(creds.master, db_name)
+    conn = connect_as_master(creds, db_name)
 
     try:
         # Create or update app user
