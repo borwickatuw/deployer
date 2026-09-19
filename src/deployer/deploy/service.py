@@ -8,7 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NamedTuple, NoReturn
 
 import boto3
 from botocore.exceptions import ClientError
@@ -1247,20 +1247,35 @@ def _raise_task_failure(events: list[dict], service_name: str, failed: int) -> N
     )
 
 
-def _track_no_progress(events: list[dict], service_name: str, consecutive_failures: int) -> int:
-    """Count a poll that made no progress, raising once the run is hopeless.
+def _track_no_progress(
+    events: list[dict],
+    service_name: str,
+    running: int,
+    failed: int,
+    consecutive_failures: int,
+) -> int:
+    """Count a poll against the no-progress run, raising once it is hopeless.
+
+    A poll makes no progress when it has failures and nothing running; any
+    other poll ends the run. Owning that predicate here keeps the definition
+    of "no progress" next to the count it drives.
 
     Args:
         events: List of ECS service events (most recent first).
         service_name: Name of the service.
+        running: Running task count reported by this poll.
+        failed: ``failedTasks`` reported by this poll.
         consecutive_failures: Count of prior consecutive no-progress polls.
 
     Returns:
-        The incremented no-progress count.
+        The incremented no-progress count, or 0 if this poll made progress.
 
     Raises:
         DeploymentError: After 3 polls (~45s) with failures and no running tasks.
     """
+    if not (running == 0 and failed > 0):
+        return 0
+
     consecutive_failures += 1
     if consecutive_failures >= 3 and events:
         # 3 polls (~45s) with failures and no running tasks
@@ -1362,6 +1377,68 @@ def _check_expected_task_definition(
         )
 
 
+class _SettleWindow(NamedTuple):
+    """A run of consecutive qualifying polls of one ECS deployment.
+
+    Success requires the criterion (running == desired > 0, nothing pending,
+    PRIMARY running the expected ARN) to hold across the whole window: the
+    first qualifying poll plus ``stability.settle_polls`` confirming polls of
+    the same deployment with ``failedTasks`` not increasing, spanning
+    ~``settle_seconds``. One poll is not enough -- a crash loop whose tasks
+    live ~15s can show running == desired on every poll with a different task
+    each time.
+    """
+
+    deployment_id: str | None
+    failed_at_start: int
+    confirming_polls: int
+
+
+def _advance_settle_window(
+    window: _SettleWindow | None, deployment: dict, failed: int
+) -> _SettleWindow:
+    """Fold one qualifying poll into the settle window.
+
+    Args:
+        window: Window built by the previous qualifying poll, or None when
+            the previous poll did not qualify.
+        deployment: The PRIMARY deployment this poll observed.
+        failed: ``failedTasks`` this poll reported.
+
+    Returns:
+        A window restarted at zero confirming polls when this poll cannot
+        confirm the previous one (there was no window, the deployment id
+        changed, or failures grew); otherwise the same window with one more
+        confirming poll.
+    """
+    deployment_id = deployment.get("id")
+    if window is None or window.deployment_id != deployment_id or failed > window.failed_at_start:
+        return _SettleWindow(deployment_id, failed, 0)
+    return _SettleWindow(window.deployment_id, window.failed_at_start, window.confirming_polls + 1)
+
+
+def _format_poll_status(deployment: dict, running: int, desired: int, failed: int) -> str:
+    """Render the operator-facing one-line status for a poll.
+
+    Args:
+        deployment: The PRIMARY deployment this poll observed.
+        running: Running task count.
+        desired: Desired task count.
+        failed: ``failedTasks`` this poll reported.
+
+    Returns:
+        A line such as ``running=1/2`` or ``running=0/0, rollout=COMPLETED``.
+    """
+    status = f"running={running}/{desired}"
+    if failed > 0:
+        status += f", failed={failed}"
+    if desired == 0:
+        # At 0/0 the counts never change; the rollout state is the only
+        # progress signal (and the only clue in a timeout message).
+        status += f", rollout={deployment.get('rolloutState', 'UNKNOWN')}"
+    return status
+
+
 def _wait_for_service_stable(
     ctx: DeploymentContext,
     service_name: str,
@@ -1370,14 +1447,9 @@ def _wait_for_service_stable(
 ) -> None:
     """Wait for a single service to stabilize.
 
-    Success requires the criterion (running == desired > 0, nothing pending,
-    PRIMARY running ``expected_arn``) to hold across a settle window: the
-    first qualifying poll plus ``stability.settle_polls`` consecutive
-    confirming polls of the same deployment with ``failedTasks`` not
-    increasing, spanning ~``settle_seconds``. One poll is not enough: a crash
-    loop whose tasks live ~15s can show running == desired on every poll with
-    a different task each time. Costs ~settle_seconds per service, all
-    services in parallel.
+    Success requires a full ``_SettleWindow`` of qualifying polls, which
+    documents what qualifies and why one poll is not enough. Costs
+    ~settle_seconds per service, all services in parallel.
 
     A scale-to-zero service (desired == 0, e.g. held there by queue-depth
     autoscaling) instead succeeds as soon as PRIMARY reports rolloutState
@@ -1398,39 +1470,24 @@ def _wait_for_service_stable(
     """
     last_status = ""
     consecutive_failures = 0
-    # (deployment id, failedTasks at window start, confirming polls seen) for
-    # the current run of qualifying polls; None after any non-qualifying poll.
-    settling: tuple[str | None, int, int] | None = None
+    settling: _SettleWindow | None = None
 
     for _ in range(1, stability.max_attempts + 1):
         service = _describe_service_or_raise(ctx, service_name)
         events = service.get("events", [])[:5]  # Check last 5 events
-
-        # Check for fatal errors in events
         _check_for_fatal_errors(events, service_name)
 
         # A FAILED rollout anywhere in the deployment list is fatal
         _check_for_failed_rollout(service, service_name)
 
-        # Get deployment status
         deployment, running, desired, failed = _get_deployment_status(service)
-
         if not deployment:
             log_warning(f"{service_name}: No primary deployment found")
             settling = None
             time.sleep(stability.poll_interval)
             continue
 
-        # Build status message
-        status = f"running={running}/{desired}"
-        if failed > 0:
-            status += f", failed={failed}"
-        if desired == 0:
-            # At 0/0 the counts never change; the rollout state is the only
-            # progress signal (and the only clue in a timeout message).
-            status += f", rollout={deployment.get('rolloutState', 'UNKNOWN')}"
-
-        # Only print if status changed
+        status = _format_poll_status(deployment, running, desired, failed)
         if status != last_status:
             print(f"  {service_name}: {status}")
             last_status = status
@@ -1440,22 +1497,14 @@ def _wait_for_service_stable(
 
         if running == desired and pending == 0 and running > 0:
             _check_expected_task_definition(deployment, service_name, expected_arn)
-            dep_id = deployment.get("id")
-            if settling is None or settling[0] != dep_id or failed > settling[1]:
-                # First qualifying poll (or the id changed, or failures
-                # grew): (re)start the settle window.
-                settling = (dep_id, failed, 0)
-            else:
-                confirmed = settling[2] + 1
-                if confirmed >= stability.settle_polls:
-                    log_success(f"{service_name} (stable)")
-                    return
-                settling = (settling[0], settling[1], confirmed)
+            settling = _advance_settle_window(settling, deployment, failed)
+            if settling.confirming_polls >= stability.settle_polls:
+                log_success(f"{service_name} (stable)")
+                return
         elif running == 0 and desired == 0 and pending == 0:
-            # Scale-to-zero: queue-depth autoscaling can hold desiredCount at
-            # 0 across a deploy. With no tasks the settle window has nothing
-            # to observe, so ECS's rollout verdict gates instead — PRIMARY
-            # COMPLETED means the new task definition is what a scale-up runs.
+            # With no tasks the settle window has nothing to observe, so ECS's
+            # own rollout verdict gates this route instead: PRIMARY COMPLETED
+            # means the new task definition is what a scale-up runs.
             settling = None
             if deployment.get("rolloutState") == "COMPLETED":
                 _check_expected_task_definition(deployment, service_name, expected_arn)
@@ -1463,18 +1512,11 @@ def _wait_for_service_stable(
                 return
         else:
             settling = None
-
-            # Check for persistent failures
             if failed >= stability.failure_threshold:
                 _raise_task_failure(events, service_name, failed)
-
-            # Track consecutive polls with no progress
-            if running == 0 and failed > 0:
-                consecutive_failures = _track_no_progress(
-                    events, service_name, consecutive_failures
-                )
-            else:
-                consecutive_failures = 0
+            consecutive_failures = _track_no_progress(
+                events, service_name, running, failed, consecutive_failures
+            )
 
         time.sleep(stability.poll_interval)
 

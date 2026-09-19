@@ -95,10 +95,13 @@ from deployer.deploy.service import (
     DeploymentError,
     MigrationTask,
     ServiceWaitResult,
+    _advance_settle_window,
     _check_for_fatal_errors,
     _display_migration_logs,
+    _format_poll_status,
     _get_deployment_status,
     _get_service_target_group,
+    _SettleWindow,
     _wait_for_service_and_targets,
     _wait_for_service_stable,
     _wait_for_target_group_healthy,
@@ -495,6 +498,83 @@ class TestGetDeploymentStatus:
         """
         with pytest.raises(KeyError, match="status"):
             _get_deployment_status({"deployments": [{"runningCount": 1}]})
+
+
+# ===========================================================================
+# _format_poll_status
+# ===========================================================================
+
+
+class TestFormatPollStatus:
+    """Pins the operator-facing poll line the stability loop prints."""
+
+    def test_counts_only(self):
+        assert _format_poll_status({}, 1, 2, 0) == "running=1/2"
+
+    def test_failed_tasks_are_appended(self):
+        assert _format_poll_status({}, 1, 2, 3) == "running=1/2, failed=3"
+
+    def test_rollout_state_is_appended_at_zero_desired(self):
+        """At 0/0 the counts never move, so the rollout state carries the news."""
+        deployment = {"rolloutState": "COMPLETED"}
+        assert _format_poll_status(deployment, 0, 0, 0) == "running=0/0, rollout=COMPLETED"
+
+    def test_missing_rollout_state_reads_unknown(self):
+        assert _format_poll_status({}, 0, 0, 0) == "running=0/0, rollout=UNKNOWN"
+
+    def test_failed_and_rollout_both_appear(self):
+        deployment = {"rolloutState": "IN_PROGRESS"}
+        assert (
+            _format_poll_status(deployment, 0, 0, 2) == "running=0/0, failed=2, rollout=IN_PROGRESS"
+        )
+
+
+# ===========================================================================
+# _advance_settle_window
+# ===========================================================================
+
+
+class TestAdvanceSettleWindow:
+    """Pins the restart-vs-confirm rule the settle window turns on.
+
+    ``_wait_for_service_stable`` tests exercise this through whole polling
+    runs; these pin the fold itself, so a restart rule that regresses is
+    visible without counting describe_services calls.
+    """
+
+    def test_first_qualifying_poll_opens_a_window(self):
+        assert _advance_settle_window(None, {"id": "d1", "runningCount": 1}, 0) == _SettleWindow(
+            "d1", 0, 0
+        )
+
+    def test_missing_deployment_id_is_carried_as_none(self):
+        assert _advance_settle_window(None, {}, 0).deployment_id is None
+
+    def test_same_deployment_confirms(self):
+        window = _SettleWindow("d1", 0, 0)
+        assert _advance_settle_window(window, {"id": "d1"}, 0) == _SettleWindow("d1", 0, 1)
+
+    def test_confirmations_accumulate(self):
+        window = _SettleWindow("d1", 0, 4)
+        assert _advance_settle_window(window, {"id": "d1"}, 0).confirming_polls == 5
+
+    def test_a_new_deployment_id_restarts_the_window(self):
+        window = _SettleWindow("d1", 0, 3)
+        assert _advance_settle_window(window, {"id": "d2"}, 0) == _SettleWindow("d2", 0, 0)
+
+    def test_growing_failures_restart_the_window_at_the_new_count(self):
+        """A failedTasks bump discards the whole window, not just that poll."""
+        window = _SettleWindow("d1", 1, 3)
+        assert _advance_settle_window(window, {"id": "d1"}, 2) == _SettleWindow("d1", 2, 0)
+
+    def test_steady_failures_still_confirm(self):
+        """Only *growing* failures restart: a static count is not a new crash."""
+        window = _SettleWindow("d1", 2, 1)
+        assert _advance_settle_window(window, {"id": "d1"}, 2) == _SettleWindow("d1", 2, 2)
+
+    def test_shrinking_failures_still_confirm(self):
+        window = _SettleWindow("d1", 5, 1)
+        assert _advance_settle_window(window, {"id": "d1"}, 4) == _SettleWindow("d1", 5, 2)
 
 
 # ===========================================================================
