@@ -48,6 +48,22 @@ SECRET_PATTERNS = [
     "PRIVATE",
 ]
 
+# Variables whose deploy.toml value is fixed, whatever the compose file said.
+# deploy.toml is checked in, so a local value must never be carried across.
+FIXED_ENVIRONMENT_VALUES = {
+    "DATABASE_URL": "${database_url}",
+    "ALLOWED_HOSTS": "*",
+}
+
+# Variables that all name the same Redis endpoint. Whichever one the compose
+# file declares, REDIS_URL is emitted -- deployer resolves ${redis_url} from
+# the environment's infra config.
+REDIS_ALIAS_VARS = {"REDIS_URL", "CELERY_BROKER_URL"}
+
+# Variables the generator leaves out of the shared [environment] table because
+# it writes them per-environment in [environment.staging]/[environment.production].
+PER_ENVIRONMENT_ONLY_VARS = {"DEBUG", "LOG_LEVEL"}
+
 # Environment variables that look like secrets but are actually placeholders/infrastructure
 NON_SECRET_ENV_VARS = {
     "DATABASE_URL",
@@ -199,25 +215,26 @@ def _build_environment_config(all_env_vars: set) -> tuple[dict, dict]:
     the environment's answer -- config.toml's ``[secrets] path_prefix`` -- so
     it has no business in the application's checked-in file.
     """
-    environment = {}
-    secret_names = []
+    # ALLOWED_HOSTS is wide open whether or not the application declared it,
+    # so it is seeded rather than patched in afterwards; a declared one takes
+    # the same value from the same table below.
+    environment: dict[str, str] = {"ALLOWED_HOSTS": FIXED_ENVIRONMENT_VALUES["ALLOWED_HOSTS"]}
+    secret_names: list[str] = []
 
     for var_name in sorted(all_env_vars):
         if is_likely_secret(var_name):
             secret_names.append(var_name)
-        elif var_name == "DATABASE_URL":
-            environment["DATABASE_URL"] = "${database_url}"
-        elif var_name in {"REDIS_URL", "CELERY_BROKER_URL"}:
+            continue
+        if var_name in REDIS_ALIAS_VARS:
+            # An alias also emits REDIS_URL, which the application may not
+            # itself have mentioned.
             environment["REDIS_URL"] = "${redis_url}"
-            if var_name == "CELERY_BROKER_URL":
-                environment["CELERY_BROKER_URL"] = "${redis_url}"
-        elif var_name == "ALLOWED_HOSTS":
-            environment["ALLOWED_HOSTS"] = "*"
-        elif var_name not in {"DEBUG", "LOG_LEVEL"}:
-            environment[var_name] = ""
-
-    if "ALLOWED_HOSTS" not in environment:
-        environment["ALLOWED_HOSTS"] = "*"
+            environment[var_name] = "${redis_url}"
+            continue
+        if var_name not in PER_ENVIRONMENT_ONLY_VARS:
+            # Anything without a fixed value is declared empty for the
+            # operator to fill in; the compose value is never carried across.
+            environment[var_name] = FIXED_ENVIRONMENT_VALUES.get(var_name, "")
 
     return environment, {"names": secret_names} if secret_names else {}
 

@@ -408,6 +408,13 @@ class TestEnvironmentMapping:
         assert config["environment"]["CELERY_BROKER_URL"] == "${redis_url}"
         assert config["environment"]["REDIS_URL"] == "${redis_url}"
 
+    def test_both_redis_variables_declared_collapse_to_one_endpoint(self):
+        config = _generate(
+            {"web": _svc(environment=["REDIS_URL=redis://a", "CELERY_BROKER_URL=redis://b"])}
+        )
+        assert config["environment"]["REDIS_URL"] == "${redis_url}"
+        assert config["environment"]["CELERY_BROKER_URL"] == "${redis_url}"
+
     def test_allowed_hosts_is_always_present_and_wide_open(self):
         config = _generate({"web": _svc()})
         assert config["environment"]["ALLOWED_HOSTS"] == "*"
@@ -415,6 +422,13 @@ class TestEnvironmentMapping:
     def test_a_declared_allowed_hosts_is_overwritten_with_the_wildcard(self):
         config = _generate({"web": _svc(environment=["ALLOWED_HOSTS=example.com"])})
         assert config["environment"]["ALLOWED_HOSTS"] == "*"
+
+    @pytest.mark.parametrize("environment", [[], ["ALLOWED_HOSTS=example.com"]])
+    def test_allowed_hosts_is_written_exactly_once(self, environment):
+        # The default is seeded, not patched in afterwards, so a declared
+        # ALLOWED_HOSTS must not produce a second line in the generated file.
+        rendered = format_deploy_toml(_generate({"web": _svc(environment=environment)}))
+        assert rendered.count('ALLOWED_HOSTS = "*"') == 1
 
     def test_debug_and_log_level_are_left_to_the_per_environment_overrides(self):
         config = _generate({"web": _svc(environment=["DEBUG=1", "LOG_LEVEL=INFO"])})
