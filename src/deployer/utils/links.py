@@ -27,8 +27,7 @@ def get_links_file() -> Path:
 
 # absence sentinel: None means "not linked", and nothing else. A links file
 # that exists but will not parse is "I could not look" and raises, per
-# DECISIONS.md 2026-08-18 "Error Contracts".  (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore return-none-instead-of-raise
+# DECISIONS.md 2026-08-18 "Error Contracts".
 def get_linked_deploy_toml(environment: str) -> Path | None:
     """Look up the deploy.toml path for an environment.
 

@@ -219,7 +219,6 @@ def check_environment(_env_name: str, env_path, days: int) -> int:
     return 1 if total_oom > 0 else 0
 
 
-# pysmelly: ignore shotgun-surgery — Click's @click.command() pattern inherently spans files  (re-evaluate-by: 2026-11 review)
 @click.command()
 @click.argument("environment", required=False)
 @click.option("--days", "-d", type=int, default=7, help="Number of days to check (default: 7)")

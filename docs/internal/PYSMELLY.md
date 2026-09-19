@@ -11,11 +11,12 @@ or regenerate the generic guide with `pysmelly init --short`.
 **Near-zero suppression.** Findings are fixed, or left standing as an
 operator-visible decision recorded below. Inline `# pysmelly: ignore` is reserved
 for cut-and-dry false positives (Lambda handler signatures, JSON-serialized dict
-returns), each with a rationale and a `re-evaluate-by:` tag — **which is true of
-15 of the 20 standing directives; the five in `utils/logging.py` carry a tag and
-no reason, escalated by §53l**. Suppression comments
-go on the finding line or the line immediately above it — pysmelly does not see
-them anywhere else.
+returns), each with a rationale and a `re-evaluate-by:` tag. Enumerate the
+standing directives rather than trusting a count written here:
+`grep -rn 'pysmelly: ignore' --include='*.py' . | grep -v .venv`. Suppression
+comments go on the finding line or the line immediately above it — pysmelly does
+not see them anywhere else, and a directive that suppresses nothing is deleted
+(see "Standing inline suppressions"), not left as scenery.
 
 Whole-category `skip` config is used only where a finding is structurally
 inapplicable to this repo rather than merely inconvenient; the three entries in
@@ -1845,6 +1846,26 @@ Suppressions adjudicated by an entry above:
 
 `modules/staging-scheduler/lambda/handler.py` `handler` is a fourth Lambda
 `vestigial-params` suppression the table above should have listed and does not.
+
+#### Three of the standing directives suppressed nothing (strip-audit, 2026-09-18)
+
+The 53i-2a claim below — *"the suppressions never stopped working"* — was true
+when written and is no longer. A per-directive strip-audit (delete one
+directive, re-run `pysmelly . --check <name>`, compare) found three that fire no
+finding either way and deleted them:
+
+| Location                     | Check                        | Class                                                                                                                                                                      |
+| ---------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bin/capacity-report.py:222` | shotgun-surgery              | **Redundant companion.** The check's single finding anchors at `bin/cognito.py`, which carries its own live directive; a non-anchor ignore on a multi-file check is inert. |
+| `emergency/checkpoint.py:38` | write-only-attributes        | **Dead.** The check reports nothing repo-wide; `RdsState` is read back through `asdict()` / `RdsState(**rds_data)`.                                                        |
+| `utils/links.py:31`          | return-none-instead-of-raise | **Dead.** The check now fires only at `core/config.py` and `init/bootstrap.py`.                                                                                            |
+
+The rationale prose above the `checkpoint.py` and `links.py` directives stayed, demoted to plain comments: it
+documents why `RdsState`'s fields have no direct attribute reads, and the
+error-contract split (`docs/internal/DECISIONS.md`, "Error Contracts") that
+makes `None` an absence sentinel rather than a swallowed failure. The
+`re-evaluate-by:` tags went with the directives — there is no longer a
+suppression to re-evaluate.
 
 #### The corpus, classified by where the rationale sits (re-measured 2026-08-18)
 
