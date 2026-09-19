@@ -5,6 +5,8 @@ image build/push, database extensions, migrations, service deployment,
 and stability checks.
 """
 
+from __future__ import annotations
+
 import functools
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -118,8 +120,8 @@ def _build_stability_config(infra_config: InfraConfig) -> StabilityConfig:
 
 
 def _timed_step[**P, R](
-    method: "Callable[Concatenate[Deployer, P], R]",
-) -> "Callable[Concatenate[Deployer, P], R]":
+    method: Callable[Concatenate[Deployer, P], R],
+) -> Callable[Concatenate[Deployer, P], R]:
     """Time a Deployer step under the method's own name.
 
     The timing key is the method name with its leading underscore stripped,
@@ -140,7 +142,7 @@ def _timed_step[**P, R](
     step_name = method.__name__.removeprefix("_")
 
     @functools.wraps(method)
-    def wrapper(self: "Deployer", *args: P.args, **kwargs: P.kwargs) -> R:
+    def wrapper(self: Deployer, *args: P.args, **kwargs: P.kwargs) -> R:
         with (self.timer or NullTimer()).step(step_name):
             return method(self, *args, **kwargs)
 
