@@ -149,6 +149,23 @@ or is deleted with its rationale recorded in
 [DECISIONS.md](internal/DECISIONS.md). fileplan does not validate the
 path; keeping items and drafts pointing at each other is review work.
 
+## review
+
+The comprehensive review that filed this item, cited by its audit date
+`YYYY-MM-DD` — provenance, the way [source](#source) is provenance for an
+idea. Set by [scope](#scope) on every item a review opens: a finding that
+changes this repo's code is scoped here, guide, process and register work
+is scoped in claude-meta, and a fleet-wide family is one claude-meta item
+that per-repo items cite with blocked-on. The audit record
+itself lives in claude-meta at `audits/<date>-comprehensive-review.md`.
+
+`fileplan list --has review=<date>` answers "what did that review file" in
+this repo; `--has review` lists every review-filed item; and the next
+review's carry-forward audit is the open items still carrying an older
+date. Declared identically in every fleet `plan.toml` (the shared-key
+pattern of claude-meta's `best-practices/FILEPLAN.md` Practice 12). An item
+opened by hand carries no `review` key, so the absence means something too.
+
 ## capture
 
 File an idea into someday-maybe. Write the idea shape into the body —

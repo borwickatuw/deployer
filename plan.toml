@@ -48,6 +48,10 @@ help = "The date the idea was captured, YYYY-MM-DD."
 doc  = "docs/PLAN-METHOD.md#draft"
 help = "Repo-relative path of the design document the item decides from."
 
+[keys.review]
+doc  = "docs/PLAN-METHOD.md#review"
+help = "The comprehensive review that filed this, cited by audit date YYYY-MM-DD."
+
 [transitions.capture]
 doc  = "docs/PLAN-METHOD.md#capture"
 help = "File an idea in someday-maybe."
@@ -63,6 +67,7 @@ to   = "plan"
 doc  = "docs/PLAN-METHOD.md#scope"
 help = "Open a phase directly in the plan (review findings, carry-forwards)."
 to   = "plan"
+sets = ["review"]
 
 # The four session verbs. All four point at one #session-verbs heading:
 # fileplan allows transitions to share a doc pointer, and the canonical
