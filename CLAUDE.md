@@ -186,7 +186,10 @@ compared byte-for-byte, not read.
 
 ## pysmelly
 
-Read [docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md) before running pysmelly code smell analysis on this project.
+Read [docs/PYSMELLY.md](docs/PYSMELLY.md) — the findings register and review
+conventions — before running pysmelly code smell analysis on this project. The
+phase-by-phase reasoning behind the standing verdicts is in
+[docs/internal/PYSMELLY.md](docs/internal/PYSMELLY.md).
 
 ## Cross-Repository Ideas
 

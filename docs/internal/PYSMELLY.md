@@ -1,35 +1,19 @@
-<!-- pysmelly-guidance 0679ec1c1685 -->
+# pysmelly — the phase-by-phase reasoning log
 
-# pysmelly — findings register and review conventions
-
-Run `make pysmelly` (repo root — config lives in `[tool.pysmelly]` in
-`pyproject.toml`). Full guidance: https://github.com/borwickatuw/pysmelly#readme
-or regenerate the generic guide with `pysmelly init --short`.
+**The current-facing register moved.** The convention, the standing inline
+suppressions, the `[tool.pysmelly]` config notes and the live adjudication
+state are in [docs/PYSMELLY.md](../PYSMELLY.md), which is where
+PYSMELLY-REVIEW.md Practice #8a expects them and what a session should read
+first. This file is the **history**: the per-subphase reasoning, the
+measurements each verdict rested on, and the records of the arcs that produced
+them. It is read back, not maintained as current — a count or a placement
+claim here describes the tree it was measured at.
 
 ## Deployer's convention
 
-**Near-zero suppression.** Findings are fixed, or left standing as an
-operator-visible decision recorded below. Inline `# pysmelly: ignore` is reserved
-for cut-and-dry false positives (Lambda handler signatures, JSON-serialized dict
-returns), each with a rationale and a `re-evaluate-by:` tag. Enumerate the
-standing directives rather than trusting a count written here:
-`grep -rn 'pysmelly: ignore' --include='*.py' . | grep -v .venv`. Suppression
-comments go on the finding line or the line immediately above it — pysmelly does
-not see them anywhere else, and a directive that suppresses nothing is deleted
-(see "Standing inline suppressions"), not left as scenery.
-
-Whole-category `skip` config is used only where a finding is structurally
-inapplicable to this repo rather than merely inconvenient; the three entries in
-`pyproject.toml` (`internal-only`, `shared-mutable-module-state`,
-`scattered-constants`) each carry their rationale inline. `exclude = ["tests/"]`
-is set because pytest setup boilerplate otherwise dominates `duplicate-blocks`.
-
-**Scan scope note.** `make pysmelly` runs `uvx pysmelly .` over the whole repo,
-which includes `modules/` — that is deliberate, because the OpenTofu modules
-carry Python Lambda code. The per-module `lambda/` directories also hold
-pip-vendored packages at apply time; those are gitignored build artifacts and are
-not present in a clean tree, so they do not pollute the count. The tracked shared
-Lambda code lives in `modules/lambda-shared/`.
+Stated in [docs/PYSMELLY.md](../PYSMELLY.md) § "Deployer's convention".
+Sections below that quote "the convention this document states" are quoting
+that section as it stood when they were written.
 
 ## Adjudication record
 
@@ -1877,6 +1861,13 @@ None — zero code units. The one code change recorded above belongs to the
 2026-08-18 closeout, not to 53g, and is dated as such.
 
 ### Standing inline suppressions
+
+**Superseded — the live set is in [docs/PYSMELLY.md](../PYSMELLY.md)
+§ "Standing inline suppressions".** The table below describes the tree as the
+Phase 53 subphases left it. Both `vestigial-params` rows were retired on
+2026-09-18 by renaming the Lambda handlers' unused parameter `_context`, which
+removed the findings instead of hiding them; the `staging-scheduler` handler
+named in the paragraph after it had already been written that way.
 
 Suppressions adjudicated by an entry above:
 
