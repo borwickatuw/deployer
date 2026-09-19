@@ -88,16 +88,6 @@ def render(template: str, reasons: list[str]) -> str:
     return rendered
 
 
-def run_pa11y(path: Path) -> int:
-    """Run pa11y against a rendered file; return its exit code."""
-    print(f"=== pa11y {PA11Y_STANDARD}: {path.name} ===", flush=True)
-    result = subprocess.run(
-        ["npx", "--yes", PA11Y_SPEC, "--standard", PA11Y_STANDARD, path.as_uri()],
-        check=False,
-    )
-    return result.returncode
-
-
 def main() -> int:
     if shutil.which("npx") is None:
         raise SystemExit("npx not found on PATH; install node to run the accessibility check")
@@ -108,7 +98,12 @@ def main() -> int:
         for variant, reasons in read_reason_sets(text).items():
             path = Path(tmp) / f"error-503-{variant}.html"
             path.write_text(render(template, reasons), encoding="utf-8")
-            failures += 1 if run_pa11y(path) != 0 else 0
+            print(f"=== pa11y {PA11Y_STANDARD}: {path.name} ===", flush=True)
+            result = subprocess.run(
+                ["npx", "--yes", PA11Y_SPEC, "--standard", PA11Y_STANDARD, path.as_uri()],
+                check=False,
+            )
+            failures += 1 if result.returncode != 0 else 0
     if failures:
         print(f"{failures} error-page variant(s) failed {PA11Y_STANDARD}")
     return 1 if failures else 0
