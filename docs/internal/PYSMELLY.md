@@ -33,8 +33,16 @@ Lambda code lives in `modules/lambda-shared/`.
 
 ## Adjudication record
 
-Standing total: **36** (measured at `187b2f9`, the 53p close and the close of
-Phase 53 — re-verified 2026-08-25. The rise from 33 is deliberate: 53p-1
+**The current total is not written here — derive it.** `make pysmelly` prints
+the top ten categories; `uvx pysmelly . --more-please` prints all of them.
+Every count in this register is pinned to the commit it was measured at, and a
+pinned count is history: it describes that tree, not the one you have checked
+out. The most recent measurement, and the drift since the Phase 53 close, are
+at the head of § "Remainder — the reconciled adjudication split".
+
+Standing total at the Phase 53 close: **36** (measured at `187b2f9`, the 53p
+close and the close of Phase 53 — re-verified 2026-08-25. The rise from 33 is
+deliberate: 53p-1
 cleared one and 53p-3 surfaced four by deleting rationale-free suppressions,
 moving those four decisions out of comments and into this register. It was 33
 at `411c8f0`, the 53n close, and unmoved by
@@ -47,10 +55,13 @@ the 53i-3 closeout `600c788` and unmoved by the whole of 53j, 32 at `a9327ab`,
 56 at `a304fa1`, 57 at `9903e2b`, 60 at `805d516`, 68 at `db8aa78`, 71 at
 `26d9290`, 74 at `07d65d6`, 82 at `2d79e33`, 91 at `a8800cd`, 97 at `8e57264`).
 
-**Phase 53 is closed (2026-08-25).** Every live finding is attributed, nothing
-is unowned, nothing is open, **and nothing is escalated**. See § "Remainder —
-the reconciled adjudication split": **36** adjudicated leave-standings, **0**
-escalated, **0** open. The operator took the last ten verdicts on 2026-08-25;
+**Phase 53 is closed (2026-08-25).** At `187b2f9` every live finding was
+attributed, nothing was unowned, nothing was open, **and nothing was
+escalated**. See § "Remainder — the reconciled adjudication split": **36**
+adjudicated leave-standings, **0** escalated, **0** open — the state of the
+tree at the close, not a standing property of the repo; the findings that have
+landed since it are unadjudicated. The operator took the last ten verdicts on
+2026-08-25;
 §53p applies the four that were work and records the seven that were not. The 3
 findings that 53f/53g's reconciliation found owned by no subphase were folded
 into 53i-1 by operator decision (2026-08-18); one of them is cleared and two are
@@ -1946,6 +1957,41 @@ adjudication.
 
 ### Remainder — the reconciled adjudication split (rebuilt 2026-08-21 at HEAD)
 
+#### Drift since the close — re-measured at `329a1e6` (2026-09-18)
+
+The tree has moved 99 commits past the pin below, and the finding set moved
+with it: **50 findings in 12 categories at `329a1e6`, against 36 in 10 at
+`187b2f9`.** Both numbers were measured with pysmelly
+`3.4.1.dev2+g67d5d9772` against a `git archive` extract of each tree — one
+tool version, two trees — so the delta is code drift, not tool drift.
+
+| Check                        | `187b2f9` | `329a1e6` |
+| ---------------------------- | --------- | --------- |
+| pass-through-params          | 13        | 14        |
+| inconsistent-error-handling  | 9         | 10        |
+| param-clumps                 | 5         | 9         |
+| foo-equals-foo               | 3         | 3         |
+| single-call-site             | 1         | 3         |
+| arrow-code                   | 1         | 1         |
+| law-of-demeter               | 1         | 1         |
+| temp-accumulators            | 1         | 1         |
+| duplicate-blocks             | 1         | 0         |
+| return-none-instead-of-raise | 1         | 0         |
+| env-fallbacks                | 0         | 4         |
+| long-function                | 0         | 3         |
+| dict-as-dataclass            | 0         | 1         |
+| **Total**                    | **36**    | **50**    |
+
+Three checks that reported nothing at the close now report eight findings
+between them (`env-fallbacks`, `long-function`, `dict-as-dataclass`), and
+`param-clumps` and `single-call-site` have grown. **The attribution table
+below covers the 36 findings at `187b2f9` and nothing else.** A finding at
+HEAD that is absent from it is unadjudicated — it is not a leave-standing, and
+its absence is not a verdict. Re-pinning the split, and adjudicating what has
+landed since, is a Phase-53-style pass that has not been run; do not infer it
+from this note. Re-derive the current set before scoping anything:
+`uvx pysmelly . --more-please`.
+
 **Re-pinned at `187b2f9` (2026-08-25), the Phase 53 close.** §53p applied the
 operator's ten verdicts: **the Escalated column is now 0**. Seven escalations
 became confirmed leave-standings, one (`single-call-site`
@@ -1965,9 +2011,11 @@ members are now `cmd_rollback():458`, `cmd_scale():553`,
 
 **Live total: 36, measured at `187b2f9`** with
 `uvx pysmelly . --more-please` —
-**the plain `make pysmelly` view truncates to the top ten categories and HEAD
-has exactly ten, so any drift hides a row.** This table is the authoritative
-one; scope each subphase from it.
+**the plain `make pysmelly` view truncates to the top ten categories and that
+tree had exactly ten, so any drift hid a row.** (It has since: `329a1e6`
+carries twelve categories, so the truncated view now drops two outright.) This
+table is authoritative for `187b2f9`, not for HEAD — re-pin it before scoping
+a subphase from it.
 
 This replaces a table pinned to `a9327ab` at **32** findings — *four* subphases
 out of date (53i-2a/b/c, 53i-3a/b/c/d, 53j-1/2/3/4, twenty commits), and so
@@ -1996,8 +2044,9 @@ absorbed below.
 | temp-accumulators            | 1    | 1       | 0         | 0     |
 | **Total**                    | 36   | **36**  | **0**     | **0** |
 
-**Nothing at HEAD is open work, and nothing awaits a verdict.** Every live
-finding is an adjudicated leave-standing. This is what closes Phase 53.
+**Nothing at `187b2f9` was open work, and nothing awaited a verdict.** Every
+finding live at that commit is an adjudicated leave-standing. This is what
+closes Phase 53. It is not a claim about HEAD — see the drift note above.
 
 **Escalated** meant a fix was drafted, measured and handed to the operator
 rather than recorded as a self-authored justification; the diffs and their
