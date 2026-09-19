@@ -4,8 +4,8 @@ from datetime import datetime
 
 
 # Leaf utility called within boto3 response processing; callers handle
-# ClientError at their own boundaries.
-# pysmelly: ignore inconsistent-error-handling  (re-evaluate-by: 2026-11 review)
+# ClientError at their own boundaries.  (re-evaluate-by: 2026-11 review)
+# pysmelly: ignore[inconsistent-error-handling]  # noqa: ERA001
 def format_iso(value: object) -> str | None:
     """Format a value as ISO 8601 string if it's a datetime.
 

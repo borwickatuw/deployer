@@ -50,7 +50,10 @@ def _compute_hash(data: str) -> str:
     return f"sha256:{hashlib.sha256(data.encode()).hexdigest()}"
 
 
-# pysmelly: ignore dict-as-dataclass — return value is serialized to JSON via json.dumps  (re-evaluate-by: 2026-11 review)
+# The return value is serialized straight to JSON via json.dumps; a dataclass
+# would have to be converted back to a dict at the one call site.
+# (re-evaluate-by: 2026-11 review)
+# pysmelly: ignore[dict-as-dataclass]
 def build_meta(
     environment: str,
     environment_type: str,

@@ -427,6 +427,28 @@ def test_twins_do_not_redefine_shared_helpers(index_path):
     assert not (defined & shared) - policy
 
 
+@pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)
+def test_twin_handler_takes_event_and_underscored_context(index_path):
+    """The AWS runtime calls ``index.handler(event, context)`` positionally.
+
+    Both twins ignore the context object, so it is named ``_context``: the
+    underscore is the convention that says "deliberately unused" to ruff's ARG
+    rules and to pysmelly's vestigial-params check, which is why neither twin
+    needs a suppression comment here. Renaming it back to ``context`` would
+    silently re-introduce a finding; dropping the parameter would break every
+    invocation.
+    """
+    tree = ast.parse(index_path.read_text(encoding="utf-8"), filename=str(index_path))
+    handlers = [
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "handler"
+    ]
+    assert len(handlers) == 1, f"{index_path} should define exactly one handler()"
+
+    args = handlers[0].args
+    assert not args.posonlyargs and not args.kwonlyargs
+    assert [a.arg for a in args.args] == ["event", "_context"]
+
+
 def test_shared_module_stays_import_light():
     """db_common ships in a bundle whose only pip deps are boto3 and pg8000."""
     tree = ast.parse(

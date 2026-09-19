@@ -184,7 +184,7 @@ def generate_bootstrap(
 # absence sentinel: None means no bootstrap directory is there. An unset
 # DEPLOYER_ENVIRONMENTS_DIR is "I could not look" and raises, per DECISIONS.md
 # 2026-08-18 "Error Contracts".  (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore return-none-instead-of-raise
+# pysmelly: ignore[return-none-instead-of-raise]
 def bootstrap_dir_exists() -> str | None:
     """Check if any bootstrap directory exists in the environments dir.
 

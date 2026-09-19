@@ -81,7 +81,7 @@ def _parse_additional_contexts(raw: list | dict) -> dict[str, str]:
 
 
 # YAML values can be str, list, or dict  (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore isinstance-chain
+# pysmelly: ignore[isinstance-chain]  # noqa: ERA001
 def get_compose_services(compose: dict[str, Any], base_dir: Path | None = None) -> dict[str, dict]:
     """Extract services from docker-compose.yml with their properties.
 

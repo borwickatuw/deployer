@@ -130,7 +130,10 @@ def setup_schema_privileges(
     )
 
 
-# pysmelly: ignore dict-as-dataclass — Lambda handler return must be dict for JSON serialization  (re-evaluate-by: 2026-11 review)
+# The Lambda return value is JSON-serialized by the runtime; a dataclass would
+# have to be converted back to a dict before returning.
+# (re-evaluate-by: 2026-11 review)
+# pysmelly: ignore[dict-as-dataclass]
 def handle_setup_database() -> dict:
     """Handle the setup_database action (default behavior)."""
     creds = DbCredentials.from_environment()
@@ -210,7 +213,7 @@ def handle_setup_database() -> dict:
     }
 
 
-def handler(event, context):  # pysmelly: ignore vestigial-params — context required by Lambda handler signature  (re-evaluate-by: 2026-11 review)
+def handler(event, _context):
     """Lambda handler to create database/users or extensions on shared RDS.
 
     Dispatches on event["action"]:

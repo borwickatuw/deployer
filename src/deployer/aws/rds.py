@@ -9,9 +9,6 @@ from .cli import run_aws
 
 # absence sentinel: None means the instance does not exist, and nothing else —
 # every other failure raises, per DECISIONS.md 2026-08-18 "Error Contracts".
-# The check still fires because the None return is unconditional in shape; the
-# contract it asks about is the one documented here. (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore return-none-instead-of-raise
 def get_status(instance_id: str) -> dict | None:
     """Get RDS instance status.
 

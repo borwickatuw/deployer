@@ -288,7 +288,7 @@ def get_service_replicas_from_config(resolved_config: dict) -> dict[str, int]:
 
 
 # None means Cognito not enabled  (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore return-none-instead-of-raise
+# pysmelly: ignore[return-none-instead-of-raise]
 def get_cognito_user_pool_id_from_config(resolved_config: dict) -> str | None:
     """Get Cognito user pool ID from resolved config.
 
@@ -348,7 +348,7 @@ def load_deploy_toml(deploy_toml_path: Path) -> dict:
 
 
 # TOML command entries can be list or dict format  (re-evaluate-by: 2026-11 review)
-# pysmelly: ignore isinstance-chain
+# pysmelly: ignore[isinstance-chain]  # noqa: ERA001
 def get_commands_from_deploy_toml(deploy_toml: dict) -> dict[str, list[str]]:
     """Extract the [commands] section from a deploy.toml config.
 

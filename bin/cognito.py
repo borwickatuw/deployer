@@ -381,7 +381,10 @@ def cli():
     """Manage Cognito user access for environments."""
 
 
-# pysmelly: ignore shotgun-surgery — Click's @cli.command() pattern inherently spans files  (re-evaluate-by: 2026-11 review)
+# Click's @cli.command() pattern inherently spans every bin/ CLI script; the
+# "many files" the check counts are the CLI entry points themselves.
+# (re-evaluate-by: 2026-11 review)
+# pysmelly: ignore[shotgun-surgery]  # noqa: ERA001
 @cli.command("list")
 @click.argument("environment", required=False)
 def list_cmd(environment):
