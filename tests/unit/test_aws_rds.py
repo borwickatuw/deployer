@@ -180,3 +180,19 @@ class TestWaitForStatus:
         aws_cli.replies((True, AVAILABLE))
         assert rds.wait_for_status(INSTANCE, "available", None, timeout=0) is False
         assert aws_cli.calls == []
+
+    def test_default_cadence_comes_from_the_module_constant(self, aws_cli, monkeypatch):
+        """The default sleep is POLL_INTERVAL_SECONDS, not a literal 15.
+
+        Retuning the cadence has to move this wait; a literal in the signature
+        would let it drift away from the constant emergency.rds shares.
+        """
+        slept: list[int] = []
+        monkeypatch.setattr(rds.time, "sleep", slept.append)
+        aws_cli.replies(
+            (True, describe("stopping")),
+            (True, AVAILABLE),
+        )
+
+        assert rds.wait_for_status(INSTANCE, "available", None) is True
+        assert slept == [rds.POLL_INTERVAL_SECONDS]

@@ -43,6 +43,7 @@ from deployer.emergency.ecs import (
 )
 from deployer.emergency.rds import get_rds_snapshots
 from deployer.utils import (
+    AWS_ERROR_RESOURCE_NOT_FOUND,
     Colors,
     exit_on,
     format_iso,
@@ -126,7 +127,7 @@ def scan_logs_for_errors(
 
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
-        if error_code != "ResourceNotFoundException":
+        if error_code != AWS_ERROR_RESOURCE_NOT_FOUND:
             raise
 
     return result

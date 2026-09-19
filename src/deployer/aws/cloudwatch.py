@@ -5,6 +5,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from ..utils import AWS_ERROR_RESOURCE_NOT_FOUND
 from .cli import run_aws
 
 
@@ -50,7 +51,7 @@ def get_log_events(
 
     success, output = run_aws(*args)
     if not success:
-        if "ResourceNotFoundException" in output:
+        if AWS_ERROR_RESOURCE_NOT_FOUND in output:
             return None
         raise RuntimeError(f"Could not read {log_group}/{log_stream} from CloudWatch: {output}")
 

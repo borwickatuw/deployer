@@ -216,7 +216,14 @@ skips = ["B101", "B608"]
 
 [tool.pysmelly]
 # CLI cmd_* functions are dispatched by Click — public naming is conventional
-# Config dict keys ("infrastructure", "services") are inherent to the data format
+# scattered-constants: the config-dict-key rationale this skip used to carry
+# ("infrastructure", "services") describes findings the check no longer
+# reports. Re-measured 2026-09-18 with `pysmelly . --check scattered-constants
+# --more-please`: the operational literals it was hiding (the RDS wait budget
+# and cadence, the ResourceNotFoundException error code) are now named
+# constants, and what remains is CLI flag names, help text, separators and
+# service-name strings. Whether the skip stays at all is an operator call, not
+# a settled one — re-run that command before trusting this line.
 skip = ["internal-only", "scattered-constants"]
 # Test setup boilerplate dominates duplicate-blocks findings
 exclude = ["tests/"]

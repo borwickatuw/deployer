@@ -23,7 +23,11 @@ from .cli import (
     validate_and_configure,
 )
 from .colors import Colors
-from .constants import AWS_REGION
+from .constants import (
+    AWS_ERROR_ACCESS_DENIED,
+    AWS_ERROR_RESOURCE_NOT_FOUND,
+    AWS_REGION,
+)
 from .datetime import format_iso, format_timestamp
 from .environment import (
     ensure_environments_symlinks,
@@ -60,6 +64,8 @@ from .logging import (
 from .subprocess import run_command
 
 __all__ = [
+    "AWS_ERROR_ACCESS_DENIED",
+    "AWS_ERROR_RESOURCE_NOT_FOUND",
     "AWS_REGION",
     "Colors",
     "EnvironmentConfigError",

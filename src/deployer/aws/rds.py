@@ -104,20 +104,29 @@ def start(instance_id: str) -> bool:
     return _instance_action("start-db-instance", instance_id)
 
 
+# The budget and cadence for every RDS wait in the deployer: an instance state
+# change here, and snapshot completion in emergency.rds, which imports these.
+# One owner so raising the budget on one RDS wait path cannot silently miss the
+# other -- a divergence only an incident would surface.
+WAIT_TIMEOUT_SECONDS = 600
+POLL_INTERVAL_SECONDS = 15
+
+
 def wait_for_status(
     instance_id: str,
     target_status: str,
     status_callback: Callable[[str], None] | None,
-    timeout: int = 600,
-    poll_interval: int = 15,
+    timeout: int = WAIT_TIMEOUT_SECONDS,
+    poll_interval: int = POLL_INTERVAL_SECONDS,
 ) -> bool:
     """Wait for RDS instance to reach a target status.
 
     Args:
         instance_id: The DB instance identifier.
         target_status: The status to wait for (e.g., "available", "stopped").
-        timeout: Maximum seconds to wait (default: 600).
-        poll_interval: Seconds between status checks (default: 15).
+        timeout: Maximum seconds to wait (default: ``WAIT_TIMEOUT_SECONDS``).
+        poll_interval: Seconds between status checks (default:
+            ``POLL_INTERVAL_SECONDS``).
         status_callback: Optional callback(status_str) called on each poll.
 
     Returns:

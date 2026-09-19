@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 import boto3
 from botocore.exceptions import ClientError
 
+from ..aws.rds import POLL_INTERVAL_SECONDS, WAIT_TIMEOUT_SECONDS
 from ..utils import format_iso
 
 
@@ -77,14 +78,16 @@ def generate_emergency_snapshot_id(instance_id: str) -> str:
 def create_emergency_snapshot(
     instance_id: str,
     wait: bool = True,
-    timeout: int = 600,
+    timeout: int = WAIT_TIMEOUT_SECONDS,
 ) -> str | None:
     """Create an emergency snapshot of an RDS instance.
 
     Args:
         instance_id: RDS instance identifier
         wait: If True, wait for snapshot to complete
-        timeout: Maximum seconds to wait
+        timeout: Maximum seconds to wait (default:
+            ``aws.rds.WAIT_TIMEOUT_SECONDS``, shared with the instance-status
+            wait so the two RDS wait budgets cannot drift apart)
 
     Returns:
         The snapshot identifier if the snapshot was created, or None if AWS
@@ -109,8 +112,8 @@ def create_emergency_snapshot(
             waiter.wait(
                 DBSnapshotIdentifier=snapshot_id,
                 WaiterConfig={
-                    "Delay": 15,
-                    "MaxAttempts": timeout // 15,
+                    "Delay": POLL_INTERVAL_SECONDS,
+                    "MaxAttempts": timeout // POLL_INTERVAL_SECONDS,
                 },
             )
 

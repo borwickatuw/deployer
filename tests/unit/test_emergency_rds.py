@@ -24,6 +24,7 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
+from deployer.aws import rds as aws_rds
 from deployer.emergency import rds as rds_module
 from deployer.emergency.rds import (
     _handle_restore_error,
@@ -153,6 +154,28 @@ class TestCreateEmergencySnapshot:
         waiter.wait.assert_called_once_with(
             DBSnapshotIdentifier=snapshot_id,
             WaiterConfig={"Delay": 15, "MaxAttempts": 40},
+        )
+
+    def test_wait_budget_is_shared_with_the_instance_status_wait(self, mocker):
+        """The default wait reads aws.rds's budget, and its own cadence divisor.
+
+        Both RDS waits -- instance start/stop and snapshot completion -- take
+        one budget and one cadence from ``deployer.aws.rds``, so raising the
+        budget cannot land on one path and miss the other. And MaxAttempts is
+        derived from the same cadence the waiter delays by: editing one of a
+        pair of bare 15s would have silently doubled or halved the real
+        timeout, which is the wrong thing to discover during an incident.
+        """
+        client = MagicMock()
+        waiter = client.get_waiter.return_value
+        mocker.patch.object(rds_module, "_get_rds_client", return_value=client)
+
+        create_emergency_snapshot(INSTANCE_ID, wait=True)
+
+        config = waiter.wait.call_args.kwargs["WaiterConfig"]
+        assert config["Delay"] == aws_rds.POLL_INTERVAL_SECONDS
+        assert (
+            config["MaxAttempts"] == aws_rds.WAIT_TIMEOUT_SECONDS // aws_rds.POLL_INTERVAL_SECONDS
         )
 
 

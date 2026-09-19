@@ -13,7 +13,15 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from ..aws import ssm
-from ..utils import log, log_error, log_success, log_warning, print_with_advice
+from ..utils import (
+    AWS_ERROR_ACCESS_DENIED,
+    AWS_ERROR_RESOURCE_NOT_FOUND,
+    log,
+    log_error,
+    log_success,
+    log_warning,
+    print_with_advice,
+)
 
 
 def _extensions_state_param_name(app_name: str, environment: str) -> str:
@@ -165,7 +173,7 @@ def _invoke_extensions_lambda(lambda_name: str, extensions: list[str], region: s
         error_code = e.response["Error"]["Code"]
         error_message = e.response["Error"]["Message"]
 
-        if error_code == "ResourceNotFoundException":
+        if error_code == AWS_ERROR_RESOURCE_NOT_FOUND:
             print_with_advice(
                 f"Lambda function '{lambda_name}' not found.",
                 "  The extensions_lambda in your config.toml points to a Lambda",
@@ -177,7 +185,7 @@ def _invoke_extensions_lambda(lambda_name: str, extensions: list[str], region: s
             )
             raise RuntimeError(f"Lambda function '{lambda_name}' not found") from e
 
-        if error_code == "AccessDeniedException":
+        if error_code == AWS_ERROR_ACCESS_DENIED:
             print_with_advice(
                 f"Permission denied invoking Lambda '{lambda_name}'.",
                 "  The deploy role does not have lambda:InvokeFunction permission",
