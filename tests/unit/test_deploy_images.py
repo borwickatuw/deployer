@@ -1362,6 +1362,36 @@ class TestHashModifiers:
         )
         assert "--build-arg" not in argv
 
+    def test_all_three_modifier_kinds_hash_in_args_target_context_order(self, source_dir, run):
+        """The whole recipe, end to end: ``args`` then ``target`` then contexts.
+
+        The three kinds are contributed by three different rules, so a
+        refactor can reorder them without any single-kind test noticing. The
+        digest is written longhand here; a reordering changes every image tag
+        in the fleet and throws away the remote build cache.
+        """
+        shared = source_dir / "shared"
+        shared.mkdir()
+        (shared / "constants.py").write_text("X = 1\n", encoding="utf-8")
+        config = _dict_config(
+            web={
+                "context": "web",
+                "target": "runtime",
+                "build_args": {"B": "2", "A": "1"},
+                "additional_contexts": {"shared": "shared"},
+            }
+        )
+
+        _build(config, source_dir)
+
+        base = _compute_context_hash(source_dir / "web", "Dockerfile")
+        shared_hash = _compute_context_hash(shared, None)
+        combined = f"{base}:args:A=1,B=2;target:runtime;context:shared:{shared_hash}"
+        expected = hashlib.sha256(combined.encode()).hexdigest()[:12]
+
+        argv = run.argv[0]
+        assert argv[argv.index("-t") + 1].split(":")[-1] == expected
+
     def test_changing_a_build_arg_changes_the_tag(self, source_dir, run):
         _build(_dict_config(web={"context": "web", "build_args": {"A": "1"}}), source_dir)
         first = run.argv[0][run.argv[0].index("-t") + 1]

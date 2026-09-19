@@ -4,6 +4,7 @@ import base64
 import fnmatch
 import hashlib
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -370,6 +371,28 @@ def _resolve_image_spec(
     )
 
 
+def _hash_modifiers(spec: ImageBuildSpec) -> Iterator[str]:
+    """Yield the digest inputs beyond the context hash itself.
+
+    Emission order is part of the tag recipe: ``args``, then ``target``, then
+    the additional contexts sorted by name. Reordering these rehashes every
+    image and defeats the remote build cache, so keep the order as written.
+
+    Args:
+        spec: The resolved build inputs for the image.
+
+    Yields:
+        One ``<kind>:<value>`` modifier string per contributing input.
+    """
+    if spec.build_args:
+        args_str = ",".join(f"{k}={v}" for k, v in sorted(spec.build_args.items()))
+        yield f"args:{args_str}"
+    if spec.target:
+        yield f"target:{spec.target}"
+    for name, path in sorted(spec.additional_contexts.items()):
+        yield f"context:{name}:{_compute_context_hash(path, None)}"
+
+
 def _cache_tag(spec: ImageBuildSpec) -> str:
     """Compute the content-addressed cache tag for one image.
 
@@ -385,15 +408,7 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
     """
     content_hash = _compute_context_hash(spec.context, spec.dockerfile)
 
-    hash_modifiers = []
-    if spec.build_args:
-        args_str = ",".join(f"{k}={v}" for k, v in sorted(spec.build_args.items()))
-        hash_modifiers.append(f"args:{args_str}")
-    if spec.target:
-        hash_modifiers.append(f"target:{spec.target}")
-    for name, path in sorted(spec.additional_contexts.items()):
-        hash_modifiers.append(f"context:{name}:{_compute_context_hash(path, None)}")
-
+    hash_modifiers = list(_hash_modifiers(spec))
     if hash_modifiers:
         combined = f"{content_hash}:{';'.join(hash_modifiers)}"
         content_hash = hashlib.sha256(combined.encode()).hexdigest()[:12]
