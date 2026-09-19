@@ -56,8 +56,7 @@ def get_parameter_path(env_name: str, secret_name: str) -> str:
     Returns:
         Full parameter path like "/myapp/staging/SECRET_KEY"
     """
-    project, environment = parse_environment(env_name)
-    return f"/{project}/{environment}/{secret_name}"
+    return f"{get_path_prefix(env_name)}/{secret_name}"
 
 
 def get_secrets_from_deploy_toml(

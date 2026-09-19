@@ -78,7 +78,12 @@ import pytest
 
 from deployer.config import parse_deploy_config
 from deployer.core import ssm_secrets
-from deployer.core.ssm_secrets import check_secrets_exist, get_secrets_from_deploy_toml
+from deployer.core.ssm_secrets import (
+    check_secrets_exist,
+    get_parameter_path,
+    get_path_prefix,
+    get_secrets_from_deploy_toml,
+)
 from deployer.deploy.context import EnvironmentTarget
 from deployer.deploy.preflight import PreflightError, check_ssm_secrets
 from deployer.utils import EnvironmentConfigError
@@ -141,6 +146,39 @@ def put_ssm(*names: str) -> None:
     client = boto3.client("ssm", region_name="us-west-2")
     for name in names:
         client.put_parameter(Name=name, Value="value", Type="SecureString")
+
+
+class TestSsmPathConstruction:
+    """Pins the env-name -> SSM path scheme, and that it is written once.
+
+    Neither helper had a test. ``get_parameter_path`` used to re-derive
+    ``/{project}/{environment}`` from its own ``parse_environment`` call, so
+    the prefix scheme existed in two places and could drift apart silently --
+    a drift no test would have caught, while ``ssm-secrets.py list`` (prefix)
+    and ``ssm-secrets.py get`` (parameter path) would then disagree about
+    where a secret lives.
+    """
+
+    def test_path_prefix_is_project_then_environment(self):
+        assert get_path_prefix("myapp-staging") == "/myapp/staging"
+
+    def test_only_the_last_dash_separates_project_from_environment(self):
+        assert get_path_prefix("my-long-app-staging") == "/my-long-app/staging"
+
+    def test_parameter_path_appends_the_secret_name_to_the_prefix(self):
+        assert get_parameter_path("myapp-staging", "SECRET_KEY") == "/myapp/staging/SECRET_KEY"
+
+    def test_parameter_path_is_built_from_the_one_prefix_helper(self):
+        """The anti-drift pin: one scheme, not two implementations of it."""
+        for env_name in ("myapp-staging", "my-long-app-production"):
+            prefix = get_path_prefix(env_name)
+            assert get_parameter_path(env_name, "SECRET_KEY") == f"{prefix}/SECRET_KEY"
+
+    def test_an_env_name_without_a_dash_is_rejected_by_both(self):
+        with pytest.raises(ValueError, match="nodashes"):
+            get_path_prefix("nodashes")
+        with pytest.raises(ValueError, match="nodashes"):
+            get_parameter_path("nodashes", "SECRET_KEY")
 
 
 class TestGetSecretsFromDeployToml:
