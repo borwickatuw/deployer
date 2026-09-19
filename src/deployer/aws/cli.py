@@ -42,9 +42,9 @@ def run_aws(*args: str) -> tuple[bool, str]:
 
 
 # The parsed dict is the answer to a query; None means "no answer" for either
-# reason it can fail. Whether query helpers should raise instead is Phase 53i's
-# call for the whole repo — see the standing suppression on rds.get_status().
-# That suppression is not needed here: measured, the check does not fire.
+# reason it can fail. rds.get_status() went the other way — it calls run_aws()
+# so the error text survives, and reserves None for "no such instance", per
+# DECISIONS.md 2026-08-18 "Error Contracts".
 def run_aws_json(*args: str) -> dict | None:
     """Run an `aws` CLI command and parse its JSON output.
 

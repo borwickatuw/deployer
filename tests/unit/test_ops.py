@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 from botocore.exceptions import ClientError
 
+from deployer.aws.rds import RdsStatus
 from deployer.emergency import ecs
 from deployer.emergency import rds as emergency_rds
 from deployer.emergency.checkpoint import ServiceState
@@ -177,11 +178,12 @@ def status_env(monkeypatch):
             "web": ServiceState(task_definition=_arn("web", 7), desired_count=2, running_count=2),
         },
         "revisions": [{"revision": 7, "registered_at": "2026-08-07T14:30:00Z"}],
-        "rds_status": {
-            "status": "available",
-            "instance_class": "db.t4g.micro",
-            "engine": "postgres",
-        },
+        "rds_status": RdsStatus(
+            identifier=RDS_ID,
+            status="available",
+            instance_class="db.t4g.micro",
+            engine="postgres",
+        ),
         "snapshots": [
             {
                 "id": "rds:myapp-2026-08-07",

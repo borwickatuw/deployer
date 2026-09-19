@@ -3,21 +3,36 @@
 import json
 import time
 from collections.abc import Callable
+from typing import NamedTuple
 
 from .cli import run_aws
 
 
+class RdsStatus(NamedTuple):
+    """One RDS instance's current state, flattened out of describe-db-instances.
+
+    A ``NamedTuple`` rather than a dataclass, for the reason
+    ``emergency.rds.RdsInstanceDetails`` gives: ``identifier`` names the
+    instance AWS actually described and has no reader outside the tests, so a
+    dataclass would report it as a write-only attribute.
+    """
+
+    identifier: str
+    status: str
+    instance_class: str
+    engine: str
+
+
 # absence sentinel: None means the instance does not exist, and nothing else —
 # every other failure raises, per DECISIONS.md 2026-08-18 "Error Contracts".
-def get_status(instance_id: str) -> dict | None:
+def get_status(instance_id: str) -> RdsStatus | None:
     """Get RDS instance status.
 
     Args:
         instance_id: The DB instance identifier.
 
     Returns:
-        Dict with identifier, status, instance_class, engine, or None if no
-        such instance exists.
+        RdsStatus for the instance, or None if no such instance exists.
 
     Raises:
         RuntimeError: If the instance could not be described for any reason
@@ -43,12 +58,12 @@ def get_status(instance_id: str) -> dict | None:
         return None
 
     inst = instances[0]
-    return {
-        "identifier": inst["DBInstanceIdentifier"],
-        "status": inst["DBInstanceStatus"],
-        "instance_class": inst["DBInstanceClass"],
-        "engine": f"{inst['Engine']} {inst.get('EngineVersion', '')}",
-    }
+    return RdsStatus(
+        identifier=inst["DBInstanceIdentifier"],
+        status=inst["DBInstanceStatus"],
+        instance_class=inst["DBInstanceClass"],
+        engine=f"{inst['Engine']} {inst.get('EngineVersion', '')}",
+    )
 
 
 def _instance_action(operation: str, instance_id: str) -> bool:
@@ -118,9 +133,9 @@ def wait_for_status(
             # Only the timeout ends this wait, not one bad poll.
             rds_status = None
 
-        current_status = rds_status["status"] if rds_status else "unknown"
+        current_status = rds_status.status if rds_status else "unknown"
 
-        if rds_status and rds_status["status"] == target_status:
+        if rds_status and rds_status.status == target_status:
             return True
 
         if status_callback:

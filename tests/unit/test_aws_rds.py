@@ -55,12 +55,21 @@ class TestGetStatus:
     def test_flattens_the_first_instance(self, aws_cli):
         """The four fields callers use are lifted out of the AWS response."""
         aws_cli.replies((True, AVAILABLE))
-        assert rds.get_status(INSTANCE) == {
-            "identifier": INSTANCE,
-            "status": "available",
-            "instance_class": "db.t4g.micro",
-            "engine": "postgres 16.3",
-        }
+        assert rds.get_status(INSTANCE) == rds.RdsStatus(
+            identifier=INSTANCE,
+            status="available",
+            instance_class="db.t4g.micro",
+            engine="postgres 16.3",
+        )
+
+    def test_answers_a_named_tuple_not_a_dict(self, aws_cli):
+        """Readers in bin/ reach the fields by attribute, not by key."""
+        aws_cli.replies((True, AVAILABLE))
+        result = rds.get_status(INSTANCE)
+        assert isinstance(result, rds.RdsStatus)
+        assert (result.status, result.instance_class) == ("available", "db.t4g.micro")
+        with pytest.raises(TypeError):
+            result["status"]
 
     def test_engine_without_version(self, aws_cli):
         """A response with no EngineVersion still produces an engine string."""
@@ -81,7 +90,7 @@ class TestGetStatus:
                 ),
             )
         )
-        assert rds.get_status(INSTANCE)["engine"] == "postgres "
+        assert rds.get_status(INSTANCE).engine == "postgres "
 
     def test_none_when_the_instance_does_not_exist(self, aws_cli):
         """Only DBInstanceNotFound answers None: absence, not failure."""

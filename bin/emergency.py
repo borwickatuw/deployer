@@ -135,7 +135,7 @@ def _capture_rds_state(rds_id: str | None) -> RdsState | None:
     rds_status = rds.get_status(rds_id)
     if not rds_status:
         return None
-    return RdsState(instance_id=rds_id, status=rds_status["status"])
+    return RdsState(instance_id=rds_id, status=rds_status.status)
 
 
 def _snapshot_services(services: dict) -> dict[str, ServiceState]:

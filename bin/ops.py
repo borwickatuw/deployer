@@ -443,9 +443,9 @@ def _print_rds_status(rds_id: str) -> None:
         print("  No such instance")
         return
 
-    print(f"  Status: {rds_status['status']}")
-    print(f"  Class: {rds_status['instance_class']}")
-    print(f"  Engine: {rds_status['engine']}")
+    print(f"  Status: {rds_status.status}")
+    print(f"  Class: {rds_status.instance_class}")
+    print(f"  Engine: {rds_status.engine}")
 
 
 def _print_recent_snapshots(rds_id: str) -> None:

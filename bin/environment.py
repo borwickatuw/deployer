@@ -103,9 +103,9 @@ def cmd_status(environment: str | None) -> int:
                 print(f"    Status: Unable to retrieve ({e})")
             else:
                 if rds_status:
-                    print(f"    Status: {rds_status['status']}")
-                    print(f"    Class: {rds_status['instance_class']}")
-                    print(f"    Engine: {rds_status['engine']}")
+                    print(f"    Status: {rds_status.status}")
+                    print(f"    Class: {rds_status.instance_class}")
+                    print(f"    Engine: {rds_status.engine}")
                 else:
                     print("    Status: No such instance")
         else:
@@ -135,15 +135,15 @@ def cmd_stop(environment: str) -> int:
         rds_status = rds.get_status(rds_id)
 
     if rds_status:
-        if rds_status["status"] == "stopped":
+        if rds_status.status == "stopped":
             print("   RDS instance already stopped")
-        elif rds_status["status"] == "available":
+        elif rds_status.status == "available":
             if rds.stop(rds_id):
                 print("   RDS stop initiated (takes 5-10 minutes)")
             else:
                 print("   Warning: Failed to stop RDS instance", file=sys.stderr)
         else:
-            print(f"   RDS in unexpected state: {rds_status['status']}")
+            print(f"   RDS in unexpected state: {rds_status.status}")
     else:
         print("   Warning: Unable to get RDS status", file=sys.stderr)
 
@@ -165,7 +165,7 @@ def _ensure_rds_available(rds_id: str) -> None:
         print("   Warning: no such RDS instance", file=sys.stderr)
         return
 
-    current = rds_status["status"]
+    current = rds_status.status
     if current == "available":
         print("   RDS instance already running")
         return
