@@ -206,7 +206,7 @@ class TestRunAudit:
 
 
 class TestGetSecretsFromConfig:
-    """Tests for get_secrets_from_config function."""
+    """Tests for _get_secrets_from_config function."""
 
     def test_the_removed_explicit_path_form_is_rejected(self):
         """UPDATED: this used to assert the explicit form resolved normally.
@@ -215,7 +215,7 @@ class TestGetSecretsFromConfig:
         how `bin/ssm-secrets.py check` comes to print "Required: 0" and advise
         deleting every live parameter under the prefix.
         """
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {
             "secrets": {
@@ -224,11 +224,11 @@ class TestGetSecretsFromConfig:
             }
         }
         with pytest.raises(ValueError, match=r"names = \["):
-            get_secrets_from_config(config, {})
+            _get_secrets_from_config(config, {})
 
     def test_module_format_with_names_list(self):
         """Test new module format with names = [...] and path_prefix."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {
             "secrets": {
@@ -241,7 +241,7 @@ class TestGetSecretsFromConfig:
                 "path_prefix": "/myapp/staging",
             }
         }
-        result = get_secrets_from_config(config, env_config)
+        result = _get_secrets_from_config(config, env_config)
 
         assert result == {
             "SECRET_KEY": "/myapp/staging/secret-key",
@@ -251,30 +251,30 @@ class TestGetSecretsFromConfig:
 
     def test_module_format_normalizes_path_prefix(self):
         """Test that path_prefix is normalized (adds leading /, removes trailing /)."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "myapp/staging/"}}  # No leading /, has trailing /
-        result = get_secrets_from_config(config, env_config)
+        result = _get_secrets_from_config(config, env_config)
 
         assert result == {"SECRET_KEY": "/myapp/staging/secret-key"}
 
     def test_module_format_without_secrets_config_returns_empty(self):
         """Test that module format returns empty dict if env_config has no secrets."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {"secrets": {"names": ["SECRET_KEY"]}}
-        result = get_secrets_from_config(config, {})
+        result = _get_secrets_from_config(config, {})
 
         assert result == {}
 
     def test_module_format_without_path_prefix_returns_empty(self):
         """Test that module format returns empty dict if path_prefix missing."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"provider": "ssm"}}  # No path_prefix
-        result = get_secrets_from_config(config, env_config)
+        result = _get_secrets_from_config(config, env_config)
 
         assert result == {}
 
@@ -286,7 +286,7 @@ class TestGetSecretsFromConfig:
         confirmed the SSM parameters existed and passed, and the container
         started without them.
         """
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {
             "secrets": {
@@ -296,24 +296,24 @@ class TestGetSecretsFromConfig:
         }
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
         with pytest.raises(ValueError, match="LEGACY_SECRET"):
-            get_secrets_from_config(config, env_config)
+            _get_secrets_from_config(config, env_config)
 
     def test_no_secrets_section_returns_empty(self):
         """Test that missing secrets section returns empty dict."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {}
-        result = get_secrets_from_config(config, {})
+        result = _get_secrets_from_config(config, {})
 
         assert result == {}
 
     def test_empty_names_list_returns_empty(self):
         """Test that empty names list returns empty dict."""
-        from deployer.core.ssm_secrets import get_secrets_from_config
+        from deployer.core.ssm_secrets import _get_secrets_from_config
 
         config = {"secrets": {"names": []}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
-        result = get_secrets_from_config(config, env_config)
+        result = _get_secrets_from_config(config, env_config)
 
         assert result == {}
 

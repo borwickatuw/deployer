@@ -48,7 +48,7 @@ def detect_aws_account_id() -> str | None:
         return None
 
 
-def format_hcl_list(items: list[str]) -> str:
+def _format_hcl_list(items: list[str]) -> str:
     """Format a Python list as an HCL list literal.
 
     Args:
@@ -154,8 +154,8 @@ def generate_bootstrap(
         "region": region,
         "env_type": env_label,
         "env_name": env_name,
-        "project_prefixes_hcl": format_hcl_list(project_prefixes),
-        "trusted_user_arns_hcl": format_hcl_list(trusted_user_arns),
+        "project_prefixes_hcl": _format_hcl_list(project_prefixes),
+        "trusted_user_arns_hcl": _format_hcl_list(trusted_user_arns),
     }
 
     # Load all template files

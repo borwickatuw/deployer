@@ -12,20 +12,20 @@ orchestration, so not one line of the module's own bodies was executed.
 What is pinned here -- the seven deploy-path functions:
 ``_get_deployment_config``, ``DeploymentError.__init__``,
 ``_ensure_az_rebalancing_disabled``, ``_get_live_service``,
-``register_task_definition``, ``create_service`` and ``deploy_services``.
+``_register_task_definition``, ``_create_service`` and ``deploy_services``.
 The wait path (``wait_for_services``/``_wait_for_service_stable`` and friends)
 belongs to ``test_deploy_service_wait.py`` and is deliberately untouched here.
 
 Eight pins exist specifically to make 53e-5b's extractions verifiable:
 
-1. **Both dry-run arms** of ``create_service`` and ``deploy_services``, and both
-   **interruptible** arms of ``create_service``. The dry-run arms are early
+1. **Both dry-run arms** of ``_create_service`` and ``deploy_services``, and both
+   **interruptible** arms of ``_create_service``. The dry-run arms are early
    returns that skip *different* amounts of work in the two functions --
-   ``create_service`` returns after building the whole parameter dict, so its
+   ``_create_service`` returns after building the whole parameter dict, so its
    network guard still fires under ``--dry-run``; ``deploy_services`` returns
    before it ever asks whether the service is live and therefore prints an
    **update** even for a service that does not exist.
-2. **Circuit breaker on and off**, at both injection points -- ``create_service``
+2. **Circuit breaker on and off**, at both injection points -- ``_create_service``
    and the update arm of ``deploy_services``. Both mutate the *already-built*
    ``deploymentConfiguration`` sub-dict in place.
 3. **Per-service vs default target group**, including the ``or`` fallthrough on an
@@ -33,11 +33,11 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
    *inside* the ``if target_group_arn`` block, so no target group means no grace
    period either.
 4. **Service discovery on and off** -- the ``serviceRegistries`` injection in both
-   ``create_service`` and the update arm of ``deploy_services``. Only
+   ``_create_service`` and the update arm of ``deploy_services``. Only
    ``registryArn`` is sent; no ``containerPort``.
-5. **The missing-network ``RuntimeError``** in ``create_service``, for each of the
+5. **The missing-network ``RuntimeError``** in ``_create_service``, for each of the
    three falsy combinations, and its ``log_error`` line.
-6. **The ``max_percent <= 100`` AZ-rebalance trigger** -- on ``create_service``
+6. **The ``max_percent <= 100`` AZ-rebalance trigger** -- on ``_create_service``
    after creation, and on the update arm of ``deploy_services`` where it is
    additionally gated on ``not ctx.dry_run``.
 7. **The ``continue``-on-``ClientError`` swallow** at the end of the update arm.
@@ -45,7 +45,7 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
    body -- so what actually matters is that the exception is swallowed and the
    *next* service still deploys. That is pinned directly.
 8. **The ``create`` vs ``update`` branch**, including the extra ``log_status``
-   ``deploy_services`` prints after ``create_service`` has already logged its own
+   ``deploy_services`` prints after ``_create_service`` has already logged its own
    success line.
 
 Also pinned deliberately, without fixing: ``DeploymentError.service_name`` and
@@ -74,7 +74,7 @@ survive code motion inside the package. Concretely:
 
 Phase 53f-1 added ``TestHealthCheckConfigSource`` at the end of the file. It is
 the odd one out here: it drives ``_build_infra_config`` -- the real producer,
-which lives in ``deployer.py`` -- into ``create_service``. 53f-1 pinned that the
+which lives in ``deployer.py`` -- into ``_create_service``. 53f-1 pinned that the
 ``health_check_config`` key ``_load_balancer_params`` reads was one no production
 ``infra_config`` had ever contained; 53f-4 wired its documented source. See that
 class's own docstring.
@@ -95,14 +95,14 @@ from deployer.deploy.service import (
     DeploymentConfig,
     DeploymentError,
     _compute_service_state_hash,
+    _create_service,
     _ensure_az_rebalancing_disabled,
     _get_deployment_config,
     _get_live_service,
+    _register_task_definition,
     _service_is_unchanged,
-    create_service,
     deploy_services,
     get_stored_service_state,
-    register_task_definition,
     store_service_state,
     store_service_state_hashes,
 )
@@ -577,7 +577,7 @@ class TestEnsureAzRebalancingDisabled:
 
     def test_non_client_error_propagates(self, run):
         # Only ClientError is caught; anything else escapes to the caller, which
-        # in create_service()/deploy_services() means the whole deploy aborts.
+        # in _create_service()/deploy_services() means the whole deploy aborts.
         client = _DescribeServicesStub([], error=RuntimeError("socket"))
         with pytest.raises(RuntimeError):
             _ensure_az_rebalancing_disabled(client, CLUSTER, "web")
@@ -662,17 +662,17 @@ class TestGetLiveService:
 
 
 class TestRegisterTaskDefinition:
-    """``register_task_definition`` -- both dry-run arms."""
+    """``_register_task_definition`` -- both dry-run arms."""
 
     def test_registers_and_returns_the_arn(self, aws, capsys):
         ctx = _ctx(aws)
-        arn = register_task_definition(ctx, "web", IMAGE_URI)
+        arn = _register_task_definition(ctx, "web", IMAGE_URI)
         assert arn == f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:1"
         assert _lines(capsys.readouterr().out) == ["  web task definition registered [done]"]
 
     def test_registered_family_and_sizing(self, aws):
         ctx = _ctx(aws)
-        register_task_definition(ctx, "web", IMAGE_URI)
+        _register_task_definition(ctx, "web", IMAGE_URI)
         params = aws.client.params("register_task_definition")
         assert params["family"] == f"{CLUSTER}-web"
         assert params["cpu"] == "256"
@@ -682,14 +682,14 @@ class TestRegisterTaskDefinition:
 
     def test_second_registration_is_a_new_revision(self, aws):
         ctx = _ctx(aws)
-        register_task_definition(ctx, "web", IMAGE_URI)
-        assert register_task_definition(ctx, "web", IMAGE_URI).endswith(":2")
+        _register_task_definition(ctx, "web", IMAGE_URI)
+        assert _register_task_definition(ctx, "web", IMAGE_URI).endswith(":2")
 
     def test_dry_run_returns_a_fabricated_arn(self, aws, capsys):
         ctx = _ctx(aws, dry_run=True)
-        arn = register_task_definition(ctx, "web", IMAGE_URI)
+        arn = _register_task_definition(ctx, "web", IMAGE_URI)
         # The ":dry-run" suffix stands where a revision number would be. It is
-        # handed to create_service/update_service printers downstream.
+        # handed to _create_service/update_service printers downstream.
         assert arn == f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:dry-run"
         assert _lines(capsys.readouterr().out) == [
             f"  [dry-run] aws ecs register-task-definition --family {CLUSTER}-web"
@@ -697,7 +697,7 @@ class TestRegisterTaskDefinition:
 
     def test_dry_run_calls_no_aws(self, aws):
         ctx = _ctx(aws, dry_run=True)
-        register_task_definition(ctx, "web", IMAGE_URI)
+        _register_task_definition(ctx, "web", IMAGE_URI)
         assert aws.client.operations == []
 
     def test_dry_run_still_builds_the_task_definition(self, aws):
@@ -710,21 +710,21 @@ class TestRegisterTaskDefinition:
             dry_run=True,
         )
         with pytest.raises(ValueError, match="below minimum"):
-            register_task_definition(ctx, "web", IMAGE_URI)
+            _register_task_definition(ctx, "web", IMAGE_URI)
 
     def test_credential_mode_is_inert_without_modules(self, aws):
         # With no module sections and an empty env_config, "migrate" and "app"
         # produce byte-identical task definitions. The mode only matters once
         # task_definition.py's module system is engaged.
         ctx = _ctx(aws)
-        register_task_definition(ctx, "web", IMAGE_URI, credential_mode="app")
-        register_task_definition(ctx, "web", IMAGE_URI, credential_mode="migrate")
+        _register_task_definition(ctx, "web", IMAGE_URI, credential_mode="app")
+        _register_task_definition(ctx, "web", IMAGE_URI, credential_mode="migrate")
         first, second = aws.client.all_params("register_task_definition")
         assert first == second
 
     def test_service_name_names_the_container(self, aws):
         ctx = _ctx(aws, services={"worker": {}})
-        register_task_definition(ctx, "worker", IMAGE_URI)
+        _register_task_definition(ctx, "worker", IMAGE_URI)
         params = aws.client.params("register_task_definition")
         assert params["containerDefinitions"][0]["name"] == "worker"
         assert params["family"] == f"{CLUSTER}-worker"
@@ -744,7 +744,7 @@ class TestCreateServiceNetworkGuard:
     def test_raises_runtime_error(self, aws, infra, capsys):
         ctx = _ctx(aws, infra=infra)
         with pytest.raises(RuntimeError, match="^Missing network configuration$"):
-            create_service(ctx, "web", "arn:task-def")
+            _create_service(ctx, "web", "arn:task-def")
         assert _lines(capsys.readouterr().out) == [
             "  ✗ Missing network configuration in infra_config (subnet_ids, security_group_id)."
         ]
@@ -753,30 +753,30 @@ class TestCreateServiceNetworkGuard:
         ctx = _ctx(aws)
         ctx = replace(ctx, infra_config=InfraConfig())
         with pytest.raises(RuntimeError, match="Missing network configuration"):
-            create_service(ctx, "web", "arn:task-def")
+            _create_service(ctx, "web", "arn:task-def")
 
     def test_guard_fires_under_dry_run_too(self, aws):
-        # The dry-run early return is at the *end* of create_service(), so
+        # The dry-run early return is at the *end* of _create_service(), so
         # --dry-run does not bypass the guard. deploy_services() never reaches
-        # create_service() under --dry-run, so this only bites direct callers.
+        # _create_service() under --dry-run, so this only bites direct callers.
         ctx = _ctx(aws, infra={"subnet_ids": []}, dry_run=True)
         with pytest.raises(RuntimeError, match="Missing network configuration"):
-            create_service(ctx, "web", "arn:task-def")
+            _create_service(ctx, "web", "arn:task-def")
 
     def test_guard_fires_before_any_aws_call(self, aws):
         ctx = _ctx(aws, infra={"subnet_ids": []})
         with pytest.raises(RuntimeError):
-            create_service(ctx, "web", "arn:task-def")
+            _create_service(ctx, "web", "arn:task-def")
         assert aws.client.operations == []
 
 
 class TestCreateService:
-    """``create_service`` -- the parameter dict, arm by arm."""
+    """``_create_service`` -- the parameter dict, arm by arm."""
 
     def test_baseline_parameters(self, aws, capsys):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws)
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service") == {
             "cluster": CLUSTER,
             "serviceName": "web",
@@ -799,13 +799,13 @@ class TestCreateService:
 
     def test_service_really_exists_afterwards(self, aws):
         arn = _make_service(aws, "seed")
-        create_service(_ctx(aws), "web", arn)
+        _create_service(_ctx(aws), "web", arn)
         assert _get_live_service(aws.client, CLUSTER, "web") is not None
 
     def test_desired_count_comes_from_merged_sizing(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"replicas": 2}}, service_config={"web": {"replicas": 4}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         # Environment sizing wins over deploy.toml.
         assert aws.client.params("create_service")["desiredCount"] == 4
 
@@ -817,7 +817,7 @@ class TestCreateService:
                 "deployment_config": {"minimum_healthy_percent": 50, "maximum_percent": 150},
             },
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["deploymentConfiguration"] == {
             "minimumHealthyPercent": 50,
             "maximumPercent": 150,
@@ -832,7 +832,7 @@ class TestCreateService:
                 "deployment_config": {"minimum_healthy_percent": 100, "maximum_percent": 200},
             },
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["deploymentConfiguration"] == {
             "minimumHealthyPercent": 0,
             "maximumPercent": 200,
@@ -847,7 +847,7 @@ class TestCreateService:
             services={"web": {"maximum_percent": 100}},
             infra={"deployment_config": {"maximum_percent": 200}},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.operations == ["create_service", "describe_services"]
 
     # -- must-pin #1: interruptible arms ---------------------------------
@@ -855,7 +855,7 @@ class TestCreateService:
     def test_interruptible_uses_capacity_provider_strategy(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"interruptible": True}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         params = aws.client.params("create_service")
         assert params["capacityProviderStrategy"] == [
             {"capacityProvider": "FARGATE", "base": 1, "weight": 0},
@@ -866,7 +866,7 @@ class TestCreateService:
     def test_non_interruptible_uses_launch_type(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"interruptible": False}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         params = aws.client.params("create_service")
         assert params["launchType"] == "FARGATE"
         assert "capacityProviderStrategy" not in params
@@ -876,21 +876,21 @@ class TestCreateService:
         # sizing, so an environment override cannot turn Spot on.
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {}}, service_config={"web": {"interruptible": True}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["launchType"] == "FARGATE"
 
     # -- must-pin #2: circuit breaker ------------------------------------
 
     def test_circuit_breaker_off_omits_the_key(self, aws):
         arn = _make_service(aws, "seed")
-        create_service(_ctx(aws), "web", arn)
+        _create_service(_ctx(aws), "web", arn)
         cfg = aws.client.params("create_service")["deploymentConfiguration"]
         assert "deploymentCircuitBreaker" not in cfg
 
     def test_circuit_breaker_on_injects_enable_and_rollback(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"deployment_config": {"circuit_breaker_enabled": True}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["deploymentConfiguration"] == {
             "minimumHealthyPercent": 100,
             "maximumPercent": 200,
@@ -908,7 +908,7 @@ class TestCreateService:
                 }
             },
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         breaker = aws.client.params("create_service")["deploymentConfiguration"][
             "deploymentCircuitBreaker"
         ]
@@ -918,7 +918,7 @@ class TestCreateService:
         # rollback is only ever read inside the `if circuit_breaker` block.
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"deployment_config": {"circuit_breaker_rollback": False}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         cfg = aws.client.params("create_service")["deploymentConfiguration"]
         assert "deploymentCircuitBreaker" not in cfg
 
@@ -931,7 +931,7 @@ class TestCreateService:
             services={"web": {"load_balanced": True, "port": 8000}},
             infra={"service_target_groups": {"web": WEB_TG}, "target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["loadBalancers"] == [
             {"targetGroupArn": WEB_TG, "containerName": "web", "containerPort": 8000}
         ]
@@ -943,7 +943,7 @@ class TestCreateService:
             services={"web": {"load_balanced": True, "port": 8000}},
             infra={"service_target_groups": {"worker": WEB_TG}, "target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["loadBalancers"][0]["targetGroupArn"] == (
             DEFAULT_TG
         )
@@ -957,7 +957,7 @@ class TestCreateService:
             services={"web": {"load_balanced": True, "port": 8000}},
             infra={"service_target_groups": {"web": ""}, "target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["loadBalancers"][0]["targetGroupArn"] == (
             DEFAULT_TG
         )
@@ -965,7 +965,7 @@ class TestCreateService:
     def test_no_target_group_means_no_load_balancer_block(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"load_balanced": True, "port": 8000}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         params = aws.client.params("create_service")
         assert "loadBalancers" not in params
         # The grace period lives inside the `if target_group_arn` block, so it
@@ -980,7 +980,7 @@ class TestCreateService:
             services={"web": {"load_balanced": True, "port": 8000}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 60
 
     def test_grace_period_is_configurable(self, aws):
@@ -993,13 +993,13 @@ class TestCreateService:
                 "health_check_config": {"grace_period": 300},
             },
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 300
 
     def test_not_load_balanced_skips_the_block(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"port": 8000}}, infra={"target_group_arn": DEFAULT_TG})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert "loadBalancers" not in aws.client.params("create_service")
 
     def test_load_balanced_without_a_port_skips_the_block(self, aws):
@@ -1009,7 +1009,7 @@ class TestCreateService:
             services={"web": {"load_balanced": True}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert "loadBalancers" not in aws.client.params("create_service")
 
     def test_port_from_environment_sizing_is_not_seen(self, aws):
@@ -1024,7 +1024,7 @@ class TestCreateService:
             service_config={"web": {"port": 8000}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert "loadBalancers" not in aws.client.params("create_service")
 
     def test_container_port_ignores_environment_override(self, aws):
@@ -1038,7 +1038,7 @@ class TestCreateService:
             service_config={"web": {"port": 9000}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["loadBalancers"][0]["containerPort"] == 8000
 
     # -- must-pin #4: service discovery ----------------------------------
@@ -1046,7 +1046,7 @@ class TestCreateService:
     def test_service_discovery_injects_registry_arn_only(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"service_discovery_registries": {"web": REGISTRY_ARN}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["serviceRegistries"] == [
             {"registryArn": REGISTRY_ARN}
         ]
@@ -1054,20 +1054,20 @@ class TestCreateService:
     def test_no_registry_omits_the_key(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"service_discovery_registries": {"worker": REGISTRY_ARN}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert "serviceRegistries" not in aws.client.params("create_service")
 
     def test_empty_registry_arn_omits_the_key(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"service_discovery_registries": {"web": ""}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert "serviceRegistries" not in aws.client.params("create_service")
 
     # -- must-pin #1: dry-run arm ----------------------------------------
 
     def test_dry_run_prints_and_creates_nothing(self, aws, capsys):
         ctx = _ctx(aws, dry_run=True)
-        assert create_service(ctx, "web", "arn:task-def") is None
+        assert _create_service(ctx, "web", "arn:task-def") is None
         assert aws.client.operations == []
         assert _lines(capsys.readouterr().out) == [
             "  [dry-run] aws ecs create-service --service-name web"
@@ -1086,7 +1086,7 @@ class TestCreateService:
             },
             dry_run=True,
         )
-        create_service(ctx, "web", "arn:task-def")
+        _create_service(ctx, "web", "arn:task-def")
         out = _plain(capsys.readouterr().out)
         assert DEFAULT_TG not in out
         assert REGISTRY_ARN not in out
@@ -1097,23 +1097,23 @@ class TestCreateService:
     def test_max_percent_at_100_triggers_the_az_check(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 100}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.operations == ["create_service", "describe_services"]
 
     def test_max_percent_below_100_triggers_the_az_check(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 50}})
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.operations == ["create_service", "describe_services"]
 
     def test_default_max_percent_skips_the_az_check(self, aws):
         arn = _make_service(aws, "seed")
-        create_service(_ctx(aws), "web", arn)
+        _create_service(_ctx(aws), "web", arn)
         assert aws.client.operations == ["create_service"]
 
     def test_dry_run_never_reaches_the_az_check(self, aws, run):
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 100}}, dry_run=True)
-        create_service(ctx, "web", "arn:task-def")
+        _create_service(ctx, "web", "arn:task-def")
         assert aws.client.operations == []
         assert run.calls == []
 
@@ -1198,7 +1198,7 @@ class TestDeployServices:
             "register_task_definition",
             "create_service",
         ]
-        # create_service() logs its own success line and deploy_services() logs
+        # _create_service() logs its own success line and deploy_services() logs
         # a second, near-identical one right after it.
         assert _lines(capsys.readouterr().out) == [
             "Deploying ECS services...",
@@ -1416,7 +1416,7 @@ class TestDeployServices:
             deploy_services(_ctx(aws), {"web": IMAGE_URI})
 
     def test_create_branch_errors_are_not_swallowed(self, aws):
-        # The try/except only wraps the update arm; a failure in create_service
+        # The try/except only wraps the update arm; a failure in _create_service
         # propagates.
         ctx = _ctx(aws, infra={"subnet_ids": []})
         with pytest.raises(RuntimeError, match="Missing network configuration"):
@@ -1445,7 +1445,7 @@ class TestDeployServices:
     def test_dry_run_never_asks_whether_the_service_exists(self, aws, capsys):
         # The dry-run arm returns before _get_live_service() is ever called, so
         # a first-time deploy is previewed as an *update* of a service that does
-        # not exist. The create_service() path is unreachable under --dry-run.
+        # not exist. The _create_service() path is unreachable under --dry-run.
         ctx = _ctx(aws, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
         out = _plain(capsys.readouterr().out)
@@ -1541,7 +1541,7 @@ class TestDeployServices:
 
 class _HealthyLiveEcs:
     """Answers describe_services with a crafted healthy service; everything
-    else (register_task_definition, update_service) delegates to the real
+    else (_register_task_definition, update_service) delegates to the real
     moto-backed recording client. moto always reports runningCount=0, so a
     healthy live state has to be injected to reach the skip decision."""
 
@@ -1874,5 +1874,5 @@ class TestHealthCheckConfigSource:
         ctx = _ctx(
             aws, services={"web": {"load_balanced": True, "port": 8000}}, infra=asdict(infra)
         )
-        create_service(ctx, "web", arn)
+        _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 60

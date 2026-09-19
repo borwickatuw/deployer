@@ -70,7 +70,7 @@ def get_secrets_from_deploy_toml(
         deploy_toml_path: Path to deploy.toml file
         env_config: Environment config.toml for module-style secrets, or None
             when the caller has no environment config -- see
-            ``get_secrets_from_config`` for what None means.
+            ``_get_secrets_from_config`` for what None means.
 
     Returns:
         Dictionary mapping env var names to SSM parameter paths.
@@ -80,10 +80,10 @@ def get_secrets_from_deploy_toml(
             and ``env_config`` is None.
     """
     config = parse_deploy_config(deploy_toml_path)
-    return get_secrets_from_config(config.get_raw_dict(), env_config)
+    return _get_secrets_from_config(config.get_raw_dict(), env_config)
 
 
-def get_secrets_from_config(
+def _get_secrets_from_config(
     config: dict,
     env_config: dict | None,
 ) -> dict[str, str]:
@@ -165,7 +165,7 @@ def check_secrets_exist(
         Each is a list of (env_var_name, ssm_path) tuples.
     """
     # Get required secrets from config
-    required_secrets = get_secrets_from_config(config, env_config)
+    required_secrets = _get_secrets_from_config(config, env_config)
 
     if not required_secrets:
         return [], []
@@ -227,7 +227,7 @@ def check_secrets_drift(
     path_prefix = path_prefix.rstrip("/")
 
     # Get declared secrets from deploy.toml
-    declared = get_secrets_from_config(config, env_config)
+    declared = _get_secrets_from_config(config, env_config)
     declared_paths = set(declared.values())
 
     # Get existing secrets from SSM

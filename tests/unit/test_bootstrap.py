@@ -6,9 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from deployer.init.bootstrap import (
+    _format_hcl_list,
     bootstrap_dir_exists,
     detect_aws_account_id,
-    format_hcl_list,
     format_hcl_map,
     generate_bootstrap,
     prompt_account_id_and_region,
@@ -36,16 +36,16 @@ class TestDetectAwsAccountId:
 
 
 class TestFormatHclList:
-    """Tests for format_hcl_list."""
+    """Tests for _format_hcl_list."""
 
     def test_single_item(self):
-        assert format_hcl_list(["myapp"]) == '["myapp"]'
+        assert _format_hcl_list(["myapp"]) == '["myapp"]'
 
     def test_multiple_items(self):
-        assert format_hcl_list(["a", "b"]) == '["a", "b"]'
+        assert _format_hcl_list(["a", "b"]) == '["a", "b"]'
 
     def test_empty_list(self):
-        assert format_hcl_list([]) == "[]"
+        assert _format_hcl_list([]) == "[]"
 
 
 class TestFormatHclMap:

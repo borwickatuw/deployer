@@ -140,7 +140,7 @@ def _context_files(context_path: Path, dockerfile: str | None, patterns: list[st
     )
 
 
-def compute_context_hash(context_path: Path, dockerfile: str | None) -> str:
+def _compute_context_hash(context_path: Path, dockerfile: str | None) -> str:
     """Compute a hash of the build context for cache detection.
 
     The hash covers the selected Dockerfile under its own prefix, then the path
@@ -383,7 +383,7 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
     Returns:
         A 12-character hex tag.
     """
-    content_hash = compute_context_hash(spec.context, spec.dockerfile)
+    content_hash = _compute_context_hash(spec.context, spec.dockerfile)
 
     hash_modifiers = []
     if spec.build_args:
@@ -392,7 +392,7 @@ def _cache_tag(spec: ImageBuildSpec) -> str:
     if spec.target:
         hash_modifiers.append(f"target:{spec.target}")
     for name, path in sorted(spec.additional_contexts.items()):
-        hash_modifiers.append(f"context:{name}:{compute_context_hash(path, None)}")
+        hash_modifiers.append(f"context:{name}:{_compute_context_hash(path, None)}")
 
     if hash_modifiers:
         combined = f"{content_hash}:{';'.join(hash_modifiers)}"

@@ -50,8 +50,9 @@ privileges are granted in a second pass from inside that database. This is
 deliberately *not* how `db-users` composes the same grants; see that module's
 Lambda source note.
 
-The shared vocabulary it imports (`escape_literal`, `get_secret`, `connect`, the
-individual GRANT helpers, `DbUser`, `DbCredentials`) lives in
+The shared vocabulary it builds on -- escaping, secret retrieval, connection
+construction, the individual GRANT helpers and the credential dataclasses,
+declared in `db_common.__all__` -- lives in
 `modules/lambda-shared/db_common.py`. That is the only tracked copy;
 `null_resource.lambda_dependencies` copies it into `lambda/` at apply time
 alongside the pip dependencies, and the copy is gitignored. **Edit

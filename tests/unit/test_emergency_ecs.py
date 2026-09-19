@@ -28,11 +28,11 @@ from botocore.exceptions import ClientError
 
 from deployer.emergency import ecs as ecs_module
 from deployer.emergency.ecs import (
+    _get_task_definition_details,
     compare_task_definitions,
     force_new_deployment,
     get_all_services_state,
     get_service_state,
-    get_task_definition_details,
     list_task_definition_revisions,
     scale_service,
     update_service_task_definition,
@@ -262,7 +262,7 @@ class TestListTaskDefinitionRevisions:
 
 class TestGetTaskDefinitionDetails:
     def test_returns_details_with_environment(self, ecs_cluster):
-        details = get_task_definition_details(ecs_cluster["arns"][2])
+        details = _get_task_definition_details(ecs_cluster["arns"][2])
 
         assert details.arn == ecs_cluster["arns"][2]
         assert details.family == FAMILY
@@ -277,7 +277,7 @@ class TestGetTaskDefinitionDetails:
     def test_unknown_task_definition_raises(self, ecs_cluster):
         """The caller got this ARN from a listing; failing to read it is an error."""
         with pytest.raises(RuntimeError, match="Could not read task definition"):
-            get_task_definition_details("no-such-family:1")
+            _get_task_definition_details("no-such-family:1")
 
 
 class TestCompareTaskDefinitions:
@@ -311,7 +311,7 @@ class TestCompareTaskDefinitions:
         """Fixed for free by the producer, having no except of its own.
 
         compare_task_definitions() has no except of its own — it inherited
-        get_task_definition_details()'s sentinel, so a permissions gap and
+        _get_task_definition_details()'s sentinel, so a permissions gap and
         "identical revisions" were the same answer. bin/emergency.py renders
         this diff to the operator immediately before a production rollback.
         """

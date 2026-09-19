@@ -9,7 +9,7 @@ What is pinned here:
 
 * Every one of the ten module functions. Eight of them were 100% unexecuted
   before this file existed: ``_run_timed_subprocess``, ``_check_subprocess_result``,
-  ``parse_dockerignore``, ``should_ignore``, ``compute_context_hash``,
+  ``parse_dockerignore``, ``should_ignore``, ``_compute_context_hash``,
   ``image_exists_in_ecr``, ``ecr_login`` and the whole body of
   ``build_and_push_images``. ``validate_ecr_repositories``'s ``ImageConfig``
   arm was the ninth gap; the pre-existing ``test_images.py`` only ever passed
@@ -82,9 +82,9 @@ from deployer.config import (
 )
 from deployer.deploy.images import (
     _check_subprocess_result,
+    _compute_context_hash,
     _run_timed_subprocess,
     build_and_push_images,
-    compute_context_hash,
     ecr_login,
     image_exists_in_ecr,
     parse_dockerignore,
@@ -130,7 +130,7 @@ def _expected_tag(
     Written out longhand rather than imported, so that a change to the digest
     recipe fails these tests instead of being mirrored into them.
     """
-    content_hash = compute_context_hash(context, dockerfile)
+    content_hash = _compute_context_hash(context, dockerfile)
     modifiers = []
     if build_args:
         args_str = ",".join(f"{k}={v}" for k, v in sorted(build_args.items()))
@@ -138,7 +138,7 @@ def _expected_tag(
     if target:
         modifiers.append(f"target:{target}")
     for name, path in sorted((additional_contexts or {}).items()):
-        modifiers.append(f"context:{name}:{compute_context_hash(path, None)}")
+        modifiers.append(f"context:{name}:{_compute_context_hash(path, None)}")
     if modifiers:
         combined = f"{content_hash}:{';'.join(modifiers)}"
         return hashlib.sha256(combined.encode()).hexdigest()[:12]
@@ -549,7 +549,7 @@ class TestShouldIgnore:
         already tests the full relative path against the same pattern — and it
         could only fire when ``rel_path.parts`` is empty, i.e. when the path
         *is* the context directory, whose relative path is ``"."``.
-        ``compute_context_hash`` never passes that, because ``rglob`` does not
+        ``_compute_context_hash`` never passes that, because ``rglob`` does not
         yield the root, so removing it changed no digest.
         """
         assert should_ignore(tmp_path, tmp_path, ["*"]) is False
@@ -567,7 +567,7 @@ class TestComputeContextHash:
     def test_the_hash_is_twelve_hex_characters(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
 
-        digest = compute_context_hash(tmp_path, "Dockerfile")
+        digest = _compute_context_hash(tmp_path, "Dockerfile")
 
         assert len(digest) == 12
         assert re.fullmatch(r"[0-9a-f]{12}", digest)
@@ -579,7 +579,7 @@ class TestComputeContextHash:
             (context / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
             (context / "app.py").write_text("x = 1\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path / "a", "Dockerfile") == compute_context_hash(
+        assert _compute_context_hash(tmp_path / "a", "Dockerfile") == _compute_context_hash(
             tmp_path / "b", "Dockerfile"
         )
 
@@ -594,77 +594,77 @@ class TestComputeContextHash:
         (second / "a.py").write_text("a\n", encoding="utf-8")
         (second / "z.py").write_text("z\n", encoding="utf-8")
 
-        assert compute_context_hash(first, "Dockerfile") == compute_context_hash(
+        assert _compute_context_hash(first, "Dockerfile") == _compute_context_hash(
             second, "Dockerfile"
         )
 
     def test_changing_the_dockerfile_changes_the_hash(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_a_missing_dockerfile_is_not_an_error(self, tmp_path):
         (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
 
-        assert len(compute_context_hash(tmp_path, "Dockerfile")) == 12
+        assert len(_compute_context_hash(tmp_path, "Dockerfile")) == 12
 
     def test_naming_a_different_dockerfile_changes_the_hash(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / "Dockerfile.dev").write_text("FROM alpine\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != compute_context_hash(
+        assert _compute_context_hash(tmp_path, "Dockerfile") != _compute_context_hash(
             tmp_path, "Dockerfile.dev"
         )
 
     def test_changing_a_context_file_changes_the_hash(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / "app.py").write_text("x = 2\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_renaming_a_file_changes_the_hash(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / "app.py").rename(tmp_path / "main.py")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_nested_files_are_included(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         nested = tmp_path / "pkg" / "deep"
         nested.mkdir(parents=True)
         (nested / "mod.py").write_text("y = 1\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_an_ignored_file_does_not_affect_the_hash(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / "noisy.log").write_text("lots of noise\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") == before
+        assert _compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_git_contents_are_excluded_without_a_dockerignore(self, tmp_path):
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         git = tmp_path / ".git"
         git.mkdir()
         (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") == before
+        assert _compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_a_comment_only_dockerignore_edit_does_not_bust_the_tag(self, tmp_path):
         """.dockerignore is build metadata, not build input: it is excluded from
@@ -672,11 +672,11 @@ class TestComputeContextHash:
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
         (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / ".dockerignore").write_text("*.log\n# a comment\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") == before
+        assert _compute_context_hash(tmp_path, "Dockerfile") == before
 
     def test_a_real_ignore_set_change_still_busts_the_tag(self, tmp_path):
         """The half that proves the exclusion did not go too far: a pattern that
@@ -684,22 +684,22 @@ class TestComputeContextHash:
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
         (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / ".dockerignore").write_text("*.log\napp.py\n", encoding="utf-8")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_deleting_the_dockerignore_busts_the_tag(self, tmp_path):
         """The files it hid come back into the walk."""
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
         (tmp_path / ".dockerignore").write_text("*.log\n", encoding="utf-8")
         (tmp_path / "noisy.log").write_text("lots of noise\n", encoding="utf-8")
-        before = compute_context_hash(tmp_path, "Dockerfile")
+        before = _compute_context_hash(tmp_path, "Dockerfile")
 
         (tmp_path / ".dockerignore").unlink()
 
-        assert compute_context_hash(tmp_path, "Dockerfile") != before
+        assert _compute_context_hash(tmp_path, "Dockerfile") != before
 
     def test_naming_the_dockerfile_in_the_dockerignore_makes_no_difference(self, tmp_path):
         """Two contexts with identical files hash the same whether or not a
@@ -718,7 +718,7 @@ class TestComputeContextHash:
             (context / "app.py").write_text("x = 1\n", encoding="utf-8")
         (listed / ".dockerignore").write_text("Dockerfile\n.dockerignore\n", encoding="utf-8")
 
-        assert compute_context_hash(listed, "Dockerfile") == compute_context_hash(
+        assert _compute_context_hash(listed, "Dockerfile") == _compute_context_hash(
             absent, "Dockerfile"
         )
 
@@ -731,10 +731,10 @@ class TestComputeContextHash:
         hasher.update(b"Dockerfile:")
         hasher.update(b"FROM scratch\n")
 
-        assert compute_context_hash(tmp_path, "Dockerfile") == hasher.hexdigest()[:12]
+        assert _compute_context_hash(tmp_path, "Dockerfile") == hasher.hexdigest()[:12]
 
     def test_an_empty_context_hashes_the_empty_digest(self, tmp_path):
-        assert compute_context_hash(tmp_path, "Dockerfile") == hashlib.sha256().hexdigest()[:12]
+        assert _compute_context_hash(tmp_path, "Dockerfile") == hashlib.sha256().hexdigest()[:12]
 
     @pytest.mark.skipif(
         hasattr(os, "geteuid") and os.geteuid() == 0, reason="root can read mode-000 files"
@@ -743,13 +743,13 @@ class TestComputeContextHash:
         """The except (PermissionError, OSError) arm: content is skipped, but the
         ``\\n<path>:`` header was already fed to the hasher before the open."""
         (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
-        without = compute_context_hash(tmp_path, "Dockerfile")
+        without = _compute_context_hash(tmp_path, "Dockerfile")
 
         secret = tmp_path / "secret.txt"
         secret.write_text("classified\n", encoding="utf-8")
         secret.chmod(0o000)
         try:
-            with_unreadable = compute_context_hash(tmp_path, "Dockerfile")
+            with_unreadable = _compute_context_hash(tmp_path, "Dockerfile")
         finally:
             secret.chmod(0o600)
 
@@ -758,7 +758,7 @@ class TestComputeContextHash:
         secret.write_text("something else entirely\n", encoding="utf-8")
         secret.chmod(0o000)
         try:
-            assert compute_context_hash(tmp_path, "Dockerfile") == with_unreadable
+            assert _compute_context_hash(tmp_path, "Dockerfile") == with_unreadable
         finally:
             secret.chmod(0o600)
 
@@ -1305,7 +1305,7 @@ class TestHashModifiers:
         _build(config, source_dir)
 
         argv = run.argv[0]
-        assert argv[argv.index("-t") + 1].split(":")[-1] == compute_context_hash(
+        assert argv[argv.index("-t") + 1].split(":")[-1] == _compute_context_hash(
             source_dir / "web", "Dockerfile"
         )
 
@@ -1316,7 +1316,7 @@ class TestHashModifiers:
 
         _build(config, source_dir)
 
-        base = compute_context_hash(source_dir / "web", "Dockerfile")
+        base = _compute_context_hash(source_dir / "web", "Dockerfile")
         args_first = hashlib.sha256(f"{base}:args:A=1,B=2;target:runtime".encode()).hexdigest()[:12]
         target_first = hashlib.sha256(f"{base}:target:runtime;args:A=1,B=2".encode()).hexdigest()[
             :12
@@ -1334,7 +1334,7 @@ class TestHashModifiers:
 
         _build(config, source_dir)
 
-        base = compute_context_hash(source_dir / "web", "Dockerfile")
+        base = _compute_context_hash(source_dir / "web", "Dockerfile")
         expected = hashlib.sha256(f"{base}:args:A=1,B=2".encode()).hexdigest()[:12]
         argv = run.argv[0]
         assert argv[argv.index("-t") + 1].split(":")[-1] == expected
@@ -1346,7 +1346,7 @@ class TestHashModifiers:
 
         _build(config, source_dir)
 
-        base = compute_context_hash(source_dir / "web", "Dockerfile")
+        base = _compute_context_hash(source_dir / "web", "Dockerfile")
         expected = hashlib.sha256(f"{base}:target:runtime".encode()).hexdigest()[:12]
         argv = run.argv[0]
         assert argv[argv.index("-t") + 1].split(":")[-1] == expected
@@ -1357,7 +1357,7 @@ class TestHashModifiers:
         _build(config, source_dir)
 
         argv = run.argv[0]
-        assert argv[argv.index("-t") + 1].split(":")[-1] == compute_context_hash(
+        assert argv[argv.index("-t") + 1].split(":")[-1] == _compute_context_hash(
             source_dir / "web", "Dockerfile"
         )
         assert "--build-arg" not in argv

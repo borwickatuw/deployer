@@ -412,6 +412,25 @@ def test_twin_imports_resolve_against_the_canonical_module(index_path):
 
 
 @pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)
+def test_twin_imports_stay_within_the_declared_vocabulary(index_path):
+    """A twin may only import what ``db_common.__all__`` offers.
+
+    ``__all__`` is the machine-readable form of the module docstring's
+    "what belongs here" contract. Importing past it means a twin has reached
+    into db_common's internals -- the first step back toward the divergence
+    the extraction removed.
+    """
+    undeclared = sorted(_imported_from_db_common(index_path) - set(db_common.__all__))
+    assert not undeclared, f"{index_path} imports db_common internals: {undeclared}"
+
+
+def test_declared_vocabulary_is_all_defined():
+    """Every name in ``__all__`` exists -- a rename must update the contract."""
+    missing = sorted(name for name in db_common.__all__ if not hasattr(db_common, name))
+    assert not missing, f"db_common.__all__ names nothing defines: {missing}"
+
+
+@pytest.mark.parametrize("index_path", TWIN_INDEXES, ids=lambda p: p.parent.parent.name)
 def test_twins_do_not_redefine_shared_helpers(index_path):
     """A twin that re-declares a shared helper has started diverging again."""
     tree = ast.parse(index_path.read_text(encoding="utf-8"), filename=str(index_path))

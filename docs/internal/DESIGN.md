@@ -163,8 +163,8 @@ ECS services and task definitions sit between infrastructure and application:
 
 **deploy.py owns both, end to end.** OpenTofu never touches them. Every
 deploy registers a fresh task definition revision
-(`register_task_definition`), then creates the service if it does not exist
-(`create_service`) or starts a new deployment of it (`update_service`).
+(`_register_task_definition`), then creates the service if it does not exist
+(`_create_service`) or starts a new deployment of it (`_update_service`).
 OpenTofu provides the surroundings a service plugs into — cluster, target
 groups, security groups, IAM roles, log group — and hands their identifiers
 to deploy.py through the resolved `config.toml`.

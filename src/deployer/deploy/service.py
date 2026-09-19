@@ -235,7 +235,7 @@ def _get_live_service(ecs_client, cluster_name: str, service_name: str) -> dict 
     return None
 
 
-def register_task_definition(
+def _register_task_definition(
     ctx,
     service_name: str,
     image_uri: str,
@@ -375,7 +375,7 @@ def _service_registries(ctx, service_name: str) -> list[dict] | None:
     return [{"registryArn": registry_arn}]
 
 
-def create_service(
+def _create_service(
     ctx,
     service_name: str,
     task_def_arn: str,
@@ -694,7 +694,7 @@ def _deploy_one_service(
     dep_cfg = _get_deployment_config(ctx.infra_config, svc_config)
 
     if ctx.dry_run:
-        task_def_arn = register_task_definition(ctx, service_name, image_uri)
+        task_def_arn = _register_task_definition(ctx, service_name, image_uri)
         print(
             f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
             f"aws ecs update-service --service {service_name} "
@@ -722,10 +722,10 @@ def _deploy_one_service(
         log_status(service_name, "unchanged, skipping")
         return ServiceDeployOutcome(state_hash=state_hash, skipped=True)
 
-    task_def_arn = register_task_definition(ctx, service_name, image_uri)
+    task_def_arn = _register_task_definition(ctx, service_name, image_uri)
 
     if live_service is None:
-        create_service(ctx, service_name, task_def_arn)
+        _create_service(ctx, service_name, task_def_arn)
         log_status(service_name, "service created")
         return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
 
@@ -867,7 +867,7 @@ def start_migrations(
     # Always register the migrate task definition so it's available for ecs-run.py
     # This ensures the task definition exists even if we skip running migrations
     log("Registering migrate task definition...")
-    task_def_arn = register_task_definition(
+    task_def_arn = _register_task_definition(
         ctx,
         "migrate",  # Use "migrate" as task family name
         image_uri,

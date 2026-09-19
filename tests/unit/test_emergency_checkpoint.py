@@ -15,9 +15,9 @@ from deployer.emergency.checkpoint import (
     Checkpoint,
     RdsState,
     ServiceState,
+    _get_checkpoint_dir,
     cleanup_old_checkpoints,
     create_checkpoint,
-    get_checkpoint_dir,
     list_checkpoints,
     load_checkpoint,
 )
@@ -158,8 +158,8 @@ class TestCheckpointSerialization:
 
 class TestGetCheckpointDir:
     def test_dir_is_under_deployer_root(self, checkpoint_dir: Path, tmp_path: Path):
-        assert get_checkpoint_dir() == tmp_path / "local" / "checkpoints"
-        assert get_checkpoint_dir() == checkpoint_dir
+        assert _get_checkpoint_dir() == tmp_path / "local" / "checkpoints"
+        assert _get_checkpoint_dir() == checkpoint_dir
 
 
 class TestCreateCheckpoint:

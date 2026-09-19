@@ -349,7 +349,7 @@ def build_task_definition(
             (DML only), "migrate" for migrations (DDL + DML). Default is "app".
 
     Returns:
-        Task definition dictionary ready for register_task_definition.
+        Task definition dictionary ready for _register_task_definition.
     """
     service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
     service_toml = ctx.config.get("services", {}).get(service_name, {})

@@ -50,8 +50,9 @@ module "db_users" {
 schema and table privileges are granted at user-creation time, because nothing
 else lives on the instance.
 
-The shared vocabulary it imports (`escape_literal`, `get_secret`, `connect`, the
-individual GRANT helpers, `DbUser`, `DbCredentials`) lives in
+The shared vocabulary it builds on -- escaping, secret retrieval, connection
+construction, the individual GRANT helpers and the credential dataclasses,
+declared in `db_common.__all__` -- lives in
 `modules/lambda-shared/db_common.py`. That is the only tracked copy;
 `null_resource.lambda_dependencies` copies it into `lambda/` at apply time
 alongside the pip dependencies, and the copy is gitignored. **Edit

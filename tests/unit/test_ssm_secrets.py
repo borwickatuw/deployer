@@ -31,7 +31,7 @@ What is pinned:
 
    The crash: ``get_secrets_from_deploy_toml`` declares
    ``env_config: dict | None = None`` and forwarded it to
-   ``get_secrets_from_config``, whose signature declared a non-optional
+   ``_get_secrets_from_config``, whose signature declared a non-optional
    ``dict`` and which calls ``env_config.get("secrets", {})`` on the
    module-style path. Its only production caller, ``bin/ssm-secrets.py``,
    passes one argument, so ``env_config`` arrived as None. The signatures now
@@ -45,7 +45,7 @@ What is pinned:
    resolved to nothing, ``Required: 0`` was printed, and every live SSM
    parameter under the prefix was listed EXTRA with ``delete`` advice. The
    guard closes it without making ``check`` require a deployed environment:
-   ``get_secrets_from_config`` refuses to answer at all when module-style
+   ``_get_secrets_from_config`` refuses to answer at all when module-style
    names are declared and no ``env_config`` was loaded, and ``cmd_check``
    turns that into an error naming what it could not load. Nothing is
    classified and no ``delete`` line is ever printed on that path.

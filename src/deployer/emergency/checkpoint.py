@@ -11,7 +11,7 @@ from pathlib import Path
 from ..utils import get_deployer_root
 
 
-def get_checkpoint_dir() -> Path:
+def _get_checkpoint_dir() -> Path:
     """Get path to the checkpoints directory.
 
     Returns:
@@ -119,7 +119,7 @@ def create_checkpoint(
     Returns:
         The created Checkpoint
     """
-    checkpoint_dir = get_checkpoint_dir()
+    checkpoint_dir = _get_checkpoint_dir()
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(UTC)
@@ -154,7 +154,7 @@ def load_checkpoint(filename: str) -> Checkpoint:
     Raises:
         FileNotFoundError: If checkpoint file doesn't exist
     """
-    filepath = get_checkpoint_dir() / filename
+    filepath = _get_checkpoint_dir() / filename
     with open(filepath, encoding="utf-8") as f:
         data = json.load(f)
     return Checkpoint.from_dict(data, filename=filename)
@@ -169,7 +169,7 @@ def list_checkpoints(environment: str) -> list[Checkpoint]:
     Returns:
         List of checkpoints, sorted by timestamp (newest first)
     """
-    checkpoint_dir = get_checkpoint_dir()
+    checkpoint_dir = _get_checkpoint_dir()
     if not checkpoint_dir.exists():
         return []
 
@@ -218,7 +218,7 @@ def cleanup_old_checkpoints(
     cutoff = datetime.now(UTC).timestamp() - (keep_days * 24 * 60 * 60)
 
     deleted = []
-    checkpoint_dir = get_checkpoint_dir()
+    checkpoint_dir = _get_checkpoint_dir()
 
     for i, checkpoint in enumerate(checkpoints):
         # Always keep the most recent `keep_count` checkpoints

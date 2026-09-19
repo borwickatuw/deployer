@@ -97,7 +97,7 @@ class DeploymentContext:
     """Bundles shared parameters passed to ECS deployment functions.
 
     This replaces the 10+ individual parameters that were threaded through
-    register_task_definition, deploy_services, start_migrations, etc.
+    _register_task_definition, deploy_services, start_migrations, etc.
     """
 
     ecs_client: Any

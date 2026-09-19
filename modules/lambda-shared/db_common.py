@@ -25,6 +25,27 @@ from dataclasses import dataclass
 import boto3
 import pg8000.native
 
+# The shared vocabulary this module offers the db-* bundles. Prose above says
+# what belongs here; this is the machine-readable form of the same contract, so
+# a twin importing something outside it fails a test instead of a deploy. Names
+# absent from this list are db_common's own internals.
+__all__ = [
+    "DbCredentials",
+    "DbUser",
+    "connect",
+    "create_user",
+    "escape_identifier",
+    "escape_literal",
+    "get_secret",
+    "grant_all_on_existing",
+    "grant_dml_on_existing",
+    "handle_create_extensions",
+    "set_default_privileges",
+    "transfer_ownership",
+    "update_user_password",
+    "user_exists",
+]
+
 # LOG_LEVEL is the fleet-wide level control (claude-meta best-practices/LOGGING.md).
 # An invalid value raises at import, so a typo fails the invocation instead of
 # silently logging at the wrong level.

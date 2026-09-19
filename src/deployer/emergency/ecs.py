@@ -192,7 +192,7 @@ def list_task_definition_revisions(
     return result
 
 
-def get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails:
+def _get_task_definition_details(task_def_arn: str) -> TaskDefinitionDetails:
     """Get details of a task definition.
 
     Args:
@@ -258,12 +258,12 @@ def compare_task_definitions(arn1: str, arn2: str) -> dict:
     Raises:
         RuntimeError: If either task definition could not be read. This
             function has no except of its own; it inherits the contract of
-            get_task_definition_details(), which is the point -- an empty diff
+            _get_task_definition_details(), which is the point -- an empty diff
             must mean "identical", never "I could not look". The rollback
             preview renders this immediately before the operator confirms.
     """
-    details1 = get_task_definition_details(arn1)
-    details2 = get_task_definition_details(arn2)
+    details1 = _get_task_definition_details(arn1)
+    details2 = _get_task_definition_details(arn2)
 
     env1 = details1.environment_variables
     env2 = details2.environment_variables
