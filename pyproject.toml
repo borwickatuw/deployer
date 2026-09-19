@@ -216,8 +216,7 @@ skips = ["B101", "B608"]
 
 [tool.pysmelly]
 # CLI cmd_* functions are dispatched by Click — public naming is conventional
-# AWS_REGION module-level constant is intentional
 # Config dict keys ("infrastructure", "services") are inherent to the data format
-skip = ["internal-only", "shared-mutable-module-state", "scattered-constants"]
+skip = ["internal-only", "scattered-constants"]
 # Test setup boilerplate dominates duplicate-blocks findings
 exclude = ["tests/"]
