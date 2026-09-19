@@ -6,8 +6,10 @@ and stability checks.
 """
 
 import functools
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Concatenate
 
 import boto3
 import click
@@ -20,6 +22,8 @@ from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
 from deployer.deploy.preflight import PreflightOptions
 from deployer.deploy.service import (
+    DeployedServices,
+    MigrationTask,
     deploy_services,
     start_migrations,
     store_service_state_hashes,
@@ -111,6 +115,36 @@ def _build_stability_config(infra_config: InfraConfig) -> StabilityConfig:
     return StabilityConfig(
         poll_interval=poll, max_attempts=max(1, round(STABILITY_TIMEOUT_SECONDS / poll))
     )
+
+
+def _timed_step[**P, R](
+    method: "Callable[Concatenate[Deployer, P], R]",
+) -> "Callable[Concatenate[Deployer, P], R]":
+    """Time a Deployer step under the method's own name.
+
+    The timing key is the method name with its leading underscore stripped,
+    so ``_create_extensions`` is recorded as ``create_extensions``. Deriving
+    it is the point: the step names are read by the deploy timing report, and
+    written by hand they were two places to keep in sync -- a ``timer.step()``
+    string literal and the call it wrapped -- free to drift apart. They had
+    already drifted once (``create_extensions`` against
+    ``create_database_extensions``), which is why the derivation strips only
+    the underscore and renames nothing else.
+
+    Args:
+        method: A Deployer method that performs one pipeline step.
+
+    Returns:
+        The method, wrapped so its call is recorded against the run's timer.
+    """
+    step_name = method.__name__.removeprefix("_")
+
+    @functools.wraps(method)
+    def wrapper(self: "Deployer", *args: P.args, **kwargs: P.kwargs) -> R:
+        with (self.timer or NullTimer()).step(step_name):
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Deployer:
@@ -331,15 +365,108 @@ class Deployer:
         print()
         return infra
 
-    def deploy(self) -> tuple[dict[str, str], list[str]]:
-        """Run the full deployment pipeline.
+    @_timed_step
+    def _ecr_login(self) -> None:
+        """Authenticate the local Docker client against ECR."""
+        ecr_login(self.ecr, self.options.dry_run)
+
+    @_timed_step
+    def _build_and_push_images(self) -> dict[str, str]:
+        """Build every declared image and push it to ECR.
 
         Returns:
-            Tuple of (image_uris dict, health_failures list).
+            Map of image name to the ECR URI that was pushed.
         """
-        timer = self.timer or NullTimer()
-        timer.start()
+        return build_and_push_images(
+            config=self.config,
+            source_dir=self.source_dir,
+            ecr_prefix=self.ecr_prefix,
+            account_id=self.account_id,
+            region=self.region,
+            environment=self.environment,
+            dry_run=self.options.dry_run,
+            ecr_client=self.ecr,
+            force_build=self.options.force_build,
+        )
 
+    @_timed_step
+    def _create_extensions(self) -> None:
+        """Create the declared database extensions, if any.
+
+        Skipped when the declared extensions and the target database both
+        match the last deploy's.
+        """
+        create_database_extensions(
+            config=self.config,
+            env_config=self.env_config,
+            region=self.region,
+            dry_run=self.options.dry_run,
+            app_name=self.app_name,
+            environment=self.environment,
+        )
+
+    @_timed_step
+    def _start_migrations(self, image_uris: dict[str, str]) -> MigrationTask | None:
+        """Start the migration task and return without waiting for it.
+
+        Args:
+            image_uris: Map of image name to ECR URI from _build_and_push_images.
+
+        Returns:
+            The running migration task, or None if there is nothing to migrate.
+        """
+        return start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
+
+    @_timed_step
+    def _deploy_services(self, image_uris: dict[str, str]) -> DeployedServices:
+        """Register task definitions and trigger ECS to pull the new images.
+
+        Unchanged, healthy services are skipped unless --force-deploy.
+
+        Args:
+            image_uris: Map of image name to ECR URI from _build_and_push_images.
+
+        Returns:
+            Which services were updated, which were skipped, and their hashes.
+        """
+        return deploy_services(self.ctx, image_uris, force_deploy=self.options.force_deploy)
+
+    @_timed_step
+    def _wait_for_migrations(self, migration_task: MigrationTask | None) -> None:
+        """Wait for the migration task to complete.
+
+        Args:
+            migration_task: The task returned by _start_migrations.
+
+        Raises:
+            RuntimeError: If the migration task did not succeed.
+        """
+        wait_for_migrations(self.ecs, migration_task)
+
+    @_timed_step
+    def _wait_for_stable(self, deployed: DeployedServices) -> list[str]:
+        """Wait in parallel for the services this deploy updated to stabilize.
+
+        Only the services this deploy actually updated are waited on, and each
+        must end up with PRIMARY running the revision _deploy_services
+        registered for it -- a circuit-breaker rollback otherwise reads as
+        success.
+
+        Args:
+            deployed: The result of _deploy_services.
+
+        Returns:
+            Names of the services that did not pass their health checks.
+        """
+        return wait_for_stable(self.ctx, deployed.updated, self.stability_config)
+
+    @_timed_step
+    def _apply_autoscaling(self) -> None:
+        """Bring Application Auto Scaling in line with the scaling config."""
+        apply_autoscaling(self.ctx, self.scaling_config, self.autoscaling, self.cloudwatch)
+
+    def _print_deploy_banner(self) -> None:
+        """Print what is about to be deployed, and where, before any work starts."""
         print()
         print(f"{Colors.BLUE}Deploying {self.app_name} to {self.environment}{Colors.NC}")
         print(f"  Account: {self.account_id}")
@@ -349,106 +476,95 @@ class Deployer:
             print(f"  Mode:    {Colors.YELLOW}DRY RUN{Colors.NC}")
         print()
 
+    def _replay_infrastructure_warnings(self, infra: InfraStatus) -> None:
+        """Re-display earlier infrastructure warnings to help diagnose a failure.
+
+        Args:
+            infra: The status returned by _check_infrastructure_or_abort.
+        """
+        if not infra.warnings:
+            return
+        print()
+        log_warning("Reminder: infrastructure issues were detected earlier:")
+        for warning in infra.warnings:
+            log_warning(f"  {warning}")
+
+    def _report_outcome(
+        self, image_uris: dict[str, str], health_failures: list[str]
+    ) -> tuple[dict[str, str], list[str]]:
+        """Print the closing summary and produce deploy()'s return value.
+
+        Args:
+            image_uris: Map of image name to ECR URI from _build_and_push_images.
+            health_failures: Services that did not pass their health checks.
+
+        Returns:
+            Tuple of (image_uris dict, health_failures list).
+        """
+        if not health_failures:
+            print(f"{Colors.GREEN}Deployment complete!{Colors.NC}")
+            return image_uris, []
+
+        print(f"{Colors.YELLOW}Deployment completed with warnings:{Colors.NC}")
+        print(f"  The following services did not pass health checks: {', '.join(health_failures)}")
+        print("  Services may still become healthy - check the AWS console.")
+        return image_uris, health_failures
+
+    def deploy(self) -> tuple[dict[str, str], list[str]]:
+        """Run the full deployment pipeline.
+
+        Every step below is a ``_``-prefixed method whose name is also its
+        timing key (see :func:`_timed_step`). The order is load-bearing:
+
+        * migrations start before services deploy, so the schema moves while
+          ECS is still pulling images;
+        * the per-service state hashes are written only once stability is
+          proven -- a hash stored earlier would let a failed deploy skip its
+          own retry;
+        * autoscaling runs last because a first deploy must create the service
+          before a scalable target can reference it, and because a failing
+          policy apply (an IAM gap, say) must not force full service rolls on
+          every retry: the retry re-runs autoscaling either way.
+
+        ``store_service_state_hashes`` is the one step that is not timed -- it
+        is milliseconds, and a no-op on dry runs, which compute no hashes.
+
+        Returns:
+            Tuple of (image_uris dict, health_failures list).
+        """
+        timer = self.timer or NullTimer()
+        timer.start()
+
+        self._print_deploy_banner()
         infra = self._check_infrastructure_or_abort()
-
-        # Show service configuration
         self.print_service_config()
-
-        # Show environment configuration
         self.print_environment_config()
 
-        # Step 1: ECR login
-        with timer.step("ecr_login"):
-            ecr_login(self.ecr, self.options.dry_run)
+        self._ecr_login()
+        print()
+        image_uris = self._build_and_push_images()
+        print()
+        self._create_extensions()
+        migration_task = self._start_migrations(image_uris)
+        print()
+        deployed = self._deploy_services(image_uris)
         print()
 
-        # Step 2: Build and push images
-        with timer.step("build_and_push_images"):
-            image_uris = build_and_push_images(
-                config=self.config,
-                source_dir=self.source_dir,
-                ecr_prefix=self.ecr_prefix,
-                account_id=self.account_id,
-                region=self.region,
-                environment=self.environment,
-                dry_run=self.options.dry_run,
-                ecr_client=self.ecr,
-                force_build=self.options.force_build,
-            )
-        print()
-
-        # Step 3: Create database extensions (if declared); skipped when the
-        # declared extensions and target database match the last deploy's.
-        with timer.step("create_extensions"):
-            create_database_extensions(
-                config=self.config,
-                env_config=self.env_config,
-                region=self.region,
-                dry_run=self.options.dry_run,
-                app_name=self.app_name,
-                environment=self.environment,
-            )
-
-        # Step 4: Start migrations (non-blocking)
-        with timer.step("start_migrations"):
-            migration_task = start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
-        print()
-
-        # Step 5: Deploy services (triggers ECS to pull images). Unchanged,
-        # healthy services are skipped unless --force-deploy.
-        with timer.step("deploy_services"):
-            deployed = deploy_services(self.ctx, image_uris, force_deploy=self.options.force_deploy)
-        print()
-
-        # Step 6: Wait for migrations to complete
         try:
-            with timer.step("wait_for_migrations"):
-                wait_for_migrations(self.ecs, migration_task)
+            self._wait_for_migrations(migration_task)
         except RuntimeError:
-            # Re-display infrastructure warnings to help diagnose the failure
-            if infra.warnings:
-                print()
-                log_warning("Reminder: infrastructure issues were detected earlier:")
-                for warning in infra.warnings:
-                    log_warning(f"  {warning}")
+            self._replay_infrastructure_warnings(infra)
             raise
         print()
 
-        # Step 7: Wait for services to stabilize (parallel). Only the services
-        # this deploy actually updated are waited on, and each must end up
-        # with PRIMARY running the revision deploy_services registered for it
-        # — a circuit-breaker rollback otherwise reads as success.
-        with timer.step("wait_for_stable"):
-            health_failures = wait_for_stable(self.ctx, deployed.updated, self.stability_config)
+        health_failures = self._wait_for_stable(deployed)
         print()
-
-        # Step 8: Persist per-service state hashes, only now that stability is
-        # proven — a hash stored before wait_for_stable would let a failed
-        # deploy skip its own retry. No-op on dry runs (no hashes computed).
-        # Before the autoscaling step: the services ARE stable, and a failing
-        # policy apply (e.g. an IAM gap) must not force full service rolls on
-        # every retry — the retry re-runs autoscaling either way.
         store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)
-
-        # Step 9: Bring Application Auto Scaling in line with the scaling
-        # config. After stability: a first deploy must create the service
-        # before a scalable target can reference it.
-        with timer.step("apply_autoscaling"):
-            apply_autoscaling(self.ctx, self.scaling_config, self.autoscaling, self.cloudwatch)
+        self._apply_autoscaling()
         print()
 
         timer.finish()
-
-        if health_failures:
-            print(f"{Colors.YELLOW}Deployment completed with warnings:{Colors.NC}")
-            print(
-                f"  The following services did not pass health checks: {', '.join(health_failures)}"
-            )
-            print("  Services may still become healthy - check the AWS console.")
-            return image_uris, health_failures
-        else:
-            print(f"{Colors.GREEN}Deployment complete!{Colors.NC}")
-            return image_uris, []
+        return self._report_outcome(image_uris, health_failures)
 
 
 def common_deploy_options(func):

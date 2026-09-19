@@ -1110,6 +1110,59 @@ class TestDeployTimerArmsAgree:
         assert run_timer.report.steps == []
 
 
+class TestTimedStepNaming:
+    """The timing key is derived from the step method's name, not written twice.
+
+    ``deploy()`` used to carry each step's timing key as a ``timer.step()``
+    string literal beside the call it wrapped. These pin the derivation that
+    replaced it, so a renamed step method cannot silently keep reporting
+    under its old key.
+    """
+
+    def test_every_timer_step_name_is_a_step_method(self):
+        """Each recorded key names a real Deployer method, underscore-prefixed."""
+        assert [
+            name for name in TIMER_STEP_NAMES if not callable(getattr(Deployer, f"_{name}", None))
+        ] == []
+
+    def test_a_step_records_under_its_own_method_name(self, make_deployer):
+        """The decorator reads the key off the method, so renaming moves both."""
+        run_timer = DeploymentTimer("run-1")
+        deployer = make_deployer(timer=run_timer)
+
+        @deployer_mod._timed_step
+        def _sample_step(self, value):
+            return value * 2
+
+        assert _sample_step(deployer, 21) == 42
+        assert [step.name for step in run_timer.report.steps] == ["sample_step"]
+
+    def test_a_failing_step_is_recorded_as_failed_under_its_own_name(self, make_deployer):
+        """The wrapper does not swallow: the step is marked failed and re-raised."""
+        run_timer = DeploymentTimer("run-1")
+        deployer = make_deployer(timer=run_timer)
+
+        @deployer_mod._timed_step
+        def _sample_step(self):
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _sample_step(deployer)
+
+        failed = run_timer.report.steps[0]
+        assert (failed.name, failed.success, failed.error) == ("sample_step", False, "boom")
+
+    def test_an_untimed_deployer_still_runs_the_step(self, make_deployer):
+        """With timer=None the wrapper falls back to NullTimer and records nothing."""
+        deployer = make_deployer(timer=None)
+
+        @deployer_mod._timed_step
+        def _sample_step(self):
+            return "ran"
+
+        assert _sample_step(deployer) == "ran"
+
+
 class TestBuildStabilityConfig:
     """[deployment] poll_interval → StabilityConfig, with a fixed 600s deadline."""
 
