@@ -387,3 +387,135 @@ class TestRunEcsCommandContainerResolution:
         assert self._invoke(None) == 1
         assert "run_task" not in calls
         assert "No containers found in task definition" in capsys.readouterr().err
+
+
+class TestMigrateTaskDefinition:
+    """Tests for _migrate_task_definition() -- the DDL task definition derivation.
+
+    This is the one piece of _run_ecs_command() that computed a name rather
+    than reading one: a wrong answer here points a migration at a task
+    definition that does not exist, or (worse) at one with the wrong
+    credentials. It is pure, so it is pinned directly.
+    """
+
+    def test_family_and_revision_drops_the_service_suffix(self):
+        assert ecs_run._migrate_task_definition("myapp-staging-web:7") == "myapp-staging-migrate"
+
+    def test_full_arn_is_reduced_to_the_family(self):
+        arn = "arn:aws:ecs:us-west-2:123456789012:task-definition/myapp-staging-web:12"
+        assert ecs_run._migrate_task_definition(arn) == "myapp-staging-migrate"
+
+    def test_the_result_is_unversioned_so_ecs_picks_the_latest_revision(self):
+        assert ":" not in ecs_run._migrate_task_definition("myapp-staging-celery:3")
+
+    def test_a_bare_family_needs_no_revision(self):
+        assert ecs_run._migrate_task_definition("myapp-staging-web") == "myapp-staging-migrate"
+
+
+class TestPlanTaskLaunchMigrateCredentials:
+    """_plan_task_launch() sends DDL commands to the migrate task definition."""
+
+    def _plan(self, monkeypatch, *, use_migrate_credentials, container_override=None):
+        seen: dict = {}
+
+        monkeypatch.setattr(
+            ecs_run.ecs,
+            "get_service_info",
+            lambda *_a, **_kw: ({"subnets": []}, "myapp-staging-web:7"),
+        )
+
+        def _containers(task_definition, **_kw):
+            seen["task_definition"] = task_definition
+            return [{"name": "web"}, {"name": "sidecar"}]
+
+        monkeypatch.setattr(ecs_run.ecs, "get_task_containers", _containers)
+
+        plan = ecs_run._plan_task_launch(
+            "myapp-staging-cluster",
+            "web",
+            container_override,
+            use_migrate_credentials=use_migrate_credentials,
+            ecs_client=object(),
+        )
+        return plan, seen
+
+    def test_ddl_runs_the_migrate_task_definition_and_container(self, monkeypatch):
+        plan, seen = self._plan(monkeypatch, use_migrate_credentials=True)
+
+        assert plan.task_definition == "myapp-staging-migrate"
+        assert plan.container_name == "migrate"
+        assert seen["task_definition"] == "myapp-staging-migrate"
+
+    def test_a_container_override_does_not_escape_the_migrate_container(self, monkeypatch):
+        plan, _ = self._plan(
+            monkeypatch, use_migrate_credentials=True, container_override="sidecar"
+        )
+
+        assert plan.container_name == "migrate"
+
+    def test_without_ddl_the_service_task_definition_is_used_as_reported(self, monkeypatch):
+        plan, seen = self._plan(monkeypatch, use_migrate_credentials=False)
+
+        assert plan.task_definition == "myapp-staging-web:7"
+        assert plan.container_name == "web"
+        assert seen["task_definition"] == "myapp-staging-web:7"
+
+    def test_an_unusable_service_reports_the_reason_and_returns_none(self, monkeypatch, capsys):
+        monkeypatch.setattr(ecs_run.ecs, "get_service_info", lambda *_a, **_kw: (None, None))
+
+        assert (
+            ecs_run._plan_task_launch(
+                "myapp-staging-cluster",
+                "web",
+                None,
+                use_migrate_credentials=False,
+                ecs_client=object(),
+            )
+            is None
+        )
+        assert "Could not get network config" in capsys.readouterr().err
+
+
+class TestAwaitTask:
+    """_await_task() reports the outcome and only tails logs when asked."""
+
+    def _await(self, monkeypatch, exit_code, logs_info):
+        tailed: list = []
+
+        monkeypatch.setattr(ecs_run.ecs, "wait_for_task", lambda *_a, **_kw: exit_code)
+        monkeypatch.setattr(ecs_run, "_display_task_logs", lambda *args: tailed.append(args))
+
+        returned = ecs_run._await_task(
+            cluster_name="myapp-staging-cluster",
+            task_arn="arn:aws:ecs:::task/c/abc123",
+            task_id="abc123",
+            container_name="web",
+            logs_info=logs_info,
+            timeout=300,
+            ecs_client=object(),
+        )
+        return returned, tailed
+
+    def test_success_returns_zero_and_tails_the_log_stream(self, monkeypatch, capsys):
+        returned, tailed = self._await(monkeypatch, 0, ("/ecs/myapp", "myapp"))
+
+        assert returned == 0
+        assert tailed == [("/ecs/myapp", "myapp", "web", "abc123")]
+        assert "Task completed successfully" in capsys.readouterr().out
+
+    def test_a_timeout_is_reported_as_failure_and_keeps_its_sentinel(self, monkeypatch, capsys):
+        returned, _ = self._await(monkeypatch, -1, None)
+
+        assert returned == -1
+        assert "Task failed or timed out" in capsys.readouterr().err
+
+    def test_a_nonzero_exit_code_is_returned_verbatim(self, monkeypatch, capsys):
+        returned, _ = self._await(monkeypatch, 3, None)
+
+        assert returned == 3
+        assert "Task exited with code 3" in capsys.readouterr().err
+
+    def test_no_logs_info_means_no_log_tail(self, monkeypatch):
+        _, tailed = self._await(monkeypatch, 0, None)
+
+        assert tailed == []

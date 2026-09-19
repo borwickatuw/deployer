@@ -24,6 +24,7 @@ Usage:
 """
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import boto3
@@ -106,6 +107,152 @@ def _display_task_logs(
         print(message)
 
 
+def _migrate_task_definition(service_task_def: str) -> str:
+    """The sibling ``-migrate`` task definition family for a service's task def.
+
+    A DDL command runs under a separate task definition whose ``migrate``
+    container holds the DDL+DML credentials. Its family is the service's own
+    family with the service suffix replaced: an ARN or ``family:revision`` for
+    ``myapp-staging-web`` resolves to ``myapp-staging-migrate``.
+
+    Args:
+        service_task_def: Task definition ARN or ``family:revision`` as the
+            service reports it.
+
+    Returns:
+        The migrate task definition family name (unversioned, so ECS picks the
+        latest revision).
+    """
+    task_family = service_task_def.rsplit("/", maxsplit=1)[-1].rsplit(":", 1)[0]
+    base = task_family.rsplit("-", 1)[0]
+    return f"{base}-migrate"
+
+
+@dataclass(frozen=True)
+class _TaskLaunchPlan:
+    """What a one-off task run needs, resolved from the service's live config."""
+
+    task_definition: str
+    container_name: str
+    containers: list[dict]
+    network_config: dict
+
+
+def _plan_task_launch(
+    cluster_name: str,
+    service_name: str,
+    container_override: str | None,
+    *,
+    use_migrate_credentials: bool,
+    ecs_client: object,
+) -> _TaskLaunchPlan | None:
+    """Resolve which task definition and container a run should target.
+
+    Args:
+        cluster_name: ECS cluster holding the service.
+        service_name: Service whose network config and task definition the
+            one-off task borrows.
+        container_override: ``--container`` value, or None to take the task
+            definition's first container. Ignored for migrate runs, which have
+            a dedicated container.
+        use_migrate_credentials: Run under the sibling migrate task definition.
+        ecs_client: boto3 ECS client.
+
+    Returns:
+        The resolved plan, or None (having printed the reason to stderr) when
+        the service declares no network config, no task definition, or no
+        container to run in.
+    """
+    print(f"Getting service configuration for '{service_name}'...")
+    # This command starts a task; aborting with a named reason is the right
+    # answer when the service cannot be read at all (DECISIONS.md 2026-08-18
+    # "Error Contracts"). A genuinely absent service still returns (None, None)
+    # and is handled below.
+    with exit_on(RuntimeError):
+        network_config, service_task_def = ecs.get_service_info(
+            cluster_name, service_name, ecs_client=ecs_client
+        )
+
+    if not network_config:
+        print(f"Error: Could not get network config for service '{service_name}'", file=sys.stderr)
+        print("Is the service running?", file=sys.stderr)
+        return None
+
+    if not service_task_def:
+        print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
+        return None
+
+    if use_migrate_credentials:
+        task_definition = _migrate_task_definition(service_task_def)
+        container_override = "migrate"
+        print("Using migrate credentials (DDL+DML) for migration command")
+    else:
+        task_definition = service_task_def
+
+    with exit_on(RuntimeError):
+        containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
+
+    if container_override:
+        target_container = container_override
+    elif containers:
+        target_container = containers[0]["name"]
+    else:
+        print("Error: No containers found in task definition", file=sys.stderr)
+        return None
+
+    return _TaskLaunchPlan(
+        task_definition=task_definition,
+        container_name=target_container,
+        containers=containers,
+        network_config=network_config,
+    )
+
+
+def _await_task(
+    *,
+    cluster_name: str,
+    task_arn: str,
+    task_id: str,
+    container_name: str,
+    logs_info: tuple[str, str] | None,
+    timeout: int,
+    ecs_client: object,
+) -> int:
+    """Wait for a started task, report its outcome, and tail its logs.
+
+    Args:
+        cluster_name: ECS cluster the task runs in.
+        task_arn: ARN returned by run_task.
+        task_id: Task id, the ARN's last segment.
+        container_name: Container whose log stream to read.
+        logs_info: (log group, stream prefix), or None when the log location
+            is unknown or the caller asked for no logs.
+        timeout: Seconds to wait before giving up.
+        ecs_client: boto3 ECS client.
+
+    Returns:
+        The task's exit code; -1 when it failed or timed out.
+    """
+    print("\nWaiting for task to complete...")
+    exit_code = ecs.wait_for_task(cluster_name, task_arn, timeout, ecs_client=ecs_client)
+
+    if exit_code == 0:
+        print("\nTask completed successfully")
+    elif exit_code == -1:
+        print("\nTask failed or timed out", file=sys.stderr)
+    else:
+        print(f"\nTask exited with code {exit_code}", file=sys.stderr)
+
+    if logs_info:
+        log_group, stream_prefix = logs_info
+        print("\n" + "=" * 60)
+        print("Task Output:")
+        print("=" * 60)
+        _display_task_logs(log_group, stream_prefix, container_name, task_id)
+
+    return exit_code
+
+
 def _run_ecs_command(
     cluster_name: str,
     service_name: str,
@@ -120,56 +267,27 @@ def _run_ecs_command(
     """Run a command in an ECS container."""
     ecs_client = boto3.client("ecs")
 
-    print(f"Getting service configuration for '{service_name}'...")
-    # This command starts a task; aborting with a named reason is the right
-    # answer when the service cannot be read at all (DECISIONS.md 2026-08-18
-    # "Error Contracts"). A genuinely absent service still returns (None, None)
-    # and is handled below.
-    with exit_on(RuntimeError):
-        network_config, service_task_def = ecs.get_service_info(
-            cluster_name, service_name, ecs_client=ecs_client
-        )
-
-    if not network_config:
-        print(f"Error: Could not get network config for service '{service_name}'", file=sys.stderr)
-        print("Is the service running?", file=sys.stderr)
+    plan = _plan_task_launch(
+        cluster_name,
+        service_name,
+        container_name,
+        use_migrate_credentials=use_migrate_credentials,
+        ecs_client=ecs_client,
+    )
+    if plan is None:
         return 1
 
-    if not service_task_def:
-        print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
-        return 1
-
-    if use_migrate_credentials:
-        task_family = service_task_def.split("/")[-1].rsplit(":", 1)[0]
-        base = task_family.rsplit("-", 1)[0]
-        task_definition = f"{base}-migrate"
-        container_name = "migrate"
-        print("Using migrate credentials (DDL+DML) for migration command")
-    else:
-        task_definition = service_task_def
-
-    with exit_on(RuntimeError):
-        containers = ecs.get_task_containers(task_definition, ecs_client=ecs_client)
-
-    if container_name:
-        target_container = container_name
-    elif containers:
-        target_container = containers[0]["name"]
-    else:
-        print("Error: No containers found in task definition", file=sys.stderr)
-        return 1
-
-    print(f"Task definition: {task_definition}")
-    print(f"Container: {target_container}")
+    print(f"Task definition: {plan.task_definition}")
+    print(f"Container: {plan.container_name}")
     print(f"Command: {' '.join(command)}")
     print()
 
     print("Starting task...")
     task_arn = ecs.run_task(
         cluster_name=cluster_name,
-        task_definition=task_definition,
-        network_config=network_config,
-        container_name=target_container,
+        task_definition=plan.task_definition,
+        network_config=plan.network_config,
+        container_name=plan.container_name,
         command=command,
         environment=environment,
         ecs_client=ecs_client,
@@ -183,34 +301,25 @@ def _run_ecs_command(
     print(f"Task ARN: {task_arn}")
     print(f"Task ID: {task_id}")
 
-    logs_info = ecs.get_logs_location_from_containers(containers, target_container)
+    logs_info = ecs.get_logs_location_from_containers(plan.containers, plan.container_name)
     if logs_info:
         log_group, stream_prefix = logs_info
-        log_stream = f"{stream_prefix}/{target_container}/{task_id}"
+        log_stream = f"{stream_prefix}/{plan.container_name}/{task_id}"
         print(f"\nLogs: CloudWatch log group '{log_group}', stream '{log_stream}'")
 
     if not wait:
         print("\nTask started (not waiting for completion)")
         return 0
 
-    print("\nWaiting for task to complete...")
-    exit_code = ecs.wait_for_task(cluster_name, task_arn, timeout, ecs_client=ecs_client)
-
-    if exit_code == 0:
-        print("\nTask completed successfully")
-    elif exit_code == -1:
-        print("\nTask failed or timed out", file=sys.stderr)
-    else:
-        print(f"\nTask exited with code {exit_code}", file=sys.stderr)
-
-    if show_logs and logs_info:
-        log_group, stream_prefix = logs_info
-        print("\n" + "=" * 60)
-        print("Task Output:")
-        print("=" * 60)
-        _display_task_logs(log_group, stream_prefix, target_container, task_id)
-
-    return exit_code
+    return _await_task(
+        cluster_name=cluster_name,
+        task_arn=task_arn,
+        task_id=task_id,
+        container_name=plan.container_name,
+        logs_info=logs_info if show_logs else None,
+        timeout=timeout,
+        ecs_client=ecs_client,
+    )
 
 
 # =============================================================================
