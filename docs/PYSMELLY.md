@@ -144,13 +144,20 @@ proven necessary by re-running ruff with it removed) and three
 ### Skipped and reverted findings
 
 Nothing was reverted. One finding was left standing, escalated to the operator
-with the fix drafted — **re-evaluate-by: 2027-03 review** (the second
-comprehensive review following this one; the cadence is ~3 months per
-claude-meta's `docs/HOWTO-COMPREHENSIVE-REVIEW.md` closeout step):
+with the fix drafted, and **ratified 2026-09-21** (answer `c10`,
+`LsSmallA` — "ratify all seven") — **re-evaluate-by: the second
+comprehensive review following 2026-09-18**:
 
-- single-call-site, `modules/staging-scheduler/lambda/handler.py`
+- single-call-site, `modules/staging-scheduler/lambda/handler.py:199`
   `stop_environment` — half a deliberate start/stop pair; inlining one half
-  reads worse.
+  reads worse. *(Anchor re-measured at `f33c84c`; it was `:195` at
+  `a510815`.)*
+
+A second single-call-site finding,
+`src/deployer/init/deploy_toml.py:93 is_likely_secret`, is live at `f33c84c`
+and carries **no** verdict — it was not part of the run's twenty units and
+nobody has adjudicated it. Its absence from the ratified table below is not a
+decision.
 
 ### Standing-suppression audit (Practice #10)
 
@@ -180,25 +187,58 @@ still hide real findings whose rationale the skip does not describe; U09 and U10
 fixed what was fixable underneath them, and **whether either skip stays at all
 is an open operator question**, not a settled one.
 
-### Findings left standing at `a510815`
+### Findings left standing — ratified 2026-09-21
 
-This was an unattended run, so no operator was in the loop and **none of the
-remaining findings carry an operator verdict**. They are escalated, not
-adjudicated; absence of a row here is not a decision. The families awaiting
-adjudication, in the run's own numbering:
+The 2026-09-18 run was unattended, so it escalated these nine families rather
+than adjudicating them. **The operator ratified eight of them on 2026-09-21**
+(answer `b3`, `PysDeployer` — "leave all standing: ratify eight declines");
+A08 had already been closed on the repo side by `ad50a02`, which is this file.
 
-| Adjudication | Family                                                                                                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A01          | env-fallbacks — `LOG_LEVEL` defaults in the four Lambda bundles.                                                                                                        |
-| A02          | inconsistent-error-handling — including `rds.get_status`, where the check does not credit the `exit_on` context manager and the "unhandled" callers do have boundaries. |
-| A03          | dict-as-dataclass — `autoscaling._metric_alarm_common`.                                                                                                                 |
-| A04          | law-of-demeter — `self.rds.exceptions.DBInstanceNotFoundFault`.                                                                                                         |
-| A05          | param-clumps — scoped as a post-`service.py` subphase.                                                                                                                  |
-| A06          | Whether the `internal-only` skip stays, and whether `db_common.__all__` is the right export surface.                                                                    |
-| A07          | The `scattered-constants` remainder, including an unexamined `50` cluster.                                                                                              |
-| A08          | Register location — resolved by this file; the guide's runnable check is `ls docs/PYSMELLY.md`.                                                                         |
-| A09          | foo-equals-foo.                                                                                                                                                         |
-| —            | pass-through-params not covered by U20, including the two `utils/cli.py` error-boundary adapters.                                                                       |
+**A ratified row is a decision, not a backlog entry.** A scout running the next
+review reads this table and does *not* re-mint a unit for a row here — it
+re-measures the anchor, and only re-opens the question if the
+`re-evaluate-by` trigger has fired or the finding's shape has changed. Every
+anchor below was re-measured at `f33c84c` (total 44 findings); the counts
+differ from the ones the run recorded at `f5d22e0`/`a510815` because eighteen
+units moved the tree in between.
+
+| Adj | Check                            | Anchor at `f33c84c`                                                                                                                                                                                                                                                            | Why it stands                                                                | Ratified   | Re-evaluate-by                                                |
+| --- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------- |
+| A01 | env-fallbacks ×4                 | `modules/db-on-shared-rds/lambda/index.py:51`, `modules/db-users/lambda/index.py:44`, `modules/lambda-shared/db_common.py:54`, `modules/staging-scheduler/lambda/handler.py:44`                                                                                                | LOG_LEVEL is a fleet-wide optional default, not required config.             | 2026-09-21 | LOGGING.md stops treating LOG_LEVEL as optional-with-default. |
+| A02 | inconsistent-error-handling ×10  | `src/deployer/utils/logging.py:47`/`:67`/`:72`/`:77`, `src/deployer/core/config.py:205`, `src/deployer/utils/environment.py:17`, `src/deployer/aws/rds.py:28`, `src/deployer/emergency/ecs.py:82`, `src/deployer/init/template.py:126`, `src/deployer/utils/aws_profile.py:85` | Callers legitimately differ; a caller-count check documentation cannot move. | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
+| A03 | dict-as-dataclass                | `src/deployer/deploy/autoscaling.py:140`                                                                                                                                                                                                                                       | A boto3 `**kwargs` bag spread at both call sites, not data.                  | 2026-09-21 | The boto3 keys stop being spread straight into the API call.  |
+| A04 | law-of-demeter                   | `src/deployer/deploy/deployer.py:311`                                                                                                                                                                                                                                          | `client.exceptions.X` is the only supported botocore idiom.                  | 2026-09-21 | botocore offers another way to name service exceptions.       |
+| A05 | param-clumps ×9                  | `bin/ecs-run.py:141` (strongest), plus eight listed by `--check param-clumps`                                                                                                                                                                                                  | Nine dataclass extractions are an interface programme, not a fix.            | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
+| A06 | `internal-only` skip stays       | skip entry in `pyproject.toml`; 6 findings behind it                                                                                                                                                                                                                           | The six survivors are Click `cmd_*` entry points, unrenameable.              | 2026-09-21 | pysmelly learns to recognize Click-dispatched entry points.   |
+| A07 | `scattered-constants` skip stays | skip entry in `pyproject.toml`; 8 findings behind it                                                                                                                                                                                                                           | Naming `' - '`, `'PATH'` or `50` makes the code worse.                       | 2026-09-21 | The `50` cluster is examined (see the plan item below).       |
+| A09 | foo-equals-foo ×3                | `bin/init.py:220`, `bin/init.py:563`, `src/deployer/config/deploy_config.py:498`                                                                                                                                                                                               | Locals computed in multi-line branches; inlining reads worse.                | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
+| A08 | register location                | this file                                                                                                                                                                                                                                                                      | Resolved on the repo side by `ad50a02`; the guide half is claude-meta's.     | —          | —                                                             |
+
+A05's anchor moved during the run: U17's extraction added a seventh member to
+the `(cluster_name, ecs_client, service_name)` clump and moved it from
+`src/deployer/aws/ecs.py:91` into `bin/ecs-run.py:141`. A06's and A07's
+rationale comments in `pyproject.toml` describe the skip, not the live
+findings — re-test them with `pysmelly . --check <name> --more-please` rather
+than reading them, as this register's convention says.
+
+**Not ratified, and therefore still open:** the pass-through-params remainder
+(14 findings at `f33c84c`, including the two `utils/cli.py` error-boundary
+adapters), the `50`-literal cluster inside A07, and the
+sentinel-returned-from-`except` sweep described below. Those are scoped as
+plan work, not as standing rows.
+
+### Non-pysmelly verdicts ratified in the same review
+
+Recorded here so the one register a scout reads carries every 2026-09-18
+verdict, not only the pysmelly ones:
+
+| Finding                                                               | Guide | Why it stands                                                     | Ratified   | Re-evaluate-by                                            |
+| --------------------------------------------------------------------- | ----- | ----------------------------------------------------------------- | ---------- | --------------------------------------------------------- |
+| `docs/internal/SIMILAR-TOOLS.md` lives outside `docs/investigations/` | DOCS  | A positioning survey the investigations rule was not written for. | 2026-09-21 | The next time the tool landscape is actually re-surveyed. |
+
+Branch protection on the public release repo's `main` was ratified as an
+accepted risk in the same round (answer `a1`); its home is risk **R3** in
+[docs/GOVERNANCE.md](GOVERNANCE.md), not here.
 
 **One thing looked for and not cleared.** PYSMELLY-REVIEW uses this repo's
 `emergency/` family as its worked example of the sentinel-returned-from-`except`
