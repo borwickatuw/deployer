@@ -1,6 +1,6 @@
 +++
 title = "Developer Experience: Tofu Placeholder Map Indexing"
-number = 8
+closed = "2026-09-22"
 +++
 
 Promoted 2026-09-22 from someday-maybe (Developer Experience). Repo-local
@@ -36,6 +36,16 @@ change.
 **Complexity**: Low-Medium.
 
 ### Sub-phases
-- **8-1 — characterization tests for the resolver's whole-string and embedded forms as they behave today (type preservation, json.dumps, the two RuntimeErrors)**
-- **8-2 — the dotted-path walk: _walk_tofu_output shared by both branches, fail-fast errors naming placeholder and segment, tests for each error arm**
-- **8-3 — CONFIG-REFERENCE.md placeholder section documents the dotted form with one map-output example**
+- **8-1 — characterization tests for the resolver's whole-string and embedded forms as they behave today (type preservation, json.dumps, the two RuntimeErrors)** **done** TestResolveTofuPlaceholders pins type preservation, json.dumps stringification, passthrough, both RuntimeError arms (f593233)
+- **8-2 — the dotted-path walk: _walk_tofu_output shared by both branches, fail-fast errors naming placeholder and segment, tests for each error arm** **done** _walk_tofu_output shared by both branches; errors name the placeholder, the walked prefix, the offending type or the available keys (capped at 10); null leaf is unresolved (e8f9b4c)
+- **8-3 — CONFIG-REFERENCE.md placeholder section documents the dotted form with one map-output example** **done** CONFIG-REFERENCE Placeholder Resolution documents the dotted form with the s3_bucket_names example (446bce6)
+
+### Outcome
+
+Closed 2026-09-22. `${tofu:NAME.KEY[.KEY...]}` indexes map outputs; the
+walk lives in one helper used by both placeholder forms; every failure
+names the placeholder, the walked prefix and either the offending type or
+the available keys; a null leaf is unresolved like a null top-level output.
+31 resolver tests. Commits `f593233`, `e8f9b4c`, `446bce6`. Follow-up
+captured: migrate the templates to the dotted form and retire the per-key
+bucket outputs.

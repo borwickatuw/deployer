@@ -41,3 +41,14 @@ behaviour and its alarm consequence are documented for the next apply
 (`1be49e3`). Two follow-ups captured as ideas: the same gap in the shared-app
 module, and two PRODUCTION.md settings that are not settable. Full record in
 `items/`.
+
+## 8. Developer Experience: Tofu Placeholder Map Indexing
+
+Closed 2026-09-22. Promoted from someday-maybe the same day.
+`${tofu:NAME.KEY}` (nested keys allowed) indexes map outputs in the
+resolver, with fail-fast errors naming the placeholder, the walked prefix
+and the available keys; both placeholder forms share one walk helper; the
+existing behaviour was pinned by characterization tests first. Commits
+`f593233`, `e8f9b4c`, `446bce6`. Follow-up idea: migrate the templates to
+the dotted form and retire the per-key bucket outputs. Full record in
+`items/`.
