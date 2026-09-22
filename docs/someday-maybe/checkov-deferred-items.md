@@ -9,11 +9,9 @@ These Checkov findings are valid but require infrastructure changes. Currently s
 | Check           | Description               | Complexity | Notes                                          |
 | --------------- | ------------------------- | ---------- | ---------------------------------------------- |
 | CKV_AWS_161     | IAM authentication        | Medium     | Requires app changes to use IAM auth           |
-| ~~CKV2_AWS_69~~ | ~~Encryption in transit~~ | ~~Low~~    | Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md) |
 
 ### Other
 
 | Check           | Description                       | Complexity | Notes                                          |
 | --------------- | --------------------------------- | ---------- | ---------------------------------------------- |
-| ~~CKV_AWS_134~~ | ~~ElastiCache automatic backups~~ | ~~Low~~    | Moved to [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md) |
 | CKV_AWS_51      | ECR immutable tags                | Medium     | Deploy workflow uses `latest` tag pattern      |
