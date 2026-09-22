@@ -103,7 +103,7 @@ branch = true
 # bin/ script whose commands are still mostly unpinned. `make test-cov` shows
 # its current line; the per-phase history of how the floor got here is in git.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 81
+fail_under = 83
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
