@@ -30,6 +30,25 @@ AWS-side runnable checks were assigned to the app repos' own checkpoints.
 Commits `695c046`, `13e498b`, `68ab618`, `8a1d4bc`. Full record in
 `items/`.
 
+## 2. Security gates and static-analysis config: the bandit skips, the reporter's name, and what check gates on
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. Bandit
+skips now pair with ruff's per-file-ignores and the report-only target is
+`security-report`, both landed by the concurrent claude-meta fleet sweep
+(`98b9baf`, `931544a`; fileplan-claude-meta:77 and :78, closed the same
+day). The operator chose to gate `make check` on the read-only secrets scan
+(`779454f`). Full record in `items/`.
+
+## 3. Docs and plan plumbing: example paths, the project memory, the mdformat pathspec, and the blocked-on key
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. The
+`blocked-on` key is declared with its method-doc hooks (`9101134`,
+deployer's half of fileplan-claude-meta:89); the project memory is
+pointers (`be1443d`); example paths in docstrings and `--help` are generic
+(`ad7a573`); the mdformat pathspec and front-matter workaround were settled
+by the fleet sweep (`7d3c042`, `0357299`; fileplan-claude-meta:84 and :85).
+Full record in `items/`.
+
 ## 5. Before the next apply: production RDS protections and the staging scheduler's new failure signal
 
 Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review.
