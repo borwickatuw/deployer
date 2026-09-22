@@ -571,19 +571,28 @@ class TestEnsureAzRebalancingDisabled:
             "  ⚠ Could not disable AZ rebalancing for web: AccessDenied"
         ]
 
-    def test_client_error_is_swallowed(self, run):
+    def test_a_failed_describe_raises_rather_than_reading_as_already_disabled(self, run):
+        """False means "nothing to do"; a describe that failed must not say so.
+
+        It used to, silently, and the update that followed then failed on the
+        maximumPercent restriction this function exists to lift.
+        """
         client = _DescribeServicesStub([], error=_client_error("AccessDenied", "DescribeServices"))
-        assert _ensure_az_rebalancing_disabled(client, CLUSTER, "web") is False
+        with pytest.raises(RuntimeError, match="Could not read AZ rebalancing") as exc_info:
+            _ensure_az_rebalancing_disabled(client, CLUSTER, "web")
+        assert "AccessDenied" in str(exc_info.value)
+        assert run.calls == []
 
     def test_non_client_error_propagates(self, run):
-        # Only ClientError is caught; anything else escapes to the caller, which
-        # in _create_service()/deploy_services() means the whole deploy aborts.
-        client = _DescribeServicesStub([], error=RuntimeError("socket"))
-        with pytest.raises(RuntimeError):
+        # Only ClientError is translated; anything else escapes unchanged to the
+        # caller, which in _create_service()/deploy_services() aborts the deploy.
+        client = _DescribeServicesStub([], error=OSError("socket"))
+        with pytest.raises(OSError, match="socket"):
             _ensure_az_rebalancing_disabled(client, CLUSTER, "web")
 
-    def test_missing_cluster_is_swallowed_against_moto(self, aws, run):
-        assert _ensure_az_rebalancing_disabled(aws.client, "no-such-cluster", "web") is False
+    def test_missing_cluster_raises_against_moto(self, aws, run):
+        with pytest.raises(RuntimeError, match="ClusterNotFoundException"):
+            _ensure_az_rebalancing_disabled(aws.client, "no-such-cluster", "web")
 
     def test_real_service_reports_false_against_moto(self, aws, run):
         _make_service(aws)

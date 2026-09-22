@@ -583,7 +583,7 @@ class TestAdvanceSettleWindow:
 
 
 class TestGetServiceTargetGroup:
-    """Pins the load-balancer lookup and its four None routes."""
+    """Pins the load-balancer lookup: three None routes (absence) and one raise (failure)."""
 
     def test_returns_first_target_group_arn(self):
         client = ScriptedClient(
@@ -598,10 +598,12 @@ class TestGetServiceTargetGroup:
         _get_service_target_group(client, CLUSTER, "web")
         assert client.calls_to("describe_services") == [{"cluster": CLUSTER, "services": ["web"]}]
 
-    def test_client_error_returns_none_silently(self):
-        """A ClientError is swallowed with no logging at all."""
+    def test_client_error_raises_rather_than_reading_as_not_load_balanced(self):
+        """None means "not load balanced"; a failed read must not say so."""
         client = ScriptedClient(describe_services=_client_error())
-        assert _get_service_target_group(client, CLUSTER, "web") is None
+        with pytest.raises(RuntimeError, match="ClusterNotFoundException") as exc_info:
+            _get_service_target_group(client, CLUSTER, "web")
+        assert isinstance(exc_info.value.__cause__, ClientError)
 
     def test_no_services_returns_none(self):
         client = ScriptedClient(describe_services={"services": []})
@@ -1507,7 +1509,13 @@ class TestWaitForServiceAndTargets:
         with pytest.raises(ClientError):
             _wait_for_service_and_targets(_ctx(client), ScriptedClient(), "web", FAST)
 
-    def test_target_group_lookup_failure_is_treated_as_not_load_balanced(self, sleeps):
+    def test_target_group_lookup_failure_is_a_failed_wait_not_success(self, sleeps):
+        """A lookup that could not look is not "not load balanced".
+
+        It used to answer None, so the target-health wait was skipped and the
+        service reported healthy without anyone checking. The raise is now
+        captured into a failed ServiceWaitResult that names the cause.
+        """
         client = ScriptedClient(
             describe_services=[
                 _stable_response(1, 1, rollout_state="COMPLETED"),
@@ -1517,7 +1525,9 @@ class TestWaitForServiceAndTargets:
         )
         elbv2 = ScriptedClient()
         result = _wait_for_service_and_targets(_ctx(client), elbv2, "web", FAST)
-        assert result.success is True
+        assert result.success is False
+        assert isinstance(result.error, RuntimeError)
+        assert "Could not read the load balancer of service 'web'" in str(result.error)
         assert elbv2.calls == []
 
 
@@ -1990,11 +2000,19 @@ class TestStartMigrationsNetworkConfig:
         out = _plain(capsys.readouterr().out)
         assert "No web service found to get network configuration" in out
 
-    def test_client_error_returns_none(self, capsys):
+    def test_client_error_raises_rather_than_skipping_the_migrations(self):
+        """None from start_migrations means "nothing to migrate".
+
+        A describe failure used to return it too, so the deploy skipped the
+        migrations and carried on against the old schema. The raise aborts the
+        deploy before any service is updated; test_no_service_found_returns_none
+        pins that genuine absence still answers None.
+        """
         client = _migration_ecs_client(describe_services=_client_error())
         ctx = _ctx(client, config=_migration_config())
-        assert start_migrations(ctx, {"web": "img:web"}, None) is None
-        assert "Could not get network configuration" in _plain(capsys.readouterr().out)
+        with pytest.raises(RuntimeError, match="network configuration of service 'web'"):
+            start_migrations(ctx, {"web": "img:web"}, None)
+        assert client.calls_to("run_task") == []
 
     def test_service_without_network_configuration_raises_keyerror(self):
         """Latent bug pinned: the read is ``["networkConfiguration"]`` outside the try.
