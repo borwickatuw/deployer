@@ -52,6 +52,15 @@ help = "Repo-relative path of the design document the item decides from."
 doc  = "docs/PLAN-METHOD.md#review"
 help = "The comprehensive review that filed this, cited by audit date YYYY-MM-DD."
 
+# Declared plain, never wired to a state's `dependencies` field: that
+# machinery reads entries as slugs filed in this tree, and a cross-repo
+# citation names none. Identical to claude-meta's declaration (FILEPLAN
+# Practice 12); the sibling side of the key is what makes it a key.
+[keys.blocked-on]
+doc         = "docs/PLAN-METHOD.md#blocked-on"
+help        = "Sibling-repo work this waits on, cited fileplan-<repo>:<number>."
+list-valued = true
+
 [transitions.capture]
 doc  = "docs/PLAN-METHOD.md#capture"
 help = "File an idea in someday-maybe."

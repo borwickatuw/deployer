@@ -28,8 +28,8 @@ working notes and go unformatted by design.
 
 ## Cross-repo backlog
 
-deployer has no repo-local phases yet; the cross-repo backlog queued against
-this repo is recorded below.
+deployer's repo-local phases live in `docs/plan/` under this repo's own
+numbers; the cross-repo backlog queued against this repo is recorded below.
 
 Cross-repo work is cited `fileplan-claude-meta:<number>` — the scheme prefix
 makes every citation findable with one `grep -rn 'fileplan-'`, and the number
@@ -89,8 +89,8 @@ highest number anywhere — live items, register headings, or the register
 floor (`first-number`, which stands in for everything rotated out).
 Numbers are never reused or renumbered.
 
-deployer's own numbering starts at 1: the repo has never had a repo-local
-phase, and every phase it has worked was queued and numbered by claude-meta
+deployer's own numbering starts at 1: before the 2026-09-18 review every
+phase it worked was queued and numbered by claude-meta
 (see [Cross-repo backlog](#cross-repo-backlog)). A repo-local phase is work
 this repo decides to do on its own account — a deployer feature, a
 refactor, a docs arc — as opposed to deployer's slice of a fleet arc, which
@@ -166,6 +166,31 @@ date. Declared identically in every fleet `plan.toml` (the shared-key
 pattern of claude-meta's `best-practices/FILEPLAN.md` Practice 12). An item
 opened by hand carries no `review` key, so the absence means something too.
 
+## blocked-on
+
+Sibling-repo work this item waits on, cited `fileplan-<repo>:<number>`
+and list-valued (an item names every blocker it has). Numbers only: the
+phase number is the one identifier fileplan guarantees constant — minted
+once, never reused, and it outlives the item file because the register
+heading keeps it after a prune. Resolve a citation by degrading tiers: the
+sibling's `docs/plan/`, then its `docs/plan-archive/items/`, then its
+register's `## N.` heading, then its rotated segments. The `fileplan-`
+prefix is what makes citations greppable — repo names are ordinary words
+in prose, so `grep -rn 'fileplan-'` is the fleet-wide query.
+
+Declared plain, never wired to a state's `dependencies` field: that
+machinery reads entries as slugs filed in *this* tree, so a cross-repo
+citation would report as an `unknown dependency` on every listing,
+forever. Only numbered items are citable, so depending on uncommitted
+work is inexpressible by construction — promote it first, or describe it
+in the body as prose.
+
+The key only works because the declaration is identical in claude-meta's
+`plan.toml` and both method docs carry the hooks at
+[scope](#scope)/[promote](#promote) and [archive](#archive). Name the
+sibling by repo, never by checkout path. See claude-meta's
+`best-practices/FILEPLAN.md` Practice 12.
+
 ## capture
 
 File an idea into someday-maybe. Write the idea shape into the body —
@@ -184,6 +209,10 @@ Commit to a someday-maybe idea: move it into the plan. fileplan mints the
 next phase number into the item's head. Rewrite the body from idea-shape
 into work-shape: scope and approach, not just motivation.
 
+Before opening a phase that touches a boundary with a sibling repo, read
+that repo's `docs/plan/` and record what this phase waits on in
+[blocked-on](#blocked-on).
+
 ## scope
 
 Open a phase directly in the plan, without passing through someday-maybe;
@@ -191,6 +220,10 @@ fileplan mints the next phase number. This is the path for review findings,
 carry-forward work items and deployer's slice of a cross-repo arc that the
 repo decides to track on its own number — commitments the moment they are
 queued.
+
+The same hook as [promote](#promote): a boundary-touching phase reads the
+sibling's `docs/plan/` first and records what it waits on in
+[blocked-on](#blocked-on).
 
 ## session-verbs
 
@@ -249,6 +282,13 @@ uv run --group dev fileplan archive ITEM --closed YYYY-MM-DD
 After the move, condense the outcome into a short summary under the minted
 heading with a pointer to where the full record lives; the
 `docs/plan-archive/items/` file may then be deleted at any point.
+
+Before closing, settle the cross-repo citations both ways: an item whose
+head carries [blocked-on](#blocked-on) closes only once every cited
+sibling phase has decided, and in the claude-meta checkout
+`grep -rn 'fileplan-deployer:<number>' docs/` must resolve every hit — a
+closed phase must not leave a sibling waiting on a decision that has been
+made.
 
 ## Rotating the register
 

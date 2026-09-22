@@ -1,6 +1,7 @@
 +++
 title = "Docs and plan plumbing: example paths, the project memory, the mdformat pathspec, and the blocked-on key"
 review = "2026-09-18"
+blocked-on = ["fileplan-claude-meta:87", "fileplan-claude-meta:84", "fileplan-claude-meta:85"]
 number = 3
 +++
 
@@ -9,9 +10,11 @@ Evidence for each is in claude-meta
 `docs/investigations/2026-09-18-comprehensive-review-run-ledger.md`,
 `## Unit records` → `### deployer` → `#### Pending operator`.
 
-Three of the four are deployer's slice of a fleet family; cited in prose
-rather than as a `blocked-on` key, because this repo's `plan.toml` does not
-declare that key yet — which is sub-phase 3-4's whole subject:
+Three of the four are deployer's slice of a fleet family, cited as
+`blocked-on` keys in the head now that sub-phase 3-4 has declared the key.
+fileplan-claude-meta:89 is not cited: its deployer half *is* 3-4, so once
+that lands deployer waits on nothing there — claude-meta's 89-2 waits on
+deployer.
 
 - blocked-on: fileplan-claude-meta:87 — finish DOCS Practice 12, migrated
   memories become pointers, across pysmelly, outscience, **deployer**,
