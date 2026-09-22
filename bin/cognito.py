@@ -93,7 +93,10 @@ def get_cognito_environments() -> list[str]:
     """Find all environments with Cognito enabled.
 
     Returns:
-        Sorted list of environment names that have Cognito enabled.
+        Sorted list of environment names that have Cognito enabled. A deployed
+        environment whose config cannot be loaded is left out -- whether it
+        uses Cognito is unknown -- and named on stderr, so it is not mistaken
+        for one that does not.
     """
     cognito_envs = []
     with exit_on(RuntimeError):
@@ -106,10 +109,11 @@ def get_cognito_environments() -> list[str]:
             continue
         try:
             config = load_environment_config(env_path)
-            if is_cognito_enabled(config):
-                cognito_envs.append(env_name)
-        except (FileNotFoundError, RuntimeError):
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"  {env_name}: skipped, could not load config: {e}", file=sys.stderr)
             continue
+        if is_cognito_enabled(config):
+            cognito_envs.append(env_name)
     return cognito_envs
 
 

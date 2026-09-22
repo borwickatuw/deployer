@@ -312,14 +312,16 @@ class TestCmdListDiscovery:
         assert cognito_cli.cmd_list(None) == 1
         assert "No Cognito-enabled environments found." in capsys.readouterr().err
 
-    def test_a_config_error_during_discovery_is_swallowed(self, environments, capsys):
-        # Pinned, not endorsed: get_cognito_environments() catches
-        # FileNotFoundError/RuntimeError and `continue`s with no message, so a
-        # broken environment is silently invisible to `cognito list` with no
-        # argument.
+    def test_a_config_error_during_discovery_is_named_not_swallowed(self, environments, capsys):
+        # get_cognito_environments() used to `continue` with no message, so a
+        # broken environment was indistinguishable from one without Cognito.
+        # It is still left out -- whether it uses Cognito is unknown -- but
+        # the operator is told which one and why.
         environments("myapp-staging", RuntimeError("tofu failed"))
         assert cognito_cli.cmd_list(None) == 1
-        assert "tofu failed" not in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "  myapp-staging: skipped, could not load config: tofu failed" in err
+        assert "No Cognito-enabled environments found." in err
 
     def test_an_explicit_environment_skips_discovery(self, environments, aws_cli, capsys):
         # The named environment is used verbatim -- is_cognito_enabled() is
