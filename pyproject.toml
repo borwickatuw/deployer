@@ -216,14 +216,27 @@ skips = ["B101", "B608"]
 
 [tool.pysmelly]
 # CLI cmd_* functions are dispatched by Click — public naming is conventional
-# scattered-constants: the config-dict-key rationale this skip used to carry
-# ("infrastructure", "services") describes findings the check no longer
-# reports. Re-measured 2026-09-18 with `pysmelly . --check scattered-constants
-# --more-please`: the operational literals it was hiding (the RDS wait budget
-# and cadence, the ResourceNotFoundException error code) are now named
-# constants, and what remains is CLI flag names, help text, separators and
-# service-name strings. Whether the skip stays at all is an operator call, not
-# a settled one — re-run that command before trusting this line.
+# scattered-constants: kept by operator ratification (docs/PYSMELLY.md, A07).
+# Measured at 6d36aa6 with `pysmelly . --check scattered-constants
+# --more-please`, it hides 8 findings — two numeric clusters and six strings:
+#   15  the RDS poll cadence (rds.POLL_INTERVAL_SECONDS), the ECS stability
+#       poll cadence (StabilityConfig.poll_interval) and a count of
+#       autoscaling evaluation periods (SCALE_IN_SUSTAINED_PERIODS) — each
+#       already named where it lives; the two cadences are separate waits
+#       that need not move together
+#   50  three unrelated limits: the init dry-run preview's lines per file, the
+#       ops audit's error-event cap per log group, and the migration-failure
+#       log tail (docs/PYSMELLY.md, under A07, says which is which)
+#   'PATH'  the Click metavar on --deploy-toml and --from-compose
+#   "Path to deploy.toml (optional if environment is linked)" — the
+#       --deploy-toml help text in three bin/ scripts
+#   '  - '      the bullet= style passed to advice_block() by three error blocks
+#   'app'       the credential_mode default in three signatures
+#   'available' the RDS DBInstanceStatus value, one copy in the separately
+#               packaged staging-scheduler Lambda
+#   'web'       the conventional name of the web service
+# Re-run that command before trusting this list; a new cluster is a finding,
+# not something this skip was ratified to hide.
 skip = ["internal-only", "scattered-constants"]
 # Test setup boilerplate dominates duplicate-blocks findings
 exclude = ["tests/"]

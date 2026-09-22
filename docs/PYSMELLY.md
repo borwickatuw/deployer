@@ -210,22 +210,46 @@ units moved the tree in between.
 | A04 | law-of-demeter                   | `src/deployer/deploy/deployer.py:311`                                                                                                                                                                                                                                          | `client.exceptions.X` is the only supported botocore idiom.                  | 2026-09-21 | botocore offers another way to name service exceptions.       |
 | A05 | param-clumps ×9                  | `bin/ecs-run.py:141` (strongest), plus eight listed by `--check param-clumps`                                                                                                                                                                                                  | Nine dataclass extractions are an interface programme, not a fix.            | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
 | A06 | `internal-only` skip stays       | skip entry in `pyproject.toml`; 6 findings behind it                                                                                                                                                                                                                           | The six survivors are Click `cmd_*` entry points, unrenameable.              | 2026-09-21 | pysmelly learns to recognize Click-dispatched entry points.   |
-| A07 | `scattered-constants` skip stays | skip entry in `pyproject.toml`; 8 findings behind it                                                                                                                                                                                                                           | Naming `' - '`, `'PATH'` or `50` makes the code worse.                       | 2026-09-21 | The `50` cluster is examined (see the plan item below).       |
+| A07 | `scattered-constants` skip stays | skip entry in `pyproject.toml`; 8 findings behind it                                                                                                                                                                                                                           | Naming `' - '`, `'PATH'` or `50` makes the code worse.                       | 2026-09-21 | Second comprehensive review after 2026-09-18 (`50`: below).   |
 | A09 | foo-equals-foo ×3                | `bin/init.py:220`, `bin/init.py:563`, `src/deployer/config/deploy_config.py:498`                                                                                                                                                                                               | Locals computed in multi-line branches; inlining reads worse.                | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
 | A08 | register location                | this file                                                                                                                                                                                                                                                                      | Resolved on the repo side by `ad50a02`; the guide half is claude-meta's.     | —          | —                                                             |
 
 A05's anchor moved during the run: U17's extraction added a seventh member to
 the `(cluster_name, ecs_client, service_name)` clump and moved it from
-`src/deployer/aws/ecs.py:91` into `bin/ecs-run.py:141`. A06's and A07's
-rationale comments in `pyproject.toml` describe the skip, not the live
-findings — re-test them with `pysmelly . --check <name> --more-please` rather
-than reading them, as this register's convention says.
+`src/deployer/aws/ecs.py:91` into `bin/ecs-run.py:141`. A06's rationale
+comment in `pyproject.toml` describes the skip, not the live findings. A07's
+was rewritten at `6d36aa6` to list the eight findings the skip hides, one line
+each, because the U10 rewrite described them as strings when two of the eight
+are numeric clusters. Either comment is a snapshot: re-test with
+`pysmelly . --check <name> --more-please` rather than reading it, as this
+register's convention says.
+
+**A07's `50` trigger, discharged 2026-09-22 at `6d36aa6`.** The literal `50`
+appears at three sites, and each was read with its callee. They are three
+unrelated limits, so none was named and the code is unchanged:
+
+- `bin/init.py:575` — `max_lines=50` to `_print_dry_run_preview`: how many
+  lines of each generated file `init.py environment --dry-run` prints before
+  truncating. A display choice for rendered tofu/TOML templates.
+- `bin/ops.py:869` — `limit=50` from `cmd_audit` to `cmd_logs`: the
+  `filter_log_events` result cap per log group in the audit's error scan. The
+  "(N errors)" count saturates at it; only ten are printed. The standalone
+  `ops.py logs` defaults to 100, so this is the audit's own tighter budget, not
+  a shared log-limit.
+- `src/deployer/deploy/service.py:976` — `_display_migration_logs`'s
+  `limit: int = 50`: how many of the most recent `get_log_events` lines from
+  one failed migration task's stream are shown to explain the failure.
+
+The second and third are both CloudWatch caps, but on different APIs (a
+filtered search across a group versus the tail of one stream) for different
+purposes (counting errors versus explaining one failure). A reason to change
+one gives no reason to change the other, so sharing a name would couple them
+for no gain.
 
 **Not ratified, and therefore still open:** the pass-through-params remainder
 (14 findings at `f33c84c`, including the two `utils/cli.py` error-boundary
-adapters), the `50`-literal cluster inside A07, and the
-sentinel-returned-from-`except` sweep described below. Those are scoped as
-plan work, not as standing rows.
+adapters) and the sentinel-returned-from-`except` sweep described below.
+Those are scoped as plan work, not as standing rows.
 
 ### Non-pysmelly verdicts ratified in the same review
 
