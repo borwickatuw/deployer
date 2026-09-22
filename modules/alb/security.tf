@@ -35,8 +35,8 @@ resource "aws_security_group" "alb" {
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    cidr_blocks     = var.restrict_ingress_to_cloudfront ? [] : ["0.0.0.0/0"]
-    prefix_list_ids = var.restrict_ingress_to_cloudfront ? [data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id] : []
+    cidr_blocks     = var.restrict_ingress_to_cloudfront ? null : ["0.0.0.0/0"]
+    prefix_list_ids = var.restrict_ingress_to_cloudfront ? [data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id] : null
   }
 
   egress {
