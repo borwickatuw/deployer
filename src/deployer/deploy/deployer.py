@@ -32,7 +32,11 @@ from deployer.deploy.service import (
     wait_for_migrations,
     wait_for_stable,
 )
-from deployer.deploy.task_definition import get_environment_variables, get_service_sizing
+from deployer.deploy.task_definition import (
+    get_environment_variables,
+    get_service_sizing,
+    stringify_environment,
+)
 from deployer.timing import DeploymentTimer, NullTimer, set_timer
 from deployer.utils import Colors, log, log_warning, print_with_advice
 
@@ -281,24 +285,38 @@ class Deployer:
         expiry in seconds, and three empty strings, while printing
         CSRF_TRUSTED_ORIGINS in full holding the value it masked BASE_URL for.
 
-        ``str(raw_value)`` is what makes ``or`` safe: after it, only ``""`` is
+        Stringifying first is what makes ``or`` safe: after it, only ``""`` is
         falsy, so ``0`` prints ``0`` and ``false`` prints ``False`` rather than
-        ``(unset)``. TOML yields ints and bools as well as strings, and the
-        task definition stringifies the same value (build_task_definition), so
-        this prints what deploys.
+        ``(unset)``. TOML yields ints and bools as well as strings, and
+        ``environment_variables`` stringifies them exactly as the task
+        definition does, so this prints what deploys.
 
         ``(unset)`` is a marker for a human reading deploy narration, not a
         parseable encoding -- a value literally equal to ``(unset)`` is
         indistinguishable from an empty one, and nothing in the fleet parses
-        this block. A machine-readable dump would need its own subcommand with
-        real quoting.
+        this block. The machine-readable dump is ``deploy.py env``, which
+        reads the same ``environment_variables`` and quotes it properly
+        (``deploy/env_dump.py``).
         """
         log("Global environment variables:")
-        env_vars = get_environment_variables(self.ctx)
-        for key, raw_value in sorted(env_vars.items()):
-            value = str(raw_value)
+        for key, value in sorted(self.environment_variables().items()):
             print(f"  {key}={value or '(unset)'}")
         print()
+
+    def environment_variables(self) -> dict[str, str]:
+        """The global environment map, stringified as the task definition carries it.
+
+        The one route both the deploy log's environment block and
+        ``deploy.py env`` read, so the two cannot disagree. It is
+        ``get_environment_variables`` with no service -- per-service
+        ``[services.<name>.environment]`` overrides are not in it -- and it
+        never holds a secret, for the reason ``print_environment_config``
+        gives.
+
+        Returns:
+            Variable names to string values.
+        """
+        return stringify_environment(get_environment_variables(self.ctx))
 
     def check_infrastructure_status(self) -> InfraStatus:
         """Check if critical infrastructure is available."""
