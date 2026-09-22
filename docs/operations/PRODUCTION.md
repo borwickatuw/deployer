@@ -62,25 +62,33 @@ Before deploying to production, verify:
 - [ ] **Redis**: ElastiCache configured with Multi-AZ
 - [ ] **Secrets**: All secrets stored in SSM Parameter Store (`bin/ssm-secrets.py`)
 
-### Production-Specific terraform.tfvars Settings
+### Production-Specific tfvars Settings
 
-These settings should always be enabled for production regardless of workload:
+These settings should always be enabled for production regardless of workload.
+They are declared in `environments/deployer.tf` (the file symlinked into every
+standalone environment) with staging defaults, so an environment that does not
+set them gets staging protections under a production name:
 
 ```hcl
-# $DEPLOYER_ENVIRONMENTS_DIR/myapp-production/terraform.tfvars
+# $DEPLOYER_ENVIRONMENTS_DIR/myapp-production/services.auto.tfvars
 
-# Database - reliability settings
-rds_multi_az             = true      # Automatic failover
-backup_retention_period  = 35        # 35 days vs 7 for staging
-deletion_protection      = true      # Prevent accidental deletion
-skip_final_snapshot      = false     # Always create final snapshot
-
-# Redis - reliability settings
-elasticache_multi_az     = true      # Automatic failover
-
-# ECR - more rollback depth
-lifecycle_policy_count   = 50        # Keep 50 images vs 10 for staging
+# Database - backup and protection (staging defaults: 7 / false / true / false)
+rds_backup_retention_period = 35    # 35 days vs 7 for staging
+rds_deletion_protection     = true  # Prevent accidental deletion
+rds_skip_final_snapshot     = false # Always create final snapshot
+rds_multi_az                = true  # Automatic failover
 ```
+
+The `standalone-production` template's `services.auto.tfvars.example` already
+carries these values. Use the `rds_*` names: the unprefixed
+`backup_retention_period` and friends are `modules/rds` inputs, and an
+environment tfvars that sets them gets an "undeclared variable" warning while
+the staging defaults silently apply.
+
+Two production settings are not yet settable from an environment's tfvars:
+ElastiCache Multi-AZ (`modules/elasticache` has no such input) and ECR
+lifecycle depth (the root module's `ecr_lifecycle_policy_count`, which
+`environments/deployer.tf` does not pass through).
 
 ### Sizing Guidelines
 
