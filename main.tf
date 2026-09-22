@@ -285,7 +285,7 @@ module "route53" {
       main = {
         type = "A"
         name = var.domain_name
-        alias_target = var.cloudfront_alb_enabled ? {
+        alias_target = local.cloudfront_alb_enabled ? {
           dns_name               = module.cloudfront_alb[0].distribution_domain_name
           zone_id                = module.cloudfront_alb[0].distribution_hosted_zone_id
           evaluate_target_health = false

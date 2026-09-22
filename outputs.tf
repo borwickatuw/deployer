@@ -254,17 +254,17 @@ output "waf_log_group_name" {
 
 output "cloudfront_alb_distribution_id" {
   description = "CloudFront distribution ID (null if CloudFront ALB disabled)"
-  value       = var.cloudfront_alb_enabled ? module.cloudfront_alb[0].distribution_id : null
+  value       = local.cloudfront_alb_enabled ? module.cloudfront_alb[0].distribution_id : null
 }
 
 output "cloudfront_alb_domain_name" {
   description = "CloudFront distribution domain name (null if CloudFront ALB disabled)"
-  value       = var.cloudfront_alb_enabled ? module.cloudfront_alb[0].distribution_domain_name : null
+  value       = local.cloudfront_alb_enabled ? module.cloudfront_alb[0].distribution_domain_name : null
 }
 
 output "cloudfront_alb_error_bucket" {
   description = "S3 bucket name for error pages (null if CloudFront ALB disabled)"
-  value       = var.cloudfront_alb_enabled ? module.cloudfront_alb[0].error_bucket_name : null
+  value       = local.cloudfront_alb_enabled ? module.cloudfront_alb[0].error_bucket_name : null
 }
 
 # Service Discovery outputs

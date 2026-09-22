@@ -129,11 +129,11 @@ bot_control_scope_paths = ["/login", "/api/", "/admin/"]
 
 ### Geographic and IP Rules
 
-| Variable              | Default                   | Description                                   |
-| --------------------- | ------------------------- | --------------------------------------------- |
-| `geo_block_countries` | `[]`                      | Country codes to block (e.g., `["RU", "CN"]`) |
-| `ip_allowlist`        | `[]`                      | CIDRs that bypass all rules                   |
-| `health_check_paths`  | `["/health", "/health/"]` | Paths that bypass WAF                         |
+| Variable              | Default | Description                                             |
+| --------------------- | ------- | ------------------------------------------------------- |
+| `geo_block_countries` | `[]`    | Country codes to block (e.g., `["RU", "CN"]`)           |
+| `ip_allowlist`        | `[]`    | CIDRs that bypass all rules                             |
+| `health_check_paths`  | `[]`    | Paths that bypass WAF (the root module never sets this) |
 
 ### Deployment and Logging
 

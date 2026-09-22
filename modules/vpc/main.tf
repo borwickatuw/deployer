@@ -224,7 +224,7 @@ output "private_subnet_ids" {
 # off the NAT gateway, which bills every byte it processes. Both route tables
 # get the prefix-list route so nothing in the VPC reaches S3 via the internet.
 # Gateway endpoints only cover buckets in this region; a custom S3-compatible
-# endpoint (e.g. Kopah) still goes out through the NAT.
+# endpoint (an off-VPC S3-compatible store, say) still goes out through the NAT.
 data "aws_region" "current" {}
 
 resource "aws_vpc_endpoint" "s3" {
