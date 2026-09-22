@@ -1,7 +1,7 @@
 +++
 title = "Operations and governance: an owner, the console-only checks, and the password flag"
 review = "2026-09-18"
-number = 1
+closed = "2026-09-22"
 +++
 
 Four OPERATIONS/GOVERNANCE escalations the 2026-09-18 comprehensive review
@@ -24,3 +24,22 @@ This is a per-repo item; nothing here is blocked on a fleet family.
 - **1-2 — GOVERNANCE — docs/GOVERNANCE.md:26 names `bin/ecs-run.py shell`, which does not exist. Answer b17: correct it to the real subcommands, list/run/exec. (Ledger: deployer → Pending operator, the OPERATIONS ownership bullet; the register note is quoted in the b17 question.)** **done** GOVERNANCE.md now names ecs-run.py exec (695c046)
 - **1-3 — GOVERNANCE risk R4 (held-back behaviour-change) — "bin/cognito.py -p/--password accepts a password as a command-line argument, so it is written to shell history and exposed in ps output while the command runs" (bin/cognito.py:396 and :437; cmd_reset_password at :346). The run drafted two remedies and applied neither because both change the CLI contract for anyone scripting cognito.py create|reset-password: (a) prompt=True, hide_input=True guarded so the generate-a-temp-password default still works when the flag is absent, or (b) a --password-stdin flag reading one line from stdin, mirroring docker login. Operator picks. (Ledger: deployer → Pending operator, [behaviour-change, GOVERNANCE].)** **done** operator chose --password-stdin; -p/--password removed from create and reset-password, 17 tests, docs updated (68ab618, 8a1d4bc); residual aws-CLI argv exposure recorded in GOVERNANCE R4 and captured as a someday-maybe idea
 - **1-4 — OPERATIONS carry-forward — "The guide's AWS-side runnable checks were not executed — no credentials and no environment of deployer's own." All four (aws sns list-subscriptions-by-topic, aws cloudwatch describe-alarms, curl of the health endpoint, aws elbv2 describe-target-health) need live credentials and a named deployed environment; deployer deploys none of its own. Either run them against a real <app>-production environment in an attended session, or decide they belong to the app repos' checkpoints rather than deployer's. PRODUCTION.md's new 'Alarms and Notifications' section (5117cd5) already carries the two alarm-side commands. (Ledger: deployer → Pending operator, [carry-forward, OPERATIONS].)** **dropped** operator decision 2026-09-22: the four AWS-side checks run from the app repo's own checkpoint against its own environment; recorded in PRODUCTION.md Alarms and Notifications (13e498b)
+
+### Outcome
+
+Closed 2026-09-22. All four sub-phases disposed in one session:
+
+- 1-1 — Ownership block (primary owner and escalation contact
+  `borwick@uw.edu`) at the top of `docs/operations/README.md`, cross-referenced
+  from GOVERNANCE.md's access table. `695c046`.
+- 1-2 — GOVERNANCE.md's container-shell row now names `bin/ecs-run.py exec`.
+  `695c046`.
+- 1-3 — `bin/cognito.py create` and `reset-password` take `--password-stdin`
+  (one line from stdin, docker-login style); `-p/--password` is gone; the
+  generated-password default is byte-identical; 17 characterization tests;
+  STAGING.md and GOVERNANCE.md R4 updated. `68ab618`, `8a1d4bc`. Residual —
+  the password still reaches the `aws` CLI as argv — is recorded in R4 and
+  captured as a someday-maybe idea.
+- 1-4 — dropped: the four AWS-side runnable checks run from the app repo's
+  own checkpoint against its own environment; recorded in PRODUCTION.md
+  Alarms and Notifications. `13e498b`.

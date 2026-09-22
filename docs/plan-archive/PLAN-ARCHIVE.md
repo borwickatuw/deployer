@@ -8,14 +8,24 @@ stays bounded by rotation (see
 [PLAN-METHOD.md](../PLAN-METHOD.md#rotating-the-register)): the oldest
 entries are cut into dated segment files and `first-number` is raised.
 
-The register is empty and the floor is 1, because deployer has never had
-a repo-local phase. Every phase this repo has worked was queued and
-numbered by claude-meta, and those records — Phase 53, Phase 54, and all
-the pre-numbering repo-local work — live in the rotated segment
-[PLAN-ARCHIVE-2026-09.md](PLAN-ARCHIVE-2026-09.md). Their headings are
-claude-meta numbers or unnumbered, so they were rotated out whole rather
-than reheaded into this register; nothing here re-mints them. The first
-heading minted below will be `## 1.`.
+The floor is 1: before the 2026-09-18 review every phase this repo
+worked was queued and numbered by claude-meta, and those records — Phase
+53, Phase 54, and all the pre-numbering repo-local work — live in the
+rotated segment [PLAN-ARCHIVE-2026-09.md](PLAN-ARCHIVE-2026-09.md). Their
+headings are claude-meta numbers or unnumbered, so they were rotated out
+whole rather than reheaded into this register; nothing here re-mints them.
 
 Live items are one file each in [plan/](../plan/); what each state and
 transition means is in [PLAN-METHOD.md](../PLAN-METHOD.md).
+
+## 1. Operations and governance: an owner, the console-only checks, and the password flag
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. An
+Ownership block (owner and escalation contact) now heads
+`docs/operations/README.md`; GOVERNANCE.md names the real `ecs-run.py exec`
+subcommand; `bin/cognito.py create|reset-password` take `--password-stdin`
+in place of `-p/--password` (17 characterization tests, residual aws-CLI
+argv exposure recorded in GOVERNANCE R4 and filed as an idea); the four
+AWS-side runnable checks were assigned to the app repos' own checkpoints.
+Commits `695c046`, `13e498b`, `68ab618`, `8a1d4bc`. Full record in
+`items/`.
