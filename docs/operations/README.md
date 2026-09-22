@@ -2,6 +2,14 @@
 
 Day-to-day operations for deployed applications. For initial deployment, see [DEPLOYMENT-GUIDE.md](../DEPLOYMENT-GUIDE.md).
 
+## Ownership
+
+| Role                               | Contact        |
+| ---------------------------------- | -------------- |
+| Primary owner / escalation contact | borwick@uw.edu |
+
+Solo operator, no rotation — see [GOVERNANCE.md](../GOVERNANCE.md#1-access-control).
+
 ## Guides
 
 - [MULTIPLE-ACCOUNTS.md](MULTIPLE-ACCOUNTS.md) — Staging and production in separate AWS accounts

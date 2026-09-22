@@ -16,18 +16,19 @@ Reviewed at each comprehensive-review closeout, not on a calendar date.
 
 ## 1. Access control
 
-| Question                     | Answer                                                                                                                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Who operates this            | One operator. Onboarding and offboarding are structurally inapplicable; the central register carries the identity.                                                                         |
-| Human AWS access             | Named CLI profiles that assume purpose-specific roles — see [MULTIPLE-ACCOUNTS.md](operations/MULTIPLE-ACCOUNTS.md). Three roles, one per workflow: DECISIONS 2026-01-23.                  |
-| Long-lived AWS keys          | None in the deploy path. CI authenticates through GitHub OIDC (`modules/ci/`, `modules/ci-role/`); ECS tasks use the task role. The bootstrap IAM user is the account-level exception.     |
-| Privilege scoping            | Role policies are ARN-scoped to the prefixes in bootstrap's `project_prefixes`, under the permission boundary in `modules/bootstrap/iam-boundary.tf`.                                      |
-| Database access              | Two accounts per database — a migrate user with DDL, an app user without: DECISIONS 2026-02-05 and 2026-01-30.                                                                             |
-| Container shell access       | `bin/ecs-run.py shell`, through the same assumed role as a deploy.                                                                                                                         |
-| Secrets access               | Values live in SSM Parameter Store / Secrets Manager and are referenced, never copied, by `deploy.toml`: DECISIONS 2026-01-21. `bin/ssm-secrets.py` is the read/write path.                |
-| Repository access            | Two remotes: a private working repo and a public release repo. [HOWTO-PUBLISH.md](internal/HOWTO-PUBLISH.md) is the pre-publish review that keeps internal identifiers off the public one. |
-| Branch protection            | Not enabled on the public release repo; unavailable on the private working repo under its GitHub plan. Tracked below as R3.                                                                |
-| MFA on the bootstrap account | Not expressible in this repo's OpenTofu — it is an account-level control. Central register.                                                                                                |
+| Question                       | Answer                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Who operates this              | One operator. Onboarding and offboarding are structurally inapplicable; the central register carries the identity.                                                                         |
+| Ownership / escalation contact | [Ownership](operations/README.md#ownership) — one row, no rotation.                                                                                                                        |
+| Human AWS access               | Named CLI profiles that assume purpose-specific roles — see [MULTIPLE-ACCOUNTS.md](operations/MULTIPLE-ACCOUNTS.md). Three roles, one per workflow: DECISIONS 2026-01-23.                  |
+| Long-lived AWS keys            | None in the deploy path. CI authenticates through GitHub OIDC (`modules/ci/`, `modules/ci-role/`); ECS tasks use the task role. The bootstrap IAM user is the account-level exception.     |
+| Privilege scoping              | Role policies are ARN-scoped to the prefixes in bootstrap's `project_prefixes`, under the permission boundary in `modules/bootstrap/iam-boundary.tf`.                                      |
+| Database access                | Two accounts per database — a migrate user with DDL, an app user without: DECISIONS 2026-02-05 and 2026-01-30.                                                                             |
+| Container shell access         | `bin/ecs-run.py exec`, through the same assumed role as a deploy.                                                                                                                          |
+| Secrets access                 | Values live in SSM Parameter Store / Secrets Manager and are referenced, never copied, by `deploy.toml`: DECISIONS 2026-01-21. `bin/ssm-secrets.py` is the read/write path.                |
+| Repository access              | Two remotes: a private working repo and a public release repo. [HOWTO-PUBLISH.md](internal/HOWTO-PUBLISH.md) is the pre-publish review that keeps internal identifiers off the public one. |
+| Branch protection              | Not enabled on the public release repo; unavailable on the private working repo under its GitHub plan. Tracked below as R3.                                                                |
+| MFA on the bootstrap account   | Not expressible in this repo's OpenTofu — it is an account-level control. Central register.                                                                                                |
 
 ## 2. Risk awareness
 
