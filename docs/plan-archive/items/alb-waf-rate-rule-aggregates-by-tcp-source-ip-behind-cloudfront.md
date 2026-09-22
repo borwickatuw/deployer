@@ -2,7 +2,7 @@
 title = "ALB WAF rate rule aggregates by TCP source IP behind CloudFront"
 source = "deployer"
 captured = "2026-09-11"
-number = 10
+closed = "2026-09-22"
 +++
 
 Promoted 2026-09-22 from someday-maybe (captured 2026-09-11). Repo-local
@@ -45,6 +45,21 @@ switches in `docs/CONFIG-REFERENCE.md` and the operational consequence in
 **Complexity**: Low for the rate rule; Medium with the ingress restriction.
 
 ### Sub-phases
-- **10-1 — modules/waf: behind_cloudfront variable gating FORWARDED_IP aggregation with X-Forwarded-For and fallback MATCH; root module sets it from cloudfront-alb presence; validate + checkov green**
-- **10-2 — modules/alb: separately-gated ingress restriction to the CloudFront origin-facing managed prefix list, so the header the rate rule reads is one only CloudFront can write**
-- **10-3 — CONFIG-REFERENCE.md and PRODUCTION.md: both switches, the apply trigger, and what an operator loses when direct-to-ALB access is closed**
+- **10-1 — modules/waf: behind_cloudfront variable gating FORWARDED_IP aggregation with X-Forwarded-For and fallback MATCH; root module sets it from cloudfront-alb presence; validate + checkov green** **done** behind_cloudfront counts the rate rule per x-viewer-ip, a header a viewer-request CloudFront Function overwrites from event.viewer.ip (X-Forwarded-For rejected: CloudFront appends, WAF reads the first address); module refuses the mode without origin_restricted_to_cloudfront; root derives it from CloudFront AND the ALB switch and warns on plan otherwise; mock-provider tofu test 9/9 (93b651e)
+- **10-2 — modules/alb: separately-gated ingress restriction to the CloudFront origin-facing managed prefix list, so the header the rate rule reads is one only CloudFront can write** **done** alb_restrict_ingress_to_cloudfront: HTTPS only from the CloudFront origin-facing prefix list (55 rules, so port 80 closes); plan fails without a distribution or a certificate; infra-admin gains DescribeManagedPrefixLists/GetManagedPrefixListEntries; off-state byte-identical (6773fbb, 612dc7f)
+- **10-3 — CONFIG-REFERENCE.md and PRODUCTION.md: both switches, the apply trigger, and what an operator loses when direct-to-ALB access is closed** **done** CONFIG-REFERENCE documents the switch; PRODUCTION.md WAF and CloudFront section lists the apply trigger, what the rule counts before and after, and what direct-to-ALB access loses; the any-distribution gap is named with the origin-verify header as its fix (5dae323)
+
+### Outcome
+
+Closed 2026-09-22. The rate rule counts per viewer behind CloudFront using a
+header only CloudFront writes (`x-viewer-ip`, from a viewer-request
+CloudFront Function), never X-Forwarded-For, which CloudFront appends to and
+a client controls. The mode derives from CloudFront being on AND the new
+`alb_restrict_ingress_to_cloudfront` switch (HTTPS only from the
+origin-facing prefix list); the module refuses the forgeable combination
+and the root warns on plan when WAF and CloudFront are on without the
+switch. Existing environments plan no change. Commits `6773fbb`, `612dc7f`,
+`5dae323`, `93b651e`, `94b074d`; follow-up fixes `8ffc944`. Three ideas
+captured: the origin-verify header (any distribution passes the prefix
+list), the allowlist/geo-block rules with the same flaw, and nothing else
+left open.

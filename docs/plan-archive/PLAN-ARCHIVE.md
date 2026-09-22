@@ -89,3 +89,14 @@ dotenv or JSON with real quoting, stdout holding only the document, secrets
 excluded by construction, values stringified by the same helper the task
 definition uses. Commits `e9c0499`, `1692166`, `a5e28d9`. Full record in
 `items/`.
+
+## 10. ALB WAF rate rule aggregates by TCP source IP behind CloudFront
+
+Closed 2026-09-22. Promoted from someday-maybe the same day (captured
+2026-09-11). Behind CloudFront the rate rule now counts per viewer via an
+`x-viewer-ip` header a CloudFront Function writes, gated on a new
+opt-in ALB ingress restriction to the CloudFront origin-facing prefix
+list; the module refuses the forgeable combination and the root warns on
+plan. X-Forwarded-For was rejected on evidence. Commits `6773fbb`,
+`612dc7f`, `5dae323`, `93b651e`, `8ffc944`. Two ideas captured: the
+origin-verify header and the allowlist/geo rules. Full record in `items/`.
