@@ -14,6 +14,10 @@ Those three assert the rule in docs/internal/DECISIONS.md
 render boundary and reports the failure **in place**, following
 _print_rds_status(). One unreadable section must not delete itself from the
 report, and must not stop the others printing.
+
+cmd_logs(), cmd_audit(), cmd_incident_list() and the Click layer are pinned at
+the end of the file. The boto3 collectors these commands read from are pinned
+separately, against botocore's Stubber, in test_ops_aws.py.
 """
 
 import sys
@@ -23,6 +27,7 @@ from pathlib import Path
 
 import pytest
 from botocore.exceptions import ClientError
+from click.testing import CliRunner
 
 from deployer.aws.rds import RdsStatus
 from deployer.emergency import ecs
@@ -265,6 +270,22 @@ class TestCmdStatus:
 
         assert ops.cmd_status(ENV) == 0
         assert "  web: min=?, max=? (no steps)" in capsys.readouterr().out
+
+    def test_scaling_without_a_cluster_prints_the_config_but_no_live_line(
+        self, status_env, monkeypatch, capsys
+    ):
+        status_env["cluster_name"] = None
+        status_env["config"] = {"services": {"scaling": {"worker": {"min": 1, "max": 4}}}}
+
+        def no_live_lookup(_cluster, _service):
+            raise AssertionError("no cluster to ask")
+
+        monkeypatch.setattr(ops, "_describe_live_scaling", no_live_lookup)
+
+        assert ops.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert "  worker: min=1, max=4 (no steps)" in out
+        assert "live:" not in out
 
     def test_absent_scaling_config_prints_no_section(self, status_env, capsys):
         assert ops.cmd_status(ENV) == 0
@@ -570,6 +591,29 @@ class TestCmdMaintenance:
         assert "    Scheduled: 2026-09-05T00:00:00Z" in out
         assert "Pending maintenance found" in out
 
+    def test_an_rds_action_with_no_dates_prints_no_date_lines(
+        self, env_config, monkeypatch, capsys
+    ):
+        """get_rds_pending_maintenance() reports an absent date as None."""
+        env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
+        self._maintenance(
+            monkeypatch,
+            rds_items=[
+                {
+                    "action": "db-upgrade",
+                    "description": "",
+                    "auto_apply_after": None,
+                    "current_apply_date": None,
+                }
+            ],
+        )
+
+        assert ops.cmd_maintenance(ENV) == 0
+        out = capsys.readouterr().out
+        assert "  - db-upgrade: \n" in out
+        assert "Auto-apply after:" not in out
+        assert "Scheduled:" not in out
+
     def test_a_cache_update_severity_is_shown_in_brackets_when_present(
         self, env_config, monkeypatch, capsys
     ):
@@ -722,6 +766,22 @@ class TestCmdEcr:
         assert "      - [CRITICAL] CVE-2026-0005" not in out
         assert "      ... and 1 more" in out
 
+    def test_verbose_with_five_or_fewer_findings_prints_no_remainder(
+        self, env_config, monkeypatch, capsys
+    ):
+        env_config["services"] = {"config": {"web": {}}}
+        self._ecr(
+            monkeypatch,
+            repos=[f"{ENV}-web"],
+            summaries={f"{ENV}-web": self._summary(high=1)},
+            findings={"findings": [{"severity": "HIGH", "name": "CVE-2026-0001"}]},
+        )
+
+        assert ops.cmd_ecr(ENV, verbose=True) == 0
+        out = capsys.readouterr().out
+        assert "      - [HIGH] CVE-2026-0001" in out
+        assert "more" not in out
+
     def test_an_unreadable_config_exits_1_with_the_error_text(
         self, env_config, monkeypatch, capsys
     ):
@@ -763,6 +823,15 @@ class TestCmdIncidentStart:
         assert "- web: 1/2 running" in body
         assert "Status: OPEN" in body
 
+    def test_a_cluster_with_no_services_leaves_the_state_empty(
+        self, env_config, incidents_dir, monkeypatch
+    ):
+        env_config["infrastructure"] = {"cluster_name": CLUSTER}
+        monkeypatch.setattr(ops, "get_all_services_state", lambda _c: {})
+
+        assert ops.cmd_incident_start(ENV, "web 500s") == 0
+        assert "(no services found)" in self._written(incidents_dir)
+
     def test_an_unconfigured_cluster_leaves_the_state_empty(
         self, env_config, incidents_dir, monkeypatch
     ):
@@ -800,3 +869,346 @@ class TestCmdIncidentStart:
         body = self._written(incidents_dir)
         assert "(Could not capture state: Config file not found: config.toml)" in body
         assert "Status: OPEN" in body
+
+
+# =============================================================================
+# logs / audit / incident list, and the Click wiring above every command
+# =============================================================================
+
+
+class TestCmdLogs:
+    """Characterization tests for cmd_logs()'s per-log-group error report."""
+
+    def _logs(self, monkeypatch, groups: list[str], events: dict[str, list[dict]]) -> list[tuple]:
+        """Stub both log collectors; return the scan calls received."""
+        calls: list[tuple] = []
+
+        def _scan(log_group, lookback_minutes, max_results):
+            calls.append((log_group, lookback_minutes, max_results))
+            return events.get(log_group, [])
+
+        monkeypatch.setattr(ops, "get_log_groups_for_environment", lambda _e: groups)
+        monkeypatch.setattr(ops, "scan_logs_for_errors", _scan)
+        return calls
+
+    def _event(self, message="ERROR boom", timestamp="2026-08-13T09:15:30+00:00") -> dict:
+        return {"timestamp": timestamp, "message": message, "log_stream": "web/web/abc"}
+
+    def test_no_log_groups_explains_why_and_returns_0(self, monkeypatch, capsys):
+        calls = self._logs(monkeypatch, [], {})
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 0
+        out = capsys.readouterr().out
+        assert calls == []
+        assert f"No log groups found with prefix /ecs/{ENV}" in out
+        assert "Log groups are created when ECS tasks first run" in out
+
+    def test_every_group_is_scanned_with_the_window_and_limit(self, monkeypatch, capsys):
+        groups = [f"/ecs/{ENV}-web", f"/ecs/{ENV}-worker"]
+        calls = self._logs(monkeypatch, groups, {})
+
+        assert ops.cmd_logs(ENV, minutes=15, limit=25) == 0
+        out = capsys.readouterr().out
+        assert calls == [(groups[0], 15, 25), (groups[1], 15, 25)]
+        assert "Scanning logs for errors (last 15 minutes):" in out
+        assert f"Log groups: /ecs/{ENV}-web, /ecs/{ENV}-worker" in out
+        assert "No errors found" in out
+
+    def test_errors_are_grouped_under_the_service_name_with_a_time(self, monkeypatch, capsys):
+        self._logs(
+            monkeypatch,
+            [f"/ecs/{ENV}-web", f"/ecs/{ENV}-worker"],
+            {f"/ecs/{ENV}-worker": [self._event(), self._event("Traceback")]},
+        )
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 0
+        out = capsys.readouterr().out
+        assert "worker:" in out
+        assert "(2 errors)" in out
+        assert "web:" not in out
+        assert "  [09:15:30] ERROR boom" in out
+        assert "  [09:15:30] Traceback" in out
+        assert "Found 2 error(s)" in out
+
+    def test_a_long_message_is_cut_at_200_characters(self, monkeypatch, capsys):
+        self._logs(
+            monkeypatch,
+            [f"/ecs/{ENV}-web"],
+            {f"/ecs/{ENV}-web": [self._event("E" * 200), self._event("F" * 201)]},
+        )
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 0
+        out = capsys.readouterr().out
+        assert f"] {'E' * 200}\n" in out
+        assert f"] {'F' * 200}...\n" in out
+
+    def test_only_the_first_ten_events_are_shown_but_all_are_counted(self, monkeypatch, capsys):
+        events = [self._event(f"ERROR number {n}") for n in range(12)]
+        self._logs(monkeypatch, [f"/ecs/{ENV}-web"], {f"/ecs/{ENV}-web": events})
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 0
+        out = capsys.readouterr().out
+        assert "ERROR number 9\n" in out
+        assert "ERROR number 10" not in out
+        assert "  ... and 2 more" in out
+        assert "Found 12 error(s)" in out
+
+    def test_an_event_with_no_timestamp_prints_it_verbatim(self, monkeypatch, capsys):
+        """scan_logs_for_errors() leaves a missing timestamp as the integer 0."""
+        self._logs(
+            monkeypatch, [f"/ecs/{ENV}-web"], {f"/ecs/{ENV}-web": [self._event(timestamp=0)]}
+        )
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 0
+        assert "  [0] ERROR boom" in capsys.readouterr().out
+
+
+class TestCmdAudit:
+    """cmd_audit() runs the five checks in order and folds three exit codes."""
+
+    @pytest.fixture
+    def checks(self, monkeypatch) -> dict:
+        """Stub the five commands; return their exit codes and the call log."""
+        state: dict = {"calls": [], "status": 0, "health": 0, "ecr": 0}
+
+        def _record(name, code_key=None):
+            def _cmd(*args, **kwargs):
+                state["calls"].append((name, args, kwargs))
+                return state[code_key] if code_key else 0
+
+            return _cmd
+
+        monkeypatch.setattr(ops, "cmd_status", _record("status", "status"))
+        monkeypatch.setattr(ops, "cmd_health", _record("health", "health"))
+        monkeypatch.setattr(ops, "cmd_logs", _record("logs"))
+        monkeypatch.setattr(ops, "cmd_maintenance", _record("maintenance"))
+        monkeypatch.setattr(ops, "cmd_ecr", _record("ecr", "ecr"))
+        return state
+
+    def test_the_five_checks_run_in_order_with_audit_s_arguments(self, checks, capsys):
+        assert ops.cmd_audit(ENV) == 0
+        assert checks["calls"] == [
+            ("status", (ENV,), {}),
+            ("health", (ENV,), {}),
+            ("logs", (ENV,), {"minutes": 60, "limit": 50}),
+            ("maintenance", (ENV,), {}),
+            ("ecr", (ENV,), {"verbose": False}),
+        ]
+        out = capsys.readouterr().out
+        assert f"Production Audit: {ENV}" in out
+        headings = [
+            "[1/5] Environment Status",
+            "[2/5] ALB Target Health",
+            "[3/5] Recent Errors (last 60 minutes)",
+            "[4/5] Pending Maintenance",
+            "[5/5] ECR Vulnerability Findings",
+        ]
+        assert [out.index(h) for h in headings] == sorted(out.index(h) for h in headings)
+        assert "Audit completed - no critical issues found" in out
+
+    @pytest.mark.parametrize("failing", ["status", "health", "ecr"])
+    def test_a_failing_check_fails_the_audit_but_the_rest_still_run(self, checks, capsys, failing):
+        checks[failing] = 1
+
+        assert ops.cmd_audit(ENV) == 1
+        assert len(checks["calls"]) == 5
+        assert "Audit completed - issues found that require attention" in capsys.readouterr().out
+
+
+class TestIncidentLookupAndList:
+    """_get_open_incident(), _require_open_incident() and cmd_incident_list()."""
+
+    @pytest.fixture(autouse=True)
+    def incidents_dir(self, monkeypatch, tmp_path) -> Path:
+        monkeypatch.setattr(ops, "INCIDENTS_DIR", tmp_path / "incidents")
+        return tmp_path / "incidents"
+
+    def _write(self, incidents_dir: Path, name: str, title: str, status: str) -> Path:
+        incidents_dir.mkdir(exist_ok=True)
+        path = incidents_dir / name
+        path.write_text(
+            f"# Incident: {title}\nStarted: x\nEnvironment: {ENV}\nStatus: {status}\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_no_directory_means_no_open_incident(self):
+        assert ops._get_open_incident() is None
+
+    def test_the_newest_open_incident_is_chosen_over_older_and_resolved_ones(self, incidents_dir):
+        self._write(incidents_dir, "2026-08-01-0900-a.md", "a", "OPEN")
+        wanted = self._write(incidents_dir, "2026-08-02-0900-b.md", "b", "OPEN")
+        self._write(incidents_dir, "2026-08-03-0900-c.md", "c", "RESOLVED")
+
+        assert ops._get_open_incident() == wanted
+
+    def test_only_resolved_incidents_means_none_open(self, incidents_dir):
+        self._write(incidents_dir, "2026-08-03-0900-c.md", "c", "RESOLVED")
+
+        assert ops._get_open_incident() is None
+
+    def test_note_lands_in_the_open_incident_the_lookup_finds(self, incidents_dir):
+        incidents_dir.mkdir()
+        older = incidents_dir / "2026-08-01-0900-db-down.md"
+        older.write_text(_incident("09:00 Incident started"), encoding="utf-8")
+        newer = incidents_dir / "2026-08-13-0900-web-500s.md"
+        newer.write_text(_incident("09:00 Incident started"), encoding="utf-8")
+
+        assert ops.cmd_incident_note("scaled web to 4") == 0
+        assert "scaled web to 4" in newer.read_text(encoding="utf-8")
+        assert "scaled web to 4" not in older.read_text(encoding="utf-8")
+
+    def test_note_with_no_open_incident_exits_1_and_says_how_to_start_one(self, capsys):
+        with pytest.raises(SystemExit) as exit_info:
+            ops.cmd_incident_note("anything")
+        assert exit_info.value.code == 1
+        assert "No open incident found. Start one with: ops.py incident start" in (
+            capsys.readouterr().out
+        )
+
+    def test_list_with_no_directory_says_none_recorded(self, capsys):
+        assert ops.cmd_incident_list() == 0
+        assert "No incidents recorded" in capsys.readouterr().out
+
+    def test_list_with_an_empty_directory_says_none_recorded(self, incidents_dir, capsys):
+        incidents_dir.mkdir()
+
+        assert ops.cmd_incident_list() == 0
+        assert "No incidents recorded" in capsys.readouterr().out
+
+    def test_list_marks_each_incident_newest_first_and_counts_the_open_ones(
+        self, incidents_dir, capsys
+    ):
+        self._write(incidents_dir, "2026-08-01-0900-db-down.md", "db down", "RESOLVED")
+        self._write(incidents_dir, "2026-08-02-0900-web-500s.md", "web 500s", "OPEN")
+
+        assert ops.cmd_incident_list() == 0
+        out = capsys.readouterr().out
+        assert "[OPEN]" in out
+        assert "2026-08-02-0900-web-500s.md  web 500s" in out
+        assert "[RESOLVED]" in out
+        assert "2026-08-01-0900-db-down.md  db down" in out
+        assert out.index("web-500s") < out.index("db-down")
+        assert "\n1 open incident(s)" in out
+
+    def test_list_with_nothing_open_prints_no_count(self, incidents_dir, capsys):
+        self._write(incidents_dir, "2026-08-01-0900-db-down.md", "db down", "RESOLVED")
+
+        assert ops.cmd_incident_list() == 0
+        assert "open incident(s)" not in capsys.readouterr().out
+
+    def test_list_shows_only_the_twenty_newest(self, incidents_dir, capsys):
+        for day in range(1, 22):
+            self._write(incidents_dir, f"2026-08-{day:02d}-0900-i.md", f"i{day}", "RESOLVED")
+
+        assert ops.cmd_incident_list() == 0
+        out = capsys.readouterr().out
+        assert "2026-08-21-0900-i.md" in out
+        assert "2026-08-02-0900-i.md" in out
+        assert "2026-08-01-0900-i.md" not in out
+
+
+class TestCli:
+    """The Click layer: argument parsing, the deployed-environment gate, exit codes.
+
+    Each command's body is ``_validate_and_configure(env)`` then
+    ``sys.exit(cmd_x(...))``. The environment directory and terraform.tfstate
+    are real so the gate runs for real; AWS_PROFILE short-circuits the profile
+    lookup. The cmd_* functions are stubbed; their output is pinned above.
+    """
+
+    @pytest.fixture
+    def deployed(self, monkeypatch, tmp_path) -> Path:
+        monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("AWS_PROFILE", "test")
+        env_dir = tmp_path / ENV
+        env_dir.mkdir()
+        state = env_dir / "terraform.tfstate"
+        state.write_text("{}", encoding="utf-8")
+        return state
+
+    @pytest.fixture
+    def commands(self, monkeypatch) -> list[tuple]:
+        """Stub every cmd_* the CLI dispatches to; each returns 3."""
+        calls: list[tuple] = []
+        for name in (
+            "cmd_status",
+            "cmd_health",
+            "cmd_logs",
+            "cmd_maintenance",
+            "cmd_ecr",
+            "cmd_audit",
+            "cmd_incident_start",
+            "cmd_incident_note",
+            "cmd_incident_resolve",
+            "cmd_incident_list",
+        ):
+            monkeypatch.setattr(
+                ops, name, lambda *args, _name=name: (calls.append((_name, args)), 3)[1]
+            )
+        return calls
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["status", ENV], ("cmd_status", (ENV,))),
+            (["health", ENV], ("cmd_health", (ENV,))),
+            (["logs", ENV], ("cmd_logs", (ENV, 60, 100))),
+            (["logs", ENV, "-m", "15", "-l", "20"], ("cmd_logs", (ENV, 15, 20))),
+            (["maintenance", ENV], ("cmd_maintenance", (ENV,))),
+            (["ecr", ENV], ("cmd_ecr", (ENV, False))),
+            (["ecr", ENV, "--verbose"], ("cmd_ecr", (ENV, True))),
+            (["audit", ENV], ("cmd_audit", (ENV,))),
+            (["incident", "start", ENV, "web 500s"], ("cmd_incident_start", (ENV, "web 500s"))),
+        ],
+    )
+    def test_an_environment_command_runs_after_the_gate_and_exits_with_its_code(
+        self, deployed, commands, argv, expected
+    ):
+        result = CliRunner().invoke(ops.cli, argv)
+
+        assert result.exit_code == 3
+        assert commands == [expected]
+        assert "ops.py: Production monitoring tool (read-only)" in result.output
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["status", ENV],
+            ["health", ENV],
+            ["logs", ENV],
+            ["maintenance", ENV],
+            ["ecr", ENV],
+            ["audit", ENV],
+            ["incident", "start", ENV, "web 500s"],
+        ],
+    )
+    def test_an_undeployed_environment_exits_1_before_the_command_runs(
+        self, deployed, commands, argv
+    ):
+        deployed.unlink()
+
+        result = CliRunner().invoke(ops.cli, argv)
+
+        assert result.exit_code == 1
+        assert commands == []
+        assert f"Environment '{ENV}' is not deployed" in result.output
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["incident", "note", "scaled web"], ("cmd_incident_note", ("scaled web",))),
+            (["incident", "resolve"], ("cmd_incident_resolve", ())),
+            (["incident", "list"], ("cmd_incident_list", ())),
+        ],
+    )
+    def test_the_environment_free_incident_commands_skip_the_gate(
+        self, commands, monkeypatch, argv, expected
+    ):
+        monkeypatch.delenv("DEPLOYER_ENVIRONMENTS_DIR", raising=False)
+
+        result = CliRunner().invoke(ops.cli, argv)
+
+        assert result.exit_code == 3
+        assert commands == [expected]
+        assert "ops.py: Production monitoring tool" not in result.output

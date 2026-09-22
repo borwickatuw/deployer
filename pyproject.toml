@@ -99,11 +99,11 @@ branch = true
 # `make test-cov` prints the TOTAL, and the floor sits just under it. Raise it
 # when a run clears it; don't lower it without saying here what was removed.
 #
-# Largest remaining gap: bin/ops.py, the widest CLI in the repo and the only
-# bin/ script whose commands are still mostly unpinned. `make test-cov` shows
-# its current line; the per-phase history of how the floor got here is in git.
+# bin/ops.py, once the largest gap, is pinned (test_ops.py, test_ops_aws.py);
+# the remaining gaps are the other bin/ CLIs. `make test-cov` shows each one's
+# current line; the per-phase history of how the floor got here is in git.
 # (re-evaluate-by: 2026-11 review)
-fail_under = 83
+fail_under = 86
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
