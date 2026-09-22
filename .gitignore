@@ -9,6 +9,11 @@
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+# The root module's lock is tracked (GIT Practice 2, operator answer b16,
+# 2026-09-21): it records which provider build the code was written against
+# and holds checksums only. Module and environments/ locks written by
+# `make tofu-validate` stay ignored.
+!/.terraform.lock.hcl
 *.tfvars
 !*.tfvars.example
 crash.log
