@@ -48,44 +48,97 @@ the service-route band, so service routes like `/iiif/*` still win).
 
 ### Managing Users
 
+List users:
+
 ```bash
-# List users
 uv run python bin/cognito.py list myapp-staging
+```
 
-# Create user (copies welcome message to clipboard)
-uv run python bin/cognito.py create myapp-staging \
-  --email alice@example.com --clipboard
+Create a user. A temporary password is generated, the welcome message is
+printed, and `--clipboard` copies it:
 
-# Create with specific password
-uv run python bin/cognito.py create myapp-staging \
-  --email alice@example.com -p "SecurePass123!"
+```bash
+uv run python bin/cognito.py create myapp-staging --email alice@example.com --clipboard
+```
 
-# Disable/enable user
+Disable a user (keeps the account, blocks login):
+
+```bash
 uv run python bin/cognito.py disable myapp-staging --email alice@example.com
+```
+
+Enable a disabled user:
+
+```bash
 uv run python bin/cognito.py enable myapp-staging --email alice@example.com
+```
 
-# Reset password
+Reset a password. A new temporary password is generated and printed; add
+`--permanent` to skip the change-on-next-login prompt:
+
+```bash
 uv run python bin/cognito.py reset-password myapp-staging --email alice@example.com
+```
 
-# Delete user
+Delete a user:
+
+```bash
 uv run python bin/cognito.py delete myapp-staging --email alice@example.com
 ```
 
 **Password requirements:** Minimum 12 characters, at least one uppercase, lowercase, and number.
 
+#### Choosing the password yourself
+
+`create` and `reset-password` generate a password unless given
+`--password-stdin`, which reads exactly one line from stdin (only the trailing
+newline is stripped), the way `docker login --password-stdin` does. There is no
+option that takes the password as an argument: that would put it in shell
+history and in `ps` output. `--password-stdin` refuses a terminal on stdin and
+an empty line.
+
+Read the password into a variable without echoing it:
+
+```bash
+read -rs PW
+```
+
+Pipe it in. `printf` is a shell builtin, so the password is not in any
+process's argv:
+
+```bash
+printf '%s\n' "$PW" | uv run python bin/cognito.py create myapp-staging --email alice@example.com --password-stdin
+```
+
+Or read it from a file:
+
+```bash
+uv run python bin/cognito.py reset-password myapp-staging --email alice@example.com --password-stdin --permanent < password.txt
+```
+
+On `create`, a password given this way is set as permanent. Stdin is used up
+by the password, so the "Copy to clipboard?" prompt reads end-of-file and
+answers no; pass `--clipboard` to copy the welcome message.
+
 ### Test Account for Automation
 
 For automated health checks of Cognito-protected environments, create a dedicated test account:
 
+Generate a password:
+
 ```bash
-# Generate password
 PASSWORD=$(uv run python -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))")
+```
 
-# Create user
-uv run python bin/cognito.py create myapp-staging \
-  --email deployer@test.local -p "$PASSWORD"
+Create the user with it:
 
-# Store in SSM
+```bash
+printf '%s\n' "$PASSWORD" | uv run python bin/cognito.py create myapp-staging --email deployer@test.local --password-stdin
+```
+
+Store it in SSM:
+
+```bash
 aws ssm put-parameter \
   --name "/deployer/myapp-staging/cognito-test-password" \
   --type SecureString \
