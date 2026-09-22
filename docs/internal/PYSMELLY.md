@@ -3300,7 +3300,7 @@ as the contrast `NullTimer.sub_step` deliberately does not copy).
 **Exercised by hand against `havoc-staging` with `deploy --dry-run`**, which
 proved three of the five and disproved the plan's fourth claim:
 
-- a typo'd `context` aborts with `Image 'transcoder': build context '/Users/borwick/code/havoc/transcodr' is not a directory.`
+- a typo'd `context` aborts with `Image 'transcoder': build context '/path/to/myapp/transcodr' is not a directory.`
 - `build_args.staging = "oops"` aborts with the ADR's message, naming
   `transcoder` and the key.
 - `MAX_WORKERS = 4` / `RELOAD = false` print as `4` and `False` instead of

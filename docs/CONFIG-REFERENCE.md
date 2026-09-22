@@ -809,7 +809,7 @@ circuit_breaker_rollback = true # Auto-rollback on failure
 
 ### Placeholder Resolution
 
-The `${tofu:output_name}` syntax tells the deploy script to run `tofu output -json output_name` (or `-raw` for simple values) in the environment directory and substitute the result.
+The `${tofu:output_name}` syntax tells the deploy script to run a single `tofu output -json` in the environment directory, cache every output, and substitute the named one.
 
 **Complex types** (lists, maps) are preserved as Python objects when the entire value is a placeholder:
 
