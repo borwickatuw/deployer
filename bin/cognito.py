@@ -24,8 +24,13 @@ Usage:
     # Delete a user
     python bin/cognito.py delete myapp-staging --email alice@example.com
 
-    # Reset a user's password
-    python bin/cognito.py reset-password myapp-staging --email alice@example.com -p "NewPass123"
+    # Reset a user's password (a new temporary password is generated and printed)
+    python bin/cognito.py reset-password myapp-staging --email alice@example.com
+
+    # Supply a password instead of generating one: --password-stdin reads one
+    # line from stdin, keeping the password out of shell history and this command's argv
+    printf '%s\\n' "$PW" | python bin/cognito.py create myapp-staging \\
+        --email alice@example.com --password-stdin
 """
 
 import sys
@@ -56,6 +61,27 @@ from deployer.utils import (
     get_environments_dir,
     require_validated_environment,
 )
+
+
+def read_password_stdin() -> str:
+    """Read the password for --password-stdin: exactly one line from stdin.
+
+    Mirrors `docker login --password-stdin`: the trailing newline (and a
+    carriage return before it) is stripped and nothing else, so leading or
+    trailing spaces are part of the password.
+
+    Raises:
+        click.UsageError: If stdin is a terminal or the line is empty.
+    """
+    if sys.stdin.isatty():
+        raise click.UsageError(
+            "--password-stdin reads the password from stdin, but stdin is a terminal. "
+            "Pipe it in, e.g. printf '%s\\n' \"$PW\" | ... --password-stdin"
+        )
+    password = sys.stdin.readline().removesuffix("\n").removesuffix("\r")
+    if not password:
+        raise click.UsageError("--password-stdin was given but stdin held no password.")
+    return password
 
 
 def _configure_aws(environment: str | None) -> None:
@@ -396,12 +422,17 @@ def list_cmd(environment):
 @cli.command()
 @click.argument("environment")
 @click.option("--email", "-e", required=True, help="Email address (used as username)")
-@click.option("-p", "--password", help="Set permanent password (otherwise temporary is generated)")
+@click.option(
+    "--password-stdin",
+    is_flag=True,
+    help="Read a permanent password from stdin, one line (otherwise a temporary one is generated)",
+)
 @click.option(
     "-c", "--clipboard", is_flag=True, help="Copy welcome message with credentials to clipboard"
 )
-def create(environment, email, password, clipboard):
+def create(environment, email, password_stdin, clipboard):
     """Create a new user."""
+    password = read_password_stdin() if password_stdin else None
     _configure_aws(environment)
     sys.exit(cmd_create(environment, email, password, clipboard))
 
@@ -437,10 +468,15 @@ def enable(environment, email):
 @cli.command("reset-password")
 @click.argument("environment")
 @click.option("--email", "-e", required=True, help="Email address")
-@click.option("-p", "--password", help="New password (otherwise generated)")
+@click.option(
+    "--password-stdin",
+    is_flag=True,
+    help="Read the new password from stdin, one line (otherwise one is generated and printed)",
+)
 @click.option("--permanent", is_flag=True, help="Set as permanent (no change required)")
-def reset_password(environment, email, password, permanent):
+def reset_password(environment, email, password_stdin, permanent):
     """Reset a user's password."""
+    password = read_password_stdin() if password_stdin else None
     _configure_aws(environment)
     sys.exit(cmd_reset_password(environment, email, password, permanent))
 
