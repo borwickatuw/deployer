@@ -29,3 +29,15 @@ argv exposure recorded in GOVERNANCE R4 and filed as an idea); the four
 AWS-side runnable checks were assigned to the app repos' own checkpoints.
 Commits `695c046`, `13e498b`, `68ab618`, `8a1d4bc`. Full record in
 `items/`.
+
+## 5. Before the next apply: production RDS protections and the staging scheduler's new failure signal
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review.
+`environments/deployer.tf` now declares and passes the four production RDS
+protections (previously silently ignored from an environment's tfvars), the
+production tfvars example carries the production values, and the docs name
+the real variables (`fcb3c38`). The staging scheduler's 500-on-failure
+behaviour and its alarm consequence are documented for the next apply
+(`1be49e3`). Two follow-ups captured as ideas: the same gap in the shared-app
+module, and two PRODUCTION.md settings that are not settable. Full record in
+`items/`.
