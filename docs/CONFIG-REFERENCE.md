@@ -1024,6 +1024,27 @@ health_check = {
 }
 ```
 
+### `alb_restrict_ingress_to_cloudfront` Variable
+
+| Type | Default | Set in                 |
+| ---- | ------- | ---------------------- |
+| bool | `false` | `services.auto.tfvars` |
+
+When `true`, the ALB security group accepts HTTPS only, and only from the
+AWS-managed prefix list `com.amazonaws.global.cloudfront.origin-facing`, in
+place of HTTP and HTTPS from `0.0.0.0/0`. Every request then has to come through
+the CloudFront distribution, so nobody can go around it, and around the WAF
+rules that read headers CloudFront writes, by calling the ALB's own DNS name.
+
+The plan fails unless the distribution exists: `cloudfront_alb_enabled = true`
+with `domain_name` and `route53_zone_id` set. Without one, no traffic could reach
+the ALB. What an operator gives up is listed in
+[PRODUCTION.md](operations/PRODUCTION.md#waf-and-cloudfront).
+
+```hcl
+alb_restrict_ingress_to_cloudfront = true
+```
+
 ______________________________________________________________________
 
 ## Complete Examples
