@@ -123,7 +123,7 @@ a11y: ## Run pa11y (WCAG 2.1 AA) against the rendered CloudFront error page
 	@uv run bin/a11y.py
 
 .PHONY: check
-check: lint test format-docs-check ## Run lint, tests, and docs formatting
+check: lint test format-docs-check security-secrets ## Run lint, tests, docs formatting, and the read-only secrets scan
 	@echo ""
 	@echo "=== All Checks Passed ==="
 

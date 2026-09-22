@@ -158,7 +158,9 @@ This is infrastructure code. Security focus areas:
 - **Secrets scanning**: `make security-secrets` runs detect-secrets against `.secrets.baseline`.
 - **Code review**: Review changes manually, especially IAM policy modifications.
 
-Run `make security` (bandit + uv audit + detect-secrets + checkov) before committing.
+`make check` gates on the secrets scan (detect-secrets is read-only, so drift in
+`.secrets.baseline` turns it red instead of accumulating). Run `make security`
+(bandit + uv audit + detect-secrets + checkov) before the last commit of a session.
 
 ## Posture: accessibility and i18n
 
