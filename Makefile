@@ -275,20 +275,23 @@ clean: ## Remove build artifacts and caches
 	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
 
-# The three fileplan state directories declared in plan.toml are excluded:
+# The fileplan state directories declared in plan.toml are excluded:
 # mdformat escapes Markdown punctuation inside an item's `+++` TOML head (a
 # trailing `_` becomes `\_`), which corrupts the head so fileplan refuses the
-# file. The exclusion is the state directory itself, not its parent --
-# `[states.plan-archive]` is `docs/plan-archive/items`, so the registers in
-# `docs/plan-archive/` stay formatted. .claude/skills is excluded for a
-# different reason: mdformat rewrites a SKILL.md's YAML frontmatter into a
-# horizontal rule.
+# file. `:!docs/plan-archive` is a directory pathspec, so it takes the whole
+# tree -- `items/` plus the register (PLAN-ARCHIVE.md) and its rotated
+# segments -- out of scope too: those are frozen historical records (DOCS
+# Practice 15) and mdformat rewrites them (FILEPLAN Practice 4). Narrowing
+# this to `docs/plan-archive/items` so the registers stay formatted is the
+# mistake FILEPLAN P4 warns against; don't reintroduce it. .claude/skills is
+# excluded for a different reason: mdformat rewrites a SKILL.md's YAML
+# frontmatter into a horizontal rule.
 .PHONY: format-docs
 format-docs: ## Format markdown files
 	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive/items' ':!.claude/skills' | xargs -0 mdformat
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat
 
 .PHONY: format-docs-check
 format-docs-check: ## Check markdown formatting without modifying
 	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive/items' ':!.claude/skills' | xargs -0 mdformat --check
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat --check
