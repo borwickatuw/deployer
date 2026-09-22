@@ -275,6 +275,12 @@ variable "cloudfront_alb_enabled" {
   description = "Enable CloudFront in front of ALB for custom error pages"
 }
 
+variable "alb_restrict_ingress_to_cloudfront" {
+  type        = bool
+  default     = false
+  description = "Accept ALB traffic only from CloudFront (HTTPS); closes direct access to the ALB DNS name. Requires cloudfront_alb_enabled."
+}
+
 # Cache
 variable "cache_enabled" {
   type        = bool
@@ -383,6 +389,9 @@ module "infrastructure" {
   # unbranded default is only a fallback for environments without one.
   cloudfront_alb_enabled            = var.cloudfront_alb_enabled
   cloudfront_alb_error_page_content = fileexists("${path.root}/error-503.html") ? file("${path.root}/error-503.html") : null
+
+  # Close direct-to-ALB access so every request passes through CloudFront
+  alb_restrict_ingress_to_cloudfront = var.alb_restrict_ingress_to_cloudfront
 
   # IAM permissions boundary (required for role creation)
   iam_permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"

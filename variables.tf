@@ -213,6 +213,12 @@ variable "alb_deletion_protection" {
   default     = false
 }
 
+variable "alb_restrict_ingress_to_cloudfront" {
+  description = "Restrict ALB ingress to CloudFront's origin-facing prefix list (HTTPS only). Requires cloudfront_alb_enabled with domain_name and route53_zone_id; closes direct access to the ALB's DNS name."
+  type        = bool
+  default     = false
+}
+
 # Container configuration
 
 variable "container_port" {

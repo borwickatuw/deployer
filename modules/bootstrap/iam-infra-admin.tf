@@ -29,7 +29,13 @@ data "aws_iam_policy_document" "infra_admin_compute" {
       # Gateway VPC endpoints (modules/vpc's S3 endpoint): the provider reads
       # the AWS-managed service prefix list to populate the endpoint's
       # prefix_list_id and cidr_blocks, so plan fails without this.
-      "ec2:DescribePrefixLists"
+      "ec2:DescribePrefixLists",
+      # AWS-managed prefix lists (modules/alb's CloudFront origin-facing
+      # ingress restriction): the aws_ec2_managed_prefix_list data source
+      # looks the list up by name and reads its entries. Read-only; no
+      # module creates or modifies a managed prefix list.
+      "ec2:DescribeManagedPrefixLists",
+      "ec2:GetManagedPrefixListEntries"
     ]
     resources = ["*"]
   }

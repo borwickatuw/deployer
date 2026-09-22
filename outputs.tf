@@ -16,6 +16,13 @@ output "ecs_cluster_arn" {
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer"
   value       = module.alb.dns_name
+
+  # Checked here because the ALB module cannot see whether a distribution
+  # fronts it. Restricting ingress without one would cut off all traffic.
+  precondition {
+    condition     = !var.alb_restrict_ingress_to_cloudfront || local.cloudfront_alb_enabled
+    error_message = "alb_restrict_ingress_to_cloudfront requires the CloudFront distribution (cloudfront_alb_enabled = true with domain_name and route53_zone_id set); without it no traffic could reach the ALB."
+  }
 }
 
 output "alb_zone_id" {

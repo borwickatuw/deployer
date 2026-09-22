@@ -37,6 +37,10 @@ locals {
   create_certificate = var.domain_name != null && var.route53_zone_id != null && var.certificate_arn == null
   certificate_arn    = var.certificate_arn != null ? var.certificate_arn : (local.create_certificate ? module.acm[0].certificate_arn : null)
 
+  # Whether a CloudFront distribution actually fronts the ALB: the flag alone
+  # is not enough, the distribution also needs a domain and a zone.
+  cloudfront_alb_enabled = var.cloudfront_alb_enabled && var.domain_name != null && var.route53_zone_id != null
+
   # Cognito authentication configuration
   # Prefer external cognito_auth if provided, otherwise create local pool if enabled
   create_local_cognito = var.cognito_auth == null && var.cognito_auth_enabled
@@ -133,6 +137,9 @@ module "alb" {
 
   # Deletion protection
   deletion_protection = var.alb_deletion_protection
+
+  # Accept traffic only from CloudFront (closes direct access to the ALB)
+  restrict_ingress_to_cloudfront = var.alb_restrict_ingress_to_cloudfront
 
   # Cognito authentication (optional)
   # Prefer external cognito_auth if provided, otherwise use local pool if enabled
@@ -507,7 +514,7 @@ module "waf" {
 # CloudFront in front of ALB (optional, for custom error pages)
 module "cloudfront_alb" {
   source = "./modules/cloudfront-alb"
-  count  = var.cloudfront_alb_enabled && var.domain_name != null && var.route53_zone_id != null ? 1 : 0
+  count  = local.cloudfront_alb_enabled ? 1 : 0
 
   providers = {
     aws           = aws
