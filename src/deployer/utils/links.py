@@ -6,10 +6,10 @@ on every command.
 
 Example local/environments.toml:
     [myapp-staging]
-    deploy_toml = "~/code/myapp/deploy.toml"
+    deploy_toml = "/path/to/myapp/deploy.toml"
 
     [otherapp-staging]
-    deploy_toml = "~/code/otherapp/deploy.toml"
+    deploy_toml = "/path/to/otherapp/deploy.toml"
 """
 
 import tomllib

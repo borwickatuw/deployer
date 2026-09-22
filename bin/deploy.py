@@ -14,7 +14,7 @@ while keeping app structure in deploy.toml.
 Usage:
     python deploy.py deploy myapp-staging
     python deploy.py deploy myapp-staging --dry-run
-    python deploy.py audit ~/code/myapp
+    python deploy.py audit /path/to/myapp
 """
 
 import secrets
@@ -127,7 +127,7 @@ def deploy(
     Examples:
       deploy.py deploy myapp-staging
       deploy.py deploy myapp-staging --dry-run
-      deploy.py deploy myapp-staging --deploy-toml ~/code/myapp/deploy.toml
+      deploy.py deploy myapp-staging --deploy-toml /path/to/myapp/deploy.toml
     """
     if verbose:
         set_verbose(True)
@@ -179,7 +179,7 @@ def audit(project_dir, docker_compose, deploy_toml):
 
     \b
     Examples:
-      deploy.py audit ~/code/myapp
+      deploy.py audit /path/to/myapp
       deploy.py audit . --docker-compose docker-compose.prod.yml
     """
     issue_count, issues = run_audit(
