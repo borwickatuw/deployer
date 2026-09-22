@@ -159,7 +159,7 @@ def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
             if dockerfile_path.exists():
                 try:
                     return dockerfile_path.read_text(encoding="utf-8")
-                except Exception:  # noqa: BLE001, S110 — best-effort Dockerfile read
+                except Exception:  # noqa: BLE001, S110 — best-effort Dockerfile read  # nosec
                     pass
     return None
 

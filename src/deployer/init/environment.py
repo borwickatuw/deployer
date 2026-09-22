@@ -55,7 +55,7 @@ def get_next_listener_priority(env_type: str) -> int:
             match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
             if match:
                 existing_priorities.append(int(match.group(1)))
-        except Exception:  # noqa: BLE001, S110 — best-effort priority scan
+        except Exception:  # noqa: BLE001, S110 — best-effort priority scan  # nosec
             pass
 
     # Return next available (100, 200, 300, ...)

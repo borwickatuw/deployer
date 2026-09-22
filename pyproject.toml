@@ -212,7 +212,11 @@ max-complexity = 15
 exclude_dirs = [".venv", "tests"]
 # B101: assert usage (OK in non-test code for internal invariants)
 # B608: hardcoded SQL expressions (false positives on f-strings with dict access syntax)
-skips = ["B101", "B608"]
+# B603: pairs with ruff S603 per-file-ignore ("src/*", "bin/*" — subprocess calls to
+#   external tools (tofu, docker, aws) expected)
+# B607: pairs with ruff S607 per-file-ignore ("src/*", "bin/*" — partial executable
+#   paths for CLI tools (tofu, docker) expected)
+skips = ["B101", "B608", "B603", "B607"]
 
 [tool.pysmelly]
 # CLI cmd_* functions are dispatched by Click — public naming is conventional
