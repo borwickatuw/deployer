@@ -43,6 +43,9 @@ Infrastructure and deployment tooling for containerized applications on AWS ECS 
 # Local deployment (uses linked deploy.toml)
 uv run python bin/deploy.py deploy myapp-staging
 
+# Dump the environment variables a deploy sets (dotenv or --format json; no secrets)
+uv run python bin/deploy.py env myapp-staging
+
 # CI/CD deployment (uses pre-resolved config)
 ci-deploy deploy.toml resolved-config.json
 ci-deploy deploy.toml s3://bucket/myapp-staging/config.json

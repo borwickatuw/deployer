@@ -259,6 +259,43 @@ This shows:
 - What environment variables will be set
 - Which services will be created/updated
 
+### Dumping the environment variables
+
+The deploy log's "Global environment variables" block is narration for a
+human, not a parseable form: values are unquoted and an empty value prints as
+`(unset)`. To read the environment programmatically, use `deploy.py env`. It
+prints the same map, read by the same code, and quotes it so that it reads
+back exactly:
+
+```bash
+uv run python bin/deploy.py env myapp-staging > myapp-staging.env
+```
+
+The default `--format dotenv` writes `KEY='value'` lines. Values are
+single-quoted, so `$` and backticks are not expanded, and an empty value is
+`KEY=''`. To load the variables into your shell:
+
+```bash
+set -a; . <(uv run python bin/deploy.py env myapp-staging); set +a
+```
+
+`--format json` writes a flat JSON object instead:
+
+```bash
+uv run python bin/deploy.py env myapp-staging --format json | jq -r .LOG_LEVEL
+```
+
+Only the document goes to stdout. Progress and errors go to stderr. A
+variable name that a shell cannot assign, such as `MY-VAR`, stops the dotenv
+format with an error. JSON can carry any name.
+
+The dump has the same scope as the log block. It covers resource modules,
+`[environment]` and `[environment.<type>]`. It does not include
+per-service `[services.<name>.environment]` overrides. It never includes
+secrets, and no option adds them: `[secrets]` names reach the container from
+SSM through the task definition's `secrets` block, which is a separate route
+from the environment map.
+
 ### Deploy
 
 ```bash
