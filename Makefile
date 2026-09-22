@@ -283,15 +283,16 @@ clean: ## Remove build artifacts and caches
 # segments -- out of scope too: those are frozen historical records (DOCS
 # Practice 15) and mdformat rewrites them (FILEPLAN Practice 4). Narrowing
 # this to `docs/plan-archive/items` so the registers stay formatted is the
-# mistake FILEPLAN P4 warns against; don't reintroduce it. .claude/skills is
-# excluded for a different reason: mdformat rewrites a SKILL.md's YAML
-# frontmatter into a horizontal rule.
+# mistake FILEPLAN P4 warns against; don't reintroduce it. The host mdformat
+# carries mdformat-frontmatter, so .claude/skills' SKILL.md YAML frontmatter
+# and any docs/drafts front matter round-trip intact -- no pathspec exclusion
+# needed for those (FILEPLAN Practice 4).
 .PHONY: format-docs
 format-docs: ## Format markdown files
-	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat
+	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm --with mdformat-frontmatter"; exit 1; }
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' | xargs -0 mdformat
 
 .PHONY: format-docs-check
 format-docs-check: ## Check markdown formatting without modifying
-	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm"; exit 1; }
-	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' ':!.claude/skills' | xargs -0 mdformat --check
+	@command -v mdformat >/dev/null 2>&1 || { echo "Error: mdformat not found. Install with: uv tool install mdformat --with mdformat-gfm --with mdformat-frontmatter"; exit 1; }
+	@git ls-files -coz --exclude-standard '*.md' ':!docs/someday-maybe' ':!docs/plan' ':!docs/plan-archive' | xargs -0 mdformat --check

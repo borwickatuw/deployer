@@ -41,11 +41,11 @@ uv run --group dev fileplan <transition> <item> --check
 Pass whatever options the contract said the run requires; a check is of a
 **run**, so a required option is still required (`docs/method.md#the-check`).
 
-* **rc 2** — report the refusal verbatim and **stop**. Nothing was written,
+- **rc 2** — report the refusal verbatim and **stop**. Nothing was written,
   and the message is the one a real run gives. Do not go on to read the
   sections or attempt the change: the point of asking first is not to spend
   the session on an item the transition was never going to take.
-* **rc 0** — the sentence on stdout says what the run will do. Carry on.
+- **rc 0** — the sentence on stdout says what the run will do. Carry on.
 
 The check is also the ownership guard: a claimed item held by another session
 refuses here, before anything is read.
@@ -64,27 +64,27 @@ Read them before acting. They are the program.
 
 Guided by the halves under `Declares`, never by the transition's name:
 
-* **`claims`** — the run picks the item up for this session, and it is the run
+- **`claims`** — the run picks the item up for this session, and it is the run
   that takes it. Nothing takes a claim beforehand.
-* **`mints`** — the run writes into the item's body in a strict form. Expect
+- **`mints`** — the run writes into the item's body in a strict form. Expect
   to mint first and fill the prose in afterwards.
-* **`seeds`** — the item the run creates may be bodied from a declared
+- **`seeds`** — the item the run creates may be bodied from a declared
   template rather than from prose passed at the run; the option's own help
   says which templates the declaration holds.
-* **`files`** — the run writes a **second item**, into the state the
+- **`files`** — the run writes a **second item**, into the state the
   declaration names, carrying the two declared keys that say where it came
   from. It rides on `marks`, so the same run disposes of the bullet the new
   item was written from.
-* **`marks`** — the run's subject is one **bullet** rather than the item, and
+- **`marks`** — the run's subject is one **bullet** rather than the item, and
   what it writes onto that bullet is the declaration's own word. The offer for
   such a transition lists bullets, so the second handle it takes is a bullet's
   name.
-* **`archives`** — the run files a record of the item. If the run also takes
+- **`archives`** — the run files a record of the item. If the run also takes
   the file away, compose that record **in full before running**, because what
   it is written from goes with it.
-* **`dissolves`** — the item's file is deleted by the run. Read whatever you
+- **`dissolves`** — the item's file is deleted by the run. Read whatever you
   still need out of it first; afterwards only git has it.
-* **`absorbs`** — the edges pointing at this item are repointed at the
+- **`absorbs`** — the edges pointing at this item are repointed at the
   survivor the run names, rather than cleared.
 
 No half named is a half that does not happen. If the contract named none, the
