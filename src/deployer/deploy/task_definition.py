@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from deployer.modules import (
     ModuleContext,
     ModuleOutput,
@@ -267,6 +269,26 @@ def get_environment_variables(
     return merged
 
 
+def stringify_environment(env_vars: Mapping[str, object]) -> dict[str, str]:
+    """Stringify an environment map the way the container receives it.
+
+    ``get_environment_variables`` passes deploy.toml values through untouched,
+    so TOML ints and bools arrive as ``int`` and ``bool``. ECS takes strings
+    only, and this is the one place that decides how they become strings:
+    ``str()``, so ``4`` is ``"4"`` and ``false`` is ``"False"`` (Python's
+    spelling, not TOML's). The task definition, the deploy log's environment
+    block and ``deploy.py env`` all go through here, which is what lets the
+    last two claim to show what deploys.
+
+    Args:
+        env_vars: Merged environment variables, values as TOML produced them.
+
+    Returns:
+        The same map with every value converted by ``str()``.
+    """
+    return {key: str(value) for key, value in env_vars.items()}
+
+
 def _resolve_legacy_placeholders(
     env_vars: dict[str, str],
     region: str,
@@ -365,7 +387,7 @@ def build_task_definition(
         service_name,
         credential_mode=credential_mode,
     )
-    task_env = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+    task_env = [{"name": k, "value": v} for k, v in stringify_environment(env_vars).items()]
     log_debug(f"  Environment variables: {len(env_vars)}")
 
     # Build secrets (modules + legacy)
