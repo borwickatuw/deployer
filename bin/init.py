@@ -563,7 +563,8 @@ def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain
     # Auto-assign listener priority for shared-app templates
     listener_priority = None
     if template.startswith("shared-app-"):
-        listener_priority = get_next_listener_priority(env_type)
+        with exit_on(RuntimeError):
+            listener_priority = get_next_listener_priority(env_type)
 
     try:
         files = generate_environment(

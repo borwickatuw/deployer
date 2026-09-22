@@ -2319,3 +2319,43 @@ class TestDisplayMigrationLogs:
         aws_cli.replies((True, '{"events": []}'))
         _display_migration_logs(_migration_task())
         assert "Fetching migration logs..." in _plain(capsys.readouterr().out)
+
+
+class TestComputeMigrationsHashFallback:
+    """The file-hashing fallback (no git) catches OSError only.
+
+    None means "run migrations to be safe", so an unreadable directory still
+    answers it; a bug in the hashing itself no longer does, because that would
+    switch skip-detection off for every deploy without anyone noticing.
+    """
+
+    @pytest.fixture
+    def plain_dir(self, tmp_path):
+        """A migrations tree outside any git repo, so the git route falls through."""
+        (tmp_path / "app" / "migrations").mkdir(parents=True)
+        (tmp_path / "app" / "migrations" / "0001_initial.py").write_text("x", encoding="utf-8")
+        return tmp_path
+
+    def test_hashes_the_files(self, plain_dir):
+        from deployer.deploy.migrations import compute_migrations_hash
+
+        assert len(compute_migrations_hash(plain_dir)) == 16
+
+    def test_an_unreadable_file_answers_none(self, plain_dir, monkeypatch):
+        from deployer.deploy.migrations import compute_migrations_hash
+
+        def denied(_self):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(Path, "read_bytes", denied)
+        assert compute_migrations_hash(plain_dir) is None
+
+    def test_a_non_os_error_propagates(self, plain_dir, monkeypatch):
+        from deployer.deploy.migrations import compute_migrations_hash
+
+        def broken(_self):
+            raise TypeError("hashing bug")
+
+        monkeypatch.setattr(Path, "read_bytes", broken)
+        with pytest.raises(TypeError, match="hashing bug"):
+            compute_migrations_hash(plain_dir)

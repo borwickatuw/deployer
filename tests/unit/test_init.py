@@ -718,3 +718,46 @@ class TestSymlinkHelpersDistinguishFailureFromAlreadyThere:
             "variables.tf",
         ]
         assert ensure_environments_symlinks() == []
+
+
+class TestNextListenerPriority:
+    """An unreadable tfvars is "could not look", not "holds no priority"."""
+
+    def test_the_next_free_hundred_is_returned(self, tmp_path, monkeypatch):
+        for name, priority in (("myapp-staging", 100), ("otherapp-staging", 200)):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "terraform.tfvars").write_text(
+                f"listener_rule_priority = {priority}\n", encoding="utf-8"
+            )
+        monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(tmp_path))
+
+        assert init_environment.get_next_listener_priority("staging") == 300
+
+    def test_an_unreadable_tfvars_raises_rather_than_risking_a_collision(
+        self, tmp_path, monkeypatch
+    ):
+        (tmp_path / "myapp-staging" / "terraform.tfvars").mkdir(parents=True)  # read fails
+        monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(tmp_path))
+
+        with pytest.raises(RuntimeError, match="listener priorities in use"):
+            init_environment.get_next_listener_priority("staging")
+
+
+class TestDockerfileProbeIsBestEffort:
+    """_read_dockerfile_content catches a failed read only, not every exception."""
+
+    def test_a_dockerfile_that_is_not_utf8_answers_none(self, tmp_path):
+        from deployer.init.deploy_toml import _read_dockerfile_content
+
+        (tmp_path / "Dockerfile").write_bytes(b"FROM python\xff\n")
+        services = {"web": {"has_build": True, "build_context": None, "dockerfile": None}}
+        assert _read_dockerfile_content(tmp_path / "docker-compose.yml", services) is None
+
+    def test_a_readable_dockerfile_is_returned(self, tmp_path):
+        from deployer.init.deploy_toml import _read_dockerfile_content
+
+        (tmp_path / "Dockerfile").write_text("FROM python\n", encoding="utf-8")
+        services = {"web": {"has_build": True, "build_context": None, "dockerfile": None}}
+        assert _read_dockerfile_content(tmp_path / "docker-compose.yml", services) == (
+            "FROM python\n"
+        )

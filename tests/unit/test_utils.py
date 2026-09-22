@@ -202,6 +202,20 @@ class TestRunCommand:
         assert success is False
         assert output  # Should have error message
 
+    def test_a_launch_failure_carries_the_os_error_text(self):
+        success, output = run_command(["nonexistent_command_xyz"])
+        assert success is False
+        assert "nonexistent_command_xyz" in output
+
+    def test_a_non_launch_error_raises_rather_than_reading_as_a_failed_command(self):
+        """Only OSError is "the command could not run"; a bad argv is a bug.
+
+        The old ``except Exception`` answered it (False, message), so the
+        caller reported a command failure for a command that never started.
+        """
+        with pytest.raises(ValueError, match="null byte"):
+            run_command(["echo", "a\0b"])
+
 
 class TestFormatTimestamp:
     """Tests for format_timestamp()."""

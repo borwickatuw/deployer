@@ -90,7 +90,11 @@ def compute_migrations_hash(source_dir: Path) -> str | None:
 
         return hasher.hexdigest()[:16]
 
-    except Exception:  # noqa: BLE001 — graceful fallback when migrations dir is unreadable
+    except OSError:
+        # The migrations directory could not be read: run migrations to be
+        # safe (should_skip_migrations treats None that way). Only OSError --
+        # a bug in the hashing itself must not silently switch skip-detection
+        # off for every deploy.
         return None
 
 
