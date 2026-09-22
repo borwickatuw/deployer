@@ -192,7 +192,12 @@ def check_environment(_env_name: str, env_path, days: int) -> int:
 
     ecs_client = boto3.client("ecs")
 
-    services = ecs.get_services(cluster_name, ecs_client)
+    # Render boundary: this environment's report ends here, the next one runs.
+    try:
+        services = ecs.get_services(cluster_name, ecs_client)
+    except RuntimeError as e:
+        print(f"  Unable to list services: {e}", file=sys.stderr)
+        return 1
     if not services:
         print(f"  No services found in cluster {cluster_name}", file=sys.stderr)
         return 1

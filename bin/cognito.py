@@ -214,6 +214,7 @@ def cmd_list(environment: str | None) -> int:
         return 1
 
     total_users = 0
+    unreadable = 0
 
     for user_pool_id, env_names in pools.items():
         # Try to get the pool's display name from AWS
@@ -227,7 +228,14 @@ def cmd_list(environment: str | None) -> int:
         print(f"Environments: {', '.join(env_names)}")
         print(f"{'=' * 60}")
 
-        raw_users = cognito.list_users(user_pool_id)
+        # Render boundary: an unreadable pool is reported in place -- never as
+        # "Users: 0" -- and the other pools still print.
+        try:
+            raw_users = cognito.list_users(user_pool_id)
+        except RuntimeError as e:
+            print(f"\n  Users: unable to list ({e})")
+            unreadable += 1
+            continue
         users = [format_user(u) for u in raw_users]
 
         print(f"\n  Users: {len(users)}\n")
@@ -238,6 +246,9 @@ def cmd_list(environment: str | None) -> int:
     if len(pools) > 1:
         print(f"\nTotal: {total_users} user(s) across {len(pools)} pool(s)")
 
+    if unreadable:
+        print(f"Error: could not list users in {unreadable} pool(s)", file=sys.stderr)
+        return 1
     return 0
 
 

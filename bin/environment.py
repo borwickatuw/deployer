@@ -62,6 +62,17 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
 # =============================================================================
 
 
+def _print_services(services: list) -> None:
+    """Print one row per ECS service, or say the cluster runs none."""
+    if not services:
+        print("  No ECS services found")
+        return
+    print(f"  {'Service':<30} {'Desired':<10} {'Running':<10} {'Status':<15}")
+    print(f"  {'-' * 30} {'-' * 10} {'-' * 10} {'-' * 15}")
+    for svc in services:
+        print(f"  {svc.name:<30} {svc.desired_count:<10} {svc.running_count:<10} {svc.status:<15}")
+
+
 def cmd_status(environment: str | None) -> int:
     """Show status of environments."""
     environments = resolve_environments_or_exit(environment)
@@ -78,16 +89,14 @@ def cmd_status(environment: str | None) -> int:
         cluster_name = config.get("infrastructure", {}).get("cluster_name")
         if cluster_name:
             print(f"\n  ECS Cluster: {cluster_name}")
-            services = ecs.get_services(cluster_name)
-            if services:
-                print(f"  {'Service':<30} {'Desired':<10} {'Running':<10} {'Status':<15}")
-                print(f"  {'-' * 30} {'-' * 10} {'-' * 10} {'-' * 15}")
-                for svc in services:
-                    print(
-                        f"  {svc.name:<30} {svc.desired_count:<10} {svc.running_count:<10} {svc.status:<15}"
-                    )
+            # Report in place: an unreadable cluster is not "No ECS services
+            # found", and must not abort the render for the other environments.
+            try:
+                services = ecs.get_services(cluster_name)
+            except RuntimeError as e:
+                print(f"  Services: Unable to retrieve ({e})")
             else:
-                print("  No ECS services found")
+                _print_services(services)
         else:
             print("  ECS: Unable to determine cluster name")
 
@@ -121,7 +130,10 @@ def cmd_stop(environment: str) -> int:
 
     # Step 1: Scale ECS services to 0
     print("\n1. Scaling ECS services to 0...")
-    services = ecs.get_services(cluster_name)
+    # A cluster that cannot be listed is not one with nothing to scale: abort
+    # before the database is stopped underneath services still running.
+    with exit_on(RuntimeError, prefix="Cannot list ECS services, stop aborted: "):
+        services = ecs.get_services(cluster_name)
     for svc in services:
         print(f"   Scaling {svc.name} to 0...")
         if not ecs.scale_service(cluster_name, svc.name, 0):
@@ -207,7 +219,9 @@ def cmd_start(environment: str) -> int:
 
     # Step 2: Scale ECS services back up
     print("\n2. Scaling ECS services...")
-    services = ecs.get_services(cluster_name)
+    # Not "no services to scale": the environment must not report itself started.
+    with exit_on(RuntimeError, prefix="Cannot list ECS services, start incomplete: "):
+        services = ecs.get_services(cluster_name)
 
     for svc in services:
         # Use configured replicas if available, otherwise default to 1

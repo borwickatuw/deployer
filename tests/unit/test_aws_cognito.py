@@ -96,13 +96,29 @@ class TestListUsers:
             AWS_REGION,
         ]
 
-    def test_returns_what_it_has_on_failure(self, aws_cli):
-        """A failed page ends the walk, keeping the pages already collected."""
+    def test_an_empty_pool_is_an_empty_list(self, aws_cli):
+        aws_cli.replies((True, json.dumps({"Users": []})))
+        assert cognito.list_users(POOL) == []
+
+    def test_a_failed_first_page_raises_rather_than_reading_as_no_users(self, aws_cli):
+        aws_cli.replies((False, "AccessDeniedException"))
+        with pytest.raises(RuntimeError, match=f"pool {POOL}: AccessDeniedException"):
+            cognito.list_users(POOL)
+
+    def test_a_failed_later_page_raises_rather_than_truncating(self, aws_cli):
+        """It used to end the walk and return the pages already collected --
+        a truncated list reported as the whole pool."""
         aws_cli.replies(
             (True, json.dumps({"Users": [{"Username": "one"}], "PaginationToken": "tok"})),
             (False, "ThrottlingException"),
         )
-        assert cognito.list_users(POOL) == [{"Username": "one"}]
+        with pytest.raises(RuntimeError, match="ThrottlingException"):
+            cognito.list_users(POOL)
+
+    def test_non_json_output_raises(self, aws_cli):
+        aws_cli.replies((True, "not json"))
+        with pytest.raises(RuntimeError, match="not JSON"):
+            cognito.list_users(POOL)
 
 
 class TestCreateUser:

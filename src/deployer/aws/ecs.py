@@ -66,7 +66,16 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[Servi
         ecs_client: Optional boto3 ECS client. If None, creates one.
 
     Returns:
-        List of ServiceInfo objects with name, arn, desired_count, running_count, status.
+        List of ServiceInfo objects with name, arn, desired_count, running_count,
+        status. ``[]`` means the cluster exists and runs no services.
+
+    Raises:
+        RuntimeError: If the cluster's services could not be listed --
+            including a cluster that does not exist. The cluster name comes
+            from the environment's config.toml, so a missing one is a stale
+            config or the wrong account, not "no services"; answering it with
+            ``[]`` let ``environment.py stop`` scale nothing and then stop the
+            database, and ``start`` report the environment started.
     """
     client: Any = _get_ecs_client() if ecs_client is None else ecs_client
 
@@ -81,9 +90,7 @@ def get_services(cluster_name: str, ecs_client: Any | None = None) -> list[Servi
                 )
                 services.extend(_format_service(svc) for svc in details["services"])
     except ClientError as e:
-        if "ClusterNotFoundException" in str(e):
-            return []
-        raise
+        raise RuntimeError(f"Could not list services in cluster '{cluster_name}': {e}") from e
 
     return services
 

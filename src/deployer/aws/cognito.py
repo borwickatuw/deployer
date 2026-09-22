@@ -1,5 +1,7 @@
 """AWS Cognito user pool operations."""
 
+import json
+
 from .cli import run_aws, run_aws_json
 
 
@@ -64,7 +66,15 @@ def list_users(user_pool_id: str) -> list[dict]:
         user_pool_id: The Cognito User Pool ID.
 
     Returns:
-        List of raw user dicts from the Cognito API.
+        List of raw user dicts from the Cognito API; ``[]`` for a pool with no
+        users.
+
+    Raises:
+        RuntimeError: If any page could not be read. ``run_aws_json``'s None
+            means failure only, and this used to turn it into "these are all
+            the users" -- ``[]`` on the first page, or a silently truncated
+            list on a later one -- which ``cognito.py list`` printed as
+            ``Users: 0``.
     """
     users: list[dict] = []
     pagination_token = None
@@ -74,9 +84,15 @@ def list_users(user_pool_id: str) -> list[dict]:
         if pagination_token:
             args.extend(["--pagination-token", pagination_token])
 
-        data = run_aws_json(*args)
-        if data is None:
-            return users
+        success, output = run_aws(*args)
+        if not success:
+            raise RuntimeError(f"Could not list users in pool {user_pool_id}: {output}")
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Cognito returned output that is not JSON for pool {user_pool_id}"
+            ) from exc
 
         users.extend(data.get("Users", []))
 

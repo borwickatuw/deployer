@@ -324,6 +324,22 @@ class TestCmdList:
         monkeypatch.setattr(ecs_run, "resolve_environment", lambda _e: None)
         assert ecs_run.cmd_list("myapp-staging") == 1
 
+    def test_an_unlistable_cluster_returns_1_not_no_services(self, monkeypatch, tmp_path, capsys):
+        """A missing cluster used to read as "No services found in cluster." and exit 0."""
+
+        def unlistable(_cluster):
+            raise RuntimeError("ClusterNotFoundException")
+
+        monkeypatch.setattr(
+            ecs_run, "resolve_environment", lambda _e: (tmp_path, "myapp-staging-cluster")
+        )
+        monkeypatch.setattr(ecs_run.ecs, "get_services", unlistable)
+
+        assert ecs_run.cmd_list("myapp-staging") == 1
+        captured = capsys.readouterr()
+        assert "Error: unable to list services: ClusterNotFoundException" in captured.err
+        assert "No services found" not in captured.out
+
 
 class TestRunEcsCommandContainerResolution:
     """Tests for _run_ecs_command()'s choice of container.

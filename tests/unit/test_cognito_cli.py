@@ -407,6 +407,23 @@ class TestCmdListOutput:
         assert "Users: 0" in out
         assert "No users found." in out
 
+    def test_an_unlistable_pool_is_reported_not_counted_as_empty(
+        self, environments, aws_cli, capsys
+    ):
+        """A refused list-users used to print "Users: 0" and exit 0."""
+        environments("myapp-staging", _cognito_config(POOL))
+        aws_cli.replies(
+            (True, json.dumps({"UserPool": {"Name": "pool"}})),
+            (False, "An error occurred (AccessDeniedException) when calling ListUsers"),
+        )
+        assert cognito_cli.cmd_list(None) == 1
+        captured = capsys.readouterr()
+        assert "Users: unable to list (" in captured.out
+        assert "AccessDeniedException" in captured.out
+        assert "Users: 0" not in captured.out
+        assert "No users found." not in captured.out
+        assert "could not list users in 1 pool(s)" in captured.err
+
     def test_two_environments_sharing_a_pool_are_listed_once(self, environments, aws_cli, capsys):
         environments("myapp-staging", _cognito_config(POOL))
         environments("myapp-production", _cognito_config(POOL))
