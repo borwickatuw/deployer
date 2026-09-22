@@ -1,7 +1,7 @@
 +++
 title = "Characterization tests for the four largely unpinned bin/ CLIs"
 review = "2026-09-18"
-number = 7
+closed = "2026-09-22"
 +++
 
 One PYTHON-TESTING carry-forward from the 2026-09-18 comprehensive review.
@@ -32,6 +32,17 @@ Per-repo item; no fleet family.
 
 ### Sub-phases
 - **7-1 — bin/ops.py — the largest gap, and the only one pyproject.toml's rationale comment names: 610 statements at 54% (c4d9648). Characterize today's behaviour first. Note its cmd_health/cmd_logs/cmd_maintenance/cmd_ecr are four of the six Click entry points behind the ratified internal-only skip (docs/PYSMELLY.md, A06) — tests here must not become an argument for renaming them private, which A06 declined.** **done** bin/ops.py 54% -> 99% via 84 new tests (botocore Stubber for the boto3 readers, CliRunner for every command); total 86.86%, fail_under 81 -> 86; only the two never-passed parameter branches left (808fea7, 8ed03f6)
-- **7-2 — bin/environment.py — 130 statements at 22% (c4d9648). Its 'available' literal at :169 is one anchor of the ratified scattered-constants set (docs/PYSMELLY.md, A07); leave it alone while pinning.**
-- **7-3 — bin/resolve-config.py — 111 statements at 34% (c4d9648). Its build_meta carries a standing dict-as-dataclass ignore (the return is serialized to JSON for the resolver's consumers) — see the standing-suppressions table in docs/PYSMELLY.md.**
+- **7-2 — bin/environment.py — 130 statements at 22% (c4d9648). Its 'available' literal at :169 is one anchor of the ratified scattered-constants set (docs/PYSMELLY.md, A07); leave it alone while pinning.** **done** bin/environment.py 22% -> 100%, 33 tests on moto ECS and the aws_cli fixture with a fake clock; 'available' anchor untouched (c8d486d)
+- **7-3 — bin/resolve-config.py — 111 statements at 34% (c4d9648). Its build_meta carries a standing dict-as-dataclass ignore (the return is serialized to JSON for the resolver's consumers) — see the standing-suppressions table in docs/PYSMELLY.md.** **done** bin/resolve-config.py 34% -> 100%, 19 tests stubbing only run_command; build_meta ignore untouched (8e8f61f); floor 86 reconciled with 7-1 (2a7814c)
 - **7-4 — bin/link-environments.py — 72 statements at 17% (c4d9648), the smallest of the four. Sequence it with sub-phase 3-1 of the docs item: two of its ~/code/myapp example paths (:9 and the :48 Click docstring) are edited there, and a characterization test that asserts --help output would otherwise pin the wrong string.** **done** 21 tests, bin/link-environments.py 17% -> 97%, total 82.29 -> 83.59, fail_under 81 -> 83; only the unlink race branch left (d4743cb)
+
+### Outcome
+
+Closed 2026-09-22. All four CLIs pinned by characterization tests, no
+production code changed: `bin/link-environments.py` 17% → 97% (`d4743cb`),
+`bin/ops.py` 54% → 99% (`808fea7`), `bin/environment.py` 22% → 100%
+(`c8d486d`), `bin/resolve-config.py` 34% → 100% (`8e8f61f`). `fail_under`
+81 → 86, measured at 86.6–86.9% total (`8ed03f6`, `2a7814c`). The A06 and
+A07 anchors were left alone. The behaviours the tests pinned but did not
+fix are captured as one someday-maybe idea; the ops.py sentinel shapes were
+handed to the 6-1 sweep.

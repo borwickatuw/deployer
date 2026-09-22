@@ -61,6 +61,15 @@ behaviour and its alarm consequence are documented for the next apply
 module, and two PRODUCTION.md settings that are not settable. Full record in
 `items/`.
 
+## 7. Characterization tests for the four largely unpinned bin/ CLIs
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. The four
+bin/ CLIs the review named as the repo's coverage slack are pinned:
+link-environments 17→97%, ops 54→99%, environment 22→100%, resolve-config
+34→100%, no production code changed, `fail_under` 81→86. Commits `d4743cb`,
+`808fea7`, `c8d486d`, `8e8f61f`. Surprises the tests pinned are filed as an
+idea. Full record in `items/`.
+
 ## 8. Developer Experience: Tofu Placeholder Map Indexing
 
 Closed 2026-09-22. Promoted from someday-maybe the same day.
@@ -70,4 +79,13 @@ and the available keys; both placeholder forms share one walk helper; the
 existing behaviour was pinned by characterization tests first. Commits
 `f593233`, `e8f9b4c`, `446bce6`. Follow-up idea: migrate the templates to
 the dotted form and retire the per-key bucket outputs. Full record in
+`items/`.
+
+## 9. Machine-readable env dump subcommand for deploy.toml
+
+Closed 2026-09-22. Promoted from someday-maybe the same day (captured
+2026-08-21 out of 53j-4a). `deploy.py env` dumps the merged environment as
+dotenv or JSON with real quoting, stdout holding only the document, secrets
+excluded by construction, values stringified by the same helper the task
+definition uses. Commits `e9c0499`, `1692166`, `a5e28d9`. Full record in
 `items/`.
