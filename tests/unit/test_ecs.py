@@ -370,18 +370,22 @@ class TestGetServices:
 
         assert result == []
 
-    def test_returns_empty_on_cluster_not_found(self, mock_ecs_client):
-        """Test returns empty list when cluster not found."""
+    @pytest.mark.parametrize("code", ["ClusterNotFoundException", "AccessDeniedException"])
+    def test_raises_rather_than_reporting_no_services(self, mock_ecs_client, code):
+        """[] means "the cluster runs no services" only.
+
+        A missing cluster used to answer [] too, so environment.py stop scaled
+        nothing and went on to stop the database.
+        """
         paginator = MagicMock()
         paginator.paginate.side_effect = ClientError(
-            {"Error": {"Code": "ClusterNotFoundException", "Message": "Not found"}},
+            {"Error": {"Code": code, "Message": "Not found"}},
             "ListServices",
         )
         mock_ecs_client.get_paginator.return_value = paginator
 
-        result = ecs.get_services("test-cluster", ecs_client=mock_ecs_client)
-
-        assert result == []
+        with pytest.raises(RuntimeError, match=f"cluster 'test-cluster': .*{code}"):
+            ecs.get_services("test-cluster", ecs_client=mock_ecs_client)
 
 
 class TestGetOomEvents:

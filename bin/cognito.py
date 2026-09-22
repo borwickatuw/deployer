@@ -93,7 +93,10 @@ def get_cognito_environments() -> list[str]:
     """Find all environments with Cognito enabled.
 
     Returns:
-        Sorted list of environment names that have Cognito enabled.
+        Sorted list of environment names that have Cognito enabled. A deployed
+        environment whose config cannot be loaded is left out -- whether it
+        uses Cognito is unknown -- and named on stderr, so it is not mistaken
+        for one that does not.
     """
     cognito_envs = []
     with exit_on(RuntimeError):
@@ -106,10 +109,11 @@ def get_cognito_environments() -> list[str]:
             continue
         try:
             config = load_environment_config(env_path)
-            if is_cognito_enabled(config):
-                cognito_envs.append(env_name)
-        except (FileNotFoundError, RuntimeError):
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"  {env_name}: skipped, could not load config: {e}", file=sys.stderr)
             continue
+        if is_cognito_enabled(config):
+            cognito_envs.append(env_name)
     return cognito_envs
 
 
@@ -214,6 +218,7 @@ def cmd_list(environment: str | None) -> int:
         return 1
 
     total_users = 0
+    unreadable = 0
 
     for user_pool_id, env_names in pools.items():
         # Try to get the pool's display name from AWS
@@ -227,7 +232,14 @@ def cmd_list(environment: str | None) -> int:
         print(f"Environments: {', '.join(env_names)}")
         print(f"{'=' * 60}")
 
-        raw_users = cognito.list_users(user_pool_id)
+        # Render boundary: an unreadable pool is reported in place -- never as
+        # "Users: 0" -- and the other pools still print.
+        try:
+            raw_users = cognito.list_users(user_pool_id)
+        except RuntimeError as e:
+            print(f"\n  Users: unable to list ({e})")
+            unreadable += 1
+            continue
         users = [format_user(u) for u in raw_users]
 
         print(f"\n  Users: {len(users)}\n")
@@ -238,6 +250,9 @@ def cmd_list(environment: str | None) -> int:
     if len(pools) > 1:
         print(f"\nTotal: {total_users} user(s) across {len(pools)} pool(s)")
 
+    if unreadable:
+        print(f"Error: could not list users in {unreadable} pool(s)", file=sys.stderr)
+        return 1
     return 0
 
 

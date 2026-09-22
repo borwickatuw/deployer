@@ -16,6 +16,7 @@ from deployer.deploy.preflight import (
     check_environment_secrets_overlap,
     check_modules,
     check_secrets_style,
+    check_ssm_secrets,
     run_preflight_checks,
 )
 
@@ -606,12 +607,32 @@ class TestCheckSecretsDrift:
         assert "/app/staging/last-migrations-hash" not in result
 
     @patch("deployer.core.ssm_secrets.ssm.list_parameters")
-    def test_handles_list_error(self, mock_list):
-        """Should return empty list on SSM list error."""
+    def test_a_list_error_raises_rather_than_reading_as_no_drift(self, mock_list):
+        """It used to answer [] -- exactly what "no unreferenced secrets" looks like."""
         mock_list.return_value = ([], "AccessDenied")
 
         config = {"secrets": {"names": ["SECRET_KEY"]}}
         env_config = {"secrets": {"path_prefix": "/app/staging"}}
 
-        result = check_secrets_drift(config, env_config)
-        assert result == []
+        with pytest.raises(RuntimeError, match="under /app/staging: AccessDenied"):
+            check_secrets_drift(config, env_config)
+
+    def test_preflight_warns_that_the_drift_check_did_not_run(self, tmp_path, capsys):
+        """The check is advisory: a failed listing warns and the deploy goes on."""
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text('[application]\nname = "test"\n', encoding="utf-8")
+        deploy_config = parse_deploy_config(deploy_toml)
+
+        def _unlistable(_config, _env_config):
+            raise RuntimeError("Could not list SSM parameters under /app/staging: AccessDenied")
+
+        with (
+            patch("deployer.deploy.preflight.check_secrets_exist", return_value=([], [])),
+            patch("deployer.deploy.preflight.check_secrets_drift", _unlistable),
+        ):
+            check_ssm_secrets(deploy_config, make_target())
+
+        out = capsys.readouterr().out
+        assert "Could not check for unreferenced SSM secrets:" in out
+        assert "AccessDenied" in out
+        assert "not referenced in deploy.toml" not in out

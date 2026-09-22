@@ -157,46 +157,56 @@ def _ensure_az_rebalancing_disabled(ecs_client, cluster_name: str, service_name:
         service_name: Name of the service.
 
     Returns:
-        True if AZ rebalancing was disabled, False if already disabled
-        or service doesn't exist.
+        True if AZ rebalancing was disabled, False if already disabled, the
+        service doesn't exist, or the CLI update was refused (that last case
+        is warned about with the AWS text).
+
+    Raises:
+        RuntimeError: If ``describe_services`` fails. That is "I could not
+            look", not "already disabled": answering it with False left AZ
+            rebalancing in place without a word, so the update that follows
+            failed on a maximumPercent error that named the wrong cause.
     """
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
-        if not response.get("services"):
-            return False
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not read AZ rebalancing for service '{service_name}' in cluster "
+            f"'{cluster_name}': {e}"
+        ) from e
 
-        service = response["services"][0]
-        if service.get("status") == "INACTIVE":
-            return False
+    if not response.get("services"):
+        return False
 
-        az_rebalancing = service.get("availabilityZoneRebalancing", "DISABLED")
-        if az_rebalancing == "ENABLED":
-            # Use subprocess to call AWS CLI since botocore doesn't support this parameter yet
-            cmd = [
-                "aws",
-                "ecs",
-                "update-service",
-                "--cluster",
-                cluster_name,
-                "--service",
-                service_name,
-                "--availability-zone-rebalancing",
-                "DISABLED",
-                "--no-force-new-deployment",
-                "--query",
-                "service.serviceName",
-                "--output",
-                "text",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if result.returncode == 0:
-                log_status(service_name, "AZ rebalancing disabled")
-                return True
-            else:
-                log_warning(f"Could not disable AZ rebalancing for {service_name}: {result.stderr}")
+    service = response["services"][0]
+    if service.get("status") == "INACTIVE":
         return False
-    except ClientError:
-        return False
+
+    az_rebalancing = service.get("availabilityZoneRebalancing", "DISABLED")
+    if az_rebalancing == "ENABLED":
+        # Use subprocess to call AWS CLI since botocore doesn't support this parameter yet
+        cmd = [
+            "aws",
+            "ecs",
+            "update-service",
+            "--cluster",
+            cluster_name,
+            "--service",
+            service_name,
+            "--availability-zone-rebalancing",
+            "DISABLED",
+            "--no-force-new-deployment",
+            "--query",
+            "service.serviceName",
+            "--output",
+            "text",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            log_status(service_name, "AZ rebalancing disabled")
+            return True
+        log_warning(f"Could not disable AZ rebalancing for {service_name}: {result.stderr}")
+    return False
 
 
 def _get_live_service(ecs_client, cluster_name: str, service_name: str) -> dict | None:
@@ -819,20 +829,31 @@ def _migration_network_config(ctx, migration_service: str) -> dict | None:
         migration_service: Name of the service to copy network config from.
 
     Returns:
-        The service's networkConfiguration, or None if it could not be read.
+        The service's networkConfiguration, or None if the service does not
+        exist yet (a first deploy starts migrations before the services).
+
+    Raises:
+        RuntimeError: If ``describe_services`` fails. Answering that with None
+            made ``start_migrations`` return None -- which its caller reads as
+            "nothing to migrate" -- so a permissions or throttling failure
+            skipped the migrations and the deploy carried on and reported
+            success against the old schema.
     """
     try:
         services = ctx.ecs_client.describe_services(
             cluster=ctx.cluster_name, services=[migration_service]
         )
-        if not services["services"]:
-            log_error(f"No {migration_service} service found to get network configuration")
-            return None
-
-        return services["services"][0]["networkConfiguration"]
     except ClientError as e:
-        log_error(f"Could not get network configuration: {e}")
+        raise RuntimeError(
+            f"Could not read the network configuration of service '{migration_service}' "
+            f"to run migrations with: {e}"
+        ) from e
+
+    if not services["services"]:
+        log_error(f"No {migration_service} service found to get network configuration")
         return None
+
+    return services["services"][0]["networkConfiguration"]
 
 
 def start_migrations(
@@ -1538,11 +1559,21 @@ def _get_service_target_group(ecs_client, cluster_name: str, service_name: str) 
 
     Returns:
         Target group ARN or None if not load balanced.
+
+    Raises:
+        RuntimeError: If ``describe_services`` fails. None means "not load
+            balanced", so answering a failure with it skipped the target-health
+            wait and reported the service healthy without looking. The caller,
+            ``_wait_for_service_and_targets``, turns the raise into a failed
+            ``ServiceWaitResult``.
     """
     try:
         response = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
-    except ClientError:
-        return None
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not read the load balancer of service '{service_name}' in cluster "
+            f"'{cluster_name}': {e}"
+        ) from e
 
     if not response.get("services"):
         return None

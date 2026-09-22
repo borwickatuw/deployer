@@ -252,7 +252,8 @@ def _write_bootstrap_files(env_path: Path, files: dict[str, str]) -> None:
     """Create the bootstrap directory, write its files and mark the script +x."""
     env_dir = env_path.parent
     env_dir.mkdir(parents=True, exist_ok=True)
-    created_symlinks = ensure_environments_symlinks()
+    with exit_on(RuntimeError):
+        created_symlinks = ensure_environments_symlinks()
     if created_symlinks:
         print(f"Created symlinks in {env_dir}: {', '.join(created_symlinks)}")
 
@@ -518,7 +519,8 @@ def _write_environment_files(env_path: Path, files: dict[str, str], template_nam
     """
     is_standalone = template_name.startswith("standalone-")
     if is_standalone:
-        created_symlinks = ensure_environments_symlinks()
+        with exit_on(RuntimeError):
+            created_symlinks = ensure_environments_symlinks()
         if created_symlinks:
             # env_path.parent is the environments directory the caller already
             # resolved. Calling get_environments_dir() again just to name it in
@@ -530,7 +532,11 @@ def _write_environment_files(env_path: Path, files: dict[str, str], template_nam
         Path(filepath).write_text(content, encoding="utf-8")
         print(f"Created: {filepath}")
 
-    if is_standalone and create_deployer_tf_symlink(env_path):
+    if not is_standalone:
+        return
+    with exit_on(RuntimeError):
+        linked = create_deployer_tf_symlink(env_path)
+    if linked:
         print(f"Created: {env_path}/deployer.tf -> shared environment config")
 
 
@@ -557,7 +563,8 @@ def cmd_environment(app_name, template, list_templates_flag, deploy_toml, domain
     # Auto-assign listener priority for shared-app templates
     listener_priority = None
     if template.startswith("shared-app-"):
-        listener_priority = get_next_listener_priority(env_type)
+        with exit_on(RuntimeError):
+            listener_priority = get_next_listener_priority(env_type)
 
     try:
         files = generate_environment(

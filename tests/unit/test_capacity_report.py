@@ -287,6 +287,22 @@ class TestCheckEnvironment:
         assert capacity.check_environment("myapp-staging", tmp_path, 7) == 1
         assert "Unable to determine ECS cluster name" in capsys.readouterr().err
 
+    def test_an_unlistable_cluster_is_reported_as_such_not_as_no_services(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setattr(capacity.boto3, "client", lambda _name: None)
+        self._stub_cluster(monkeypatch)
+
+        def unlistable(*_a):
+            raise RuntimeError("ClusterNotFoundException")
+
+        monkeypatch.setattr(capacity.ecs, "get_services", unlistable)
+
+        assert capacity.check_environment("myapp-staging", tmp_path, 7) == 1
+        err = capsys.readouterr().err
+        assert "Unable to list services: ClusterNotFoundException" in err
+        assert "No services found" not in err
+
     def test_no_services_returns_1(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setattr(capacity.boto3, "client", lambda _name: None)
         self._stub_cluster(monkeypatch, services=())

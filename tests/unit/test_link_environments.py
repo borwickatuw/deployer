@@ -305,3 +305,42 @@ class TestUnlink:
         assert _stored(links_file) == {
             "otherapp-staging": {"deploy_toml": "~/otherapp/deploy.toml"}
         }
+
+
+CORRUPT = '[otherapp-staging\ndeploy_toml = "~/otherapp/deploy.toml"\n'
+
+
+class TestCorruptLinksFile:
+    """A links file that will not parse is "could not look", never "no links".
+
+    The reader already raised (get_linked_deploy_toml); the writer, the lister
+    and unlink each answered the corrupt file as empty -- and the writer then
+    overwrote it, dropping every other environment's link.
+    """
+
+    @pytest.fixture
+    def corrupt(self, links_file) -> Path:
+        links_file.parent.mkdir(parents=True)
+        links_file.write_text(CORRUPT, encoding="utf-8")
+        return links_file
+
+    def test_link_refuses_rather_than_overwriting_the_other_links(
+        self, corrupt, environments_dir, deploy_toml
+    ):
+        result = _invoke(ENV, str(deploy_toml))
+
+        assert result.exit_code == 1
+        assert "Could not read the links file" in result.stderr
+        assert corrupt.read_text(encoding="utf-8") == CORRUPT
+
+    def test_list_exits_1_rather_than_saying_nothing_is_linked(self, corrupt):
+        result = _invoke("--list")
+
+        assert result.exit_code == 1
+        assert "Could not read the links file" in result.stderr
+        assert "No environments linked." not in result.stdout
+
+    def test_unlink_raises_rather_than_reading_as_not_linked(self, corrupt):
+        with pytest.raises(RuntimeError, match="Could not read the links file"):
+            links.unlink_deploy_toml(ENV)
+        assert corrupt.read_text(encoding="utf-8") == CORRUPT

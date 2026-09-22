@@ -63,28 +63,42 @@ from deployer.utils import (
 # =============================================================================
 
 
+# Every collector below raises RuntimeError when AWS refuses the read, and
+# keeps its empty answer for genuine absence. Each ops.py command is read-only,
+# so it catches at its render boundary and reports "unable to read" in place --
+# never "no targets" or "nothing pending" for a read that did not happen
+# (DECISIONS.md 2026-08-18 "Error Contracts").
+
+
 def get_target_health(target_group_arn: str) -> list[dict]:
-    """Get health status of all targets in a target group."""
+    """Get health status of all targets in a target group.
+
+    Returns:
+        One dict per registered target; ``[]`` when none are registered.
+
+    Raises:
+        RuntimeError: If the target group's health could not be read.
+    """
     client = boto3.client("elbv2")
-    result = []
 
     try:
         response = client.describe_target_health(TargetGroupArn=target_group_arn)
-        for target in response.get("TargetHealthDescriptions", []):
-            target_info = target.get("Target", {})
-            health = target.get("TargetHealth", {})
-            result.append(
-                {
-                    "target_id": target_info.get("Id", ""),
-                    "port": target_info.get("Port", 0),
-                    "health_state": health.get("State", "unknown"),
-                    "reason": health.get("Reason"),
-                    "description": health.get("Description"),
-                }
-            )
-    except ClientError:
-        pass
+    except ClientError as e:
+        raise RuntimeError(f"Could not read target health for {target_group_arn}: {e}") from e
 
+    result = []
+    for target in response.get("TargetHealthDescriptions", []):
+        target_info = target.get("Target", {})
+        health = target.get("TargetHealth", {})
+        result.append(
+            {
+                "target_id": target_info.get("Id", ""),
+                "port": target_info.get("Port", 0),
+                "health_state": health.get("State", "unknown"),
+                "reason": health.get("Reason"),
+                "description": health.get("Description"),
+            }
+        )
     return result
 
 
@@ -94,7 +108,16 @@ def scan_logs_for_errors(
     patterns: list[str] | None = None,
     max_results: int = 100,
 ) -> list[dict]:
-    """Scan CloudWatch logs for error patterns."""
+    """Scan CloudWatch logs for error patterns.
+
+    Returns:
+        The matching events; ``[]`` when there are none or the log group does
+        not exist.
+
+    Raises:
+        RuntimeError: If the log group could not be searched for any other
+            reason (credentials, permissions, throttling).
+    """
     if patterns is None:
         patterns = ["ERROR", "Exception", "Traceback", "CRITICAL"]
 
@@ -128,13 +151,21 @@ def scan_logs_for_errors(
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
         if error_code != AWS_ERROR_RESOURCE_NOT_FOUND:
-            raise
+            raise RuntimeError(f"Could not search {log_group_name}: {e}") from e
 
     return result
 
 
 def get_log_groups_for_environment(environment: str) -> list[str]:
-    """Get CloudWatch log group names for an environment."""
+    """Get CloudWatch log group names for an environment.
+
+    Returns:
+        The log group names under ``/ecs/<environment>``; ``[]`` when there
+        are none yet.
+
+    Raises:
+        RuntimeError: If the log groups could not be listed.
+    """
     client = boto3.client("logs")
     result = []
     prefix = f"/ecs/{environment}"
@@ -145,15 +176,23 @@ def get_log_groups_for_environment(environment: str) -> list[str]:
             for group in page.get("logGroups", []):
                 result.append(group.get("logGroupName", ""))
     except ClientError as e:
-        print(f"  Warning: Error listing log groups: {e}", file=sys.stderr)
+        raise RuntimeError(f"Could not list log groups under {prefix}: {e}") from e
 
     return result
 
 
 def get_rds_pending_maintenance(instance_id: str) -> list[dict]:
-    """Get pending maintenance actions for an RDS instance."""
+    """Get pending maintenance actions for an RDS instance.
+
+    Returns:
+        One dict per pending action; ``[]`` when nothing is pending.
+
+    Raises:
+        RuntimeError: If the instance or its pending actions could not be
+            read -- including an instance that does not exist, which is a
+            configuration problem, not "nothing pending".
+    """
     client = boto3.client("rds")
-    result = []
 
     try:
         response = client.describe_db_instances(DBInstanceIdentifier=instance_id)
@@ -163,30 +202,39 @@ def get_rds_pending_maintenance(instance_id: str) -> list[dict]:
 
         instance_arn = instances[0].get("DBInstanceArn", "")
         response = client.describe_pending_maintenance_actions(ResourceIdentifier=instance_arn)
+    except ClientError as e:
+        raise RuntimeError(f"Could not read pending maintenance for {instance_id}: {e}") from e
 
-        for resource in response.get("PendingMaintenanceActions", []):
-            for action in resource.get("PendingMaintenanceActionDetails", []):
-                auto_apply = format_iso(action.get("AutoAppliedAfterDate"))
-                current_apply = format_iso(action.get("CurrentApplyDate"))
+    result = []
+    for resource in response.get("PendingMaintenanceActions", []):
+        for action in resource.get("PendingMaintenanceActionDetails", []):
+            auto_apply = format_iso(action.get("AutoAppliedAfterDate"))
+            current_apply = format_iso(action.get("CurrentApplyDate"))
 
-                result.append(
-                    {
-                        "action": action.get("Action", ""),
-                        "description": action.get("Description", ""),
-                        "auto_apply_after": auto_apply,
-                        "current_apply_date": current_apply,
-                        "opt_in_status": action.get("OptInStatus", ""),
-                    }
-                )
-
-    except ClientError:
-        pass
+            result.append(
+                {
+                    "action": action.get("Action", ""),
+                    "description": action.get("Description", ""),
+                    "auto_apply_after": auto_apply,
+                    "current_apply_date": current_apply,
+                    "opt_in_status": action.get("OptInStatus", ""),
+                }
+            )
 
     return result
 
 
 def get_elasticache_pending_maintenance(cluster_id: str) -> list[dict]:
-    """Get pending maintenance for an ElastiCache cluster."""
+    """Get pending maintenance for an ElastiCache cluster.
+
+    Returns:
+        Pending modifications first, then available or scheduled service
+        updates; ``[]`` when nothing is pending.
+
+    Raises:
+        RuntimeError: If the cluster or the service-update listing could not
+            be read. A half-read answer is not reported as a whole one.
+    """
     client = boto3.client("elasticache")
     result = []
 
@@ -195,58 +243,41 @@ def get_elasticache_pending_maintenance(cluster_id: str) -> list[dict]:
             CacheClusterId=cluster_id,
             ShowCacheNodeInfo=True,
         )
+    except ClientError as e:
+        raise RuntimeError(f"Could not read pending maintenance for {cluster_id}: {e}") from e
 
-        clusters = response.get("CacheClusters", [])
-        if not clusters:
-            return []
+    clusters = response.get("CacheClusters", [])
+    if not clusters:
+        return []
 
-        cluster = clusters[0]
-        pending = cluster.get("PendingModifiedValues", {})
-        if pending:
-            for key, value in pending.items():
-                if value:
-                    result.append(
-                        {
-                            "action": "modify",
-                            "description": f"Pending {key} change to {value}",
-                            "severity": None,
-                        }
-                    )
-
-        try:
-            updates_response = client.describe_service_updates(
-                ServiceUpdateStatus=["available", "scheduled"],
-            )
-
-            for update in updates_response.get("ServiceUpdates", []):
+    cluster = clusters[0]
+    pending = cluster.get("PendingModifiedValues", {})
+    if pending:
+        for key, value in pending.items():
+            if value:
                 result.append(
                     {
-                        "action": update.get("ServiceUpdateName", ""),
-                        "description": update.get("ServiceUpdateDescription", ""),
-                        "severity": update.get("ServiceUpdateSeverity", ""),
+                        "action": "modify",
+                        "description": f"Pending {key} change to {value}",
+                        "severity": None,
                     }
                 )
-        except ClientError:
-            pass
 
-    except ClientError:
-        pass
+    try:
+        updates_response = client.describe_service_updates(
+            ServiceUpdateStatus=["available", "scheduled"],
+        )
+    except ClientError as e:
+        raise RuntimeError(f"Could not list ElastiCache service updates: {e}") from e
 
-    return result
-
-
-def get_all_pending_maintenance(
-    rds_instance_id: str | None,
-    elasticache_cluster_id: str | None,
-) -> dict:
-    """Get all pending maintenance for an environment."""
-    result: dict[str, list] = {"rds": [], "elasticache": []}
-
-    if rds_instance_id:
-        result["rds"] = get_rds_pending_maintenance(rds_instance_id)
-
-    if elasticache_cluster_id:
-        result["elasticache"] = get_elasticache_pending_maintenance(elasticache_cluster_id)
+    for update in updates_response.get("ServiceUpdates", []):
+        result.append(
+            {
+                "action": update.get("ServiceUpdateName", ""),
+                "description": update.get("ServiceUpdateDescription", ""),
+                "severity": update.get("ServiceUpdateSeverity", ""),
+            }
+        )
 
     return result
 
@@ -304,50 +335,70 @@ def get_image_scan_findings(
 
 
 def get_repository_scan_summary(repository_name: str, max_images: int = 5) -> list[dict]:
-    """Get scan summary for recent images in a repository."""
+    """Get scan summary for recent images in a repository.
+
+    Returns:
+        The newest images first, with their scan counts; ``[]`` when the
+        repository holds no images.
+
+    Raises:
+        RuntimeError: If the repository's images could not be read.
+    """
     client = boto3.client("ecr")
-    result = []
 
     try:
         response = client.describe_images(
             repositoryName=repository_name,
             maxResults=max_images,
         )
+    except ClientError as e:
+        raise RuntimeError(f"Could not read images in {repository_name}: {e}") from e
 
-        images = sorted(
-            response.get("imageDetails", []),
-            key=lambda x: x.get("imagePushedAt", ""),
-            reverse=True,
-        )[:max_images]
+    images = sorted(
+        response.get("imageDetails", []),
+        key=lambda x: x.get("imagePushedAt", ""),
+        reverse=True,
+    )[:max_images]
 
-        for image in images:
-            tags = image.get("imageTags", [])
-            tag = tags[0] if tags else "(untagged)"
-            pushed_at = format_iso(image.get("imagePushedAt"))
+    result = []
+    for image in images:
+        tags = image.get("imageTags", [])
+        tag = tags[0] if tags else "(untagged)"
+        pushed_at = format_iso(image.get("imagePushedAt"))
 
-            scan_status = image.get("imageScanStatus", {}).get("status", "NOT_SCANNED")
-            scan_findings = image.get("imageScanFindingsSummary", {})
-            counts = scan_findings.get("findingSeverityCounts", {})
+        scan_status = image.get("imageScanStatus", {}).get("status", "NOT_SCANNED")
+        scan_findings = image.get("imageScanFindingsSummary", {})
+        counts = scan_findings.get("findingSeverityCounts", {})
 
-            result.append(
-                {
-                    "image_tag": tag,
-                    "image_digest": image.get("imageDigest", ""),
-                    "pushed_at": pushed_at,
-                    "scan_status": scan_status,
-                    "critical_count": counts.get("CRITICAL", 0),
-                    "high_count": counts.get("HIGH", 0),
-                }
-            )
-
-    except ClientError:
-        pass
+        result.append(
+            {
+                "image_tag": tag,
+                "image_digest": image.get("imageDigest", ""),
+                "pushed_at": pushed_at,
+                "scan_status": scan_status,
+                "critical_count": counts.get("CRITICAL", 0),
+                "high_count": counts.get("HIGH", 0),
+            }
+        )
 
     return result
 
 
+def _is_repository_not_found(error: ClientError) -> bool:
+    return error.response.get("Error", {}).get("Code", "") == "RepositoryNotFoundException"
+
+
 def list_repositories_for_environment(environment: str, service_names: list[str]) -> list[str]:
-    """List ECR repositories for an environment."""
+    """List the ECR repositories that exist for an environment's services.
+
+    Returns:
+        The names that exist; a service whose repository is missing is
+        simply absent from the list.
+
+    Raises:
+        RuntimeError: If ECR refused the lookup for any reason other than a
+            missing repository.
+    """
     client = boto3.client("ecr")
 
     repo_names = [f"{environment}-{svc}" for svc in service_names]
@@ -355,19 +406,20 @@ def list_repositories_for_environment(environment: str, service_names: list[str]
         response = client.describe_repositories(repositoryNames=repo_names)
         return [repo.get("repositoryName", "") for repo in response.get("repositories", [])]
     except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "")
-        if error_code != "RepositoryNotFoundException":
-            return []
+        if not _is_repository_not_found(e):
+            raise RuntimeError(f"Could not list ECR repositories for {environment}: {e}") from e
 
     # At least one repo doesn't exist — try each individually
     result = []
     for repo_name in repo_names:
         try:
             response = client.describe_repositories(repositoryNames=[repo_name])
-            for repo in response.get("repositories", []):
-                result.append(repo.get("repositoryName", ""))
-        except ClientError:
-            pass
+        except ClientError as e:
+            if _is_repository_not_found(e):
+                continue
+            raise RuntimeError(f"Could not read ECR repository {repo_name}: {e}") from e
+        for repo in response.get("repositories", []):
+            result.append(repo.get("repositoryName", ""))
     return result
 
 
@@ -581,7 +633,12 @@ def cmd_health(environment: str) -> int:
     print()
     print(f"{Colors.BLUE}ALB Target Health:{Colors.NC}")
 
-    targets = get_target_health(target_group_arn)
+    # Render boundary: a health check that could not look must not pass.
+    try:
+        targets = get_target_health(target_group_arn)
+    except RuntimeError as e:
+        log_error(f"Unable to read target health: {e}")
+        return 1
     if not targets:
         print("  No targets registered")
         return 0
@@ -623,8 +680,17 @@ def cmd_health(environment: str) -> int:
 
 
 def cmd_logs(environment: str, minutes: int, limit: int) -> int:
-    """Scan logs for errors."""
-    log_groups = get_log_groups_for_environment(environment)
+    """Scan logs for errors.
+
+    Returns 0 whether or not errors were found -- finding them is the report,
+    not a failure -- and 1 only when a log group could not be listed or
+    searched, so "No errors found" is never printed for a scan that did not run.
+    """
+    try:
+        log_groups = get_log_groups_for_environment(environment)
+    except RuntimeError as e:
+        log_error(f"Unable to list log groups: {e}")
+        return 1
 
     if not log_groups:
         log_warning(f"No log groups found with prefix /ecs/{environment}")
@@ -638,17 +704,27 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
     print()
 
     total_errors = 0
+    unreadable = 0
 
     for log_group in log_groups:
-        events = scan_logs_for_errors(
-            log_group,
-            lookback_minutes=minutes,
-            max_results=limit,
-        )
+        # Extract service name from log group
+        service_name = log_group.replace(f"/ecs/{environment}-", "")
+
+        # Render boundary: one unsearchable group reports itself in place and
+        # the rest of the scan carries on.
+        try:
+            events = scan_logs_for_errors(
+                log_group,
+                lookback_minutes=minutes,
+                max_results=limit,
+            )
+        except RuntimeError as e:
+            print(f"{Colors.RED}{service_name}:{Colors.NC} unable to search ({e})")
+            print()
+            unreadable += 1
+            continue
 
         if events:
-            # Extract service name from log group
-            service_name = log_group.replace(f"/ecs/{environment}-", "")
             print(f"{Colors.YELLOW}{service_name}:{Colors.NC} ({len(events)} errors)")
 
             for event in events[:10]:  # Show first 10
@@ -666,6 +742,12 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
 
             total_errors += len(events)
 
+    if unreadable:
+        if total_errors:
+            log_warning(f"Found {total_errors} error(s) in the log groups that could be read")
+        log_error(f"Could not search {unreadable} of {len(log_groups)} log group(s)")
+        return 1
+
     if total_errors == 0:
         log_success("No errors found")
     else:
@@ -679,8 +761,57 @@ def cmd_logs(environment: str, minutes: int, limit: int) -> int:
 # =============================================================================
 
 
+def _rds_action_lines(item: dict) -> list[str]:
+    lines = [f"  - {item['action']}: {item['description']}"]
+    if item.get("auto_apply_after"):
+        lines.append(f"    Auto-apply after: {item['auto_apply_after']}")
+    if item.get("current_apply_date"):
+        lines.append(f"    Scheduled: {item['current_apply_date']}")
+    return lines
+
+
+def _cache_action_lines(item: dict) -> list[str]:
+    severity = item.get("severity", "")
+    if severity:
+        return [f"  - [{severity}] {item['action']}: {item['description']}"]
+    return [f"  - {item['action']}: {item['description']}"]
+
+
+def _print_pending_section(label: str, resource_id: str | None, fetch, format_item) -> str:
+    """Render one resource's pending maintenance in place.
+
+    Each resource is its own render boundary: one that cannot be read is
+    reported here, the other is still shown, and neither is ever "No pending
+    maintenance" for a read that did not happen.
+
+    Returns:
+        "unconfigured", "unreadable", "pending" or "clear".
+    """
+    if not resource_id:
+        print(f"{label}: Not configured")
+        return "unconfigured"
+    try:
+        items = fetch(resource_id)
+    except RuntimeError as e:
+        print(f"{Colors.RED}{label} ({resource_id}):{Colors.NC} unable to read ({e})")
+        return "unreadable"
+    if not items:
+        print(f"{label} ({resource_id}): No pending maintenance")
+        return "clear"
+    print(f"{Colors.YELLOW}{label} ({resource_id}):{Colors.NC}")
+    for item in items:
+        for line in format_item(item):
+            print(line)
+    print()
+    return "pending"
+
+
 def cmd_maintenance(environment: str) -> int:
-    """Show pending maintenance for RDS and ElastiCache."""
+    """Show pending maintenance for RDS and ElastiCache.
+
+    Returns 0 whether or not maintenance is pending -- that is the report --
+    and 1 only when a configured resource could not be read.
+    """
     env_path = get_environment_path(environment)
     with exit_on(FileNotFoundError, RuntimeError):
         config = load_environment_config(env_path)
@@ -696,51 +827,24 @@ def cmd_maintenance(environment: str) -> int:
     print(f"{Colors.BLUE}Pending Maintenance:{Colors.NC}")
     print()
 
-    maintenance = get_all_pending_maintenance(
-        rds_instance_id=rds_id,
-        elasticache_cluster_id=elasticache_id,
-    )
-
-    has_pending = False
-
-    # RDS maintenance
-    if rds_id:
-        if maintenance["rds"]:
-            has_pending = True
-            print(f"{Colors.YELLOW}RDS ({rds_id}):{Colors.NC}")
-            for item in maintenance["rds"]:
-                print(f"  - {item['action']}: {item['description']}")
-                if item.get("auto_apply_after"):
-                    print(f"    Auto-apply after: {item['auto_apply_after']}")
-                if item.get("current_apply_date"):
-                    print(f"    Scheduled: {item['current_apply_date']}")
-            print()
-        else:
-            print(f"RDS ({rds_id}): No pending maintenance")
-    else:
-        print("RDS: Not configured")
-
-    # ElastiCache maintenance
-    if elasticache_id:
-        if maintenance["elasticache"]:
-            has_pending = True
-            print(f"{Colors.YELLOW}ElastiCache ({elasticache_id}):{Colors.NC}")
-            for item in maintenance["elasticache"]:
-                severity = item.get("severity", "")
-                if severity:
-                    print(f"  - [{severity}] {item['action']}: {item['description']}")
-                else:
-                    print(f"  - {item['action']}: {item['description']}")
-            print()
-        else:
-            print(f"ElastiCache ({elasticache_id}): No pending maintenance")
-    else:
-        print("ElastiCache: Not configured")
+    outcomes = [
+        _print_pending_section("RDS", rds_id, get_rds_pending_maintenance, _rds_action_lines),
+        _print_pending_section(
+            "ElastiCache",
+            elasticache_id,
+            get_elasticache_pending_maintenance,
+            _cache_action_lines,
+        ),
+    ]
 
     print()
-    if has_pending:
+    if "pending" in outcomes:
         log_warning("Pending maintenance found - schedule updates during maintenance window")
-    else:
+    unreadable = outcomes.count("unreadable")
+    if unreadable:
+        log_error(f"Could not read pending maintenance for {unreadable} resource(s)")
+        return 1
+    if "pending" not in outcomes:
         log_success("No pending maintenance")
 
     return 0
@@ -749,6 +853,73 @@ def cmd_maintenance(environment: str) -> int:
 # =============================================================================
 # ECR Command
 # =============================================================================
+
+
+def _print_repository_scan(environment: str, repo: str, verbose: bool) -> tuple[int, int]:
+    """Print one repository's latest scan and return its (critical, high) counts.
+
+    A repository with no images prints nothing and counts nothing.
+
+    Raises:
+        RuntimeError: If the repository's scan results could not be read.
+    """
+    summaries = get_repository_scan_summary(repo, max_images=1)
+    if not summaries:
+        return 0, 0
+
+    latest = summaries[0]
+    critical = latest.get("critical_count", 0)
+    high = latest.get("high_count", 0)
+    scan_status = latest.get("scan_status", "UNKNOWN")
+
+    if critical > 0:
+        status_color = Colors.RED
+    elif high > 0:
+        status_color = Colors.YELLOW
+    else:
+        status_color = Colors.GREEN
+
+    repo_short = repo.replace(f"{environment}-", "")
+    print(f"  {repo_short}:")
+    print(f"    Tag: {latest['image_tag']}")
+    print(f"    Scan: {scan_status}")
+    print(f"    Vulnerabilities: {status_color}CRITICAL={critical}, HIGH={high}{Colors.NC}")
+
+    if verbose and (critical > 0 or high > 0):
+        findings = get_image_scan_findings(repo, latest["image_tag"])
+        for finding in findings.get("findings", [])[:5]:
+            print(f"      - [{finding['severity']}] {finding['name']}")
+        if len(findings.get("findings", [])) > 5:
+            print(f"      ... and {len(findings['findings']) - 5} more")
+    print()
+    return critical, high
+
+
+def _report_ecr_totals(total_critical: int, total_high: int, unreadable: int) -> int:
+    """Print the scan summary and return cmd_ecr's exit status."""
+    print(f"{Colors.BLUE}Summary:{Colors.NC}")
+    if total_critical > 0:
+        print(f"  {Colors.RED}CRITICAL: {total_critical}{Colors.NC}")
+    else:
+        print("  CRITICAL: 0")
+    if total_high > 0:
+        print(f"  {Colors.YELLOW}HIGH: {total_high}{Colors.NC}")
+    else:
+        print("  HIGH: 0")
+    if unreadable:
+        print(f"  {Colors.RED}UNREADABLE: {unreadable} repository(ies){Colors.NC}")
+
+    if total_critical > 0:
+        log_error("Critical vulnerabilities found - update base images immediately")
+        return 1
+    if unreadable:
+        log_error(f"Could not read scan results for {unreadable} repository(ies)")
+        return 1
+    if total_high > 0:
+        log_warning("High severity vulnerabilities found - plan updates soon")
+        return 0
+    log_success("No critical or high vulnerabilities")
+    return 0
 
 
 def cmd_ecr(environment: str, verbose: bool) -> int:
@@ -770,7 +941,13 @@ def cmd_ecr(environment: str, verbose: bool) -> int:
         log_warning(f"No services configured for {environment} - no ECR repositories to scan")
         return 0
 
-    repos = list_repositories_for_environment(environment, service_names)
+    # Render boundary: a security scan that could not look must not report
+    # "No critical or high vulnerabilities" and exit 0.
+    try:
+        repos = list_repositories_for_environment(environment, service_names)
+    except RuntimeError as e:
+        log_error(f"Unable to list ECR repositories: {e}")
+        return 1
     if not repos:
         log_warning(f"No ECR repositories found for {environment}")
         log_info(f"Checked: {', '.join(f'{environment}-{s}' for s in service_names)}")
@@ -778,60 +955,20 @@ def cmd_ecr(environment: str, verbose: bool) -> int:
 
     total_critical = 0
     total_high = 0
+    unreadable = 0
 
     for repo in repos:
-        summaries = get_repository_scan_summary(repo, max_images=1)
-        if not summaries:
+        try:
+            critical, high = _print_repository_scan(environment, repo, verbose)
+        except RuntimeError as e:
+            print(f"  {repo.replace(f'{environment}-', '')}: unable to read scan results ({e})")
+            print()
+            unreadable += 1
             continue
-
-        latest = summaries[0]
-        critical = latest.get("critical_count", 0)
-        high = latest.get("high_count", 0)
-        scan_status = latest.get("scan_status", "UNKNOWN")
-
         total_critical += critical
         total_high += high
 
-        if critical > 0:
-            status_color = Colors.RED
-        elif high > 0:
-            status_color = Colors.YELLOW
-        else:
-            status_color = Colors.GREEN
-
-        repo_short = repo.replace(f"{environment}-", "")
-        print(f"  {repo_short}:")
-        print(f"    Tag: {latest['image_tag']}")
-        print(f"    Scan: {scan_status}")
-        print(f"    Vulnerabilities: {status_color}CRITICAL={critical}, HIGH={high}{Colors.NC}")
-
-        if verbose and (critical > 0 or high > 0):
-            findings = get_image_scan_findings(repo, latest["image_tag"])
-            for finding in findings.get("findings", [])[:5]:
-                print(f"      - [{finding['severity']}] {finding['name']}")
-            if len(findings.get("findings", [])) > 5:
-                print(f"      ... and {len(findings['findings']) - 5} more")
-        print()
-
-    print(f"{Colors.BLUE}Summary:{Colors.NC}")
-    if total_critical > 0:
-        print(f"  {Colors.RED}CRITICAL: {total_critical}{Colors.NC}")
-    else:
-        print("  CRITICAL: 0")
-    if total_high > 0:
-        print(f"  {Colors.YELLOW}HIGH: {total_high}{Colors.NC}")
-    else:
-        print("  HIGH: 0")
-
-    if total_critical > 0:
-        log_error("Critical vulnerabilities found - update base images immediately")
-        return 1
-    elif total_high > 0:
-        log_warning("High severity vulnerabilities found - plan updates soon")
-        return 0
-    else:
-        log_success("No critical or high vulnerabilities")
-        return 0
+    return _report_ecr_totals(total_critical, total_high, unreadable)
 
 
 # =============================================================================
@@ -866,13 +1003,17 @@ def cmd_audit(environment: str) -> int:
     print()
     print(f"{Colors.BLUE}[3/5] Recent Errors (last 60 minutes){Colors.NC}")
     print(f"{Colors.BLUE}{'-' * 40}{Colors.NC}")
-    cmd_logs(environment, minutes=60, limit=50)
+    # cmd_logs and cmd_maintenance return 1 only when a read failed: errors
+    # found or maintenance pending is the report, not an audit failure.
+    if cmd_logs(environment, minutes=60, limit=50) != 0:
+        exit_code = 1
 
     # 4. Maintenance
     print()
     print(f"{Colors.BLUE}[4/5] Pending Maintenance{Colors.NC}")
     print(f"{Colors.BLUE}{'-' * 40}{Colors.NC}")
-    cmd_maintenance(environment)
+    if cmd_maintenance(environment) != 0:
+        exit_code = 1
 
     # 5. ECR Vulnerabilities
     print()

@@ -312,3 +312,68 @@ class TestRdsAndLinksBoundaries:
         assert exit_info.value.code == 1
         assert "ThrottlingException" in capsys.readouterr().err
         assert scaled == []
+
+
+class TestUnlistableClusterBoundaries:
+    """ecs.get_services() raises for a cluster it cannot list, missing ones included.
+
+    It used to answer [] for ClusterNotFoundException -- "the cluster runs no
+    services" -- so stop scaled nothing and went on to stop the database.
+    """
+
+    @staticmethod
+    def _unlistable(_cluster):
+        raise RuntimeError("Could not list services in cluster 'cluster': ClusterNotFoundException")
+
+    def test_stop_aborts_before_touching_rds(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            environment,
+            "_load_environment_context",
+            lambda _env: ({}, "cluster", "myapp-staging-db"),
+        )
+        monkeypatch.setattr(environment.ecs, "get_services", self._unlistable)
+        rds_calls: list[str] = []
+        monkeypatch.setattr(environment.rds, "get_status", rds_calls.append)
+
+        with pytest.raises(SystemExit) as exit_info:
+            environment.cmd_stop(ENV)
+        assert exit_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Cannot list ECS services, stop aborted: " in captured.err
+        assert "ClusterNotFoundException" in captured.err
+        assert rds_calls == []
+        assert "stop initiated" not in captured.out
+
+    def test_start_does_not_report_the_environment_started(self, monkeypatch, capsys):
+        monkeypatch.setattr(
+            environment,
+            "_load_environment_context",
+            lambda _env: ({}, "cluster", "myapp-staging-db"),
+        )
+        monkeypatch.setattr(environment, "_ensure_rds_available", lambda _id: None)
+        monkeypatch.setattr(environment.ecs, "get_services", self._unlistable)
+
+        with pytest.raises(SystemExit) as exit_info:
+            environment.cmd_start(ENV)
+        assert exit_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Cannot list ECS services, start incomplete: " in captured.err
+        assert "started." not in captured.out
+
+    def test_status_reports_the_cluster_in_place(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr(environment, "resolve_environments_or_exit", lambda _e: [ENV])
+        monkeypatch.setattr(
+            environment, "iter_deployed_environments", lambda envs: [(e, tmp_path) for e in envs]
+        )
+        monkeypatch.setattr(
+            environment,
+            "load_environment_config",
+            lambda _p: {"infrastructure": {"cluster_name": "cluster"}},
+        )
+        monkeypatch.setattr(environment.ecs, "get_services", self._unlistable)
+
+        assert environment.cmd_status(ENV) == 0
+        out = capsys.readouterr().out
+        assert "Services: Unable to retrieve (" in out
+        assert "ClusterNotFoundException" in out
+        assert "No ECS services found" not in out

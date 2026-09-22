@@ -208,6 +208,11 @@ def check_secrets_drift(
 
     Returns:
         List of unreferenced SSM parameter paths (empty if none or not applicable).
+
+    Raises:
+        RuntimeError: If the parameters under the prefix could not be listed.
+            The check is advisory, so the caller decides whether that is fatal;
+            it must not be reported as "no drift".
     """
     secrets_config = config.get("secrets", {})
 
@@ -232,7 +237,8 @@ def check_secrets_drift(
     # Get existing secrets from SSM
     existing_params, error = ssm.list_parameters(path_prefix)
     if error:
-        return []  # Can't check drift if we can't list parameters
+        # Not [] -- that is "no drift", and a listing that failed checked nothing.
+        raise RuntimeError(f"Could not list SSM parameters under {path_prefix}: {error}")
 
     # Deployer-managed parameters that aren't app secrets
     deployer_managed_suffixes = ("/last-migrations-hash",)

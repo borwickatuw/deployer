@@ -162,7 +162,9 @@ def _read_dockerfile_content(compose_path: Path, services: dict) -> str | None:
             if dockerfile_path.exists():
                 try:
                     return dockerfile_path.read_text(encoding="utf-8")
-                except Exception:  # noqa: BLE001, S110 — best-effort Dockerfile read  # nosec
+                except (OSError, UnicodeDecodeError):  # noqa: S110 — best-effort read  # nosec
+                    # Framework detection then falls back to the compose file
+                    # alone; the unreadable Dockerfile is not an error here.
                     pass
     return None
 

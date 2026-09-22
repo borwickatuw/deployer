@@ -166,8 +166,14 @@ def check_ssm_secrets(
     else:
         log("No secrets defined in deploy.toml")
 
-    # Check for unreferenced secrets in SSM (warn only)
-    unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), target.config)
+    # Check for unreferenced secrets in SSM (warn only). Advisory, so a failed
+    # listing warns rather than aborting -- but says so, instead of looking
+    # exactly like "no unreferenced secrets".
+    try:
+        unreferenced = check_secrets_drift(deploy_config.get_raw_dict(), target.config)
+    except RuntimeError as e:
+        log_warning(f"Could not check for unreferenced SSM secrets: {e}")
+        unreferenced = []
     if unreferenced:
         log_warning(f"{len(unreferenced)} SSM secret(s) not referenced in deploy.toml:")
         for path in unreferenced:

@@ -108,7 +108,12 @@ def ensure_environments_symlinks() -> list[str]:
     - outputs.tf -> deployer/outputs.tf
 
     Returns:
-        List of created symlink names (empty if none created).
+        List of created symlink names (empty if they all exist already).
+
+    Raises:
+        RuntimeError: If a missing symlink could not be created. It used to be
+            skipped silently, so "created nothing" also meant "could not", and
+            tofu later failed on a module source that did not resolve.
     """
     env_dir = get_environments_dir()
     deployer_root = get_deployer_root()
@@ -124,13 +129,11 @@ def ensure_environments_symlinks() -> list[str]:
     for name, target in symlinks.items():
         link_path = env_dir / name
         if not link_path.exists():
-            # Create relative symlink
+            relative_target = os.path.relpath(target, env_dir)
             try:
-                relative_target = os.path.relpath(target, env_dir)
                 link_path.symlink_to(relative_target)
-                created.append(name)
-            except OSError:
-                # Symlink creation failed (e.g., permissions), skip silently
-                pass
+            except OSError as e:
+                raise RuntimeError(f"Could not create {link_path} -> {relative_target}: {e}") from e
+            created.append(name)
 
     return created

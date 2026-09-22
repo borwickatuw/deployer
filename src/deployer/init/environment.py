@@ -38,6 +38,12 @@ def get_next_listener_priority(env_type: str) -> int:
 
     Returns:
         Next available listener priority.
+
+    Raises:
+        RuntimeError: If an environment's terraform.tfvars exists but cannot
+            be read. Skipping it (the old best-effort scan) could hand out a
+            priority that environment already holds -- a collision the ALB
+            only reports at apply time.
     """
     env_dir = get_environments_dir()
     shared_infra_name = f"shared-infra-{env_type}"
@@ -52,11 +58,13 @@ def get_next_listener_priority(env_type: str) -> int:
             continue
         try:
             content = tfvars_path.read_text(encoding="utf-8")
-            match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
-            if match:
-                existing_priorities.append(int(match.group(1)))
-        except Exception:  # noqa: BLE001, S110 — best-effort priority scan  # nosec
-            pass
+        except (OSError, UnicodeDecodeError) as e:
+            raise RuntimeError(
+                f"Could not read {tfvars_path} to find the listener priorities in use: {e}"
+            ) from e
+        match = re.search(r"listener_rule_priority\s*=\s*(\d+)", content)
+        if match:
+            existing_priorities.append(int(match.group(1)))
 
     # Return next available (100, 200, 300, ...)
     if not existing_priorities:
@@ -76,6 +84,11 @@ def create_deployer_tf_symlink(env_dir: Path) -> bool:
 
     Returns:
         True if symlink was created, False if it already exists.
+
+    Raises:
+        RuntimeError: If the symlink could not be created. False means
+            "already there"; answering a failure with it left the new
+            environment without deployer.tf and said nothing.
     """
     link_path = env_dir / "deployer.tf"
     if link_path.exists():
@@ -84,12 +97,12 @@ def create_deployer_tf_symlink(env_dir: Path) -> bool:
     deployer_root = get_deployer_root()
     target = deployer_root / "environments" / "deployer.tf"
 
+    relative_target = os.path.relpath(target, env_dir)
     try:
-        relative_target = os.path.relpath(target, env_dir)
         link_path.symlink_to(relative_target)
-        return True
-    except OSError:
-        return False
+    except OSError as e:
+        raise RuntimeError(f"Could not create {link_path} -> {relative_target}: {e}") from e
+    return True
 
 
 def generate_environment(

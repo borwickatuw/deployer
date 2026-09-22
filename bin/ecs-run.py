@@ -339,7 +339,11 @@ def cmd_list(environment: str) -> int:
     print(f"Cluster: {cluster_name}")
     print()
 
-    services = ecs.get_services(cluster_name)
+    try:
+        services = ecs.get_services(cluster_name)
+    except RuntimeError as e:
+        print(f"Error: unable to list services: {e}", file=sys.stderr)
+        return 1
     if not services:
         print("No services found in cluster.")
         return 0
