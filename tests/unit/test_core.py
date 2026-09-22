@@ -1,6 +1,7 @@
 """Tests for deployer.core package."""
 
 import string
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from deployer.core.cognito import (
     format_welcome_message,
     generate_temp_password,
 )
+from deployer.core.config import _resolve_tofu_placeholders
 from deployer.core.deploy import topological_sort
 
 
@@ -490,3 +492,95 @@ class TestGetTofuDir:
         config = {"tofu": {"dir": "/nonexistent/path"}}
         with pytest.raises(FileNotFoundError, match="does not exist"):
             get_tofu_dir(config, tmp_path)
+
+
+ENV_PATH = Path("/environments/myapp-staging")
+
+TOFU_OUTPUTS = {
+    "cluster_name": "myapp-staging-cluster",
+    "private_subnet_ids": ["subnet-aaa", "subnet-bbb"],
+    "s3_bucket_names": {"uploads": "myapp-staging-uploads", "static": "myapp-staging-static"},
+    "desired_count": 2,
+    "cognito_enabled": True,
+}
+
+MISSING_OUTPUT_HINT = f"Hint: If you recently added this output, run 'tofu apply' in {ENV_PATH}"
+
+
+class TestResolveTofuPlaceholders:
+    """Characterization of _resolve_tofu_placeholders."""
+
+    def test_whole_string_scalar(self):
+        result = _resolve_tofu_placeholders("${tofu:cluster_name}", ENV_PATH, TOFU_OUTPUTS)
+        assert result == "myapp-staging-cluster"
+
+    def test_whole_string_preserves_list(self):
+        result = _resolve_tofu_placeholders("${tofu:private_subnet_ids}", ENV_PATH, TOFU_OUTPUTS)
+        assert result == ["subnet-aaa", "subnet-bbb"]
+
+    def test_whole_string_preserves_dict(self):
+        result = _resolve_tofu_placeholders("${tofu:s3_bucket_names}", ENV_PATH, TOFU_OUTPUTS)
+        assert result == {"uploads": "myapp-staging-uploads", "static": "myapp-staging-static"}
+
+    def test_whole_string_preserves_int_and_bool(self):
+        assert _resolve_tofu_placeholders("${tofu:desired_count}", ENV_PATH, TOFU_OUTPUTS) == 2
+        assert _resolve_tofu_placeholders("${tofu:cognito_enabled}", ENV_PATH, TOFU_OUTPUTS) is True
+
+    def test_embedded_scalar_is_stringified(self):
+        result = _resolve_tofu_placeholders(
+            "cluster=${tofu:cluster_name} count=${tofu:desired_count}", ENV_PATH, TOFU_OUTPUTS
+        )
+        assert result == "cluster=myapp-staging-cluster count=2"
+
+    def test_embedded_list_and_dict_are_json_dumped(self):
+        result = _resolve_tofu_placeholders(
+            "subnets=${tofu:private_subnet_ids} buckets=${tofu:s3_bucket_names}",
+            ENV_PATH,
+            TOFU_OUTPUTS,
+        )
+        assert result == (
+            'subnets=["subnet-aaa", "subnet-bbb"] '
+            'buckets={"uploads": "myapp-staging-uploads", "static": "myapp-staging-static"}'
+        )
+
+    def test_non_string_values_pass_through(self):
+        assert _resolve_tofu_placeholders(3, ENV_PATH, TOFU_OUTPUTS) == 3
+        assert _resolve_tofu_placeholders(False, ENV_PATH, TOFU_OUTPUTS) is False
+        assert _resolve_tofu_placeholders(None, ENV_PATH, TOFU_OUTPUTS) is None
+
+    def test_string_without_placeholder_unchanged(self):
+        assert _resolve_tofu_placeholders("plain", ENV_PATH, TOFU_OUTPUTS) == "plain"
+
+    def test_recurses_into_dicts_and_lists(self):
+        config = {
+            "infrastructure": {
+                "cluster_name": "${tofu:cluster_name}",
+                "private_subnet_ids": "${tofu:private_subnet_ids}",
+            },
+            "extra": ["${tofu:desired_count}", "n=${tofu:desired_count}", 7],
+        }
+        assert _resolve_tofu_placeholders(config, ENV_PATH, TOFU_OUTPUTS) == {
+            "infrastructure": {
+                "cluster_name": "myapp-staging-cluster",
+                "private_subnet_ids": ["subnet-aaa", "subnet-bbb"],
+            },
+            "extra": [2, "n=2", 7],
+        }
+
+    def test_whole_string_missing_output_raises(self):
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders("${tofu:no_such_output}", ENV_PATH, TOFU_OUTPUTS)
+        assert str(exc_info.value) == (
+            f"Could not resolve tofu output: no_such_output\n{MISSING_OUTPUT_HINT}"
+        )
+
+    def test_embedded_missing_output_raises(self):
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders("prefix-${tofu:no_such_output}", ENV_PATH, TOFU_OUTPUTS)
+        assert str(exc_info.value) == (
+            f"Could not resolve tofu output: no_such_output\n{MISSING_OUTPUT_HINT}"
+        )
+
+    def test_null_valued_output_is_treated_as_missing(self):
+        with pytest.raises(RuntimeError, match="Could not resolve tofu output: nullable"):
+            _resolve_tofu_placeholders("${tofu:nullable}", ENV_PATH, {"nullable": None})
