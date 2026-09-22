@@ -475,6 +475,23 @@ class TestCmdHealth:
         assert ops.cmd_health(ENV) == 1
         assert "Target group ARN not configured" in capsys.readouterr().out
 
+    def test_an_unreadable_target_group_returns_1_not_no_targets(
+        self, env_config, monkeypatch, capsys
+    ):
+        """A refused describe used to print "No targets registered" and pass."""
+        env_config["infrastructure"] = {"target_group_arn": "arn:tg"}
+
+        def _refused(_arn):
+            raise RuntimeError("Could not read target health for arn:tg: AccessDenied")
+
+        monkeypatch.setattr(ops, "get_target_health", _refused)
+
+        assert ops.cmd_health(ENV) == 1
+        out = capsys.readouterr().out
+        assert "Unable to read target health: " in out
+        assert "AccessDenied" in out
+        assert "No targets registered" not in out
+
     def test_no_registered_targets_returns_0(self, env_config, monkeypatch, capsys):
         env_config["infrastructure"] = {"target_group_arn": "arn:tg"}
         seen = self._targets(monkeypatch, [])
@@ -530,14 +547,25 @@ class TestCmdMaintenance:
     """Characterization tests for cmd_maintenance()'s two-resource report."""
 
     def _maintenance(self, monkeypatch, rds_items=(), cache_items=()) -> list[tuple]:
-        """Stub the pending-maintenance lookup; return the calls it received."""
+        """Stub both pending-maintenance collectors; return the calls they received.
+
+        An Exception instance in place of the items is raised instead.
+        """
         calls: list[tuple] = []
 
-        def _get(rds_instance_id, elasticache_cluster_id):
-            calls.append((rds_instance_id, elasticache_cluster_id))
-            return {"rds": list(rds_items), "elasticache": list(cache_items)}
+        def _collector(kind, items):
+            def _get(resource_id):
+                calls.append((kind, resource_id))
+                if isinstance(items, Exception):
+                    raise items
+                return list(items)
 
-        monkeypatch.setattr(ops, "get_all_pending_maintenance", _get)
+            return _get
+
+        monkeypatch.setattr(ops, "get_rds_pending_maintenance", _collector("rds", rds_items))
+        monkeypatch.setattr(
+            ops, "get_elasticache_pending_maintenance", _collector("elasticache", cache_items)
+        )
         return calls
 
     def test_neither_resource_configured_says_so_and_returns_0(
@@ -547,7 +575,7 @@ class TestCmdMaintenance:
 
         assert ops.cmd_maintenance(ENV) == 0
         out = capsys.readouterr().out
-        assert calls == [(None, None)]
+        assert calls == []
         assert "RDS: Not configured" in out
         assert "ElastiCache: Not configured" in out
         assert "No pending maintenance" in out
@@ -558,7 +586,27 @@ class TestCmdMaintenance:
         calls = self._maintenance(monkeypatch)
 
         assert ops.cmd_maintenance(ENV) == 0
-        assert calls == [(RDS_ID, f"{ENV}-cache")]
+        assert calls == [("rds", RDS_ID), ("elasticache", f"{ENV}-cache")]
+
+    def test_an_unreadable_resource_is_reported_in_place_and_fails(
+        self, env_config, monkeypatch, capsys
+    ):
+        """A refused read is not "No pending maintenance", and does not hide the other."""
+        env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
+        env_config["cache"] = {"url": "redis://cache:6379"}
+        self._maintenance(
+            monkeypatch,
+            rds_items=RuntimeError("AccessDenied"),
+            cache_items=[{"action": "update-1", "description": "Engine patch", "severity": None}],
+        )
+
+        assert ops.cmd_maintenance(ENV) == 1
+        out = capsys.readouterr().out
+        assert f"RDS ({RDS_ID}):" in out
+        assert "unable to read (AccessDenied)" in out
+        assert "No pending maintenance" not in out
+        assert "  - update-1: Engine patch" in out
+        assert "Could not read pending maintenance for 1 resource(s)" in out
 
     def test_nothing_pending_reports_each_resource_as_clear(self, env_config, monkeypatch, capsys):
         env_config["infrastructure"] = {"rds_instance_id": RDS_ID}
@@ -699,6 +747,53 @@ class TestCmdEcr:
         assert ops.cmd_ecr(ENV, verbose=False) == 0
         assert seen == []
         assert f"No services configured for {ENV}" in capsys.readouterr().out
+
+    def test_an_unlistable_environment_returns_1_not_no_repositories(
+        self, env_config, monkeypatch, capsys
+    ):
+        """A refused lookup used to print "No ECR repositories found" and exit 0."""
+        env_config["services"] = {"config": {"web": {}}}
+
+        def _refused(_env, _names):
+            raise RuntimeError("AccessDeniedException")
+
+        monkeypatch.setattr(ops, "list_repositories_for_environment", _refused)
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 1
+        out = capsys.readouterr().out
+        assert "Unable to list ECR repositories: AccessDeniedException" in out
+        assert "No ECR repositories found" not in out
+
+    def test_an_unreadable_repository_is_reported_and_fails_the_scan(
+        self, env_config, monkeypatch, capsys
+    ):
+        """A repository whose images cannot be read is not silently skipped.
+
+        Skipping it used to leave the summary at "No critical or high
+        vulnerabilities" with exit 0 -- the reassuring answer, on a scan that
+        did not happen.
+        """
+        env_config["services"] = {"config": {"web": {}, "worker": {}}}
+        self._ecr(
+            monkeypatch,
+            repos=[f"{ENV}-web", f"{ENV}-worker"],
+            summaries={f"{ENV}-worker": self._summary()},
+        )
+
+        def _summary(repo, **_kw):
+            if repo == f"{ENV}-web":
+                raise RuntimeError("AccessDeniedException")
+            return self._summary()
+
+        monkeypatch.setattr(ops, "get_repository_scan_summary", _summary)
+
+        assert ops.cmd_ecr(ENV, verbose=False) == 1
+        out = capsys.readouterr().out
+        assert "  web: unable to read scan results (AccessDeniedException)" in out
+        assert "  worker:" in out
+        assert "UNREADABLE: 1 repository(ies)" in out
+        assert "Could not read scan results for 1 repository(ies)" in out
+        assert "No critical or high vulnerabilities" not in out
 
     def test_a_repository_with_no_scan_summary_is_skipped(self, env_config, monkeypatch, capsys):
         env_config["services"] = {"config": {"web": {}}}
@@ -879,17 +974,59 @@ class TestCmdIncidentStart:
 class TestCmdLogs:
     """Characterization tests for cmd_logs()'s per-log-group error report."""
 
-    def _logs(self, monkeypatch, groups: list[str], events: dict[str, list[dict]]) -> list[tuple]:
-        """Stub both log collectors; return the scan calls received."""
+    def _logs(self, monkeypatch, groups, events: dict) -> list[tuple]:
+        """Stub both log collectors; return the scan calls received.
+
+        An Exception instance in place of ``groups`` or of one group's events
+        is raised instead of returned.
+        """
         calls: list[tuple] = []
 
         def _scan(log_group, lookback_minutes, max_results):
             calls.append((log_group, lookback_minutes, max_results))
-            return events.get(log_group, [])
+            result = events.get(log_group, [])
+            if isinstance(result, Exception):
+                raise result
+            return result
 
-        monkeypatch.setattr(ops, "get_log_groups_for_environment", lambda _e: groups)
+        def _groups(_env):
+            if isinstance(groups, Exception):
+                raise groups
+            return groups
+
+        monkeypatch.setattr(ops, "get_log_groups_for_environment", _groups)
         monkeypatch.setattr(ops, "scan_logs_for_errors", _scan)
         return calls
+
+    def test_an_unlistable_environment_returns_1_not_no_log_groups(self, monkeypatch, capsys):
+        calls = self._logs(monkeypatch, RuntimeError("AccessDeniedException"), {})
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 1
+        out = capsys.readouterr().out
+        assert calls == []
+        assert "Unable to list log groups: AccessDeniedException" in out
+        assert "No log groups found" not in out
+
+    def test_an_unsearchable_group_is_reported_in_place_and_the_rest_still_scan(
+        self, monkeypatch, capsys
+    ):
+        """A denied search used to end logs (and audit) with a traceback."""
+        groups = [f"/ecs/{ENV}-web", f"/ecs/{ENV}-worker"]
+        calls = self._logs(
+            monkeypatch,
+            groups,
+            {groups[0]: RuntimeError("AccessDeniedException"), groups[1]: [self._event()]},
+        )
+
+        assert ops.cmd_logs(ENV, minutes=60, limit=100) == 1
+        out = capsys.readouterr().out
+        assert [c[0] for c in calls] == groups
+        assert "web:" in out
+        assert "unable to search (AccessDeniedException)" in out
+        assert "worker:" in out
+        assert "(1 errors)" in out
+        assert "Could not search 1 of 2 log group(s)" in out
+        assert "No errors found" not in out
 
     def _event(self, message="ERROR boom", timestamp="2026-08-13T09:15:30+00:00") -> dict:
         return {"timestamp": timestamp, "message": message, "log_stream": "web/web/abc"}
@@ -964,25 +1101,33 @@ class TestCmdLogs:
 
 
 class TestCmdAudit:
-    """cmd_audit() runs the five checks in order and folds three exit codes."""
+    """cmd_audit() runs the five checks in order and folds all five exit codes.
+
+    logs and maintenance answer 1 only when a read failed, so folding them
+    means an audit that could not look is not reported as clean.
+    """
 
     @pytest.fixture
     def checks(self, monkeypatch) -> dict:
         """Stub the five commands; return their exit codes and the call log."""
-        state: dict = {"calls": [], "status": 0, "health": 0, "ecr": 0}
+        state: dict = {
+            "calls": [],
+            "status": 0,
+            "health": 0,
+            "logs": 0,
+            "maintenance": 0,
+            "ecr": 0,
+        }
 
-        def _record(name, code_key=None):
+        def _record(name):
             def _cmd(*args, **kwargs):
                 state["calls"].append((name, args, kwargs))
-                return state[code_key] if code_key else 0
+                return state[name]
 
             return _cmd
 
-        monkeypatch.setattr(ops, "cmd_status", _record("status", "status"))
-        monkeypatch.setattr(ops, "cmd_health", _record("health", "health"))
-        monkeypatch.setattr(ops, "cmd_logs", _record("logs"))
-        monkeypatch.setattr(ops, "cmd_maintenance", _record("maintenance"))
-        monkeypatch.setattr(ops, "cmd_ecr", _record("ecr", "ecr"))
+        for name in ("status", "health", "logs", "maintenance", "ecr"):
+            monkeypatch.setattr(ops, f"cmd_{name}", _record(name))
         return state
 
     def test_the_five_checks_run_in_order_with_audit_s_arguments(self, checks, capsys):
@@ -1006,7 +1151,7 @@ class TestCmdAudit:
         assert [out.index(h) for h in headings] == sorted(out.index(h) for h in headings)
         assert "Audit completed - no critical issues found" in out
 
-    @pytest.mark.parametrize("failing", ["status", "health", "ecr"])
+    @pytest.mark.parametrize("failing", ["status", "health", "logs", "maintenance", "ecr"])
     def test_a_failing_check_fails_the_audit_but_the_rest_still_run(self, checks, capsys, failing):
         checks[failing] = 1
 

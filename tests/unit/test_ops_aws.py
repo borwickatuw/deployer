@@ -3,7 +3,7 @@
 test_ops.py pins what each command *prints*, stubbing these collectors out.
 This file pins the collectors themselves: which AWS call each makes, with
 which parameters, how the response is flattened, and which failures are
-swallowed into an empty answer versus raised.
+raised on a refused read versus answered empty for genuine absence.
 
 Backed by botocore's Stubber rather than moto: several of these operations
 (describe_pending_maintenance_actions, describe_service_updates,
@@ -122,14 +122,21 @@ class TestGetTargetHealth:
         assert target["health_state"] == "unknown"
         assert target["port"] == 0
 
-    def test_a_refused_describe_reads_as_no_targets(self, aws):
-        """Today's contract: indistinguishable from an empty target group.
+    def test_an_empty_target_group_is_an_empty_list(self, aws):
+        aws("elbv2").add_response("describe_target_health", {"TargetHealthDescriptions": []})
 
-        cmd_health() then prints "No targets registered" and returns 0.
+        assert ops.get_target_health("arn:tg") == []
+
+    def test_a_refused_describe_raises_rather_than_reading_as_no_targets(self, aws):
+        """It used to answer [] -- indistinguishable from an empty target group.
+
+        cmd_health() then printed "No targets registered" and returned 0; it now
+        reports the read failure and returns 1 (test_ops.py pins that half).
         """
         aws("elbv2").add_client_error("describe_target_health", "AccessDenied")
 
-        assert ops.get_target_health("arn:tg") == []
+        with pytest.raises(RuntimeError, match="Could not read target health for arn:tg"):
+            ops.get_target_health("arn:tg")
 
 
 # =============================================================================
@@ -192,16 +199,17 @@ class TestScanLogsForErrors:
 
         assert ops.scan_logs_for_errors(f"/ecs/{ENV}-web") == []
 
-    def test_any_other_failure_propagates(self, aws):
-        """Unlike its siblings, this collector does not swallow a refusal.
+    def test_any_other_failure_raises_runtime_error_with_the_aws_text(self, aws):
+        """The collectors' shared contract: RuntimeError, which cmd_logs catches.
 
-        cmd_logs() has no handler for it either, so a denied
-        filter_log_events ends the command with a traceback.
+        It used to re-raise the raw ClientError, which nothing caught, so a
+        denied filter_log_events ended logs (and audit) with a traceback.
         """
         aws("logs").add_client_error("filter_log_events", "AccessDeniedException")
 
-        with pytest.raises(ClientError, match="AccessDeniedException"):
+        with pytest.raises(RuntimeError, match="AccessDeniedException") as exc_info:
             ops.scan_logs_for_errors(f"/ecs/{ENV}-web")
+        assert isinstance(exc_info.value.__cause__, ClientError)
 
 
 class TestGetLogGroupsForEnvironment:
@@ -226,13 +234,14 @@ class TestGetLogGroupsForEnvironment:
             f"/ecs/{ENV}-worker",
         ]
 
-    def test_a_refused_listing_warns_on_stderr_and_reads_as_none(self, aws, capsys):
+    def test_a_refused_listing_raises_rather_than_reading_as_none(self, aws, capsys):
+        """It used to warn on stderr and answer [], which cmd_logs then
+        reported as "No log groups found" with exit 0."""
         aws("logs").add_client_error("describe_log_groups", "AccessDeniedException")
 
-        assert ops.get_log_groups_for_environment(ENV) == []
-        err = capsys.readouterr().err
-        assert "  Warning: Error listing log groups:" in err
-        assert "AccessDeniedException" in err
+        with pytest.raises(RuntimeError, match=f"under /ecs/{ENV}: .*AccessDeniedException"):
+            ops.get_log_groups_for_environment(ENV)
+        assert capsys.readouterr().err == ""
 
 
 # =============================================================================
@@ -291,10 +300,23 @@ class TestGetRdsPendingMaintenance:
 
         assert ops.get_rds_pending_maintenance(RDS_ID) == []
 
-    def test_a_refused_describe_reads_as_nothing_pending(self, aws):
+    def test_a_refused_describe_raises_rather_than_reading_as_nothing_pending(self, aws):
+        """A configured instance AWS will not describe is not "nothing pending"."""
         aws("rds").add_client_error("describe_db_instances", "DBInstanceNotFound")
 
-        assert ops.get_rds_pending_maintenance(RDS_ID) == []
+        with pytest.raises(RuntimeError, match=f"{RDS_ID}: .*DBInstanceNotFound"):
+            ops.get_rds_pending_maintenance(RDS_ID)
+
+    def test_a_refused_action_listing_raises(self, aws):
+        stubber = aws("rds")
+        stubber.add_response(
+            "describe_db_instances",
+            {"DBInstances": [{"DBInstanceIdentifier": RDS_ID, "DBInstanceArn": RDS_ARN}]},
+        )
+        stubber.add_client_error("describe_pending_maintenance_actions", "AccessDenied")
+
+        with pytest.raises(RuntimeError, match="AccessDenied"):
+            ops.get_rds_pending_maintenance(RDS_ID)
 
 
 class TestGetElasticachePendingMaintenance:
@@ -351,18 +373,15 @@ class TestGetElasticachePendingMaintenance:
             },
         ]
 
-    def test_a_refused_service_update_listing_keeps_the_modifications(self, aws):
+    def test_a_refused_service_update_listing_raises_rather_than_answering_half(self, aws):
+        """It used to keep the modifications and drop the updates silently,
+        reporting a half-read answer as the whole one."""
         stubber = aws("elasticache")
         self._cluster(stubber, {"NumCacheNodes": 3})
         stubber.add_client_error("describe_service_updates", "AccessDenied")
 
-        assert ops.get_elasticache_pending_maintenance(CACHE_ID) == [
-            {
-                "action": "modify",
-                "description": "Pending NumCacheNodes change to 3",
-                "severity": None,
-            }
-        ]
+        with pytest.raises(RuntimeError, match="service updates: .*AccessDenied"):
+            ops.get_elasticache_pending_maintenance(CACHE_ID)
 
     def test_a_cluster_with_nothing_pending_still_lists_service_updates(self, aws):
         stubber = aws("elasticache")
@@ -376,25 +395,16 @@ class TestGetElasticachePendingMaintenance:
 
         assert ops.get_elasticache_pending_maintenance(CACHE_ID) == []
 
-    def test_a_refused_describe_reads_as_nothing_pending(self, aws):
+    def test_a_refused_describe_raises_rather_than_reading_as_nothing_pending(self, aws):
         aws("elasticache").add_client_error("describe_cache_clusters", "CacheClusterNotFound")
 
-        assert ops.get_elasticache_pending_maintenance(CACHE_ID) == []
+        with pytest.raises(RuntimeError, match=f"{CACHE_ID}: .*CacheClusterNotFound"):
+            ops.get_elasticache_pending_maintenance(CACHE_ID)
 
 
-class TestGetAllPendingMaintenance:
-    def test_an_unconfigured_resource_is_not_asked_about(self, aws):
-        # No stubbers registered: any client() call would raise KeyError.
-        assert ops.get_all_pending_maintenance(None, None) == {"rds": [], "elasticache": []}
-
-    def test_each_configured_resource_is_asked_about(self, monkeypatch):
-        monkeypatch.setattr(ops, "get_rds_pending_maintenance", lambda i: [f"rds:{i}"])
-        monkeypatch.setattr(ops, "get_elasticache_pending_maintenance", lambda i: [f"ec:{i}"])
-
-        assert ops.get_all_pending_maintenance(RDS_ID, CACHE_ID) == {
-            "rds": [f"rds:{RDS_ID}"],
-            "elasticache": [f"ec:{CACHE_ID}"],
-        }
+# get_all_pending_maintenance() is gone: cmd_maintenance() calls the two
+# collectors itself so each is its own render boundary. Which resource is asked
+# about is pinned by TestCmdMaintenance in test_ops.py.
 
 
 # =============================================================================
@@ -439,11 +449,26 @@ class TestListRepositoriesForEnvironment:
 
         assert ops.list_repositories_for_environment(ENV, ["web", "worker"]) == [f"{ENV}-web"]
 
-    def test_any_other_refusal_reads_as_no_repositories(self, aws):
-        """cmd_ecr() then reports "No ECR repositories found" and returns 0."""
+    def test_any_other_refusal_raises_rather_than_reading_as_no_repositories(self, aws):
+        """It used to answer [], which cmd_ecr() reported as "No ECR repositories
+        found" with exit 0 -- a security scan that passed without looking."""
         aws("ecr").add_client_error("describe_repositories", "AccessDeniedException")
 
-        assert ops.list_repositories_for_environment(ENV, ["web"]) == []
+        with pytest.raises(RuntimeError, match=f"repositories for {ENV}: .*AccessDenied"):
+            ops.list_repositories_for_environment(ENV, ["web"])
+
+    def test_a_refusal_during_the_one_at_a_time_fallback_raises(self, aws):
+        """Only RepositoryNotFoundException means "absent"; nothing else is skipped."""
+        stubber = aws("ecr")
+        stubber.add_client_error("describe_repositories", "RepositoryNotFoundException")
+        stubber.add_client_error(
+            "describe_repositories",
+            "AccessDeniedException",
+            expected_params={"repositoryNames": [f"{ENV}-web"]},
+        )
+
+        with pytest.raises(RuntimeError, match=f"repository {ENV}-web: .*AccessDenied"):
+            ops.list_repositories_for_environment(ENV, ["web", "worker"])
 
 
 class TestGetRepositoryScanSummary:
@@ -496,11 +521,12 @@ class TestGetRepositoryScanSummary:
 
         assert ops.get_repository_scan_summary(REPO, max_images=1) == []
 
-    def test_a_refused_describe_reads_as_no_images(self, aws):
-        """cmd_ecr() skips such a repository silently."""
+    def test_a_refused_describe_raises_rather_than_reading_as_no_images(self, aws):
+        """It used to answer [], and cmd_ecr() skipped the repository silently."""
         aws("ecr").add_client_error("describe_images", "AccessDeniedException")
 
-        assert ops.get_repository_scan_summary(REPO) == []
+        with pytest.raises(RuntimeError, match=f"images in {REPO}: .*AccessDenied"):
+            ops.get_repository_scan_summary(REPO)
 
 
 class TestGetImageScanFindings:
