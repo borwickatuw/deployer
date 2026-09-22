@@ -241,6 +241,10 @@ If status is `FORCE_CHANGE_PASSWORD`, user needs to complete first login or rese
 
 ### Scheduling Issues
 
+**A CloudWatch `Errors` alarm fires on the scheduler Lambda after an apply**
+— see [staging-scheduler.md § Failure Behavior](../tofu-modules/staging-scheduler.md#failure-behavior)
+before assuming it's a new break.
+
 **Environment won't stop**
 
 ```bash
