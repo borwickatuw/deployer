@@ -185,6 +185,14 @@ which creates the ALB, RDS, ElastiCache and ECS alarms and the SNS topic they
 publish to. Instantiate it in the production environment's `main.tf`; staging
 does not need it.
 
+**These four checks run from the app repository, not from here.** Deployer
+provisions the alarms and the SNS topic but deploys no environment of its
+own — there is no deployer `<app>-production` to check against. The two
+commands below, plus a `curl` of the app's health endpoint and
+`aws elbv2 describe-target-health` against its target group, belong in the
+app repository's own operational checkpoint (its `docs/OPERATIONS.md`), run
+against that app's `<app>-production` environment.
+
 **An email subscription is not live until it is confirmed.** AWS sends a
 confirmation link when `tofu apply` first creates the subscription, and until
 someone clicks it the subscription sits in `PendingConfirmation` and every
