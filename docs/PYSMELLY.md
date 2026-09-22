@@ -153,11 +153,38 @@ comprehensive review following 2026-09-18**:
   reads worse. *(Anchor re-measured at `f33c84c`; it was `:195` at
   `a510815`.)*
 
-A second single-call-site finding,
-`src/deployer/init/deploy_toml.py:93 is_likely_secret`, is live at `f33c84c`
-and carries **no** verdict — it was not part of the run's twenty units and
-nobody has adjudicated it. Its absence from the ratified table below is not a
-decision.
+A second single-call-site finding, `is_likely_secret`, was not one of the
+twenty units. It was adjudicated on its own merits on 2026-09-22 and does
+**not** inherit `stop_environment`'s verdict. The verdict is a keep, and the
+operator has not yet ratified it:
+
+| Adj | Check            | Anchor, 2026-09-22                                                      | Why it stands                                                                                                                                                                                                                                                                                                                      | Ratified | Re-evaluate-by                                                                                  |
+| --- | ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| A10 | single-call-site | `src/deployer/init/deploy_toml.py:93` `is_likely_secret` (call at :228) | It names the secret-detection policy. It is the one env-var rule that combines two tables with a precedence (an exact `NON_SECRET_ENV_VARS` entry beats a case-folded `SECRET_PATTERNS` substring). U13 made every other arm of `_build_environment_config`'s loop a one-table test, and this keeps the secret arm reading as one. | pending  | The rule collapses to a single table test, or the second comprehensive review after 2026-09-18. |
+
+What the verdict rests on, measured rather than argued:
+
+- **Not independently tested, so tests are not the reason.** No test names it.
+  `tests/unit/test_init_deploy_toml_pins.py` deliberately drives every private
+  helper through `generate_deploy_toml`, including the precedence and
+  case-folding pins.
+- **The inline was drafted and measured**, then reverted. It clears the finding
+  (44 → 43), mints nothing, and the 158 tests in `test_init.py` and the pins
+  file pass. So this is a readability verdict, not a "the fix does not work"
+  one. The inline puts a three-line, two-table boolean at the head of a loop
+  whose other arms are `var_name in TABLE`.
+- **History.** The operator confirmed a leave-standing on this function on
+  2026-08-25 (§53p, at `:77`) because "the named predicate heads a 4-way
+  dispatch". U13 (`980b9be`) removed that `elif` dispatch, so the old reason no
+  longer describes the code. That is why this was re-adjudicated rather than
+  carried forward. The earlier note here, that nobody had ever adjudicated it,
+  was wrong.
+- **A trap for the next editor.** pysmelly's single-call-site check skips any
+  function spanning 10 or more lines. A docstring two lines longer makes this
+  finding vanish without anyone deciding anything. The docstring was kept to
+  four lines so the finding stays live and this row stays attached to it. If
+  the function grows past that, record here that the finding stopped firing
+  by threshold, not by fix.
 
 ### Standing-suppression audit (Practice #10)
 

@@ -91,7 +91,10 @@ def _is_infrastructure_service(name: str) -> bool:
 
 
 def is_likely_secret(var_name: str) -> bool:
-    """Check if an environment variable name suggests it's a secret."""
+    """Decide whether the generator declares a variable as a secret: an exact
+    NON_SECRET_ENV_VARS entry wins, otherwise any SECRET_PATTERNS substring of
+    the upper-cased name does. A heuristic, hence "likely" (MONKEY_COUNT hits KEY).
+    """
     if var_name in NON_SECRET_ENV_VARS:
         return False
     var_upper = var_name.upper()
