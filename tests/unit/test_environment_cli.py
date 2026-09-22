@@ -250,16 +250,21 @@ class TestStatus:
         assert "  No ECS services found" in out
         assert "Service" not in out
 
-    def test_a_cluster_that_does_not_exist_reads_as_no_services(
+    def test_a_cluster_that_does_not_exist_is_reported_not_read_as_no_services(
         self, environments, mocked_aws, aws_cli, capsys
     ):
-        """get_services() maps ClusterNotFoundException to [], so a wrong
-        cluster name is indistinguishable from an empty cluster here."""
+        """get_services() used to map ClusterNotFoundException to [], so a wrong
+        cluster name was indistinguishable from an empty cluster here. It now
+        raises, and status reports the cluster in place and carries on."""
         environments(ENV, _config())
         aws_cli.replies((True, describe("available")))
 
         assert environment.cmd_status(ENV) == 0
-        assert "  No ECS services found" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "  Services: Unable to retrieve (" in out
+        assert "ClusterNotFoundException" in out
+        assert "No ECS services found" not in out
+        assert "    Status: available" in out
 
     def test_no_cluster_name_and_no_rds_id(self, environments, aws_cli, capsys):
         environments(ENV, _config(cluster=None, rds_id=None))
