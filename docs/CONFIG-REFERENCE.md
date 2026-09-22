@@ -823,6 +823,18 @@ private_subnet_ids = "${tofu:private_subnet_ids}"  # Returns a list
 connection = "host=${tofu:db_host} port=5432"  # String interpolation
 ```
 
+Lists and maps embedded in a string are rendered as JSON.
+
+**Map outputs can be indexed** with dotted keys: `${tofu:NAME.KEY}`, or `${tofu:NAME.KEY.KEY}` for a map of maps. The first segment is the output name; each further segment looks up a key in a map. This reaches a single value inside a map output without adding a per-key `output` block to the root module. For example, the root module's `s3_bucket_names` output maps each entry in `s3_buckets` to its bucket name:
+
+```toml
+[storage]
+uploads_bucket = "${tofu:s3_bucket_names.uploads}"      # "myapp-staging-uploads"
+uploads_url = "s3://${tofu:s3_bucket_names.uploads}/"  # Works embedded too
+```
+
+The indexed value follows the same rules as a plain placeholder: a whole-string placeholder keeps its type, an embedded one is stringified. Only maps can be indexed; there is no list indexing. Resolution fails with an error when the output does not exist, when a key is applied to something that is not a map (the error names its type), when a key is absent (the error lists the map's keys if it has ten or fewer), or when the value reached is null.
+
 ______________________________________________________________________
 
 ## Resolved Config JSON Reference
