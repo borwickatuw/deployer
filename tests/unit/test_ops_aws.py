@@ -54,7 +54,7 @@ def aws(monkeypatch):
             service,
             region_name="us-west-2",
             aws_access_key_id="testing",
-            aws_secret_access_key="testing",  # noqa: S106 - fake credential
+            aws_secret_access_key="testing",  # noqa: S106 - fake credential  # pragma: allowlist secret
         )
         stubber = Stubber(client)
         stubber.activate()

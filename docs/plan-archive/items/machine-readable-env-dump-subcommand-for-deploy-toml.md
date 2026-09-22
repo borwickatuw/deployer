@@ -2,7 +2,7 @@
 title = "Machine-readable env dump subcommand for deploy.toml"
 source = "deployer"
 captured = "2026-08-21"
-number = 9
+closed = "2026-09-22"
 +++
 
 Promoted 2026-09-22 from someday-maybe (captured 2026-08-21 out of 53j-4a).
@@ -39,6 +39,15 @@ the parseable form.
 **Complexity**: Low-Medium.
 
 ### Sub-phases
-- **9-1 — the two pure encoders (dotenv, json) with unit tests on empty, literal (unset), quotes, newlines, non-ASCII, TOML ints and bools**
-- **9-2 — the deploy.py env subcommand: same get_environment_variables route as print_environment_config, --format, secrets refused by construction; CLI test through the Click runner**
-- **9-3 — DEPLOYMENT-GUIDE.md: document the subcommand and state that the deploy log's environment block is narration, not the parseable form**
+- **9-1 — the two pure encoders (dotenv, json) with unit tests on empty, literal (unset), quotes, newlines, non-ASCII, TOML ints and bools** **done** encode_dotenv/encode_json plus stringify_environment shared with build_task_definition; 20 tests including a real sh source round-trip (e9c0499)
+- **9-2 — the deploy.py env subcommand: same get_environment_variables route as print_environment_config, --format, secrets refused by construction; CLI test through the Click runner** **done** deploy.py env ENV --format dotenv|json; stdout holds only the document, secrets unreachable by construction, invalid shell names refused in dotenv; 10 CliRunner tests (1692166)
+- **9-3 — DEPLOYMENT-GUIDE.md: document the subcommand and state that the deploy log's environment block is narration, not the parseable form** **done** DEPLOYMENT-GUIDE Dumping the environment variables section, CLAUDE.md Common Commands, print_environment_config docstring re-pointed (a5e28d9)
+
+### Outcome
+
+Closed 2026-09-22. `deploy.py env ENV [--format dotenv|json]` prints the
+merged environment as a parseable document and nothing else on stdout;
+values pass through the same `stringify_environment` the task definition
+uses, so the dump equals what deploys; secrets are unreachable by
+construction. 30 tests including a real `sh` round-trip. Commits
+`e9c0499`, `1692166`, `a5e28d9`. A per-service dump was left out of scope.

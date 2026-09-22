@@ -2,7 +2,7 @@
 title = "Security gates and static-analysis config: the bandit skips, the reporter's name, and what check gates on"
 review = "2026-09-18"
 blocked-on = ["fileplan-claude-meta:77", "fileplan-claude-meta:78"]
-number = 2
+closed = "2026-09-22"
 +++
 
 Three SECURITY/PYTHON configuration decisions the 2026-09-18 comprehensive
@@ -35,3 +35,15 @@ the citation records which fleet sub-phase each one closes (77-3, 78-3/78-4).
 - **2-1 — SECURITY Practice #4b/#4c (suppression-proposed; blocked-on fileplan-claude-meta:77) — "bandit skips are not aligned with ruff's per-file-ignores (Practice #4b), and two noqa'd lines lack the paired bare # nosec (Practice #4c)." Evidence: bandit over bin src modules/lambda-shared modules/staging-scheduler/lambda reports B404 LOW x8, B603 LOW x14, B607 LOW x8, B110 LOW x2, 0 Medium, 0 High, while [tool.ruff.lint.per-file-ignores] already ignores S603/S607 for the bin and src globs and [tool.bandit] skips is only ['B101','B608']. Fix in hand: skips = ['B101','B608','B404','B603','B607'], plus a bare # nosec at the end of src/deployer/init/deploy_toml.py:146 and src/deployer/init/environment.py:58. The lead's own caveat: with -ll the Lows never print, so the payoff is the honest metrics line, not saved triage time. (Ledger: deployer → Pending operator, [suppression-proposed, SECURITY].)** **done** landed on main by the concurrent claude-meta fleet sweep as 98b9baf (fileplan-claude-meta:77-3): B603/B607 skips paired with the S603/S607 per-file-ignores, bare # nosec at the two B110 sites; B404 x9 left visible because ruff S404 is preview-only and unselected, so no ruff-layer call exists to pair
 - **2-2 — PYTHON §15 / SECURITY §6b (adjudication; blocked-on fileplan-claude-meta:78) — "Two guides name two different jobs one character apart: PYTHON.md §15 make security-update REWRITES uv.lock, SECURITY.md §6b make security-updates only reports." deployer's Makefile:233 and :246 carry both, adjacent in make help, with the hazard documented at the point of use (6032603). Make does no fuzzy matching, so dropping the trailing s silently runs the mutating one. Answer a3 settles the fleet shape: the reporter becomes security-report and security-update stays the rewriter. deployer renames its reporter and greps for references. (Ledger: deployer → Pending operator, [adjudication, PYTHON].)** **done** landed by the fleet sweep as 931544a (fileplan-claude-meta:78-3/78-4): security-updates -> security-report, hazard comment dropped, docs re-pointed
 - **2-3 — SECURITY / MAKEFILE (held-back behaviour-change, operator's choice still open) — "make check excludes the security family, so security-secrets drift stays invisible until someone runs it by hand." Evidence: Makefile:126 is 'check: lint test format-docs-check'; drift accumulated across six commits (67874d8..ad50a02) and was caught only by a verifier running make security explicitly, which was EXIT=2 at ad50a02. bump-version and storage-scripts fold security into check. The three drafted options, verbatim: (a) add security-secrets alone to check — catches exactly this drift class at zero network cost, but makes check tree-mutating on drift; (b) add the whole security target, at the cost of network and checkov runtime every time; (c) leave as-is and treat 'run make security before the last commit of a session' as the discipline. The lead recommends (a) only if tree-mutation is acceptable, otherwise (c). Note deployer is NOT a member of answer a7 (NeverRun, fileplan-claude-meta:80) — that family named pysmelly, porter, o-snap, dslab and outscience — so nothing has decided this one yet. (Ledger: deployer → Pending operator, [behaviour-change, SECURITY, fixup]; see also its Plan corrections, 'Neither make security nor make vulture is in make check'.)** **done** operator chose (a): check now gates on the read-only secrets scan; CLAUDE.md says which target runs what (779454f); baseline drift refreshed twice as the tree grew (bab33f0, c372361)
+
+### Outcome
+
+Closed 2026-09-22. 2-1 and 2-2 landed on main through the concurrent
+claude-meta fleet sweep that closed families 77 and 78 the same day
+(`98b9baf`: B603/B607 skips paired with the S603/S607 per-file-ignores, bare
+`# nosec` at the two B110 sites, B404 left visible because ruff S404 is
+preview-only; `931544a`: `security-updates` → `security-report`, hazard
+comment dropped). 2-3 was decided (a) by the operator: `make check` gates on
+the read-only secrets scan (`779454f`), with the baseline refreshed for line
+drift as the tree grew. A subagent lane reproduced 2-1/2-2 independently on
+a stale base; only its check-gate step was taken, by hand.
