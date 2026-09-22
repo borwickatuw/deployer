@@ -14,9 +14,11 @@ while keeping app structure in deploy.toml.
 Usage:
     python deploy.py deploy myapp-staging
     python deploy.py deploy myapp-staging --dry-run
+    python deploy.py env myapp-staging --format json
     python deploy.py audit ~/code/myapp
 """
 
+import contextlib
 import secrets
 import sys
 from dataclasses import replace
@@ -30,7 +32,8 @@ from deployer.core.config import (
     load_environment_config,
 )
 from deployer.deploy.context import EnvironmentTarget
-from deployer.deploy.deployer import common_deploy_options
+from deployer.deploy.deployer import Deployer, common_deploy_options
+from deployer.deploy.env_dump import encode_dotenv, encode_json
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.timing import DeploymentTimer
 from deployer.utils import (
@@ -162,6 +165,64 @@ def deploy(
             ecr_hint=True,
         )
     )
+
+
+ENV_ENCODERS = {"dotenv": encode_dotenv, "json": encode_json}
+
+
+@cli.command()
+@click.argument("environment")
+@click.option(
+    "--deploy-toml", metavar="PATH", help="Path to deploy.toml (optional if environment is linked)"
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(sorted(ENV_ENCODERS)),
+    default="dotenv",
+    show_default=True,
+    help="dotenv: shell-sourceable KEY='value' lines. json: a flat object.",
+)
+def env(environment, deploy_toml, output_format):
+    """Print the environment variables a deploy sets, in a parseable form.
+
+    This is the same merged map the deploy log's "Global environment
+    variables" block narrates -- resource modules, [environment] and
+    [environment.<type>] -- read by the same code, but quoted so it can be
+    read back exactly. Per-service [services.<name>.environment] overrides are
+    not included, as they are not in the log block.
+
+    Secrets are never printed, and there is no option to print them: [secrets]
+    names reach the container from SSM through the task definition's secrets
+    block, a separate route from the environment (DECISIONS.md 2026-01-21).
+
+    Only the document goes to stdout; progress and errors go to stderr, so
+    the output can be piped or redirected.
+
+    \b
+    Examples:
+      deploy.py env myapp-staging > myapp-staging.env
+      deploy.py env myapp-staging --format json | jq keys
+    """
+    # Everything before the document -- the link tip, profile validation,
+    # config loading, deploy.toml warnings -- prints to stdout by the
+    # helpers' own contract; send all of it to stderr instead.
+    with contextlib.redirect_stdout(sys.stderr):
+        config_path = resolve_deploy_toml_or_exit(
+            environment,
+            deploy_toml,
+            specify_hint=f"deploy.py env {environment} --deploy-toml /path/to/deploy.toml",
+            link_benefit=f"dump with just: deploy.py env {environment}",
+        )
+        configure_profile_or_exit("deploy", environment)
+        env_config, environment_type = _load_env_config_or_exit(environment)
+        with exit_on(ValueError):
+            deployer = Deployer(str(config_path), environment_type, env_config)
+        env_vars = deployer.environment_variables()
+        with exit_on(ValueError):
+            document = ENV_ENCODERS[output_format](env_vars)
+
+    sys.stdout.write(document)
 
 
 @cli.command()

@@ -582,8 +582,8 @@ EMPTY_STRING = ""
     ):
         """The accepted ambiguity of an in-band marker, pinned deliberately.
 
-        This block is narration for a human, not a format anything parses. A
-        machine-readable dump would need its own subcommand with real quoting;
+        This block is narration for a human, not a format anything parses. The
+        machine-readable dump is ``deploy.py env``, which quotes for real;
         a sentinel like $NONE was rejected because a dotenv parser would take
         it literally, a shell would expand it, and set -u would error on it.
         """
