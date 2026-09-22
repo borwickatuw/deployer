@@ -121,3 +121,9 @@ variable "additional_target_groups" {
   }))
   default = {}
 }
+
+variable "restrict_ingress_to_cloudfront" {
+  description = "Accept inbound traffic only from CloudFront's origin-facing managed prefix list, on HTTPS only, instead of HTTP and HTTPS from 0.0.0.0/0. Enable only when a CloudFront distribution fronts this ALB: it closes direct access to the ALB's DNS name. Requires certificate_arn."
+  type        = bool
+  default     = false
+}

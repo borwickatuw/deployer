@@ -136,6 +136,7 @@ vpc_cidr = "10.1.0.0/16"  # Must be unique across all environments
 
 # service_discovery_enabled = true    # Enable AWS Cloud Map for service-to-service discovery
 # cloudfront_alb_enabled    = false   # Disable CloudFront custom error pages
+# alb_restrict_ingress_to_cloudfront = true  # ALB accepts traffic only from CloudFront (closes direct ALB access)
 # cache_enabled             = false   # Disable ElastiCache Redis
 
 # ------------------------------------------------------------------------------

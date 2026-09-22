@@ -5,6 +5,7 @@ This guide covers deploying, operating, and maintaining production environments 
 ## Table of Contents
 
 1. [Initial Production Deployment](#initial-production-deployment)
+1. [WAF and CloudFront](#waf-and-cloudfront)
 1. [Maintenance Cadences](#maintenance-cadences)
 1. [Alarms and Notifications](#alarms-and-notifications)
 1. [Emergency Procedures](#emergency-procedures)
@@ -143,6 +144,87 @@ Sizing depends on your specific workload. Start conservatively and adjust based 
    ```bash
    uv run python bin/ops.py health myapp-production
    ```
+
+______________________________________________________________________
+
+## WAF and CloudFront
+
+With `cloudfront_alb_enabled` (the default in `deployer.tf`), viewers reach the
+application through a CloudFront distribution whose origin is the ALB. The WAF
+(`waf_preset`) is attached to the ALB, not to the distribution.
+
+### Closing direct access to the ALB
+
+By default the ALB also accepts HTTP and HTTPS from anywhere on its own DNS
+name, the `alb_dns_name` output, so a client can skip CloudFront.
+`alb_restrict_ingress_to_cloudfront = true` in `services.auto.tfvars` limits the
+ALB security group to HTTPS from the AWS-managed prefix list
+`com.amazonaws.global.cloudfront.origin-facing`. It takes effect on the next
+`tofu apply`. The plan refuses it unless the distribution exists
+(`cloudfront_alb_enabled` with `domain_name` and `route53_zone_id`).
+
+What the operator loses once it is applied:
+
+- **The ALB DNS name stops answering.** `https://<alb_dns_name>` from a
+  workstation, CI job or external uptime monitor times out, because the security
+  group drops the packets instead of refusing them. Point monitors at the domain.
+- **No path around CloudFront for debugging.** When CloudFront serves its 503
+  page, you cannot curl the ALB to see the origin's own response. Use
+  `bin/ops.py health` (target health through the AWS API), the ALB's CloudWatch
+  metrics, the application logs, or `bin/ecs-run.py exec <env> curl http://localhost:<port>/...`
+  inside a task.
+- **Port 80 closes.** CloudFront talks to the ALB over HTTPS only and redirects
+  viewers to HTTPS at the edge, so no viewer ever used it.
+- **Other DNS names aimed at the ALB break.** An `additional_dns_records` entry
+  that aliases the ALB directly stops working. Alias the distribution instead.
+
+What does not change: ALB target health checks, which run from the ALB to the
+tasks; `bin/cognito.py`, which uses `domain_name` whenever one is set; and
+deploys, which use the ECS and ELB APIs, not HTTP to the ALB.
+
+The prefix list lets in **CloudFront as a service, not this distribution**.
+Anyone can create their own CloudFront distribution with this ALB as its origin,
+and it will pass the security group. The companion fix is a secret
+origin-verify header: the distribution adds it as an origin custom header, and
+the ALB or WAF rejects requests that lack it. Deployer does not implement it yet.
+
+### What the WAF rate rule counts
+
+The rate rule (2000 requests per 5 minutes on `standard`, 1000 on `strict`)
+counts per client address. What "client address" means depends on the two
+switches:
+
+| CloudFront | `alb_restrict_ingress_to_cloudfront` | The rule counts per                                        |
+| ---------- | ------------------------------------ | ---------------------------------------------------------- |
+| off        | n/a                                  | Viewer IP (the TCP source)                                 |
+| on         | `false`                              | CloudFront **edge** address (the TCP source the ALB sees)  |
+| on         | `true`                               | Viewer IP, from the `x-viewer-ip` header CloudFront writes |
+
+**Before** (restriction off): every viewer arriving through the same edge shares
+one counter, so a busy edge can trip the limit for all of them. A single abusive
+client spread across edges never trips it. `tofu plan` prints a check warning
+for this combination.
+
+**After** (restriction on): a viewer-request CloudFront Function sets
+`x-viewer-ip` to the address CloudFront observed and overwrites any value the
+client sent. The rule aggregates on that header (`FORWARDED_IP`), and a
+malformed value counts against the limit. `X-Forwarded-For` was rejected
+because CloudFront appends the viewer's address to whatever the client sent in
+that header, and a WAF rate rule reads the first address, which the client
+controls. The header is trustworthy only when nothing but CloudFront can reach
+the ALB. For that reason the WAF module refuses `behind_cloudfront` unless the
+ALB restriction is asserted, and the root module derives it from both switches.
+
+The switch takes effect on the next `tofu apply` of an environment with the WAF
+and CloudFront both enabled. That apply creates the function, attaches it to
+the distribution, and changes the rule's aggregation. While the distribution
+change propagates, requests that arrive without the header are not evaluated by
+the rate rule at all, because WAF skips a forwarded-IP rule when its header is
+absent. That window lasts minutes.
+
+The residual gap above applies here too. Another account's CloudFront
+distribution pointed at this ALB can send its own `x-viewer-ip`, or omit it, and
+choose its rate key. The origin-verify header closes that as well.
 
 ______________________________________________________________________
 
