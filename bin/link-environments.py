@@ -6,7 +6,7 @@ Links are stored locally (gitignored) so you don't have to specify
 
 Usage:
     # Link an environment to its deploy.toml
-    python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+    python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 
     # List all links
     python bin/link-environments.py --list
@@ -45,7 +45,7 @@ def cli(environment, deploy_toml, list_links, show_file, unlink):
 
     \b
     Examples:
-      link-environments.py myapp-staging ~/code/myapp/deploy.toml
+      link-environments.py myapp-staging /path/to/myapp/deploy.toml
       link-environments.py otherapp-staging ../otherapp/deploy.toml
       link-environments.py --unlink myapp-staging
       link-environments.py --list

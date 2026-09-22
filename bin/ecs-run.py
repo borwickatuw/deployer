@@ -20,7 +20,7 @@ Usage:
     python bin/ecs-run.py exec myapp-staging -s celery python -c "print('hello')"
 
     # Link environment to deploy.toml (one-time setup)
-    python bin/link-environments.py myapp-staging ~/code/myapp/deploy.toml
+    python bin/link-environments.py myapp-staging /path/to/myapp/deploy.toml
 """
 
 import sys
