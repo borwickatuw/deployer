@@ -584,3 +584,119 @@ class TestResolveTofuPlaceholders:
     def test_null_valued_output_is_treated_as_missing(self):
         with pytest.raises(RuntimeError, match="Could not resolve tofu output: nullable"):
             _resolve_tofu_placeholders("${tofu:nullable}", ENV_PATH, {"nullable": None})
+
+
+NESTED_OUTPUTS = {
+    **TOFU_OUTPUTS,
+    "cache": {"primary": {"endpoint": "cache.example.com", "port": 6379}},
+}
+
+
+class TestDottedTofuPlaceholders:
+    """${tofu:NAME.KEY...} indexes into map outputs."""
+
+    def test_whole_string_single_level(self):
+        result = _resolve_tofu_placeholders(
+            "${tofu:s3_bucket_names.uploads}", ENV_PATH, NESTED_OUTPUTS
+        )
+        assert result == "myapp-staging-uploads"
+
+    def test_whole_string_nested_preserves_type(self):
+        assert (
+            _resolve_tofu_placeholders("${tofu:cache.primary.port}", ENV_PATH, NESTED_OUTPUTS)
+            == 6379
+        )
+        assert _resolve_tofu_placeholders("${tofu:cache.primary}", ENV_PATH, NESTED_OUTPUTS) == {
+            "endpoint": "cache.example.com",
+            "port": 6379,
+        }
+
+    def test_embedded_single_level_and_nested(self):
+        result = _resolve_tofu_placeholders(
+            "s3://${tofu:s3_bucket_names.static}/ redis://${tofu:cache.primary.endpoint}:"
+            "${tofu:cache.primary.port} ${tofu:cache.primary}",
+            ENV_PATH,
+            NESTED_OUTPUTS,
+        )
+        assert result == (
+            "s3://myapp-staging-static/ redis://cache.example.com:6379 "
+            '{"endpoint": "cache.example.com", "port": 6379}'
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        ["${tofu:no_such_output.uploads}", "x-${tofu:no_such_output.uploads}"],
+    )
+    def test_missing_base_output_raises(self, value):
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders(value, ENV_PATH, NESTED_OUTPUTS)
+        assert str(exc_info.value) == (
+            f"Could not resolve tofu output: no_such_output\n{MISSING_OUTPUT_HINT}"
+        )
+
+    @pytest.mark.parametrize(
+        ("value", "detail"),
+        [
+            (
+                "${tofu:cluster_name.uploads}",
+                "'cluster_name' is str, not a map, so '.uploads' cannot index it",
+            ),
+            (
+                "x-${tofu:private_subnet_ids.0}",
+                "'private_subnet_ids' is list, not a map, so '.0' cannot index it",
+            ),
+            (
+                "${tofu:cache.primary.port.x}",
+                "'cache.primary.port' is int, not a map, so '.x' cannot index it",
+            ),
+        ],
+    )
+    def test_segment_on_non_map_raises(self, value, detail):
+        placeholder = value.split("${tofu:")[1].rstrip("}")
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders(value, ENV_PATH, NESTED_OUTPUTS)
+        assert str(exc_info.value) == (
+            f"Could not resolve tofu output: {placeholder}\n{detail}\n{MISSING_OUTPUT_HINT}"
+        )
+
+    @pytest.mark.parametrize(
+        ("value", "detail"),
+        [
+            (
+                "${tofu:s3_bucket_names.media}",
+                "'s3_bucket_names' has no key 'media'. Available keys: static, uploads",
+            ),
+            (
+                "x-${tofu:cache.primary.host}",
+                "'cache.primary' has no key 'host'. Available keys: endpoint, port",
+            ),
+        ],
+    )
+    def test_absent_key_lists_available_keys(self, value, detail):
+        placeholder = value.split("${tofu:")[1].rstrip("}")
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders(value, ENV_PATH, NESTED_OUTPUTS)
+        assert str(exc_info.value) == (
+            f"Could not resolve tofu output: {placeholder}\n{detail}\n{MISSING_OUTPUT_HINT}"
+        )
+
+    def test_absent_key_in_empty_map(self):
+        with pytest.raises(RuntimeError, match=r"'empty' has no key 'a'. Available keys: \(none\)"):
+            _resolve_tofu_placeholders("${tofu:empty.a}", ENV_PATH, {"empty": {}})
+
+    def test_absent_key_in_large_map_gives_count_not_keys(self):
+        outputs = {"buckets": {f"bucket{i:02d}": f"myapp-{i}" for i in range(11)}}
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders("${tofu:buckets.media}", ENV_PATH, outputs)
+        assert "'buckets' has no key 'media'. 'buckets' has 11 keys\n" in str(exc_info.value)
+        assert "bucket00" not in str(exc_info.value)
+
+    def test_null_leaf_raises(self):
+        with pytest.raises(RuntimeError) as exc_info:
+            _resolve_tofu_placeholders(
+                "x-${tofu:s3_bucket_names.media}", ENV_PATH, {"s3_bucket_names": {"media": None}}
+            )
+        assert str(exc_info.value) == (
+            "Could not resolve tofu output: s3_bucket_names.media\n"
+            f"'s3_bucket_names.media' is null\n{MISSING_OUTPUT_HINT}"
+        )

@@ -54,8 +54,11 @@ def validate_environment_config(config: dict) -> list[str]:
     return errors
 
 
-# Regex to match ${tofu:output_name} placeholders
+# Regex to match ${tofu:output_name} and ${tofu:output_name.key.key} placeholders
 TOFU_PLACEHOLDER_PATTERN = re.compile(r"\$\{tofu:([^}]+)\}")
+
+# A map this size or smaller has its keys listed in a missing-key error.
+_MAX_KEYS_LISTED = 10
 
 
 def get_tofu_dir(config: dict, env_path: Path) -> Path:
@@ -146,8 +149,56 @@ def get_all_tofu_outputs(env_path: Path, tofu_dir: Path | None = None) -> dict[s
             del os.environ["AWS_PROFILE"]
 
 
+def _walk_tofu_output(placeholder: str, tofu_outputs: dict[str, Any], env_path: Path) -> Any:
+    """Look up one placeholder body (``NAME`` or ``NAME.KEY.KEY``) in the tofu outputs.
+
+    The first dot-separated segment names the output; each further segment
+    indexes a map. Only maps are indexable.
+
+    Raises:
+        RuntimeError: If the output is missing or null, a segment is applied to
+            a value that is not a map, a key is absent, or the value reached is null.
+    """
+    hint = f"Hint: If you recently added this output, run 'tofu apply' in {env_path}"
+    output_name, *keys = placeholder.split(".")
+
+    value = tofu_outputs.get(output_name)
+    if value is None:
+        raise RuntimeError(f"Could not resolve tofu output: {output_name}\n{hint}")
+
+    walked = output_name
+    for key in keys:
+        if not isinstance(value, dict):
+            raise RuntimeError(
+                f"Could not resolve tofu output: {placeholder}\n"
+                f"'{walked}' is {type(value).__name__}, not a map, so '.{key}' cannot index it\n"
+                f"{hint}"
+            )
+        if key not in value:
+            if len(value) <= _MAX_KEYS_LISTED:
+                available = f"Available keys: {', '.join(sorted(value)) or '(none)'}"
+            else:
+                available = f"'{walked}' has {len(value)} keys"
+            raise RuntimeError(
+                f"Could not resolve tofu output: {placeholder}\n"
+                f"'{walked}' has no key '{key}'. {available}\n"
+                f"{hint}"
+            )
+        value = value[key]
+        walked = f"{walked}.{key}"
+
+    if value is None:
+        raise RuntimeError(
+            f"Could not resolve tofu output: {placeholder}\n'{walked}' is null\n{hint}"
+        )
+    return value
+
+
 def _resolve_tofu_placeholders(value: Any, env_path: Path, tofu_outputs: dict[str, Any]) -> Any:
     """Recursively resolve ${tofu:...} placeholders in a value.
+
+    A placeholder is ``${tofu:NAME}`` or ``${tofu:NAME.KEY.KEY...}``; the dotted
+    form indexes into a map output (see _walk_tofu_output).
 
     Args:
         value: Value to resolve (can be string, dict, list, or other).
@@ -166,24 +217,11 @@ def _resolve_tofu_placeholders(value: Any, env_path: Path, tofu_outputs: dict[st
         if match:
             # Entire value is a placeholder - return the resolved value directly
             # This preserves types (dict, list) instead of converting to string
-            output_name = match.group(1)
-            resolved = tofu_outputs.get(output_name)
-            if resolved is None:
-                raise RuntimeError(
-                    f"Could not resolve tofu output: {output_name}\n"
-                    f"Hint: If you recently added this output, run 'tofu apply' in {env_path}"
-                )
-            return resolved
+            return _walk_tofu_output(match.group(1), tofu_outputs, env_path)
 
         # Check for embedded placeholders
         def replace_placeholder(m: re.Match) -> str:
-            output_name = m.group(1)
-            resolved = tofu_outputs.get(output_name)
-            if resolved is None:
-                raise RuntimeError(
-                    f"Could not resolve tofu output: {output_name}\n"
-                    f"Hint: If you recently added this output, run 'tofu apply' in {env_path}"
-                )
+            resolved = _walk_tofu_output(m.group(1), tofu_outputs, env_path)
             # Convert to string for embedded placeholders
             if isinstance(resolved, (dict, list)):
                 return json.dumps(resolved)
