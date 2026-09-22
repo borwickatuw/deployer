@@ -180,6 +180,44 @@ and it will pass the security group. The companion fix is a secret
 origin-verify header: the distribution adds it as an origin custom header, and
 the ALB or WAF rejects requests that lack it. Deployer does not implement it yet.
 
+### What the WAF rate rule counts
+
+The rate rule (2000 requests per 5 minutes on `standard`, 1000 on `strict`)
+counts per client address. What "client address" means depends on the two
+switches:
+
+| CloudFront | `alb_restrict_ingress_to_cloudfront` | The rule counts per                                        |
+| ---------- | ------------------------------------ | ---------------------------------------------------------- |
+| off        | n/a                                  | Viewer IP (the TCP source)                                 |
+| on         | `false`                              | CloudFront **edge** address (the TCP source the ALB sees)  |
+| on         | `true`                               | Viewer IP, from the `x-viewer-ip` header CloudFront writes |
+
+**Before** (restriction off): every viewer arriving through the same edge shares
+one counter, so a busy edge can trip the limit for all of them. A single abusive
+client spread across edges never trips it. `tofu plan` prints a check warning
+for this combination.
+
+**After** (restriction on): a viewer-request CloudFront Function sets
+`x-viewer-ip` to the address CloudFront observed and overwrites any value the
+client sent. The rule aggregates on that header (`FORWARDED_IP`), and a
+malformed value counts against the limit. `X-Forwarded-For` was rejected
+because CloudFront appends the viewer's address to whatever the client sent in
+that header, and a WAF rate rule reads the first address, which the client
+controls. The header is trustworthy only when nothing but CloudFront can reach
+the ALB. For that reason the WAF module refuses `behind_cloudfront` unless the
+ALB restriction is asserted, and the root module derives it from both switches.
+
+The switch takes effect on the next `tofu apply` of an environment with the WAF
+and CloudFront both enabled. That apply creates the function, attaches it to
+the distribution, and changes the rule's aggregation. While the distribution
+change propagates, requests that arrive without the header are not evaluated by
+the rate rule at all, because WAF skips a forwarded-IP rule when its header is
+absent. That window lasts minutes.
+
+The residual gap above applies here too. Another account's CloudFront
+distribution pointed at this ALB can send its own `x-viewer-ip`, or omit it, and
+choose its rate key. The origin-verify header closes that as well.
+
 ______________________________________________________________________
 
 ## Maintenance Cadences

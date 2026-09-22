@@ -73,6 +73,24 @@ variable "rate_limit_window" {
   }
 }
 
+variable "behind_cloudfront" {
+  description = "The ALB sits behind a CloudFront distribution whose viewer-IP function writes viewer_ip_header. When true the rate rule counts per viewer IP read from that header (FORWARDED_IP); when false it counts per TCP source IP, which behind CloudFront is the edge address. Requires origin_restricted_to_cloudfront."
+  type        = bool
+  default     = false
+}
+
+variable "origin_restricted_to_cloudfront" {
+  description = "The caller asserts the ALB accepts traffic only from CloudFront. Required for behind_cloudfront, because a client reaching the ALB directly can set viewer_ip_header to anything."
+  type        = bool
+  default     = false
+}
+
+variable "viewer_ip_header" {
+  description = "Header holding the viewer IP when behind_cloudfront. Must match the cloudfront-alb module's viewer_ip_header."
+  type        = string
+  default     = "x-viewer-ip"
+}
+
 # ------------------------------------------------------------------------------
 # Bot Control (paid tier)
 # ------------------------------------------------------------------------------

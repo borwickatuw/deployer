@@ -1032,14 +1032,22 @@ health_check = {
 
 When `true`, the ALB security group accepts HTTPS only, and only from the
 AWS-managed prefix list `com.amazonaws.global.cloudfront.origin-facing`, in
-place of HTTP and HTTPS from `0.0.0.0/0`. Every request then has to come through
-the CloudFront distribution, so nobody can go around it, and around the WAF
-rules that read headers CloudFront writes, by calling the ALB's own DNS name.
+place of HTTP and HTTPS from `0.0.0.0/0`. Requests then have to come through
+CloudFront; a client can no longer call the ALB's own DNS name. The list admits
+CloudFront as a service, not only this distribution.
+
+It also switches the WAF rate rule from counting per TCP source, which behind
+CloudFront means per edge address, to counting per viewer IP. The count uses the
+`x-viewer-ip` header that a CloudFront Function writes on the distribution. This
+happens only when the WAF (`waf_preset` not `"off"`) has its rate rule on.
+`X-Forwarded-For` is not used because CloudFront appends the viewer's address to
+any value the client sends, and the rate rule reads the first address.
 
 The plan fails unless the distribution exists: `cloudfront_alb_enabled = true`
 with `domain_name` and `route53_zone_id` set. Without one, no traffic could reach
-the ALB. What an operator gives up is listed in
-[PRODUCTION.md](operations/PRODUCTION.md#waf-and-cloudfront).
+the ALB. With WAF and CloudFront both on and this switch off, the plan prints a
+check warning that the rate rule is counting per edge. What an operator gives up
+is listed in [PRODUCTION.md](operations/PRODUCTION.md#waf-and-cloudfront).
 
 ```hcl
 alb_restrict_ingress_to_cloudfront = true

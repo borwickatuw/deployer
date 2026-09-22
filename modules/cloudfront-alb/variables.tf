@@ -44,6 +44,23 @@ variable "error_caching_min_ttl" {
   default     = 60
 }
 
+variable "viewer_ip_header_enabled" {
+  description = "Attach a viewer-request CloudFront Function that sets viewer_ip_header to the viewer's IP, overwriting any client-supplied value, so a WAF on the ALB can rate-limit per viewer. Only trustworthy when the ALB accepts traffic from CloudFront alone."
+  type        = bool
+  default     = false
+}
+
+variable "viewer_ip_header" {
+  description = "Request header the viewer-IP CloudFront Function writes (lowercase). Must match the WAF module's viewer_ip_header."
+  type        = string
+  default     = "x-viewer-ip"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]*$", var.viewer_ip_header)) && !startswith(var.viewer_ip_header, "x-forwarded-") && !startswith(var.viewer_ip_header, "cloudfront-") && !startswith(var.viewer_ip_header, "x-amz-") && !startswith(var.viewer_ip_header, "x-edge-")
+    error_message = "viewer_ip_header must be a lowercase header name (letters, digits, hyphens) and not an X-Forwarded-*, CloudFront-*, X-Amz-* or X-Edge-* header."
+  }
+}
+
 variable "price_class" {
   description = "CloudFront price class"
   type        = string

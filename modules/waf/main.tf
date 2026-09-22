@@ -156,11 +156,23 @@ resource "aws_wafv2_web_acl" "main" {
         }
       }
 
+      # Behind CloudFront the TCP source is an edge address, so count per
+      # viewer from the header CloudFront's viewer-IP function writes. A
+      # request whose header value is not a valid IP counts against the limit
+      # (fallback MATCH) rather than escaping it.
       statement {
         rate_based_statement {
           limit                 = var.rate_limit_requests
           evaluation_window_sec = var.rate_limit_window
-          aggregate_key_type    = "IP"
+          aggregate_key_type    = var.behind_cloudfront ? "FORWARDED_IP" : "IP"
+
+          dynamic "forwarded_ip_config" {
+            for_each = var.behind_cloudfront ? [1] : []
+            content {
+              header_name       = var.viewer_ip_header
+              fallback_behavior = "MATCH"
+            }
+          }
         }
       }
 
@@ -431,6 +443,13 @@ resource "aws_wafv2_web_acl" "main" {
 
   tags = {
     Name = "${var.name_prefix}-waf"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.behind_cloudfront || var.origin_restricted_to_cloudfront
+      error_message = "behind_cloudfront requires origin_restricted_to_cloudfront: the rate rule keys on viewer_ip_header, which anyone reaching the ALB directly can forge. Restrict the ALB's ingress to CloudFront (modules/alb restrict_ingress_to_cloudfront) first."
+    }
   }
 }
 

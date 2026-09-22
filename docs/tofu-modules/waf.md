@@ -7,7 +7,7 @@ The `modules/waf` module provides Web Application Firewall protection for your a
 - **IP Reputation**: Blocks known malicious IP addresses (botnets, scanners, etc.)
 - **OWASP Top 10**: Protection against common vulnerabilities (XSS, path traversal, etc.)
 - **Known Bad Inputs**: Blocks requests with known exploit patterns
-- **Rate Limiting**: Prevents abuse by limiting requests per IP
+- **Rate Limiting**: Prevents abuse by limiting requests per IP (per viewer IP behind CloudFront, see [Behind CloudFront](#behind-cloudfront))
 - **Bot Control**: Optional paid tier for advanced bot detection
 - **Geographic Blocking**: Block traffic from specific countries
 - **IP Allowlist**: Bypass rules for trusted IPs (offices, CI/CD, etc.)
@@ -85,6 +85,34 @@ module "waf" {
 | `rate_limit_enabled`  | `true`  | Enable rate limiting        |
 | `rate_limit_requests` | `2000`  | Max requests per IP         |
 | `rate_limit_window`   | `300`   | Evaluation window (seconds) |
+
+### Behind CloudFront
+
+| Variable                          | Default         | Description                                                    |
+| --------------------------------- | --------------- | -------------------------------------------------------------- |
+| `behind_cloudfront`               | `false`         | Count the rate rule per viewer IP read from `viewer_ip_header` |
+| `origin_restricted_to_cloudfront` | `false`         | Caller asserts the ALB accepts traffic only from CloudFront    |
+| `viewer_ip_header`                | `"x-viewer-ip"` | Header holding the viewer IP; must match `cloudfront-alb`      |
+
+The module is attached to the ALB (`REGIONAL` scope). With a CloudFront
+distribution in front, the ALB sees a CloudFront edge address as each request's
+TCP source, so by default the rate rule counts per edge: viewers behind one edge
+share a counter, and one viewer spread across edges is never limited.
+
+`behind_cloudfront = true` switches the rule to `FORWARDED_IP` aggregation on
+`viewer_ip_header`, with `fallback_behavior = "MATCH"`, so a header whose value
+is not a valid IP counts against the limit instead of escaping it. The
+[cloudfront-alb](cloudfront-alb.md) module's viewer-IP function writes the
+header, overwriting whatever the client sent. `X-Forwarded-For` is not used
+because CloudFront appends the viewer's address to any `X-Forwarded-For` the
+client supplies, and a WAF rate rule reads the first address, which the client
+chose.
+
+A client that reaches the ALB directly can also set the header, so the module
+refuses `behind_cloudfront` unless the caller sets
+`origin_restricted_to_cloudfront`. The root module sets both from
+`cloudfront_alb_enabled` and `alb_restrict_ingress_to_cloudfront` (see
+[alb](alb.md#restricting-ingress-to-cloudfront)).
 
 ### Bot Control (Paid)
 

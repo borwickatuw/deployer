@@ -480,6 +480,20 @@ locals {
     for key, default_val in local.waf_config :
     key => lookup(var.waf_overrides, key, default_val)
   }
+
+  # Behind CloudFront the WAF's rate rule counts per viewer IP, read from a
+  # header CloudFront's viewer-IP function writes. That header is only
+  # trustworthy when the ALB accepts traffic from CloudFront alone, so both
+  # switches must be on; otherwise the rule keeps counting per TCP source.
+  waf_behind_cloudfront = local.cloudfront_alb_enabled && var.alb_restrict_ingress_to_cloudfront
+  viewer_ip_header      = "x-viewer-ip"
+}
+
+check "waf_rate_rule_behind_cloudfront" {
+  assert {
+    condition     = !(local.waf_enabled && local.waf.rate_limit_enabled && local.cloudfront_alb_enabled) || var.alb_restrict_ingress_to_cloudfront
+    error_message = "The WAF rate rule is counting per CloudFront edge address, not per viewer: every viewer behind one edge shares a counter. Set alb_restrict_ingress_to_cloudfront = true to count per viewer IP (this closes direct access to the ALB's DNS name; see docs/operations/PRODUCTION.md)."
+  }
 }
 
 module "waf" {
@@ -499,6 +513,11 @@ module "waf" {
   # Rate limiting
   rate_limit_enabled  = local.waf.rate_limit_enabled
   rate_limit_requests = local.waf.rate_limit_requests
+
+  # Count per viewer IP behind CloudFront (see local.waf_behind_cloudfront)
+  behind_cloudfront               = local.waf_behind_cloudfront
+  origin_restricted_to_cloudfront = var.alb_restrict_ingress_to_cloudfront
+  viewer_ip_header                = local.viewer_ip_header
 
   # Bot control (paid tier)
   bot_control_level = local.waf.bot_control_level
@@ -528,6 +547,10 @@ module "cloudfront_alb" {
   route53_zone_id       = var.route53_zone_id
   error_page_content    = var.cloudfront_alb_error_page_content
   error_caching_min_ttl = var.cloudfront_alb_error_caching_ttl
+
+  # Stamp the viewer IP for the WAF rate rule only when the WAF reads it
+  viewer_ip_header_enabled = local.waf_enabled && local.waf.rate_limit_enabled && local.waf_behind_cloudfront
+  viewer_ip_header         = local.viewer_ip_header
 }
 
 # Service Discovery (AWS Cloud Map)

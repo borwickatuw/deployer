@@ -20,6 +20,31 @@ terraform {
 }
 
 # ------------------------------------------------------------------------------
+# Viewer IP Header
+# ------------------------------------------------------------------------------
+
+# Behind CloudFront the ALB's WAF sees edge addresses as the TCP source, so its
+# rate rule needs the viewer's address from a header. X-Forwarded-For will not
+# do: CloudFront appends the viewer to whatever the client sent, and WAF rate
+# rules read the first address, which the client chose. This function writes
+# the viewer address CloudFront observed into its own header, replacing any
+# value the client supplied.
+resource "aws_cloudfront_function" "viewer_ip" {
+  count = var.viewer_ip_header_enabled ? 1 : 0
+
+  name    = "${var.name_prefix}-viewer-ip"
+  runtime = "cloudfront-js-2.0"
+  comment = "Sets ${var.viewer_ip_header} to the viewer IP for the ALB WAF"
+  publish = true
+  code    = <<-EOF
+    function handler(event) {
+      event.request.headers['${var.viewer_ip_header}'] = { value: event.viewer.ip };
+      return event.request;
+    }
+  EOF
+}
+
+# ------------------------------------------------------------------------------
 # CloudFront Distribution
 # ------------------------------------------------------------------------------
 
@@ -61,6 +86,16 @@ resource "aws_cloudfront_distribution" "main" {
     # Use managed policies for no caching and forwarding all headers
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
     origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3" # AllViewer
+
+    # Stamp the viewer's IP for the ALB WAF's rate rule. AllViewer forwards
+    # the header to the ALB like any other viewer header.
+    dynamic "function_association" {
+      for_each = var.viewer_ip_header_enabled ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.viewer_ip[0].arn
+      }
+    }
   }
 
   # Cache behavior for error pages - route to S3
