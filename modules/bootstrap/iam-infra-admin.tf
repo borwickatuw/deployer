@@ -25,7 +25,11 @@ data "aws_iam_policy_document" "infra_admin_compute" {
       "ec2:*Tags*",
       "ec2:*FlowLog*",
       "ec2:DescribeAvailabilityZones",
-      "ec2:DescribeAccountAttributes"
+      "ec2:DescribeAccountAttributes",
+      # Gateway VPC endpoints (modules/vpc's S3 endpoint): the provider reads
+      # the AWS-managed service prefix list to populate the endpoint's
+      # prefix_list_id and cidr_blocks, so plan fails without this.
+      "ec2:DescribePrefixLists"
     ]
     resources = ["*"]
   }
