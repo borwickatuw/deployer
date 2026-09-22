@@ -76,6 +76,11 @@ def create_deployer_tf_symlink(env_dir: Path) -> bool:
 
     Returns:
         True if symlink was created, False if it already exists.
+
+    Raises:
+        RuntimeError: If the symlink could not be created. False means
+            "already there"; answering a failure with it left the new
+            environment without deployer.tf and said nothing.
     """
     link_path = env_dir / "deployer.tf"
     if link_path.exists():
@@ -84,12 +89,12 @@ def create_deployer_tf_symlink(env_dir: Path) -> bool:
     deployer_root = get_deployer_root()
     target = deployer_root / "environments" / "deployer.tf"
 
+    relative_target = os.path.relpath(target, env_dir)
     try:
-        relative_target = os.path.relpath(target, env_dir)
         link_path.symlink_to(relative_target)
-        return True
-    except OSError:
-        return False
+    except OSError as e:
+        raise RuntimeError(f"Could not create {link_path} -> {relative_target}: {e}") from e
+    return True
 
 
 def generate_environment(

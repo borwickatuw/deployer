@@ -2,9 +2,44 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound
 
-from deployer.utils.aws_profile import validate_aws_profile
+from deployer.utils import aws_profile
+from deployer.utils.aws_profile import get_environment_aws_profile, validate_aws_profile
+
+
+class TestGetEnvironmentAwsProfile:
+    """None means "no profile configured"; an unreadable config.toml is not that."""
+
+    def test_the_configured_profile_is_returned(self, tmp_path):
+        (tmp_path / "config.toml").write_text(
+            '[aws]\ninfra_profile = "myapp-infra"\n', encoding="utf-8"
+        )
+        assert get_environment_aws_profile(tmp_path, "infra") == "myapp-infra"
+
+    def test_no_config_toml_is_none(self, tmp_path):
+        assert get_environment_aws_profile(tmp_path, "infra") is None
+
+    def test_no_profile_key_is_none(self, tmp_path):
+        (tmp_path / "config.toml").write_text("[aws]\n", encoding="utf-8")
+        assert get_environment_aws_profile(tmp_path, "deploy") is None
+
+    def test_a_malformed_config_toml_raises_rather_than_reading_as_unset(self, tmp_path):
+        """It used to answer None, silently selecting the default profile."""
+        (tmp_path / "config.toml").write_text("[aws\ninfra_profile = ", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="Could not read the AWS profile from"):
+            get_environment_aws_profile(tmp_path, "infra")
+
+    def test_configure_does_not_fall_back_to_the_default_profile(self, tmp_path, monkeypatch):
+        """The boundary half: configure_profile_or_exit catches this RuntimeError."""
+        (tmp_path / "config.toml").write_text("not = [valid", encoding="utf-8")
+        monkeypatch.delenv("AWS_PROFILE", raising=False)
+        monkeypatch.setattr(aws_profile, "get_environment_path", lambda _env: tmp_path)
+
+        with pytest.raises(RuntimeError, match="config.toml"):
+            aws_profile.configure_aws_profile_for_environment("infra", "myapp-staging")
+        assert "AWS_PROFILE" not in aws_profile.os.environ
 
 
 class TestValidateAwsProfile:

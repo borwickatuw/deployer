@@ -63,7 +63,15 @@ def get_environment_aws_profile(env_path: Path, operation: str) -> str | None:
         operation: One of "deploy", "infra", "cognito", or "secrets"
 
     Returns:
-        The profile name from config.toml, or None if not set.
+        The profile name from config.toml, or None if there is no config.toml
+        or it sets no profile for this operation -- the caller then falls
+        back to the default profile.
+
+    Raises:
+        RuntimeError: If config.toml exists but cannot be read or parsed.
+            That is not "no profile set": answering it with None silently
+            switched to the *default* profile, which in a multi-account setup
+            is a different account from the one the environment names.
     """
     config_path = env_path / "config.toml"
     if not config_path.exists():
@@ -72,14 +80,14 @@ def get_environment_aws_profile(env_path: Path, operation: str) -> str | None:
     try:
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise RuntimeError(f"Could not read the AWS profile from {config_path}: {e}") from e
 
-        aws_config = config.get("aws", {})
-        config_key = PROFILE_CONFIG_KEYS.get(operation)
-        if config_key:
-            return aws_config.get(config_key)
-        return None
-    except Exception:  # noqa: BLE001 — best-effort config.toml read
-        return None
+    aws_config = config.get("aws", {})
+    config_key = PROFILE_CONFIG_KEYS.get(operation)
+    if config_key:
+        return aws_config.get(config_key)
+    return None
 
 
 def configure_aws_profile_for_environment(

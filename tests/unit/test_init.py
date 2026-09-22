@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
+from deployer.init import environment as init_environment
 from deployer.init import template as template_module
+from deployer.init.environment import create_deployer_tf_symlink
 from deployer.init.framework import detect_framework
 from deployer.init.template import (
     _get_templates_dir,
@@ -19,7 +21,9 @@ from deployer.init.template import (
     substitute,
     substitute_optional,
 )
+from deployer.utils import environment as utils_environment
 from deployer.utils import get_deployer_root
+from deployer.utils.environment import ensure_environments_symlinks
 
 # =============================================================================
 # Template discovery
@@ -648,3 +652,69 @@ class TestDetectFramework:
 
     def test_an_env_var_outweighs_a_lone_dockerfile_hit(self):
         assert detect_framework(["FASTAPI_ENV"], "CMD next start") == "fastapi"
+
+
+# =============================================================================
+# Symlink helpers -- "already there" versus "could not create"
+# =============================================================================
+
+
+class TestSymlinkHelpersDistinguishFailureFromAlreadyThere:
+    """Both helpers used to swallow OSError into their "nothing to do" answer."""
+
+    @pytest.fixture
+    def deployer_root(self, tmp_path, monkeypatch):
+        root = tmp_path / "deployer"
+        (root / "environments").mkdir(parents=True)
+        (root / "modules").mkdir()
+        for name in ("main.tf", "variables.tf", "outputs.tf"):
+            (root / name).write_text("", encoding="utf-8")
+        monkeypatch.setattr(init_environment, "get_deployer_root", lambda: root)
+        monkeypatch.setattr(utils_environment, "get_deployer_root", lambda: root)
+        return root
+
+    def test_deployer_tf_is_linked_once_then_reported_as_already_there(
+        self, deployer_root, tmp_path
+    ):
+        env_dir = tmp_path / "envs" / "myapp-staging"
+        env_dir.mkdir(parents=True)
+        (deployer_root / "environments" / "deployer.tf").write_text("", encoding="utf-8")
+
+        assert create_deployer_tf_symlink(env_dir) is True
+        assert (env_dir / "deployer.tf").is_symlink()
+        assert create_deployer_tf_symlink(env_dir) is False
+
+    def test_deployer_tf_that_cannot_be_created_raises(self, deployer_root, tmp_path):
+        """A dangling link: exists() is False but symlink_to() hits FileExistsError."""
+        env_dir = tmp_path / "envs" / "myapp-staging"
+        env_dir.mkdir(parents=True)
+        (env_dir / "deployer.tf").symlink_to("nowhere")
+
+        with pytest.raises(RuntimeError, match="Could not create .*deployer.tf"):
+            create_deployer_tf_symlink(env_dir)
+
+    def test_environments_symlink_that_cannot_be_created_raises(
+        self, deployer_root, tmp_path, monkeypatch
+    ):
+        env_dir = tmp_path / "envs"
+        env_dir.mkdir()
+        (env_dir / "modules").symlink_to("nowhere")  # dangling: blocks creation
+        monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(env_dir))
+
+        with pytest.raises(RuntimeError, match="Could not create .*modules"):
+            ensure_environments_symlinks()
+
+    def test_environments_symlinks_already_there_is_an_empty_list(
+        self, deployer_root, tmp_path, monkeypatch
+    ):
+        env_dir = tmp_path / "envs"
+        env_dir.mkdir()
+        monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(env_dir))
+
+        assert sorted(ensure_environments_symlinks()) == [
+            "main.tf",
+            "modules",
+            "outputs.tf",
+            "variables.tf",
+        ]
+        assert ensure_environments_symlinks() == []

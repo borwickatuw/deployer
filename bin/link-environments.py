@@ -91,7 +91,9 @@ def cmd_link(environment: str, deploy_toml: str) -> int:
         click.echo(f"Warning: File does not end with .toml: {deploy_toml_path}", err=True)
 
     # Save the link
-    set_linked_deploy_toml(environment, deploy_toml_path)
+    # A corrupt links file is reported, not overwritten with this one link.
+    with exit_on(RuntimeError):
+        set_linked_deploy_toml(environment, deploy_toml_path)
 
     # Display with ~ for readability
     display_path = str(deploy_toml_path)
@@ -105,7 +107,8 @@ def cmd_link(environment: str, deploy_toml: str) -> int:
 
 def cmd_list() -> int:
     """List all environment links."""
-    links = get_all_links()
+    with exit_on(RuntimeError):
+        links = get_all_links()
 
     if not links:
         click.echo("No environments linked.")
@@ -140,7 +143,9 @@ def cmd_unlink(environment: str) -> int:
         click.echo(f"No link found for '{environment}'", err=True)
         return 1
 
-    if unlink_deploy_toml(environment):
+    with exit_on(RuntimeError):
+        unlinked = unlink_deploy_toml(environment)
+    if unlinked:
         click.echo(f"Unlinked: {environment} (was -> {current})")
         return 0
     else:
