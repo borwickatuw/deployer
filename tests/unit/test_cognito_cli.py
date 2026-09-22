@@ -1,4 +1,4 @@
-"""Characterization pins for bin/cognito.py's listing path.
+"""Characterization pins for bin/cognito.py's listing path and password input.
 
 These are characterization pins, not endorsements. They record what
 ``bin/cognito.py`` does **today**; where the behaviour looks wrong it is
@@ -36,6 +36,12 @@ What is pinned here:
   arms (named pool vs bare id), the per-environment error lines, the
   ``Total:`` line's ``> 1`` gate, the explicit-environment argument, and every
   ``return 1`` arm.
+* ``create`` / ``reset-password`` password input (GOVERNANCE.md R4). The
+  ``-p/--password`` option, which put the password in argv and shell history,
+  is gone; ``--password-stdin`` reads one line from stdin instead, the way
+  ``docker login --password-stdin`` does. These drive the Click commands through
+  ``CliRunner`` and pin both the new path and the unchanged generated-password
+  default, reading the password back out of the ``aws`` argv it reached.
 
 Stubbing is at the outermost boundary -- 53d-2a's recorded rule -- so the pins
 survive code motion inside the package. Concretely:
@@ -55,13 +61,17 @@ survive code motion inside the package. Concretely:
   dicts.
 """
 
+import io
 import json
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import click
 import pytest
+from click.testing import CliRunner
 
+from deployer.core import config as core_config
 from deployer.core.cognito import CognitoUser
 
 bin_dir = Path(__file__).parent.parent.parent / "bin"
@@ -461,3 +471,161 @@ class TestCmdListOutput:
         _aws_replies(aws_cli, "pool", [_raw_user("alice@example.com", email="a@example.com")])
         assert cognito_cli.cmd_list(None) == 0
         assert "\n  Email" in capsys.readouterr().out
+
+
+CHOSEN = "Chosen-Secret-123"
+
+
+@pytest.fixture
+def deployed_env(tmp_path, monkeypatch):
+    """One deployed, Cognito-enabled environment for the Click commands.
+
+    The environment directory and its terraform.tfstate are real, so
+    require_validated_environment() runs; load_environment_config() is the one
+    stub, as in ``environments`` above. AWS_PROFILE short-circuits the
+    profile lookup so the real _configure_aws() runs without a config.toml
+    [aws] table.
+    """
+    monkeypatch.setenv("DEPLOYER_ENVIRONMENTS_DIR", str(tmp_path))
+    monkeypatch.setenv("AWS_PROFILE", "test")
+    env_dir = tmp_path / "myapp-staging"
+    env_dir.mkdir()
+    (env_dir / "config.toml").write_text("", encoding="utf-8")
+    (env_dir / "terraform.tfstate").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(core_config, "load_environment_config", lambda _: _cognito_config(POOL))
+    return "myapp-staging"
+
+
+def _invoke(args: list[str], stdin: str):
+    return CliRunner().invoke(cognito_cli.cli, args, input=stdin)
+
+
+def _flag(argv: list[str], flag: str) -> str:
+    """The value that follows `flag` in an aws argv."""
+    return argv[argv.index(flag) + 1]
+
+
+def _create(env: str, *extra: str) -> list[str]:
+    return ["create", env, "--email", "alice@example.com", *extra]
+
+
+def _reset(env: str, *extra: str) -> list[str]:
+    return ["reset-password", env, "--email", "alice@example.com", *extra]
+
+
+class TestPasswordStdin:
+    """--password-stdin: one line from stdin, trailing newline stripped."""
+
+    def test_create_sets_the_piped_password_as_permanent(self, deployed_env, aws_cli):
+        result = _invoke(_create(deployed_env, "--password-stdin"), f"{CHOSEN}\n")
+        assert result.exit_code == 0, result.output
+        create, set_password = aws_cli.calls
+        assert "admin-create-user" in create
+        assert _flag(create, "--temporary-password") == CHOSEN
+        assert "admin-set-user-password" in set_password
+        assert _flag(set_password, "--password") == CHOSEN
+        assert "--permanent" in set_password
+        assert "prompted to change their password" not in result.output
+
+    def test_create_clipboard_prompt_finds_stdin_exhausted_and_declines(
+        self, deployed_env, aws_cli
+    ):
+        # The one stdin line was the password, so the "Copy to clipboard?"
+        # input() hits EOF, which cmd_create already treats as "no".
+        result = _invoke(_create(deployed_env, "--password-stdin"), f"{CHOSEN}\n")
+        assert result.exit_code == 0, result.output
+        assert "Copy to clipboard? [Y/n]" in result.output
+        assert "Copied to clipboard!" not in result.output
+
+    def test_reset_password_sets_the_piped_password_and_does_not_echo_it(
+        self, deployed_env, aws_cli
+    ):
+        result = _invoke(_reset(deployed_env, "--password-stdin"), f"{CHOSEN}\n")
+        assert result.exit_code == 0, result.output
+        assert _flag(aws_cli.argv, "--password") == CHOSEN
+        assert "--permanent" not in aws_cli.argv
+        assert "New password:" not in result.output
+        assert CHOSEN not in result.output
+
+    def test_reset_password_permanent_still_applies(self, deployed_env, aws_cli):
+        result = _invoke(_reset(deployed_env, "--password-stdin", "--permanent"), f"{CHOSEN}\n")
+        assert result.exit_code == 0, result.output
+        assert "--permanent" in aws_cli.argv
+
+    def test_only_the_first_line_is_read(self, deployed_env, aws_cli):
+        result = _invoke(_reset(deployed_env, "--password-stdin"), f"{CHOSEN}\nsecond line\n")
+        assert result.exit_code == 0, result.output
+        assert _flag(aws_cli.argv, "--password") == CHOSEN
+
+    @pytest.mark.parametrize(
+        ("stdin", "expected"),
+        [
+            (f"{CHOSEN}\r\n", CHOSEN),
+            (f"{CHOSEN}", CHOSEN),
+            (f" {CHOSEN} \n", f" {CHOSEN} "),
+        ],
+        ids=["crlf-stripped", "no-trailing-newline", "spaces-kept"],
+    )
+    def test_only_the_line_ending_is_stripped(self, deployed_env, aws_cli, stdin, expected):
+        result = _invoke(_reset(deployed_env, "--password-stdin"), stdin)
+        assert result.exit_code == 0, result.output
+        assert _flag(aws_cli.argv, "--password") == expected
+
+    @pytest.mark.parametrize("build", [_create, _reset], ids=["create", "reset-password"])
+    @pytest.mark.parametrize("stdin", ["", "\n"], ids=["no-input", "blank-line"])
+    def test_an_empty_password_is_a_usage_error_before_any_aws_call(
+        self, deployed_env, aws_cli, build, stdin
+    ):
+        result = _invoke(build(deployed_env, "--password-stdin"), stdin)
+        assert result.exit_code == 2
+        assert "stdin held no password" in result.output
+        assert aws_cli.calls == []
+
+    def test_a_terminal_on_stdin_is_a_usage_error_and_nothing_is_read(self, monkeypatch):
+        # CliRunner always substitutes a non-terminal stdin, so the terminal
+        # arm is driven through the helper both commands call.
+        class _Terminal(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        terminal = _Terminal(f"{CHOSEN}\n")
+        monkeypatch.setattr(sys, "stdin", terminal)
+        with pytest.raises(click.UsageError, match="stdin is a terminal"):
+            cognito_cli.read_password_stdin()
+        assert terminal.tell() == 0
+
+
+class TestGeneratedPasswordDefault:
+    """Without --password-stdin each command behaves exactly as before R4."""
+
+    def test_create_generates_a_temporary_password_and_sets_nothing_permanent(
+        self, deployed_env, aws_cli
+    ):
+        result = _invoke(_create(deployed_env), "n\n")
+        assert result.exit_code == 0, result.output
+        temporary = _flag(aws_cli.argv, "--temporary-password")
+        assert temporary
+        assert f"Password: {temporary}" in result.output
+        assert "prompted to change their password on first login" in result.output
+
+    def test_reset_password_generates_and_prints_a_temporary_password(self, deployed_env, aws_cli):
+        result = _invoke(_reset(deployed_env), "")
+        assert result.exit_code == 0, result.output
+        generated = _flag(aws_cli.argv, "--password")
+        assert f"New password: {generated}" in result.output
+        assert "--permanent" not in aws_cli.argv
+        assert "prompted to change their password on next login" in result.output
+
+
+class TestPasswordOptionRemoved:
+    """-p/--password is gone: a password on the command line is a usage error."""
+
+    @pytest.mark.parametrize("build", [_create, _reset], ids=["create", "reset-password"])
+    @pytest.mark.parametrize("flag", ["--password", "-p"])
+    def test_a_password_argument_is_rejected_before_any_aws_call(
+        self, deployed_env, aws_cli, build, flag
+    ):
+        result = _invoke(build(deployed_env, flag, CHOSEN), "")
+        assert result.exit_code == 2
+        assert "No such option" in result.output
+        assert aws_cli.calls == []
