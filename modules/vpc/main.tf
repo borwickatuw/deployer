@@ -219,3 +219,21 @@ output "public_subnet_ids" {
 output "private_subnet_ids" {
   value = aws_subnet.private[*].id
 }
+
+# S3 gateway endpoint. Free, and it keeps S3 traffic from the private subnets
+# off the NAT gateway, which bills every byte it processes. Both route tables
+# get the prefix-list route so nothing in the VPC reaches S3 via the internet.
+# Gateway endpoints only cover buckets in this region; a custom S3-compatible
+# endpoint (e.g. Kopah) still goes out through the NAT.
+data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.public.id, aws_route_table.private.id]
+
+  tags = {
+    Name = "${var.name_prefix}-s3-endpoint"
+  }
+}
