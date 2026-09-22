@@ -44,6 +44,15 @@ db_instance_class    = "db.t3.small"
 db_allocated_storage = 50
 
 # ------------------------------------------------------------------------------
+# Database Protection (production — staging defaults are 7 / false / true / false)
+# ------------------------------------------------------------------------------
+
+rds_backup_retention_period = 35    # Days of point-in-time recovery
+rds_deletion_protection     = true  # Prevent accidental deletion
+rds_skip_final_snapshot     = false # Always take a final snapshot on destroy
+rds_multi_az                = true  # Automatic failover
+
+# ------------------------------------------------------------------------------
 # Health Check Settings (production — conservative for availability)
 # ------------------------------------------------------------------------------
 

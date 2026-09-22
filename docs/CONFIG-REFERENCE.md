@@ -1024,6 +1024,19 @@ health_check = {
 }
 ```
 
+### RDS Backup and Protection Variables
+
+Declared in `environments/deployer.tf` and passed through to `modules/rds`.
+The defaults are staging values; production environments set all four (see
+[PRODUCTION.md](operations/PRODUCTION.md#production-specific-tfvars-settings)).
+
+| Variable                      | Type   | Default | Production | Description                                 |
+| ----------------------------- | ------ | ------- | ---------- | ------------------------------------------- |
+| `rds_backup_retention_period` | number | 7       | 35         | Days of automated backups (point-in-time).  |
+| `rds_deletion_protection`     | bool   | false   | true       | Block deletion of the instance.             |
+| `rds_multi_az`                | bool   | false   | true       | Standby in a second AZ, automatic failover. |
+| `rds_skip_final_snapshot`     | bool   | true    | false      | Skip the final snapshot when it is deleted. |
+
 ______________________________________________________________________
 
 ## Complete Examples
@@ -1107,6 +1120,11 @@ scaling = {}
 project_name = "myapp"
 db_username  = "myapp_admin"
 db_password  = "CHANGE_THIS"
+
+rds_backup_retention_period = 35
+rds_deletion_protection     = true
+rds_skip_final_snapshot     = false
+rds_multi_az                = true
 
 services = {
   web = {

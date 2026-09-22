@@ -17,6 +17,25 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
+# Provider Requirements
+#
+# versions.tf is not symlinked into environment directories, so this is where
+# the aws floor takes effect for every environment that links this file. A
+# module may declare required_providers only once: the per-env main.tf must
+# not add its own.
+# ------------------------------------------------------------------------------
+
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      # 6.x floor: the deployer modules use arguments 5.x rejects (see versions.tf)
+      version = "~> 6.0"
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
 # Data Sources
 # ------------------------------------------------------------------------------
 
@@ -64,6 +83,32 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
   description = "RDS allocated storage in GB"
+}
+
+# RDS backup and protection. Defaults are staging values; a production
+# environment overrides all four in services.auto.tfvars.
+variable "rds_backup_retention_period" {
+  type        = number
+  default     = 7
+  description = "Number of days to retain automated backups (7 for staging, 35 for production)"
+}
+
+variable "rds_skip_final_snapshot" {
+  type        = bool
+  default     = true
+  description = "Skip final snapshot on deletion (true for staging, false for production)"
+}
+
+variable "rds_deletion_protection" {
+  type        = bool
+  default     = false
+  description = "Prevent accidental deletion (false for staging, true for production)"
+}
+
+variable "rds_multi_az" {
+  type        = bool
+  default     = false
+  description = "Enable Multi-AZ deployment for automatic failover (false for staging, true for production)"
 }
 
 variable "cache_node_type" {
@@ -334,6 +379,12 @@ module "infrastructure" {
   db_name              = var.project_name
   db_username          = var.db_username
   db_password          = var.db_password
+
+  # RDS backup and protection (override in tfvars for production)
+  rds_backup_retention_period = var.rds_backup_retention_period
+  rds_skip_final_snapshot     = var.rds_skip_final_snapshot
+  rds_deletion_protection     = var.rds_deletion_protection
+  rds_multi_az                = var.rds_multi_az
 
   # Cache
   cache_enabled   = var.cache_enabled
