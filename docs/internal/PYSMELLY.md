@@ -4280,3 +4280,195 @@ insertion.
 #### Phase 53 is closed
 
 **36 live = 36 settled, 0 escalated, 0 open.** From 97 findings at triage.
+
+## 2026-09-22 — the sentinel-returned-from-`except` sweep
+
+The register carried this as "looked for and not cleared": PYSMELLY-REVIEW's
+grep for the contract bug — one value meaning both "there is nothing there" and
+"I could not look" — had never been worked hit by hit. This section is that
+work. It is invisible to the finding count by construction (the `except` that
+hides a failure from the operator hides it from pysmelly too), so **the table is
+the deliverable, not a count**.
+
+**Method.** The guide's grep, widened to the sentinels this sweep was asked to
+cover (`False`, `""`, and a sentinel in a tuple's first slot), run at
+`0b60994`:
+
+```bash
+grep -rn -A3 --include='*.py' -E 'except\b' src bin modules \
+  | grep -E -- '-[0-9]+-.*return (\[\]|\{\}|None|0|False|""|\(?(None|False|\[\]),)'
+```
+
+**40 hits.** For each, the `except` body was read, then every caller. A second
+grep for the `except …: pass` / `continue` form of the same shape — the form the
+`emergency/` worked example had in `get_all_services_state` — gave 23 more;
+they are in the second table. Verdicts follow DECISIONS.md 2026-08-18 "Error
+Contracts": **(a)** fine — the sentinel is the honest answer and the `except`
+is narrow; **(b)** contract bug — fixed; **(c)** fine, but the `except` is too
+broad — narrowed. Line numbers are at `0b60994`.
+
+### The 40 returned-sentinel hits
+
+| #   | Site                                    | Function                            | Catches                                 | Sentinel               | Can the caller tell empty from failed?                                                          | Verdict         |
+| --- | --------------------------------------- | ----------------------------------- | --------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------- | --------------- |
+| 1   | `bin/capacity-report.py:73`             | `_deployment_cutoff`                | `ValueError`                            | `None`                 | n/a — absent and malformed both mean "no cutoff"; AWS sends ISO; display fallback only          | a               |
+| 2   | `bin/ecs-run.py:66`                     | `resolve_environment`               | `FileNotFoundError, RuntimeError`       | `None`                 | yes — failure-only; the reason is printed first and the caller returns 1                        | a               |
+| 3   | `bin/init.py:242`                       | `_resolve_bootstrap_path`           | `RuntimeError`                          | `None`                 | yes — failure-only; reason printed                                                              | a               |
+| 4   | `bin/init.py:462`                       | `_require_bootstrap`                | `RuntimeError`                          | `False`                | yes — failure-only; reason printed                                                              | a               |
+| 5   | `bin/ops.py:360`                        | `list_repositories_for_environment` | `ClientError` other than not-found      | `[]`                   | **no** — `ops.py ecr` printed "No ECR repositories found" and exited 0                          | **b** `4a33224` |
+| 6   | `bin/ssm-secrets.py:255`                | `_get_secret_value_interactively`   | `KeyboardInterrupt`                     | `None`                 | yes — "Cancelled." printed; the caller returns 1                                                | a               |
+| 7   | `src/deployer/aws/cli.py:65`            | `run_aws_json`                      | `JSONDecodeError`                       | `None`                 | producer: yes, failure-only (contract 3) — **but `cognito.list_users` collapsed it** (below)    | a (caller b)    |
+| 8   | `src/deployer/aws/ecs.py:126`           | `scale_service`                     | `ClientError`                           | `False`                | yes — failure-only; every caller branches on it                                                 | a               |
+| 9   | `src/deployer/aws/ecs.py:233`           | `run_task`                          | `ClientError`                           | `None`                 | yes — failure-only; reason printed; the caller returns 1                                        | a               |
+| 10  | `src/deployer/aws/ecs.py:85`            | `get_services`                      | `ClientError` ClusterNotFound           | `[]`                   | **no** — `environment.py stop` scaled nothing, then stopped RDS                                 | **b** `f16f840` |
+| 11  | `src/deployer/aws/ssm.py:128`           | `list_parameters`                   | `ClientError`                           | `([], err)`            | producer: yes, the error slot — **but `check_secrets_drift` dropped the error** (below)         | a (caller b)    |
+| 12  | `src/deployer/aws/ssm.py:147`           | `parameter_exists`                  | `ParameterNotFound` only                | `False`                | yes — anything else is re-raised                                                                | a               |
+| 13  | `src/deployer/aws/ssm.py:43`            | `put_parameter`                     | `ClientError`                           | `(False, err)`         | yes — failure-only, reason in the tuple                                                         | a               |
+| 14  | `src/deployer/aws/ssm.py:62`            | `get_parameter`                     | `ParameterNotFound`                     | `(None, "not found")`  | yes — absence, named                                                                            | a               |
+| 15  | `src/deployer/aws/ssm.py:63`            | `get_parameter`                     | other `ClientError`                     | `(None, err)`          | by message only; every deploy-path reader treats any error as a skip-cache miss and redoes work | a (note 1)      |
+| 16  | `src/deployer/aws/ssm.py:82`            | `delete_parameter`                  | `ParameterNotFound`                     | `(False, "not found")` | yes — the message is printed                                                                    | a               |
+| 17  | `src/deployer/aws/ssm.py:83`            | `delete_parameter`                  | other `ClientError`                     | `(False, err)`         | yes — the message is printed                                                                    | a               |
+| 18  | `src/deployer/core/cognito.py:94`       | `copy_to_clipboard`                 | `CalledProcessError, FileNotFoundError` | `False`                | yes — failure-only                                                                              | a               |
+| 19  | `src/deployer/deploy/images.py:205`     | `image_exists_in_ecr`               | image or repository not found only      | `False`                | yes — both mean "no such image"; anything else is re-raised                                     | a               |
+| 20  | `src/deployer/deploy/migrations.py:94`  | `compute_migrations_hash` fallback  | **`Exception`**                         | `None`                 | yes for I/O ("run migrations to be safe"); a hashing bug silently disabled skip-detection       | **c** `0283520` |
+| 21  | `src/deployer/deploy/service.py:1545`   | `_get_service_target_group`         | `ClientError`                           | `None`                 | **no** — read as "not load balanced"; the target-health wait was skipped                        | **b** `1866153` |
+| 22  | `src/deployer/deploy/service.py:199`    | `_ensure_az_rebalancing_disabled`   | `ClientError`                           | `False`, silently      | **no** — read as "already disabled"; the update then failed naming the wrong cause              | **b** `1866153` |
+| 23  | `src/deployer/deploy/service.py:480`    | `_update_service`                   | `ClientError`                           | `False`                | yes — failure-only, logged with the reason, collected and raised by `deploy_services`           | a               |
+| 24  | `src/deployer/deploy/service.py:572`    | `get_stored_service_state`          | `ValueError, KeyError, TypeError`       | `None`                 | n/a — a skip-cache miss; every reading leads to the safe action (redeploy)                      | a               |
+| 25  | `src/deployer/deploy/service.py:835`    | `_migration_network_config`         | `ClientError`                           | `None`                 | **no** — `start_migrations` returned None, "nothing to migrate"; the deploy went on unmigrated  | **b** `1866153` |
+| 26  | `src/deployer/deploy/validation.py:46`  | `validate_ecs_cluster`              | `ClientError`                           | `(False, msg)`         | yes — the message names the error and preflight raises with it                                  | a               |
+| 27  | `src/deployer/emergency/ecs.py:328`     | `update_service_task_definition`    | `ClientError`                           | `False`                | yes — the mutators' `False` is ratified contract 3 (DECISIONS layer 1)                          | a (note 2)      |
+| 28  | `src/deployer/emergency/ecs.py:449`     | `force_new_deployment`              | `ClientError`                           | `False`                | yes — as #27                                                                                    | a (note 2)      |
+| 29  | `src/deployer/emergency/rds.py:122`     | `create_emergency_snapshot`         | `ClientError`                           | `None`                 | yes — failure-only, contract 3; the caller exits 1                                              | a (note 3)      |
+| 30  | `src/deployer/init/bootstrap.py:48`     | `detect_aws_account_id`             | `JSONDecodeError, KeyError`             | `None`                 | n/a — a best-effort default for an interactive prompt                                           | a               |
+| 31  | `src/deployer/init/deploy_toml.py:167`  | `_read_dockerfile_content`          | **`Exception`**, then `pass`            | `None`                 | yes for I/O (framework detection falls back to the compose file); too broad                     | **c** `0283520` |
+| 32  | `src/deployer/init/environment.py:92`   | `create_deployer_tf_symlink`        | `OSError`                               | `False`                | **no** — read as "already exists"; the environment was left without deployer.tf, silently       | **b** `4d9fae4` |
+| 33  | `src/deployer/init/verify.py:90`        | `_check_deployer_config`            | `RuntimeError`                          | `False`                | yes — failure-only and printed; the only raise is "unset"                                       | a               |
+| 34  | `src/deployer/utils/aws_profile.py:163` | `validate_aws_profile`              | `ProfileNotFound`                       | `(False, msg)`         | yes — failure-only with a specific message                                                      | a               |
+| 35  | `src/deployer/utils/aws_profile.py:169` | `validate_aws_profile`              | `NoCredentialsError`                    | `(False, msg)`         | yes — as #34                                                                                    | a               |
+| 36  | `src/deployer/utils/aws_profile.py:176` | `validate_aws_profile`              | `ClientError`                           | `(False, msg)`         | yes — as #34                                                                                    | a               |
+| 37  | `src/deployer/utils/aws_profile.py:82`  | `get_environment_aws_profile`       | **`Exception`**                         | `None`                 | **no** — read as "no profile set": an unparseable config.toml switched to the default profile   | **b** `4d9fae4` |
+| 38  | `src/deployer/utils/links.py:119`       | `unlink_deploy_toml`                | **`Exception`**                         | `False`                | **no** — read as "not linked"                                                                   | **b** `4d9fae4` |
+| 39  | `src/deployer/utils/links.py:147`       | `get_all_links`                     | **`Exception`**                         | `{}`                   | **no** — "No environments linked."                                                              | **b** `4d9fae4` |
+| 40  | `src/deployer/utils/subprocess.py:30`   | `run_command`                       | **`Exception`**                         | `(False, str(e))`      | yes for launch failures; a bad argv or a decode error was reported as "the command failed"      | **c** `0283520` |
+
+**Counts: 28 (a), 9 (b), 3 (c).** Two of the (a) rows hide a (b) one layer
+down, found only because the method reads callers and not just `except` bodies:
+
+- **`aws/cognito.list_users`** (via #7) turned `run_aws_json`'s failure-only
+  `None` into "these are all the users" — `[]`, or a silently truncated pool on
+  a later page — which `cognito.py list` printed as `Users: 0`. This is exactly
+  the collapse DECISIONS.md named for `run_aws_json` → `rds.get_status`, one
+  function over. Fixed in `f16f840`.
+- **`core/ssm_secrets.check_secrets_drift`** (via #11) answered a listing
+  error with `[]`, "no unreferenced secrets". Fixed in `f16f840`: it raises,
+  and preflight (an advisory check) warns that the check could not run.
+
+### The 23 `except …: pass` / `continue` hits
+
+| Site                                              | Function                              | Verdict                                                                                                                           |
+| ------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `bin/ops.py:86`                                   | `get_target_health`                   | **b** `4a33224` — "No targets registered", exit 0                                                                                 |
+| `bin/ops.py:183`                                  | `get_rds_pending_maintenance`         | **b** `4a33224` — "No pending maintenance"                                                                                        |
+| `bin/ops.py:230`, `:233`                          | `get_elasticache_pending_maintenance` | **b** `4a33224` — none of the answer, or half of it, reported as the whole                                                        |
+| `bin/ops.py:344`                                  | `get_repository_scan_summary`         | **b** `4a33224` — the repository was skipped; "No critical or high vulnerabilities"                                               |
+| `bin/ops.py:370`                                  | `list_repositories_for_environment`   | **b** `4a33224` — the per-repository fallback swallowed every error, not only RepositoryNotFound                                  |
+| `bin/ops.py:422`, `:424`                          | `_print_recent_task_definitions`      | a — already a correct render boundary                                                                                             |
+| `bin/capacity-report.py:118`, `:168`              | `_count_ecs_oom`, `_count_log_oom`    | a — already correct render boundaries (`36ce6e8`)                                                                                 |
+| `bin/cognito.py:112`                              | `get_cognito_environments`            | **b** `8af8113` — an unloadable environment was indistinguishable from one without Cognito; it is now named on stderr             |
+| `bin/cognito.py:198`                              | `cmd_list`                            | a — errors are collected and printed                                                                                              |
+| `bin/environment.py:75`                           | `cmd_status`                          | a — the error is printed in place                                                                                                 |
+| `modules/staging-scheduler/lambda/handler.py:193` | `_scale_services`                     | a — the failure is recorded per service with `ERROR_PREFIX`                                                                       |
+| `src/deployer/cli/ci_deploy.py:167`               | `print_config_age`                    | a — display only (note 4)                                                                                                         |
+| `src/deployer/core/cognito.py:92`                 | `copy_to_clipboard`                   | a — the same site as #18                                                                                                          |
+| `src/deployer/deploy/images.py:181`               | `_compute_context_hash`               | a (note 5)                                                                                                                        |
+| `src/deployer/deploy/migrations.py:72`            | `compute_migrations_hash`, git route  | a — falls through to the file-hashing route, the documented fallback                                                              |
+| `src/deployer/emergency/checkpoint.py:186`        | `list_checkpoints`                    | a — a file that will not parse cannot be attributed to an environment, so it is not one of "this environment's checkpoints"       |
+| `src/deployer/emergency/checkpoint.py:236`        | `cleanup_old_checkpoints`             | a — best-effort cleanup; an undeletable file is kept, the safe direction                                                          |
+| `src/deployer/init/deploy_toml.py:166`            | `_read_dockerfile_content`            | the same site as #31 (c)                                                                                                          |
+| `src/deployer/init/environment.py:59`             | `get_next_listener_priority`          | **b** `0283520` — an unreadable tfvars was skipped, so its priority could be handed out again; the ALB reports that only at apply |
+| `src/deployer/utils/environment.py:134`           | `ensure_environments_symlinks`        | **b** `4d9fae4` — "symlink creation failed, skip silently": "created nothing" also meant "could not"                              |
+
+**Counts, by hit: 9 (b), 13 (a) — one of them the same site as #18 — and 1
+that is #31 again.** Three more (b) sites were found by reading callers and
+neighbours rather than by either grep, and were fixed in the same commits:
+`ops.get_log_groups_for_environment` (warned on stderr, then `[]` → "No log
+groups found", exit 0); `ops.scan_logs_for_errors` (re-raised the raw
+`ClientError`, which nothing caught, so `ops.py logs` and `ops.py audit` ended
+in a traceback); and `links.set_linked_deploy_toml` (a corrupt links file was
+"started fresh" — overwritten with one link, dropping every other).
+
+### How the fixes are shaped
+
+Every fix follows `36ce6e8` and `1ecdfdc`: the producer raises `RuntimeError`
+naming what it could not read, with the AWS or OS text, and keeps its sentinel
+for genuine absence. Consumers split the way the ADR decides:
+
+- **Read-only: catch at the render boundary.** `ops.py` health, logs,
+  maintenance and ecr; `environment.py status`; `capacity-report`;
+  `ecs-run list`; `cognito list`. The unreadable section reports itself in
+  place, the rest still prints, and the command exits 1 where its exit status
+  means something. `ops.py audit` now folds all five checks, because `logs` and
+  `maintenance` return 1 only on a read failure.
+- **Acting: abort at one boundary.** The migration network-config read raises
+  out of `deploy()` before any service is touched; the target-group read
+  becomes a failed `ServiceWaitResult`; `environment.py stop` aborts before it
+  stops RDS; `init.py` and `link-environments.py` abort through `exit_on`.
+- **Advisory: warn, but say so.** The preflight drift check warns that it could
+  not run instead of looking identical to "no drift".
+
+### Notes on (a) verdicts that carry something
+
+1. **`get_parameter` (#15)** distinguishes not-found from failure only by
+   message text. That is harmless today because all three deploy-path readers
+   (stored service state, stored migrations hash, stored extensions state) are
+   skip caches, and every reading of a miss redoes the work. One log line is
+   misleading: `get_stored_migrations_hash` says "No stored migrations hash
+   found" for an access-denied read. The outcome is the safe one, so this is
+   left, and named here.
+1. **The emergency mutators (#27, #28)** keep ratified contract 3, but
+   `except ClientError: return False` drops the AWS reason, so the operator
+   reads "Failed to scale web" with no why. A diagnostics gap, not a sentinel
+   collapse; not changed.
+1. **`create_emergency_snapshot` (#29)** catches `ClientError`, but its waiter
+   raises `botocore.exceptions.WaiterError` (a `BotoCoreError`) on timeout,
+   after the snapshot was created. `emergency.py`'s boundary catches
+   `RuntimeError` and `ClientError` only, so a slow snapshot ends in a
+   traceback. Adjacent to the sweep, not in it; left for whoever next owns the
+   emergency exit ladder.
+1. **`ci_deploy.enforce_max_config_age`**, the sibling of `print_config_age`,
+   warns and **passes** under `--strict` when `resolved_at` is missing or
+   unparseable: a strict gate that opens when it cannot measure. That is a
+   policy question (should strict refuse an age it cannot verify?), not a
+   sentinel, so it is named and left for the operator.
+1. **`_compute_context_hash`** skips an unreadable build-context file's
+   *content*; its path is still hashed. `docker build` would fail to read the
+   same file, so the practical risk is low; not changed.
+1. **`capacity-report._count_ecs_oom`** (not a grep hit) answers any failure to
+   read a task definition with a fabricated 256/512 and prints it as "Current
+   memory". Its comment calls the `except` broad by design. The verdict: the
+   fallback is honest about the recommendation and dishonest about the printed
+   value. Left, and named.
+
+### pysmelly, before and after
+
+`uvx pysmelly . --more-please`, pysmelly 3.4.1.dev2+g67d5d9772: **44 → 44**, as
+expected, but the *set* moved by one in each direction, both in
+`inconsistent-error-handling` (A02's family, still 10 findings):
+
+- **Retired: `utils/logging.py:77 log_error`.** Its one "specific" caller was
+  the `except ClientError` body of `_migration_network_config`, which
+  `1866153` removed; with none specific and 66 unhandled, the check sees no
+  inconsistency. Retired by a fix, not by a decision.
+- **Minted: `aws/ecs.py:61 get_services`**, "5 callers: 4 catch specific
+  (RuntimeError), 1 unhandled". All five callers handle the new raise.
+  Bisected in a scratch copy: the uncredited one is `environment.py cmd_stop`'s `with exit_on(RuntimeError, prefix=...)`, although `cmd_start`'s
+  identical construct *is* credited. That is the check's model of `exit_on`,
+  not a contract gap — the same class as A02's
+  `configure_aws_profile_for_environment` row. Recorded as pending
+  adjudication in the register, not suppressed.
+
+The widened grep at the sweep's last commit returns 29 hits: the nine (b)
+sites are gone, and two of the three (c) sites fell out of the `-A3` window
+because their `except` bodies now carry a comment. They are still sentinels,
+still honest, and still narrowed — a hit count is not the measure here either.

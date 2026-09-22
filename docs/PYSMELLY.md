@@ -275,8 +275,9 @@ for no gain.
 
 **Not ratified, and therefore still open:** the pass-through-params remainder
 (14 findings at `f33c84c`, including the two `utils/cli.py` error-boundary
-adapters) and the sentinel-returned-from-`except` sweep described below.
-Those are scoped as plan work, not as standing rows.
+adapters). That is scoped as plan work, not as a standing row. The
+sentinel-returned-from-`except` sweep that used to be listed here was worked
+on 2026-09-22; see below.
 
 ### Non-pysmelly verdicts ratified in the same review
 
@@ -291,15 +292,26 @@ Branch protection on the public release repo's `main` was ratified as an
 accepted risk in the same round (answer `a1`); its home is risk **R3** in
 [docs/GOVERNANCE.md](GOVERNANCE.md), not here.
 
-**One thing looked for and not cleared.** PYSMELLY-REVIEW uses this repo's
-`emergency/` family as its worked example of the sentinel-returned-from-`except`
-contract bug — one value meaning both "there is nothing there" and "I could not
-look". The guide's grep returns many hits here, but a hit is evidence of the
-*shape*, not the bug, and clearing one means reading the `except` body and every
-caller. That was not done, so this is **not** reported clear. The shape is
-densest in `emergency/ecs.py`, `emergency/rds.py` and `deploy/service.py`. It
-is invisible to the finding count by construction: the `except` that hides the
-failure from the operator hides it from pysmelly too.
+### 2026-09-22 sentinel-returned-from-`except` sweep
+
+The 2026-09-18 review looked for this and did not clear it. PYSMELLY-REVIEW uses
+this repo's `emergency/` family as its worked example of the contract bug: one
+value meaning both "there is nothing there" and "I could not look". A grep hit
+proves only the *shape*; clearing one means reading the `except` body and every
+caller. That reading has now been done, hit by hit. It is invisible to the
+finding count by construction, so the per-hit table in
+[docs/internal/PYSMELLY.md](internal/PYSMELLY.md) § "2026-09-22 — the
+sentinel-returned-from-`except` sweep" is the record. This row summarises it:
+
+| Sweep                                     | Measured at | Hits                                                           | Verdicts (a fine / b fixed / c narrowed)                                                                                                                                                                                                    | Commits                                                     | pysmelly                                                                                                                                                                                                                                                                                                                       | Ratified |
+| ----------------------------------------- | ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| returned sentinel, plus `pass`/`continue` | `0b60994`   | 40 returned-sentinel + 23 `pass`/`continue`, 2 of them repeats | **40 hits: 28 / 9 / 3.** **23 hits: 13 / 9 / 0**, plus 1 repeat of a (c). **5 more (b)** found by reading callers and neighbours. `emergency/` itself: **all (a)**; its 53i-3 fixes hold, and its mutators' `False` is ratified contract 3. | `1866153` `4a33224` `f16f840` `4d9fae4` `0283520` `8af8113` | 44 → 44, set moved. Retired: `logging.py log_error` (its one specific caller's `except` was removed by `1866153`). Minted: **`aws/ecs.py get_services`** inconsistent-error-handling. All 5 callers handle the raise, but the check does not credit `cmd_stop`'s `with exit_on(...)`. Pending adjudication, same class as A02. | pending  |
+
+The six notes in that section are things the sweep saw and deliberately left:
+the emergency mutators drop the AWS reason text; a `WaiterError` from
+`create_emergency_snapshot` escapes `emergency.py`'s boundary as a traceback;
+`ci-deploy --strict` passes when it cannot parse `resolved_at`; and three
+smaller ones. None is a sentinel collapse. Each needs its own decision.
 
 ### Earlier arcs
 
