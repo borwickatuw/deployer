@@ -12,6 +12,14 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      # 6.x floor: the deployer modules use arguments 5.x rejects (see deployer's versions.tf)
+      version = "~> 6.0"
+    }
+  }
+
   # Uncomment and configure for remote state
   # backend "s3" {
   #   bucket         = "deployer-terraform-state-123456789012"
