@@ -153,11 +153,38 @@ comprehensive review following 2026-09-18**:
   reads worse. *(Anchor re-measured at `f33c84c`; it was `:195` at
   `a510815`.)*
 
-A second single-call-site finding,
-`src/deployer/init/deploy_toml.py:93 is_likely_secret`, is live at `f33c84c`
-and carries **no** verdict — it was not part of the run's twenty units and
-nobody has adjudicated it. Its absence from the ratified table below is not a
-decision.
+A second single-call-site finding, `is_likely_secret`, was not one of the
+twenty units. It was adjudicated on its own merits on 2026-09-22 and does
+**not** inherit `stop_environment`'s verdict. The verdict is a keep, and the
+operator has not yet ratified it:
+
+| Adj | Check            | Anchor, 2026-09-22                                                      | Why it stands                                                                                                                                                                                                                                                                                                                      | Ratified | Re-evaluate-by                                                                                  |
+| --- | ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| A10 | single-call-site | `src/deployer/init/deploy_toml.py:93` `is_likely_secret` (call at :228) | It names the secret-detection policy. It is the one env-var rule that combines two tables with a precedence (an exact `NON_SECRET_ENV_VARS` entry beats a case-folded `SECRET_PATTERNS` substring). U13 made every other arm of `_build_environment_config`'s loop a one-table test, and this keeps the secret arm reading as one. | pending  | The rule collapses to a single table test, or the second comprehensive review after 2026-09-18. |
+
+What the verdict rests on, measured rather than argued:
+
+- **Not independently tested, so tests are not the reason.** No test names it.
+  `tests/unit/test_init_deploy_toml_pins.py` deliberately drives every private
+  helper through `generate_deploy_toml`, including the precedence and
+  case-folding pins.
+- **The inline was drafted and measured**, then reverted. It clears the finding
+  (44 → 43), mints nothing, and the 158 tests in `test_init.py` and the pins
+  file pass. So this is a readability verdict, not a "the fix does not work"
+  one. The inline puts a three-line, two-table boolean at the head of a loop
+  whose other arms are `var_name in TABLE`.
+- **History.** The operator confirmed a leave-standing on this function on
+  2026-08-25 (§53p, at `:77`) because "the named predicate heads a 4-way
+  dispatch". U13 (`980b9be`) removed that `elif` dispatch, so the old reason no
+  longer describes the code. That is why this was re-adjudicated rather than
+  carried forward. The earlier note here, that nobody had ever adjudicated it,
+  was wrong.
+- **A trap for the next editor.** pysmelly's single-call-site check skips any
+  function spanning 10 or more lines. A docstring two lines longer makes this
+  finding vanish without anyone deciding anything. The docstring was kept to
+  four lines so the finding stays live and this row stays attached to it. If
+  the function grows past that, record here that the finding stopped firing
+  by threshold, not by fix.
 
 ### Standing-suppression audit (Practice #10)
 
@@ -210,22 +237,46 @@ units moved the tree in between.
 | A04 | law-of-demeter                   | `src/deployer/deploy/deployer.py:311`                                                                                                                                                                                                                                          | `client.exceptions.X` is the only supported botocore idiom.                  | 2026-09-21 | botocore offers another way to name service exceptions.       |
 | A05 | param-clumps ×9                  | `bin/ecs-run.py:141` (strongest), plus eight listed by `--check param-clumps`                                                                                                                                                                                                  | Nine dataclass extractions are an interface programme, not a fix.            | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
 | A06 | `internal-only` skip stays       | skip entry in `pyproject.toml`; 6 findings behind it                                                                                                                                                                                                                           | The six survivors are Click `cmd_*` entry points, unrenameable.              | 2026-09-21 | pysmelly learns to recognize Click-dispatched entry points.   |
-| A07 | `scattered-constants` skip stays | skip entry in `pyproject.toml`; 8 findings behind it                                                                                                                                                                                                                           | Naming `' - '`, `'PATH'` or `50` makes the code worse.                       | 2026-09-21 | The `50` cluster is examined (see the plan item below).       |
+| A07 | `scattered-constants` skip stays | skip entry in `pyproject.toml`; 8 findings behind it                                                                                                                                                                                                                           | Naming `' - '`, `'PATH'` or `50` makes the code worse.                       | 2026-09-21 | Second comprehensive review after 2026-09-18 (`50`: below).   |
 | A09 | foo-equals-foo ×3                | `bin/init.py:220`, `bin/init.py:563`, `src/deployer/config/deploy_config.py:498`                                                                                                                                                                                               | Locals computed in multi-line branches; inlining reads worse.                | 2026-09-21 | The second comprehensive review following 2026-09-18.         |
 | A08 | register location                | this file                                                                                                                                                                                                                                                                      | Resolved on the repo side by `ad50a02`; the guide half is claude-meta's.     | —          | —                                                             |
 
 A05's anchor moved during the run: U17's extraction added a seventh member to
 the `(cluster_name, ecs_client, service_name)` clump and moved it from
-`src/deployer/aws/ecs.py:91` into `bin/ecs-run.py:141`. A06's and A07's
-rationale comments in `pyproject.toml` describe the skip, not the live
-findings — re-test them with `pysmelly . --check <name> --more-please` rather
-than reading them, as this register's convention says.
+`src/deployer/aws/ecs.py:91` into `bin/ecs-run.py:141`. A06's rationale
+comment in `pyproject.toml` describes the skip, not the live findings. A07's
+was rewritten at `6d36aa6` to list the eight findings the skip hides, one line
+each, because the U10 rewrite described them as strings when two of the eight
+are numeric clusters. Either comment is a snapshot: re-test with
+`pysmelly . --check <name> --more-please` rather than reading it, as this
+register's convention says.
+
+**A07's `50` trigger, discharged 2026-09-22 at `6d36aa6`.** The literal `50`
+appears at three sites, and each was read with its callee. They are three
+unrelated limits, so none was named and the code is unchanged:
+
+- `bin/init.py:575` — `max_lines=50` to `_print_dry_run_preview`: how many
+  lines of each generated file `init.py environment --dry-run` prints before
+  truncating. A display choice for rendered tofu/TOML templates.
+- `bin/ops.py:869` — `limit=50` from `cmd_audit` to `cmd_logs`: the
+  `filter_log_events` result cap per log group in the audit's error scan. The
+  "(N errors)" count saturates at it; only ten are printed. The standalone
+  `ops.py logs` defaults to 100, so this is the audit's own tighter budget, not
+  a shared log-limit.
+- `src/deployer/deploy/service.py:976` — `_display_migration_logs`'s
+  `limit: int = 50`: how many of the most recent `get_log_events` lines from
+  one failed migration task's stream are shown to explain the failure.
+
+The second and third are both CloudWatch caps, but on different APIs (a
+filtered search across a group versus the tail of one stream) for different
+purposes (counting errors versus explaining one failure). A reason to change
+one gives no reason to change the other, so sharing a name would couple them
+for no gain.
 
 **Not ratified, and therefore still open:** the pass-through-params remainder
 (14 findings at `f33c84c`, including the two `utils/cli.py` error-boundary
-adapters), the `50`-literal cluster inside A07, and the
-sentinel-returned-from-`except` sweep described below. Those are scoped as
-plan work, not as standing rows.
+adapters) and the sentinel-returned-from-`except` sweep described below.
+Those are scoped as plan work, not as standing rows.
 
 ### Non-pysmelly verdicts ratified in the same review
 
