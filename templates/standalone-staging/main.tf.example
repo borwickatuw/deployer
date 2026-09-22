@@ -15,6 +15,9 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  # The aws provider pin lives in the symlinked deployer.tf. A module may have
+  # only one required_providers block, so do not add one here.
+
   # Uncomment and configure for remote state (recommended for team environments)
   # backend "s3" {
   #   bucket  = "deployer-terraform-state-123456789012"  # Update with your account ID

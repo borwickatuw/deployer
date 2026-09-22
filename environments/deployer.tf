@@ -17,6 +17,25 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
+# Provider Requirements
+#
+# versions.tf is not symlinked into environment directories, so this is where
+# the aws floor takes effect for every environment that links this file. A
+# module may declare required_providers only once: the per-env main.tf must
+# not add its own.
+# ------------------------------------------------------------------------------
+
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      # 6.x floor: the deployer modules use arguments 5.x rejects (see versions.tf)
+      version = "~> 6.0"
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
 # Data Sources
 # ------------------------------------------------------------------------------
 
