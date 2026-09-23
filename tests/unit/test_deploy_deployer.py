@@ -251,7 +251,7 @@ def steps(monkeypatch):
     recorder = _StepRecorder()
     for name in STEP_NAMES:
         monkeypatch.setattr(deployer_mod, name, recorder.stub(name))
-    monkeypatch.setattr(deployer_mod, "validate_services", lambda ctx: None)
+    monkeypatch.setattr(deployer_mod, "validate_services", lambda _ctx: None)
     return recorder
 
 
