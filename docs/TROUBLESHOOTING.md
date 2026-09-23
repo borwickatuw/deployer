@@ -224,6 +224,15 @@ ______________________________________________________________________
 1. Check for missing required variables in terraform.tfvars
 1. Verify AWS credentials: `uv run python bin/init.py verify`
 
+### `iam:PassRole` denied for the RDS enhanced-monitoring role
+
+When `iam:PassedToService` scopes `iam:PassRole`, the condition evaluates to
+the **API service** receiving the role (`rds.amazonaws.com`), not the role's
+trust-policy principal (`monitoring.rds.amazonaws.com`). RDS enhanced
+monitoring needs both values, which is why `PassRolesToServices` in
+`modules/bootstrap/iam-infra-admin.tf` lists both. The same applies to any
+service whose trust-policy principal differs from the API service.
+
 ### State Lock Issues
 
 If you see "Error acquiring state lock":
