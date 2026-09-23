@@ -273,11 +273,12 @@ purposes (counting errors versus explaining one failure). A reason to change
 one gives no reason to change the other, so sharing a name would couple them
 for no gain.
 
-**Not ratified, and therefore still open:** the pass-through-params remainder
-(14 findings at `f33c84c`, including the two `utils/cli.py` error-boundary
-adapters). That is scoped as plan work, not as a standing row. The
-sentinel-returned-from-`except` sweep that used to be listed here was worked
-on 2026-09-22; see below.
+**Not ratified, and therefore still open:** nothing is unadjudicated any
+more. The pass-through-params remainder that used to be listed here (14
+findings at `f33c84c`, including the two `utils/cli.py` error-boundary
+adapters) was worked on 2026-09-22, and so was the
+sentinel-returned-from-`except` sweep. Both carry verdicts that are still
+awaiting ratification; see below.
 
 ### Non-pysmelly verdicts ratified in the same review
 
@@ -312,6 +313,68 @@ the emergency mutators drop the AWS reason text; a `WaiterError` from
 `create_emergency_snapshot` escapes `emergency.py`'s boundary as a traceback;
 `ci-deploy --strict` passes when it cannot parse `resolved_at`; and three
 smaller ones. None is a sentinel collapse. Each needs its own decision.
+
+### 2026-09-22 pass-through-params remainder
+
+U20 took one of these findings and left the rest. Phase 53 had carried most of
+them as agent leave-standings (§53g, re-verified in §53l), but none has an
+operator verdict. So each was re-read here against HEAD: the function, and
+every production caller. Nothing was inherited.
+
+**Measured at `9d78c04`** with pysmelly 3.4.1.dev2+g67d5d9772: **46** findings
+in total, **14** of them pass-through-params. The set was the 14 listed at
+`f33c84c`, and only the anchors had moved. **After `f53b451`: 44 total, 12
+pass-through-params.** The full `--more-please` listings were diffed. Two
+findings were retired and nothing was minted. The only other change is a
+param-clumps anchor that moved (`service.py:1095` → `:1100`).
+
+**Fix or keep.** A finding was fixed when collapsing the forward left the code
+simpler. It was kept when the function names something production relies on: a
+convention, a layer boundary, an error boundary, or a typed-error adapter. The
+anchors and callers below were re-measured at `f53b451`.
+
+| Adj | Anchor at `f53b451`                                                                 | Production callers                                                                | Verdict             | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P01 | `deploy/service.py:606` `store_service_state_hashes` ×2 (`app_name`, `environment`) | `deploy/deployer.py:582`                                                          | **fixed** `f53b451` | Every other step `Deployer.deploy()` calls in this module takes the `DeploymentContext`. So does the read half of the same cache, `_service_is_unchanged`, which reads `ctx.app_name`/`ctx.environment`. This write half alone took the pair loose and only forwarded it. It now takes `ctx`. `store_service_state` keeps its explicit signature: it pairs with `get_stored_service_state` and is the seam the skip-unchanged tests seed state through. |
+| P02 | `aws/cloudwatch.py:68` `get_task_logs` ×2 (`log_group`, `limit`)                    | `deploy/service.py:1029`, `bin/ecs-run.py:86`                                     | keep                | The function exists to build the ECS stream name `{prefix}/{container}/{task_id}`. With two callers, collapsing it would copy that convention to both. The other shape, a stream-name builder that each caller hands to `get_log_events`, leaves each call site longer and removes nothing.                                                                                                                                                             |
+| P03 | `aws/cognito.py:48` `get_user_pool_name` (`user_pool_id`)                           | `bin/cognito.py:225`                                                              | keep                | Layering. Inlining it would put a raw `run_aws_json("cognito-idp", …)` argv back into `bin/`, which is what 53c removed. The body also reads the nested `UserPool.Name` and maps a failed describe to `None`.                                                                                                                                                                                                                                           |
+| P04 | `aws/ssm.py:131` `parameter_exists` (`name`)                                        | `bin/ssm-secrets.py:287`                                                          | keep (FP)           | False positive, re-read. The call it "forwards to" is `client.get_parameter(Name=name)`, a boto3 method. pysmelly matches it by attribute name to the module's own `def get_parameter`. The body adds the `ParameterNotFound` → `False` branch and re-raises anything else. No suppression was added, because the operator owns that call.                                                                                                              |
+| P05 | `core/ssm_secrets.py:36` `get_path_prefix` (`env_name`)                             | `ssm_secrets.py:173`, `bin/ssm-secrets.py:179`, `:328`, and through P06           | keep                | Encodes the SSM path convention `/{project}/{environment}`. With three direct callers, collapsing it would spread that f-string across two files.                                                                                                                                                                                                                                                                                                       |
+| P06 | `core/ssm_secrets.py:49` `get_parameter_path` (`env_name`)                          | `bin/ssm-secrets.py:262`, `:309`, `:370`                                          | keep                | U20's own residue. It builds on P05 so that there is one path scheme. U20 predicted the move would clear the finding; its validator showed it only moved it. Clearing it needs an environment-identity object, which is a design decision, not a forwarding fix.                                                                                                                                                                                        |
+| P07 | `core/ssm_secrets.py:62` `get_secrets_from_deploy_toml` (`deploy_toml_path`)        | `bin/ssm-secrets.py:162`                                                          | keep                | A parse-then-delegate adapter. `cmd_check`'s error handling is built around it: `EnvironmentConfigError` first, then exactly the `(OSError, ValueError)` that `parse_deploy_config` documents. Collapsing it would move the parse into `bin/` and make `_get_secrets_from_config` public, only to rewrite that `except` ladder. See the note below on `env_config`.                                                                                     |
+| P08 | `core/ssm_secrets.py:273` `format_missing_secrets_error` (`env_name`)               | `deploy/preflight.py:163`                                                         | keep                | Operator-confirmed in 53i-1. It composes an advice block around `ssm_put_commands`, which `bin/ssm-secrets.py:209` shares, so preflight and `check` print the same command. Collapsing it would make the caller pass `missing` twice.                                                                                                                                                                                                                   |
+| P09 | `deploy/preflight.py:46` `check_environment_config` (`env_config`)                  | `deploy/preflight.py:322`                                                         | keep                | A typed-error adapter in the `check_*` family. It turns `validate_environment_config`'s error list into a `PreflightError` with a remediation block. Its siblings `check_modules` and `check_ecs_cluster` also take the env-config dict, so passing `target` instead would clear the finding only by breaking that pattern.                                                                                                                             |
+| P10 | `utils/cli.py:288` `configure_profile_or_exit` ×2 (`operation`, `environment`)      | `bin/deploy.py:146`, `:217`, `bin/resolve-config.py:233`                          | keep                | An error-boundary adapter, as the register already names it. The `try`/`except RuntimeError` → `log_error` + `sys.exit(1)` is the whole value, and pysmelly's check does not model it. `operation` genuinely varies (`deploy`, `infra`).                                                                                                                                                                                                                |
+| P11 | `utils/cli.py:305` `configure_aws_for_operation` (`operation`)                      | `bin/ssm-secrets.py:412`, `bin/cognito.py:89` (each via a local `_configure_aws`) | keep                | An error-boundary adapter. The `if environment` branch is its value, and production uses it: `cognito.py list` takes an optional environment. `ssm-secrets.py` always passes one, but a shared two-caller helper is still simpler than splitting it into a single-call-site function plus a direct call.                                                                                                                                                |
+
+**Ratified: pending** for every row. **Re-evaluate-by:** the second
+comprehensive review following 2026-09-18, or sooner for a row whose function
+gains or loses a production caller.
+
+**U20's lesson held.** P01 did clear its finding, because it swapped two loose
+parameters for a context object and so changed what the check sees. It did not
+re-point a call. P06 is the counter-case: re-pointing a forward only moves the
+finding. Every keep above was judged on the code, not on whether a fix would
+move the count.
+
+Seen while reading, and deliberately left out of scope. Each is a separate
+decision:
+
+- **`get_secrets_from_deploy_toml`'s `env_config` is test-only.** Its one
+  production caller never passes it, and only
+  `tests/unit/test_ssm_secrets.py`'s module-style test does. Under this repo's
+  "tests reflect actual usage" rule the parameter should go. §53l cleared it
+  because the `None` path is a documented contract. That contract stands either
+  way; the question is whether the non-`None` path earns its keep.
+- **Two sources for one SSM prefix.** `check_secrets_exist` and
+  `ssm-secrets.py check` list under `get_path_prefix(env_name)`, derived from
+  the environment name. The required paths they compare against come from
+  config.toml's `[secrets] path_prefix`. The templates set both to
+  `/{app}/{env}`, so they agree today. An environment whose `path_prefix`
+  differs would report every secret missing. That is a one-canonical-location
+  question for the operator, not a forwarding one.
+- **`bin/ssm-secrets.py` `SSMGroup`** is a `click.Group` subclass that nothing
+  uses. Its `invoke` body is a `pass` placeholder.
 
 ### Earlier arcs
 
