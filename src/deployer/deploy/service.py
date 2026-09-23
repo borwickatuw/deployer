@@ -306,6 +306,13 @@ def _require_network_config(ctx) -> tuple[list[str], str]:
     return subnet_ids, security_group_id
 
 
+def _print_dry_run_call(command: str, params: dict) -> None:
+    """Narrate an ECS call a dry run would make, with every parameter it would send."""
+    print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs {command}")
+    for line in json.dumps(params, indent=2, sort_keys=True).splitlines():
+        print(f"    {line}")
+
+
 def _network_configuration(ctx) -> dict:
     """Build the ECS networkConfiguration block, sent on create and on update.
 
@@ -493,10 +500,7 @@ def _create_service(
         create_params["serviceRegistries"] = registries
 
     if ctx.dry_run:
-        print(
-            f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
-            f"aws ecs create-service --service-name {service_name}"
-        )
+        _print_dry_run_call(f"create-service --service-name {service_name}", create_params)
         return
 
     ctx.ecs_client.create_service(**create_params)
@@ -548,6 +552,13 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
         registries = _service_registries(ctx, service_name)
         if registries:
             update_params["serviceRegistries"] = registries
+
+        if ctx.dry_run:
+            _print_dry_run_call(
+                f"update-service --service {service_name} --task-definition {task_def_arn}",
+                update_params,
+            )
+            return True
 
         ctx.ecs_client.update_service(**update_params)
         log_status(service_name, "deployment started")
@@ -782,30 +793,21 @@ def _deploy_one_service(
 
     dep_cfg = _get_deployment_config(ctx.infra_config, svc_config)
 
-    if ctx.dry_run:
-        task_def_arn = _register_task_definition(ctx, service_name, image_uri)
-        print(
-            f"  {Colors.YELLOW}[dry-run]{Colors.NC} "
-            f"aws ecs update-service --service {service_name} "
-            f"--task-definition {task_def_arn}"
-        )
-        cpu = service_cfg.get("cpu")
-        mem = service_cfg.get("memory")
-        reps = service_cfg.get("replicas")
-        print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
-        print(
-            f"    deployment: minHealthy={dep_cfg.min_healthy}%, "
-            f"maxPercent={dep_cfg.max_percent}%, "
-            f"circuitBreaker={dep_cfg.circuit_breaker}"
-        )
-        return ServiceDeployOutcome(task_def_arn=task_def_arn)
-
+    # Read-only, so a dry run asks too: it is what makes the preview a create
+    # or an update. Dry runs used to skip it and preview an update of a service
+    # that did not exist (Phase 69).
     live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, service_name)
     if live_service is not None:
         mismatch = _capacity_mismatch(service_name, svc_config, live_service)
         if mismatch:
             log_error(mismatch)
             return ServiceDeployOutcome()
+
+    if ctx.dry_run:
+        return _dry_run_one_service(
+            ctx, service_name, image_uri, dep_cfg, service_cfg, live_service
+        )
+
     state_hash = _compute_service_state_hash(ctx, service_name, image_uri, dep_cfg)
 
     if (
@@ -830,6 +832,31 @@ def _deploy_one_service(
     if not _update_service(ctx, service_name, task_def_arn, dep_cfg):
         return ServiceDeployOutcome()
     return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
+
+
+def _dry_run_one_service(
+    ctx,
+    service_name: str,
+    image_uri: str,
+    dep_cfg: DeploymentConfig,
+    service_cfg: dict,
+    live_service: dict | None,
+) -> ServiceDeployOutcome:
+    """Narrate the create or update a real deploy would send for one service.
+
+    The skip-unchanged check is not run: it reads SSM, and a dry run
+    previews what would be sent rather than whether it would be skipped.
+    """
+    task_def_arn = _register_task_definition(ctx, service_name, image_uri)
+    cpu = service_cfg.get("cpu")
+    mem = service_cfg.get("memory")
+    reps = service_cfg.get("replicas")
+    if live_service is None:
+        _create_service(ctx, service_name, task_def_arn)
+    else:
+        _update_service(ctx, service_name, task_def_arn, dep_cfg)
+    print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
+    return ServiceDeployOutcome(task_def_arn=task_def_arn)
 
 
 def deploy_services(

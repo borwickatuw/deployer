@@ -257,7 +257,9 @@ This shows:
 
 - Which images will be built
 - What environment variables will be set
-- Which services will be created/updated
+- Which services will be created and which updated (it describes each service,
+  read-only, to tell), with every parameter the `create-service` or
+  `update-service` call would send
 
 ### Dumping the environment variables
 

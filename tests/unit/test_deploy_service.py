@@ -20,11 +20,11 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
 
 1. **Both dry-run arms** of ``_create_service`` and ``deploy_services``, and both
    **interruptible** arms of ``_create_service``. The dry-run arms are early
-   returns that skip *different* amounts of work in the two functions --
-   ``_create_service`` returns after building the whole parameter dict, so its
-   network guard still fires under ``--dry-run``; ``deploy_services`` returns
-   before it ever asks whether the service is live and therefore prints an
-   **update** even for a service that does not exist.
+   returns. ``_create_service`` returns after building the whole parameter
+   dict, so its network guard still fires under ``--dry-run``. Since Phase 69
+   both print the parameters they built, and ``deploy_services`` describes the
+   service first, so an absent service is previewed as a create rather than an
+   update.
 2. **Circuit breaker on and off**, at both injection points -- ``_create_service``
    and the update arm of ``deploy_services``. Both mutate the *already-built*
    ``deploymentConfiguration`` sub-dict in place.
@@ -80,6 +80,7 @@ which lives in ``deployer.py`` -- into ``_create_service``. 53f-1 pinned that th
 class's own docstring.
 """
 
+import json
 import re
 import subprocess
 from dataclasses import asdict, replace
@@ -130,6 +131,14 @@ def _plain(captured: str) -> str:
 def _lines(captured: str) -> list[str]:
     """Return a captured stream's non-blank lines, without ANSI colour."""
     return [line for line in _plain(captured).splitlines() if line.strip()]
+
+
+def _dry_run_params(captured: str, command: str) -> dict:
+    """The JSON parameter block a dry run printed under its ``aws ecs <command>`` line."""
+    lines = _plain(captured).splitlines()
+    start = next(i for i, line in enumerate(lines) if f"aws ecs {command}" in line) + 1
+    end = next(i for i in range(start, len(lines)) if lines[i] == "    }") + 1
+    return json.loads("\n".join(lines[start:end]))
 
 
 def _client_error(code: str, operation: str = "UpdateService") -> ClientError:
@@ -1093,13 +1102,16 @@ class TestCreateService:
         ctx = _ctx(aws, dry_run=True)
         assert _create_service(ctx, "web", "arn:task-def") is None
         assert aws.client.operations == []
-        assert _lines(capsys.readouterr().out) == [
-            "  [dry-run] aws ecs create-service --service-name web"
-        ]
+        out = capsys.readouterr().out
+        assert _lines(out)[0] == "  [dry-run] aws ecs create-service --service-name web"
+        assert _dry_run_params(out, "create-service")["serviceName"] == "web"
 
-    def test_dry_run_prints_none_of_the_parameters(self, aws, capsys):
-        # The whole parameter dict is built and then thrown away: --dry-run
-        # tells you nothing about the target group, the breaker or the sizing.
+    def test_dry_run_prints_the_parameters_it_built(self, aws, capsys):
+        """Phase 69 member 6: the parameter dict used to be built and thrown away.
+
+        --dry-run said nothing about the target group, the capacity or the
+        service registry -- exactly what an operator runs it to check.
+        """
         ctx = _ctx(
             aws,
             services={"web": {"load_balanced": True, "port": 8000, "interruptible": True}},
@@ -1112,9 +1124,9 @@ class TestCreateService:
         )
         _create_service(ctx, "web", "arn:task-def")
         out = _plain(capsys.readouterr().out)
-        assert DEFAULT_TG not in out
-        assert REGISTRY_ARN not in out
-        assert "FARGATE_SPOT" not in out
+        assert DEFAULT_TG in out
+        assert REGISTRY_ARN in out
+        assert "FARGATE_SPOT" in out
 
     # -- must-pin #6: AZ rebalance trigger -------------------------------
 
@@ -1487,32 +1499,52 @@ class TestDeployServices:
     # -- must-pin #1: the dry-run arm -------------------------------------
 
     def test_dry_run_prints_the_update_block(self, aws, capsys):
+        _make_service(aws)
         ctx = _ctx(aws, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
         arn = f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task-definition/{CLUSTER}-web:dry-run"
-        assert _lines(capsys.readouterr().out) == [
+        out = capsys.readouterr().out
+        lines = _lines(out)
+        assert lines[:3] == [
             "Deploying ECS services...",
             f"  [dry-run] aws ecs register-task-definition --family {CLUSTER}-web",
             f"  [dry-run] aws ecs update-service --service web --task-definition {arn}",
-            "    cpu=256, memory=512, replicas=1",
-            "    deployment: minHealthy=100%, maxPercent=200%, circuitBreaker=False",
         ]
+        assert lines[-1] == "    cpu=256, memory=512, replicas=1"
+        params = _dry_run_params(out, "update-service")
+        assert params["forceNewDeployment"] is True
+        assert params["deploymentConfiguration"] == {
+            "minimumHealthyPercent": 100,
+            "maximumPercent": 200,
+        }
 
-    def test_dry_run_calls_no_aws_at_all(self, aws, run):
+    def test_dry_run_only_reads_aws(self, aws, run):
+        """The one call is the read-only describe that picks create or update."""
         ctx = _ctx(aws, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
-        assert aws.client.operations == []
+        assert aws.client.operations == ["describe_services"]
         assert run.calls == []
 
-    def test_dry_run_never_asks_whether_the_service_exists(self, aws, capsys):
-        # The dry-run arm returns before _get_live_service() is ever called, so
-        # a first-time deploy is previewed as an *update* of a service that does
-        # not exist. The _create_service() path is unreachable under --dry-run.
+    def test_dry_run_previews_a_create_for_an_absent_service(self, aws, capsys):
+        """Phase 69 member 6: a first deploy used to be previewed as an *update*.
+
+        The dry-run arm returned before asking whether the service existed, so
+        the create path -- and every parameter only it sends -- was unreachable
+        under --dry-run.
+        """
         ctx = _ctx(aws, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
         out = _plain(capsys.readouterr().out)
-        assert "create-service" not in out
-        assert "update-service" in out
+        assert "create-service --service-name web" in out
+        assert "update-service" not in out
+        assert "create_service" not in aws.client.operations
+
+    def test_dry_run_reports_a_capacity_mismatch_too(self, aws, capsys):
+        _make_service(aws)
+        ctx = _ctx(aws, services={"web": {"interruptible": True}}, dry_run=True)
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"web": IMAGE_URI})
+        assert "launch type FARGATE" in _plain(capsys.readouterr().out)
 
     def test_dry_run_reports_the_configured_deployment_settings(self, aws, capsys):
         ctx = _ctx(
@@ -1529,9 +1561,13 @@ class TestDeployServices:
             dry_run=True,
         )
         deploy_services(ctx, {"web": IMAGE_URI})
-        out = _lines(capsys.readouterr().out)
-        assert "    cpu=512, memory=1024, replicas=3" in out
-        assert "    deployment: minHealthy=50%, maxPercent=100%, circuitBreaker=True" in out
+        out = capsys.readouterr().out
+        assert "    cpu=512, memory=1024, replicas=3" in _lines(out)
+        assert _dry_run_params(out, "create-service")["deploymentConfiguration"] == {
+            "minimumHealthyPercent": 50,
+            "maximumPercent": 100,
+            "deploymentCircuitBreaker": {"enable": True, "rollback": True},
+        }
 
     def test_dry_run_reports_per_service_deployment_overrides(self, aws, capsys):
         ctx = _ctx(
@@ -1543,14 +1579,18 @@ class TestDeployServices:
             dry_run=True,
         )
         deploy_services(ctx, {"beat": IMAGE_URI})
-        out = _lines(capsys.readouterr().out)
-        assert "    deployment: minHealthy=0%, maxPercent=100%, circuitBreaker=False" in out
+        out = capsys.readouterr().out
+        assert _dry_run_params(out, "create-service")["deploymentConfiguration"] == {
+            "minimumHealthyPercent": 0,
+            "maximumPercent": 100,
+        }
 
     def test_dry_run_at_max_percent_100_skips_the_az_check(self, aws, run):
+        _make_service(aws)
         ctx = _ctx(aws, infra={"deployment_config": {"maximum_percent": 100}}, dry_run=True)
         deploy_services(ctx, {"web": IMAGE_URI})
         assert run.calls == []
-        assert aws.client.operations == []
+        assert aws.client.operations == ["describe_services"]
 
     # -- ordering and multi-service ---------------------------------------
 
@@ -1758,8 +1798,12 @@ class TestSkipUnchangedServices:
         assert _service_is_unchanged(ctx, "web", "f" * 64, _healthy_live_service("arn:td:5"))
 
     def test_dry_run_bypasses_the_skip_check(self, aws, capsys):
-        """Dry runs narrate the update they would send and never read SSM —
-        the skip decision needs live state a dry run must not depend on."""
+        """Dry runs narrate the call they would send and never read SSM.
+
+        They do describe the service (Phase 69 member 6) to narrate create or
+        update truthfully; the skip decision stays out of dry runs.
+        """
+        _make_service(aws)
         ctx = _ctx(aws, dry_run=True)
         store_service_state(APP, ENVIRONMENT, "web", _state_hash_for(ctx, "web", IMAGE_URI), "arn")
 
@@ -1767,7 +1811,7 @@ class TestSkipUnchangedServices:
 
         assert deployed.skipped == []
         assert "web" in deployed.updated
-        assert aws.client.operations == []  # not even the live-state describe
+        assert aws.client.operations == ["describe_services"]
         assert "update-service" in _plain(capsys.readouterr().out)
 
 
