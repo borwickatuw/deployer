@@ -773,7 +773,7 @@ class TestDeploySteps:
             # apply doesn't force full service rolls on every retry.
             (
                 "store_service_state_hashes",
-                (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, []),
+                (deployer.ctx, DEPLOYED_SERVICES, []),
                 {},
             ),
             (
@@ -997,10 +997,13 @@ class TestDeployHealthChecks:
         'redeploy after exit 2' silently no-ops on a stored hash."""
         steps.returns["wait_for_stable"] = ["web"]
 
-        make_deployer(timer=timer).deploy()
+        deployer = make_deployer(timer=timer)
+        deployer.deploy()
 
         store_call = next(call for call in steps.calls if call[0] == "store_service_state_hashes")
-        assert store_call[1] == (APP_NAME, ENVIRONMENT, DEPLOYED_SERVICES, ["web"])
+        assert store_call[1] == (deployer.ctx, DEPLOYED_SERVICES, ["web"])
+        # The SSM key's (app, environment) comes from the deploy's own context.
+        assert (deployer.ctx.app_name, deployer.ctx.environment) == (APP_NAME, ENVIRONMENT)
 
     def test_no_failures_reports_success(self, make_deployer, steps, timer, capsys):
         steps.returns["wait_for_stable"] = []

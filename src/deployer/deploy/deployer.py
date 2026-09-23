@@ -579,7 +579,7 @@ class Deployer:
 
         health_failures = self._wait_for_stable(deployed)
         print()
-        store_service_state_hashes(self.app_name, self.environment, deployed, health_failures)
+        store_service_state_hashes(self.ctx, deployed, health_failures)
         self._apply_autoscaling()
         print()
 

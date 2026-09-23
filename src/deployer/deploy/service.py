@@ -604,7 +604,7 @@ def store_service_state(
 
 
 def store_service_state_hashes(
-    app_name: str, environment: str, deployed: "DeployedServices", health_check_failures: list[str]
+    ctx, deployed: "DeployedServices", health_check_failures: list[str]
 ) -> None:
     """Persist state hashes for the services that deployed AND stabilized.
 
@@ -613,9 +613,14 @@ def store_service_state_hashes(
     (the exit-2 warning list) are excluded for the same reason: storing their
     hash would make "redeploy after exit 2" silently no-op.
 
+    Takes ``ctx`` like its sibling steps (``deploy_services``,
+    ``wait_for_stable``) and like the read half, ``_service_is_unchanged``,
+    so the SSM key's (app, environment) comes from the one context the whole
+    deploy runs against.
+
     Args:
-        app_name: Application name.
-        environment: Environment name.
+        ctx: DeploymentContext; its ``app_name`` and ``environment`` name the
+            SSM parameters.
         deployed: The ``deploy_services`` result.
         health_check_failures: Services whose health checks failed.
     """
@@ -623,7 +628,7 @@ def store_service_state_hashes(
         if service_name in health_check_failures:
             continue
         store_service_state(
-            app_name, environment, service_name, state_hash, deployed.updated[service_name]
+            ctx.app_name, ctx.environment, service_name, state_hash, deployed.updated[service_name]
         )
 
 

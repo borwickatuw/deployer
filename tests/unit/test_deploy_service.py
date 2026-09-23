@@ -1787,7 +1787,7 @@ class TestServiceStateStorage:
             updated={"web": "arn:1", "worker": "arn:2"},
             state_hashes={"web": "h1", "worker": "h2"},
         )
-        store_service_state_hashes(APP, ENVIRONMENT, deployed, [])
+        store_service_state_hashes(_ctx(aws), deployed, [])
 
         assert get_stored_service_state(APP, ENVIRONMENT, "web") == ("h1", "arn:1")
         assert get_stored_service_state(APP, ENVIRONMENT, "worker") == ("h2", "arn:2")
@@ -1799,7 +1799,7 @@ class TestServiceStateStorage:
             updated={"web": "arn:1", "worker": "arn:2"},
             state_hashes={"web": "h1", "worker": "h2"},
         )
-        store_service_state_hashes(APP, ENVIRONMENT, deployed, ["worker"])
+        store_service_state_hashes(_ctx(aws), deployed, ["worker"])
 
         assert get_stored_service_state(APP, ENVIRONMENT, "web") == ("h1", "arn:1")
         assert get_stored_service_state(APP, ENVIRONMENT, "worker") is None
