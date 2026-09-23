@@ -218,6 +218,20 @@ class TestContainerHealthCheckInTheTaskDefinition:
             "startPeriod": 60,
         }
 
+    def test_the_migrate_task_definition_does_not_inherit_the_migration_services_check(self):
+        # The deploy's migration RunTask uses the "migrate" task definition,
+        # built from [services.migrate] -- not from migrations.service.
+        ctx = _ctx(
+            config={
+                "migrations": {"enabled": True, "service": "web"},
+                "services": {"web": {"container_health_check": {"command": ["CMD-SHELL", "true"]}}},
+            }
+        )
+        container = build_task_definition(ctx, "migrate", "image:tag", credential_mode="migrate")[
+            "containerDefinitions"
+        ][0]
+        assert "healthCheck" not in container
+
     def test_no_block_means_no_health_check(self):
         ctx = _ctx(config={"services": {"worker": {}}})
         container = build_task_definition(ctx, "worker", "image:tag")["containerDefinitions"][0]

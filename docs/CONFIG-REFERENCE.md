@@ -247,20 +247,20 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 
 **Note:** Sizing fields (`cpu`, `memory`, `replicas`, `load_balanced`) are configured in OpenTofu tfvars, not here.
 
-| Field                     | Type    | Required | Description                                                                                                                                                     |
-| ------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `command`                 | array   | No       | Container command override.                                                                                                                                     |
-| `container_health_check`  | table   | No       | ECS container health check; see [Container health checks](#container-health-checks).                                                                            |
-| `health_check_path`       | string  | No       | ALB health check endpoint.                                                                                                                                      |
-| `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                                                                                           |
-| `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`.                                                             |
-| `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.                                                                           |
-| `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                                                                              |
-| `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                                                                            |
-| `min_replicas`            | integer | No       | Replica floor (default 1). Declare `0` only for services safe at zero (pull-based queue workers); required before an environment may scale the service to zero. |
-| `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.                                                                           |
-| `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                                                                                |
-| `port`                    | integer | No       | Container port. Required when the environment makes the service `load_balanced`; the one source for the port (tfvars may repeat it, never differ).              |
+| Field                     | Type    | Required | Description                                                                                                                                                                                      |
+| ------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `command`                 | array   | No       | Container command override.                                                                                                                                                                      |
+| `container_health_check`  | table   | No       | ECS container health check; see [Container health checks](#container-health-checks).                                                                                                             |
+| `health_check_path`       | string  | No       | ALB health check endpoint.                                                                                                                                                                       |
+| `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                                                                                                                            |
+| `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. See [Changing `interruptible` on a live service](#changing-interruptible-on-a-live-service). |
+| `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.                                                                                                            |
+| `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                                                                                                               |
+| `min_memory`              | integer | No       | Minimum memory (MB) required. Deploy fails if environment sets less.                                                                                                                             |
+| `min_replicas`            | integer | No       | Replica floor (default 1). Declare `0` only for services safe at zero (pull-based queue workers); required before an environment may scale the service to zero.                                  |
+| `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.                                                                                                            |
+| `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                                                                                                                 |
+| `port`                    | integer | No       | Container port. Required when the environment makes the service `load_balanced`; the one source for the port (tfvars may repeat it, never differ).                                               |
 
 `minimum_healthy_percent` / `maximum_percent` override the environment's
 `[deployment]` rollout strategy **per key** for one service: a service setting
@@ -336,6 +336,36 @@ calls (`stat`, `curl`, ...) must be installed there.
 
 For a service with no load balancer, `start_period` is its whole startup
 allowance: the environment's `grace_period` is sent only with a load balancer.
+
+**Why an unknown key here fails when others only warn.** Unknown keys
+elsewhere in deploy.toml are warnings, printed at the start of every deploy;
+that is the file-wide policy, and tightening it could break deploy.toml files
+that deploy today. This table is new, so failing breaks nothing that works,
+and a dropped key here changes behaviour silently: a misspelled `intervall`
+or ECS's camelCase `startPeriod` would be ignored and the service would run a
+health check other than the one written.
+
+**Which tasks carry it.** The check is on the service's task definition, so
+every task the service runs has it. `ecs-run.py` runs non-DDL commands on the
+service's task definition too; ECS ignores health status for a task that is
+not part of a service, so a one-off command is never stopped by it, but the
+check command still runs inside that task. The migration task started by a
+deploy (and `ecs-run.py`'s DDL commands) uses the separate `migrate` task
+definition, built from `[services.migrate]` if one exists and not from the
+migration service, so it has no container health check.
+
+#### Changing `interruptible` on a live service
+
+`interruptible` is applied when a service is created. On a service that
+already exists:
+
+- **`true` → `false` (Spot → FARGATE) works in place.** The update sends an
+  empty `capacityProviderStrategy`, which AWS lists as the in-place route back
+  to the launch type.
+- **`false` → `true` (FARGATE → Spot) is refused before anything moves.**
+  ECS cannot move a live service from a launch type to Fargate Spot in place.
+  Delete the service and deploy again to recreate it on Spot, or leave
+  `interruptible` unset.
 
 ### `[environment]`
 
