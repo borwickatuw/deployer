@@ -306,6 +306,69 @@ def _require_network_config(ctx) -> tuple[list[str], str]:
     return subnet_ids, security_group_id
 
 
+def _network_configuration(ctx) -> dict:
+    """Build the ECS networkConfiguration block, sent on create and on update.
+
+    Raises:
+        RuntimeError: If subnets or the security group are missing.
+    """
+    subnet_ids, security_group_id = _require_network_config(ctx)
+    return {
+        "awsvpcConfiguration": {
+            "subnets": subnet_ids,
+            "securityGroups": [security_group_id],
+            "assignPublicIp": "DISABLED",
+        }
+    }
+
+
+def _capacity_params(service_toml: dict) -> dict:
+    """The launch type or capacity provider strategy a service should run on.
+
+    Interruptible services use Fargate Spot with one on-demand base task;
+    everything else uses the FARGATE launch type.
+    """
+    if service_toml.get("interruptible"):
+        return {
+            "capacityProviderStrategy": [
+                {"capacityProvider": "FARGATE", "base": 1, "weight": 0},
+                {"capacityProvider": "FARGATE_SPOT", "weight": 1},
+            ]
+        }
+    return {"launchType": "FARGATE"}
+
+
+def _capacity_mismatch(service_name: str, service_toml: dict, live_service: dict) -> str | None:
+    """Explain why a live service cannot be moved to the capacity deploy.toml asks for.
+
+    ``interruptible`` is applied at create time. Switching a live service
+    between the FARGATE launch type and a Fargate capacity provider strategy is
+    not a transition the rolling-update ``UpdateService`` offers for Fargate, so
+    the update path used to leave the service where it was without a word
+    (Phase 69). It is now refused, with the way out.
+
+    Returns:
+        The message, or None when the live service already matches.
+    """
+    wants_spot = bool(service_toml.get("interruptible"))
+    live_launch_type = live_service.get("launchType")
+    on_strategy = bool(live_service.get("capacityProviderStrategy"))
+    if wants_spot and not on_strategy:
+        current = f"launch type {live_launch_type}"
+    elif not wants_spot and on_strategy:
+        current = "a capacity provider strategy"
+    else:
+        return None
+    wanted = "Fargate Spot" if wants_spot else "the FARGATE launch type"
+    return (
+        f"Service '{service_name}' runs on {current}, but deploy.toml "
+        f"(interruptible = {str(wants_spot).lower()}) asks for {wanted}. "
+        f"A rolling update cannot switch a live service's capacity; delete the "
+        f"service and deploy again to recreate it on the new capacity, or "
+        f"revert interruptible."
+    )
+
+
 def _deployment_configuration(dep_cfg: DeploymentConfig) -> dict:
     """Build the ECS deploymentConfiguration block.
 
@@ -409,7 +472,7 @@ def _create_service(
     service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
     service_toml = ctx.config.get("services", {}).get(service_name, {})
 
-    subnet_ids, security_group_id = _require_network_config(ctx)
+    network_configuration = _network_configuration(ctx)
 
     dep_cfg = _get_deployment_config(ctx.infra_config, service_toml)
 
@@ -418,25 +481,10 @@ def _create_service(
         "serviceName": service_name,
         "taskDefinition": task_def_arn,
         "desiredCount": service_cfg["replicas"],
-        "networkConfiguration": {
-            "awsvpcConfiguration": {
-                "subnets": subnet_ids,
-                "securityGroups": [security_group_id],
-                "assignPublicIp": "DISABLED",
-            }
-        },
+        "networkConfiguration": network_configuration,
         "deploymentConfiguration": _deployment_configuration(dep_cfg),
+        **_capacity_params(service_toml),
     }
-
-    # Use capacity provider strategy for interruptible services (Fargate Spot),
-    # otherwise use standard FARGATE launch type
-    if service_toml.get("interruptible"):
-        create_params["capacityProviderStrategy"] = [
-            {"capacityProvider": "FARGATE", "base": 1, "weight": 0},
-            {"capacityProvider": "FARGATE_SPOT", "weight": 1},
-        ]
-    else:
-        create_params["launchType"] = "FARGATE"
 
     create_params.update(_load_balancer_params(ctx, service_name, service_cfg, service_toml))
 
@@ -477,6 +525,13 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
     Returns:
         True if the deployment was started, False if AWS rejected it.
     """
+    service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
+    service_toml = ctx.config.get("services", {}).get(service_name, {})
+    # Network and load-balancer settings are sent on every update, not only at
+    # create: otherwise a changed subnet, security group or target group never
+    # reaches a live service (Phase 69). An empty loadBalancers list is ECS's
+    # way of removing one the service no longer wants.
+    lb_params = _load_balancer_params(ctx, service_name, service_cfg, service_toml)
     try:
         update_params = {
             "cluster": ctx.cluster_name,
@@ -484,6 +539,9 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
             "taskDefinition": task_def_arn,
             "forceNewDeployment": True,
             "deploymentConfiguration": _deployment_configuration(dep_cfg),
+            "networkConfiguration": _network_configuration(ctx),
+            "loadBalancers": [],
+            **lb_params,
         }
 
         # Ensure existing services get updated with service discovery too
@@ -537,8 +595,10 @@ def _compute_service_state_hash(ctx, service_name: str, image_uri: str, dep_cfg)
     """Hash everything this deploy would send ECS for a service.
 
     Covers the full task definition plus the update-time service parameters
-    (deployment configuration, service registries) — everything
-    ``_update_service`` would send except the ARN and forceNewDeployment.
+    (deployment configuration, service registries, network configuration,
+    load balancer) — everything ``_update_service`` would send except the ARN
+    and forceNewDeployment — and the capacity ``interruptible`` selects, so
+    a change to any of them is never skipped as "unchanged".
     ``containerDefinitions[].environment`` and ``.secrets`` are sorted by name
     first: they are built from dicts, and dict-order lists would make an
     unchanged service hash differently between runs (a false redeploy).
@@ -559,10 +619,15 @@ def _compute_service_state_hash(ctx, service_name: str, image_uri: str, dep_cfg)
         )
         container["secrets"] = sorted(container.get("secrets", []), key=lambda entry: entry["name"])
 
+    service_cfg = get_service_sizing(service_name, ctx.config, ctx.service_config)
+    service_toml = ctx.config.get("services", {}).get(service_name, {})
     intended = {
         "task_def": task_def,
         "deployment_configuration": _deployment_configuration(dep_cfg),
         "service_registries": _service_registries(ctx, service_name),
+        "network_configuration": _network_configuration(ctx),
+        "load_balancer": _load_balancer_params(ctx, service_name, service_cfg, service_toml),
+        "capacity": _capacity_params(service_toml),
     }
     return hashlib.sha256(json.dumps(intended, sort_keys=True).encode()).hexdigest()
 
@@ -736,6 +801,11 @@ def _deploy_one_service(
         return ServiceDeployOutcome(task_def_arn=task_def_arn)
 
     live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, service_name)
+    if live_service is not None:
+        mismatch = _capacity_mismatch(service_name, svc_config, live_service)
+        if mismatch:
+            log_error(mismatch)
+            return ServiceDeployOutcome()
     state_hash = _compute_service_state_hash(ctx, service_name, image_uri, dep_cfg)
 
     if (

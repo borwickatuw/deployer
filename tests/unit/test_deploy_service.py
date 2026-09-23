@@ -1275,11 +1275,49 @@ class TestDeployServices:
                 "minimumHealthyPercent": 100,
                 "maximumPercent": 200,
             },
+            # Phase 69 member 2: the update used to carry neither, so a changed
+            # subnet, security group or target group never reached a live
+            # service. An empty loadBalancers list removes a stale one.
+            "networkConfiguration": {
+                "awsvpcConfiguration": {
+                    "subnets": [aws.subnet_id],
+                    "securityGroups": [aws.security_group_id],
+                    "assignPublicIp": "DISABLED",
+                }
+            },
+            "loadBalancers": [],
         }
-        # The update carries no network config, no load balancer and no launch
-        # type: those are create-time only, so changing a target group or
-        # switching a live service to Spot has no effect through this path.
-        assert "networkConfiguration" not in aws.client.params("update_service")
+
+    def test_update_carries_the_target_group_and_grace_period(self, aws):
+        _make_service(aws)
+        ctx = _ctx(
+            aws,
+            services={"web": {"load_balanced": True, "port": 8000}},
+            infra={"service_target_groups": {"web": WEB_TG}},
+        )
+        deploy_services(ctx, {"web": IMAGE_URI})
+        params = aws.client.params("update_service")
+        assert params["loadBalancers"] == [
+            {"targetGroupArn": WEB_TG, "containerName": "web", "containerPort": 8000}
+        ]
+        assert params["healthCheckGracePeriodSeconds"] == 60
+
+    def test_a_capacity_switch_on_a_live_service_fails_it_loudly(self, aws, capsys):
+        """Phase 69 member 2: interruptible = true used to do nothing to a live service.
+
+        The Fargate-launch-type -> FARGATE_SPOT transition is not one ECS offers
+        through UpdateService, so the service fails with the reason and the way
+        out, and nothing is registered or updated for it.
+        """
+        _make_service(aws)  # launchType FARGATE
+        ctx = _ctx(aws, services={"web": {"interruptible": True}})
+        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
+            deploy_services(ctx, {"web": IMAGE_URI})
+        assert "update_service" not in aws.client.operations
+        assert "register_task_definition" not in aws.client.operations
+        out = _plain(capsys.readouterr().out)
+        assert "interruptible" in out
+        assert "launch type FARGATE" in out
 
     def test_update_uses_the_freshly_registered_revision(self, aws):
         _make_service(aws)
@@ -1767,6 +1805,24 @@ class TestServiceStateHash:
             ctx, "web", IMAGE_URI, DeploymentConfig(min_healthy=0, max_percent=100)
         )
         assert h_default != h_override
+
+    def test_target_group_changes_the_hash(self, aws):
+        """Phase 69 member 2: a target-group change used to be skipped as unchanged."""
+        services = {"web": {"load_balanced": True, "port": 8000}}
+        h_default = _state_hash_for(
+            _ctx(aws, services=services, infra={"target_group_arn": DEFAULT_TG}), "web", IMAGE_URI
+        )
+        h_web = _state_hash_for(
+            _ctx(aws, services=services, infra={"target_group_arn": WEB_TG}), "web", IMAGE_URI
+        )
+        assert h_default != h_web
+
+    def test_interruptible_changes_the_hash(self, aws):
+        h_on_demand = _state_hash_for(_ctx(aws), "web", IMAGE_URI)
+        h_spot = _state_hash_for(
+            _ctx(aws, services={"web": {"interruptible": True}}), "web", IMAGE_URI
+        )
+        assert h_on_demand != h_spot
 
     def test_environment_value_changes_the_hash(self, aws):
         base = _ctx(aws)
