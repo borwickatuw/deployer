@@ -167,8 +167,34 @@ class TestGetSecretsWithoutAnEnvironmentConfig:
         assert get_secrets(ctx, "web") == []
 
 
+class TestUnresolvedPlaceholderInValueFrom:
+    """Phase 69 member 9: a ``${...}`` in a secret's valueFrom is an error here.
+
+    ``load_environment_config`` resolves only ``${tofu:...}``, so any other
+    ``${...}`` in config.toml -- a placeholder written without ``tofu:``, say
+    -- survived into the secret's ARN, and ECS rejected it at
+    register-task-definition with no hint of which config value it came from.
+    """
+
+    def test_a_placeholder_in_a_secret_arn_is_an_error(self):
+        ctx = _ctx(
+            config={"secrets": {"names": ["SECRET_KEY"]}},
+            env_config={"secrets": {"provider": "ssm", "path_prefix": "/${environment}/app"}},
+        )
+        with pytest.raises(ValueError, match=r"(?s)SECRET_KEY.*\$\{environment\}.*tofu:"):
+            get_secrets(ctx, "web")
+
+    def test_a_resolved_secret_arn_passes(self):
+        ctx = _ctx(
+            config={"secrets": {"names": ["SECRET_KEY"]}},
+            env_config={"secrets": {"provider": "ssm", "path_prefix": "/myapp/staging"}},
+        )
+        arn = f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/myapp/staging/secret-key"
+        assert get_secrets(ctx, "web") == [{"name": "SECRET_KEY", "valueFrom": arn}]
+
+
 class TestResolveLegacyPlaceholders:
-    """_resolve_legacy_placeholders() -- the whole-value substitution rule."""
+    """_resolve_legacy_placeholders() -- the substitution rule."""
 
     def test_a_string_infra_value_is_substituted(self):
         resolved = _resolve_legacy_placeholders(

@@ -431,8 +431,33 @@ def get_secrets(
 
     Returns:
         List of secrets in ECS format: [{"name": "X", "valueFrom": "arn:..."}]
+
+    Raises:
+        ValueError: If a ``valueFrom`` still holds a ``${...}`` placeholder.
+            Only ``${tofu:...}`` is resolved in config.toml, so anything else
+            there used to reach ECS verbatim and be rejected at
+            register-task-definition with no hint of its origin (Phase 69).
     """
-    return _secrets_to_ecs_format(_collect_modules(ctx, credential_mode).secrets)
+    secrets = _secrets_to_ecs_format(_collect_modules(ctx, credential_mode).secrets)
+    unresolved = [
+        f"{s['name']} -> {s['valueFrom']}"
+        for s in secrets
+        if _PLACEHOLDER_PATTERN.search(s["valueFrom"])
+    ]
+    if unresolved:
+        raise ValueError(
+            advice_block(
+                "Secrets whose valueFrom holds an unresolved placeholder:",
+                unresolved,
+                (
+                    "These come from the environment's config.toml, where only",
+                    "${tofu:NAME} placeholders are resolved. Write the value out,",
+                    "or reference the tofu output as ${tofu:NAME}.",
+                ),
+                bullet="  - ",
+            )
+        )
+    return secrets
 
 
 def build_task_definition(
