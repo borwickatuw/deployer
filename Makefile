@@ -176,40 +176,16 @@ security-deps: ## Check dependency vulnerabilities
 	@echo "=== Dependency Vulnerability Scan (uv audit) ==="
 	@uv audit
 
-# SECURITY.md Practice #6: `uv audit` above reads the root lockfile only.
-# Every lockfile git tracks below the root is declared here, space-separated,
-# and audited; an undeclared one, or a declared one git no longer tracks,
-# fails the gate. A stray is retired, not declared.
-#
-# The two Lambda-bundle requirements.txt files are live: install-deps.sh
-# installs them unpinned into the gitignored Lambda bundle with `pip install
-# -r ... --upgrade`, and nothing else audits them. `uv audit` cannot read a
-# requirements.txt, so each is turned into a fully-pinned, hashed lockfile in
-# memory with `uv pip compile` and handed to pip-audit over stdin --
-# `--require-hashes` is what lets pip-audit skip building a venv.
-# `--python-version 3.12` matches the `runtime = "python3.12"` both
-# db-on-shared-rds/main.tf and db-users/main.tf declare -- keep the three in
-# step.
+# SECURITY.md Practice #6: `uv audit` reads the root lockfile only. Every
+# lockfile git tracks below the root is declared here, space-separated;
+# bin/security-lockfiles (claude-meta's copy, verbatim) fails on an
+# undeclared or vanished one and audits each declared one by its ecosystem.
 NESTED_LOCKFILES := modules/db-on-shared-rds/lambda/requirements.txt modules/db-users/lambda/requirements.txt
-LOCKFILE_PATHSPEC := '*/uv.lock' '*/poetry.lock' '*/Pipfile.lock' '*/requirements*.txt' '*/package-lock.json'
 
 .PHONY: security-lockfiles
 security-lockfiles: ## Fail on an undeclared or vanished nested lockfile; audit each declared one
-	@tracked=" $$(git ls-files -- $(LOCKFILE_PATHSPEC) | tr '\n' ' ') "; status=0; \
-	for f in $$tracked; do case " $(NESTED_LOCKFILES) " in *" $$f "*) ;; \
-		*) echo "Error: $$f is a nested lockfile nothing audits: declare it in NESTED_LOCKFILES, or retire it"; status=1 ;; esac; done; \
-	for f in $(NESTED_LOCKFILES); do case "$$tracked" in *" $$f "*) ;; \
-		*) echo "Error: NESTED_LOCKFILES declares $$f, which git does not track: drop the declaration"; status=1 ;; esac; done; \
-	exit $$status
-	@rc=0; for lock in $(filter %/uv.lock,$(NESTED_LOCKFILES)); do \
-		echo "=== uv audit $$(dirname $$lock) ==="; (cd "$$(dirname $$lock)" && uv audit) || rc=$$?; done; \
-	exit $$rc
-	@rc=0; for req in $(filter %.txt,$(NESTED_LOCKFILES)); do \
-		echo "=== pip-audit $$req ==="; \
-		uv pip compile --quiet --python-version 3.12 --generate-hashes "$$req" \
-			| uvx pip-audit --progress-spinner off --disable-pip --require-hashes -r /dev/stdin \
-			|| rc=$$?; done; \
-	exit $$rc
+	@# 3.12 is the Lambda runtime both db-*/main.tf declare: keep the three in step.
+	@bin/security-lockfiles --python-version 3.12 $(NESTED_LOCKFILES)
 
 .PHONY: security-secrets
 security-secrets: ## Check tracked files for secrets not in .secrets.baseline

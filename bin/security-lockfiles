@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Declared nested-lockfile coverage (claude-meta SECURITY.md Practice #6).
+#
+# The root `uv audit` reads the root lockfile only. Every lockfile git tracks
+# below the root must be declared (the repo's NESTED_LOCKFILES, passed here as
+# arguments), and each declared one is audited by its ecosystem's tool. An
+# undeclared lockfile fails, so does a declared one git no longer tracks, and
+# so does one whose ecosystem has no audit here. Every file is checked and
+# audited even after one fails; the exit status is 1 if any did.
+#
+#   bin/security-lockfiles [--python-version X.Y] [LOCKFILE ...]
+#
+# --python-version is required when a requirements*.txt is declared: it is the
+# runtime that installs the file, so the audit resolves what actually ships.
+#
+# The canonical copy lives in claude-meta; every repo carries it verbatim.
+set -euo pipefail
+
+usage="usage: bin/security-lockfiles [--python-version X.Y] [LOCKFILE ...]"
+python_version=
+if [[ ${1-} == --python-version ]]; then
+	python_version=${2:?$usage}
+	shift 2
+fi
+declared=" $* "
+
+cd "$(git rev-parse --show-toplevel)"
+tracked=" $(git ls-files -- '*/uv.lock' '*/poetry.lock' '*/Pipfile.lock' \
+	'*/requirements*.txt' '*/package-lock.json' | tr '\n' ' ') "
+
+rc=0
+for f in $tracked; do
+	if [[ $declared != *" $f "* ]]; then
+		echo "Error: $f is a nested lockfile nothing audits: declare it in NESTED_LOCKFILES, or retire it"
+		rc=1
+	fi
+done
+for f in $declared; do
+	if [[ $tracked != *" $f "* ]]; then
+		echo "Error: NESTED_LOCKFILES declares $f, which git does not track: drop the declaration"
+		rc=1
+	fi
+done
+
+for f in $declared; do
+	[[ $tracked == *" $f "* ]] || continue
+	dir=$(dirname "$f")
+	echo "=== audit $f ==="
+	case $(basename "$f") in
+	uv.lock)
+		# Without a project beside it, uv walks up and audits the root instead.
+		if [[ ! -f $dir/pyproject.toml ]]; then
+			echo "Error: $f has no pyproject.toml beside it, so uv would audit an ancestor project"
+			rc=1
+			continue
+		fi
+		(cd "$dir" && uv audit) || rc=1
+		;;
+	package-lock.json)
+		(cd "$dir" && npm audit --audit-level=high) || rc=1
+		;;
+	requirements*.txt)
+		if [[ -z $python_version ]]; then
+			echo "Error: $f needs --python-version (the runtime that installs it)"
+			rc=1
+			continue
+		fi
+		uv pip compile --quiet --python-version "$python_version" --generate-hashes "$f" |
+			uvx pip-audit --progress-spinner off --disable-pip --require-hashes -r /dev/stdin ||
+			rc=1
+		;;
+	*)
+		echo "Error: $f has no audit here: move the project to uv, or retire the lockfile"
+		rc=1
+		;;
+	esac
+done
+exit "$rc"
