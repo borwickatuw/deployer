@@ -31,7 +31,7 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
 3. **Per-service vs default target group**, including the ``or`` fallthrough on an
    empty per-service entry, and the health-check grace period. A load-balanced
    service with no target group used to be created with neither; since Phase 69
-   it is a ``RuntimeError``, raised before any service moves.
+   it is a ``ValueError``, which ``validate_services`` reports before anything moves.
 4. **Service discovery on and off** -- the ``serviceRegistries`` injection in both
    ``_create_service`` and the update arm of ``deploy_services``. Only
    ``registryArn`` is sent; no ``containerPort``.
@@ -95,6 +95,7 @@ from deployer.deploy.service import (
     DeployedServices,
     DeploymentConfig,
     DeploymentError,
+    ServiceConfigError,
     _compute_service_state_hash,
     _create_service,
     _ensure_az_rebalancing_disabled,
@@ -106,6 +107,7 @@ from deployer.deploy.service import (
     get_stored_service_state,
     store_service_state,
     store_service_state_hashes,
+    validate_services,
 )
 from deployer.utils.logging import is_verbose, set_verbose
 
@@ -989,22 +991,9 @@ class TestCreateService:
         """
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"load_balanced": True, "port": 8000}})
-        with pytest.raises(RuntimeError, match=r"'web' is load_balanced.*no target group"):
+        with pytest.raises(ValueError, match=r"'web' is load_balanced.*no target group"):
             _create_service(ctx, "web", arn)
         assert "create_service" not in aws.client.operations
-
-    def test_an_unresolvable_target_group_stops_the_deploy_before_any_service_moves(self, aws):
-        """The check runs over every service before the first one is touched.
-
-        Raising mid-loop would leave the services ahead of the bad one deployed
-        and the rest not -- a partial deploy caused by a config error that was
-        knowable up front.
-        """
-        _make_service(aws, "api")
-        ctx = _ctx(aws, services={"api": {}, "web": {"load_balanced": True, "port": 8000}})
-        with pytest.raises(RuntimeError, match=r"'web' is load_balanced.*no target group"):
-            deploy_services(ctx, {"api": IMAGE_URI, "web": IMAGE_URI})
-        assert aws.client.operations == []
 
     def test_grace_period_defaults_to_sixty(self, aws):
         arn = _make_service(aws, "seed")
@@ -1325,23 +1314,6 @@ class TestDeployServices:
         ]
         assert params["healthCheckGracePeriodSeconds"] == 60
 
-    def test_a_capacity_switch_on_a_live_service_fails_it_loudly(self, aws, capsys):
-        """Phase 69 member 2: interruptible = true used to do nothing to a live service.
-
-        The Fargate-launch-type -> FARGATE_SPOT transition is not one ECS offers
-        through UpdateService, so the service fails with the reason and the way
-        out, and nothing is registered or updated for it.
-        """
-        _make_service(aws)  # launchType FARGATE
-        ctx = _ctx(aws, services={"web": {"interruptible": True}})
-        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
-            deploy_services(ctx, {"web": IMAGE_URI})
-        assert "update_service" not in aws.client.operations
-        assert "register_task_definition" not in aws.client.operations
-        out = _plain(capsys.readouterr().out)
-        assert "interruptible" in out
-        assert "launch type FARGATE" in out
-
     def test_update_uses_the_freshly_registered_revision(self, aws):
         _make_service(aws)
         ctx = _ctx(aws)
@@ -1549,13 +1521,6 @@ class TestDeployServices:
         assert "create-service --service-name web" in out
         assert "update-service" not in out
         assert "create_service" not in aws.client.operations
-
-    def test_dry_run_reports_a_capacity_mismatch_too(self, aws, capsys):
-        _make_service(aws)
-        ctx = _ctx(aws, services={"web": {"interruptible": True}}, dry_run=True)
-        with pytest.raises(RuntimeError, match=r"Failed to deploy service\(s\): web"):
-            deploy_services(ctx, {"web": IMAGE_URI})
-        assert "launch type FARGATE" in _plain(capsys.readouterr().out)
 
     def test_dry_run_reports_the_configured_deployment_settings(self, aws, capsys):
         ctx = _ctx(
@@ -1824,6 +1789,84 @@ class TestSkipUnchangedServices:
         assert "web" in deployed.updated
         assert aws.client.operations == ["describe_services"]
         assert "update-service" in _plain(capsys.readouterr().out)
+
+
+class TestValidateServices:
+    """``validate_services`` -- every Phase 69 fail-fast check, before anything moves.
+
+    ``Deployer.deploy()`` runs it ahead of the ECR login, the build and the
+    migrations (``TestDeployValidatesServicesFirst`` in test_deploy_deployer.py
+    pins that ordering). Here: what it checks, and that it only reads.
+    """
+
+    def test_a_valid_config_passes_and_only_reads(self, aws):
+        _make_service(aws)
+        ctx = _ctx(
+            aws,
+            services={"web": {"load_balanced": True, "port": 8000}, "worker": {}},
+            infra={"target_group_arn": DEFAULT_TG},
+        )
+        validate_services(ctx)
+        assert set(aws.client.operations) == {"describe_services"}
+
+    def test_an_unresolvable_target_group_is_reported_before_any_call(self, aws):
+        ctx = _ctx(aws, services={"api": {}, "web": {"load_balanced": True, "port": 8000}})
+        with pytest.raises(ServiceConfigError, match=r"(?s)'web'.*no target group"):
+            validate_services(ctx)
+        assert aws.client.operations == []
+
+    def test_an_unresolved_placeholder_in_any_service_is_reported(self, aws):
+        ctx = _ctx(aws, services={"api": {}, "web": {"environment": {"X": "${nope}"}}})
+        with pytest.raises(ServiceConfigError, match=r"(?s)'web'.*\$\{nope\}"):
+            validate_services(ctx)
+        assert aws.client.operations == []
+
+    def test_the_migrate_task_definition_is_validated_too(self, aws):
+        # Only the migrate credentials carry the placeholder, so every service
+        # builds cleanly and only the migrate task definition can report it.
+        ctx = _ctx(aws, services={"web": {}})
+        secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT_ID}:secret:app"
+        ctx = replace(
+            ctx,
+            config={
+                **ctx.config,
+                "migrations": {"enabled": True, "service": "web"},
+                "database": {"type": "postgresql"},
+            },
+            env_config={
+                "database": {
+                    "host": "db",
+                    "port": 5432,
+                    "name": "app",
+                    "credentials": "secretsmanager",
+                    "app_username_secret": secret,
+                    "app_password_secret": secret,
+                    "migrate_username_secret": "${migrate_user}",
+                    "migrate_password_secret": secret,
+                }
+            },
+        )
+        with pytest.raises(ServiceConfigError, match=r"(?s)migrate task.*\$\{migrate_user\}"):
+            validate_services(ctx)
+
+    def test_a_capacity_switch_to_spot_on_a_live_service_is_refused(self, aws):
+        """Phase 69 member 2: interruptible = true used to do nothing to a live service.
+
+        The FARGATE launch type -> FARGATE_SPOT transition is not one ECS's
+        rolling UpdateService offers, so it is refused with the way out --
+        before anything moves, not mid-loop.
+        """
+        _make_service(aws)  # launchType FARGATE
+        ctx = _ctx(aws, services={"web": {"interruptible": True}})
+        with pytest.raises(ServiceConfigError, match=r"(?s)launch type FARGATE.*interruptible"):
+            validate_services(ctx)
+        assert aws.client.operations == ["describe_services"]
+
+    def test_a_dry_run_is_refused_the_same_way(self, aws):
+        _make_service(aws)
+        ctx = _ctx(aws, services={"web": {"interruptible": True}}, dry_run=True)
+        with pytest.raises(ServiceConfigError, match="launch type FARGATE"):
+            validate_services(ctx)
 
 
 class TestServiceStateHash:

@@ -27,6 +27,7 @@ from deployer.deploy.service import (
     DeployedServices,
     MigrationTask,
     deploy_services,
+    validate_services,
     start_migrations,
     store_service_state_hashes,
     wait_for_migrations,
@@ -557,6 +558,9 @@ class Deployer:
 
         self._print_deploy_banner()
         infra = self._check_infrastructure_or_abort()
+        # Before anything moves: an invalid service config must not leave
+        # pushed images, started migrations or half the services behind it.
+        validate_services(self.ctx)
         self.print_service_config()
         self.print_environment_config()
 

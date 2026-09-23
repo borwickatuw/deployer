@@ -94,6 +94,67 @@ def _get_deployment_config(
     return DeploymentConfig(**kwargs)
 
 
+class ServiceConfigError(ValueError):
+    """A service's configuration cannot be deployed as written.
+
+    Raised only by ``validate_services``, before anything moves, so a caller
+    can report it as a one-line operator error without catching every
+    ``ValueError`` a deploy might raise.
+    """
+
+
+# Stands in for the ECR URI when a task definition is built only to validate
+# it: nothing reads the image, and the real URI does not exist until the build.
+_VALIDATION_IMAGE = "validation-only"
+
+
+def validate_services(ctx) -> None:
+    """Run every service-level fail-fast check before anything is deployed.
+
+    For every service, and for the migrate task definition when migrations
+    are enabled: the sizing and port-source rules (``get_service_sizing``),
+    target-group resolution (``_load_balancer_params``), and the full task
+    definition build -- which is where an unresolved ``${...}`` in the
+    environment or in a secret's ``valueFrom`` is reported. Then, for each
+    live service, whether deploy.toml asks for a capacity it cannot be moved
+    to in place.
+
+    These checks used to fire inside ``deploy_services`` -- after the images
+    were pushed and the migrations had started -- or partway through its
+    loop, leaving some services updated and others not (Phase 69).
+
+    Only reads: the capacity check describes each service, which a dry run
+    does too.
+
+    Raises:
+        ServiceConfigError: Naming the service or task and what is wrong.
+        RuntimeError: If ``describe_services`` fails (see ``_get_live_service``).
+    """
+    services = ctx.config.get("services", {})
+
+    for name, service_toml in services.items():
+        try:
+            sizing = get_service_sizing(name, ctx.config, ctx.service_config)
+            _load_balancer_params(ctx, name, sizing, service_toml)
+            build_task_definition(ctx, name, _VALIDATION_IMAGE)
+        except ValueError as e:
+            raise ServiceConfigError(f"Service '{name}' cannot be deployed:\n{e}") from e
+
+    if ctx.config.get("migrations", {}).get("enabled", False):
+        try:
+            build_task_definition(ctx, "migrate", _VALIDATION_IMAGE, credential_mode="migrate")
+        except ValueError as e:
+            raise ServiceConfigError(f"The migrate task definition cannot be built:\n{e}") from e
+
+    for name, service_toml in services.items():
+        live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, name)
+        if live_service is None:
+            continue
+        mismatch = _capacity_mismatch(name, service_toml, live_service)
+        if mismatch:
+            raise ServiceConfigError(mismatch)
+
+
 class DeploymentError(Exception):
     """Raised when a deployment fails with a known error."""
 
@@ -410,7 +471,7 @@ def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_tom
         Dict of ECS service params to merge, empty when not applicable.
 
     Raises:
-        RuntimeError: If the service is load-balanced but neither its own entry
+        ValueError: If the service is load-balanced but neither its own entry
             in ``service_target_groups`` nor the default ``target_group_arn``
             resolves. That used to skip the load balancer and the grace period
             and create an unreachable service with no warning (Phase 69).
@@ -422,7 +483,7 @@ def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_tom
     service_target_groups = ctx.infra_config.service_target_groups
     target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.target_group_arn
     if not target_group_arn:
-        raise RuntimeError(
+        raise ValueError(
             f"Service '{service_name}' is load_balanced with port "
             f"{service_toml['port']}, but no target group resolves for it: "
             f"config.toml has neither [infrastructure] service_target_groups."
@@ -795,13 +856,9 @@ def _deploy_one_service(
 
     # Read-only, so a dry run asks too: it is what makes the preview a create
     # or an update. Dry runs used to skip it and preview an update of a service
-    # that did not exist (Phase 69).
+    # that did not exist (Phase 69). A capacity this service cannot be moved to
+    # was already refused by validate_services.
     live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, service_name)
-    if live_service is not None:
-        mismatch = _capacity_mismatch(service_name, svc_config, live_service)
-        if mismatch:
-            log_error(mismatch)
-            return ServiceDeployOutcome()
 
     if ctx.dry_run:
         return _dry_run_one_service(
@@ -888,13 +945,6 @@ def deploy_services(
 
     services = ctx.config.get("services", {})
     log_debug(f"Services to deploy: {list(services.keys())}")
-
-    # Configuration errors that are knowable up front stop the run before the
-    # first service moves, rather than leaving a partial deploy behind them.
-    for name, svc_config in services.items():
-        _load_balancer_params(
-            ctx, name, get_service_sizing(name, ctx.config, ctx.service_config), svc_config
-        )
 
     deployed = DeployedServices()
     failed: list[str] = []

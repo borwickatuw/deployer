@@ -45,6 +45,7 @@ from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
 from deployer.deploy import deployer as deployer_mod
+from deployer.deploy import service as service_mod
 from deployer.deploy.context import DeployOptions, StabilityConfig
 from deployer.deploy.deployer import (
     Deployer,
@@ -241,10 +242,16 @@ def aws(monkeypatch):
 
 @pytest.fixture
 def steps(monkeypatch):
-    """Stub all seven step functions at their deployer-module bindings."""
+    """Stub all seven step functions at their deployer-module bindings.
+
+    ``validate_services`` is stubbed to a silent no-op too: it describes each
+    live service, which the fake ECS client cannot answer.
+    ``TestDeployValidatesServicesFirst`` puts the real one back.
+    """
     recorder = _StepRecorder()
     for name in STEP_NAMES:
         monkeypatch.setattr(deployer_mod, name, recorder.stub(name))
+    monkeypatch.setattr(deployer_mod, "validate_services", lambda ctx: None)
     return recorder
 
 
@@ -873,6 +880,63 @@ class TestDeploySteps:
         assert deploy_call[2]["force_deploy"] is True
         image_call = next(call for call in steps.calls if call[0] == "build_and_push_images")
         assert image_call[2]["force_build"] is False
+
+
+class TestDeployValidatesServicesFirst:
+    """An invalid service config stops deploy() before anything moves.
+
+    The Phase 69 checks used to fire inside ``deploy_services`` -- after the
+    images were pushed and the migrations started -- or mid-loop, leaving some
+    services updated and others not. ``validate_services`` now runs every one
+    of them, for every service, before the first step.
+    """
+
+    @pytest.mark.parametrize(
+        ("toml_tail", "env_overrides", "match"),
+        [
+            # member 7: an unresolved placeholder in one service's environment
+            ('[services.worker.environment]\nX = "${nope}"\n', {}, r"\$\{nope\}"),
+            # member 5: a port only in the environment's services map
+            (
+                "[services.worker]\n",
+                {"services": {"config": {"worker": {"port": 9000}}}},
+                "deploy.toml declares none",
+            ),
+            # member 3: load-balanced with no target group anywhere
+            (
+                "[services.worker]\nport = 9000\n",
+                {
+                    "services": {"config": {"worker": {"load_balanced": True}}},
+                    "infrastructure": {"target_group_arn": None},
+                },
+                "no target group",
+            ),
+            # member 9: a placeholder in a secret's valueFrom
+            (
+                '[secrets]\nnames = ["SECRET_KEY"]\n',
+                {"secrets": {"provider": "ssm", "path_prefix": "/${environment}/app"}},
+                r"SECRET_KEY.*\$\{environment\}",
+            ),
+        ],
+        ids=["placeholder", "port", "target-group", "value-from"],
+    )
+    def test_nothing_moves_when_one_service_is_invalid(
+        self, make_deployer, steps, monkeypatch, capsys, toml_tail, env_overrides, match
+    ):
+        monkeypatch.setattr(deployer_mod, "validate_services", service_mod.validate_services)
+        env_config = _env_config(
+            infrastructure=env_overrides.get("infrastructure"),
+            **{k: v for k, v in env_overrides.items() if k != "infrastructure"},
+        )
+        toml = CLEAN_TOML + "\n[migrations]\nenabled = true\n" + toml_tail
+        deployer = make_deployer(toml=toml, env_config=env_config)
+
+        with pytest.raises(service_mod.ServiceConfigError, match=rf"(?s){match}"):
+            deployer.deploy()
+
+        # No ECR login, no build, no migrations, no service touched.
+        assert steps.calls == []
+        assert "Service configuration:" not in capsys.readouterr().out
 
 
 class TestDeployInfrastructureGuard:
