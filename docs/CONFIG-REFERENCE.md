@@ -588,7 +588,13 @@ Each environment directory contains a `config.toml` that provides deployment con
 - Standalone environments: [templates/standalone-staging/config.toml.example](../templates/standalone-staging/config.toml.example)
 - Shared environments: [templates/shared-app-staging/config.toml.example](../templates/shared-app-staging/config.toml.example)
 
-> **Maintainer note:** When updating the config.toml structure, update both this documentation and the template files in `templates/`.
+> **Maintainer note:** When changing the config.toml structure, update all of:
+>
+> 1. `templates/standalone-staging/config.toml.example` (and production)
+> 1. `templates/shared-app-staging/config.toml.example` (and production)
+> 1. This section of CONFIG-REFERENCE.md
+> 1. Every existing `*/config.toml` in the environments directory
+>    (`DEPLOYER_ENVIRONMENTS_DIR`)
 
 ### Location
 

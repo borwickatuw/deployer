@@ -1055,6 +1055,29 @@ draws the same fragment-versus-host boundary for storage-scripts' HTML emitters.
 
 ______________________________________________________________________
 
+## 2026-09-18: Text I/O names its encoding; operator-read JSON stays readable
+
+**Decision:** UI translation is N/A — there is no UI, and CLI output is read by
+the operator running the deploy. Character-set support is implemented: every
+text read and write passes `encoding="utf-8"` explicitly rather than inheriting
+the host locale, which ruff's `PLW1514` enforces. The artifacts an operator
+reads back (`emergency` checkpoints, the timing report, the resolved config
+JSON) use `ensure_ascii=False`, so non-ASCII values in a `deploy.toml` or a
+tofu output arrive readable instead of `\uXXXX`-escaped.
+
+**Alternatives considered:**
+
+- **Inherit the host locale.** Works on the operator's machine and breaks in a
+  container or CI runner whose locale is `C`/POSIX.
+- **`ensure_ascii=False` everywhere.** JSON that is hashed or handed to an AWS
+  API is compared byte-for-byte, not read, so it keeps the default escaping.
+
+**Reasoning:** The failure mode being closed is a deploy that behaves
+differently depending on where it runs; naming the encoding makes it the same
+everywhere, and the lint rule keeps it that way.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown

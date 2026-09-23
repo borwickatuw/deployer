@@ -33,3 +33,16 @@ module "bootstrap" {
 ## Adding a New Application
 
 Add the application name to `project_prefixes` in the instance's `terraform.tfvars` and run `tofu apply`. See [Adding New Applications](../GETTING-STARTED.md#adding-new-applications) for details.
+
+## IAM Policy Guidelines
+
+The roles and policies this module creates follow three rules:
+
+- **Use service-level wildcards** (e.g., `ecs:*`, `rds:*`) rather than listing
+  individual actions.
+- **Apply resource restrictions where they matter**: S3, SSM, ECR and IAM are
+  scoped to `project_prefixes`.
+- **Keep IAM role management granular**, because it is the sensitive part.
+
+Review IAM policy changes by hand. For multi-account setups, see
+[MULTIPLE-ACCOUNTS.md](../operations/MULTIPLE-ACCOUNTS.md).

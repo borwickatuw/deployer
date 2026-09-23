@@ -111,49 +111,20 @@ Example: `ecr_prefix` belongs in the environment's config.toml (infrastructure),
 
 **Tests reflect actual usage, not speculative generality**: Tests should not exercise code paths that no production code uses. If a function parameter is always passed the same value in production, don't keep the parameter general just because tests pass different values — simplify both the code and the tests. Tests should not introduce branches that production doesn't need.
 
-## Environments Directory
-
-Environment configs are stored separately, configured via `DEPLOYER_ENVIRONMENTS_DIR` in `.env`:
-
-```
-~/deployer-environments/
-├── bootstrap/                # IAM roles and shared resources
-├── myapp-staging/
-│   ├── main.tf
-│   ├── terraform.tfvars
-│   └── config.toml
-└── myapp-production/
-```
-
 ## Maintainer Notes
 
-When changing the environment config.toml structure, update:
-
-1. `templates/standalone-staging/config.toml.example` (and production)
-1. `templates/shared-app-staging/config.toml.example` (and production)
-1. `docs/CONFIG-REFERENCE.md` (Environment config.toml Reference section)
-1. All existing `*/config.toml` files in the environments directory
-
-## IAM Policies (Bootstrap Terraform)
-
-IAM roles and policies are managed in `modules/bootstrap/`. Key guidelines:
-
-- **Use service-level wildcards** (e.g., `ecs:*`, `rds:*`) rather than listing individual actions
-- **Apply resource restrictions** where they matter: S3, SSM, ECR, IAM scoped to `project_prefixes`
-- **Keep IAM role management granular** due to sensitivity
-
-To add a new project:
-
-1. Edit bootstrap's `terraform.tfvars`, add to `project_prefixes`
-1. Run `AWS_PROFILE=admin tofu apply`
-
-For multi-account setups, see [MULTIPLE-ACCOUNTS.md](docs/operations/MULTIPLE-ACCOUNTS.md).
+- Changing the environment config.toml structure touches the templates, the
+  docs and every existing environment: follow the maintainer checklist in
+  [CONFIG-REFERENCE.md](docs/CONFIG-REFERENCE.md).
+- Adding a project to IAM is a `project_prefixes` edit in the bootstrap
+  instance; the IAM policy guidelines are in
+  [bootstrap.md](docs/tofu-modules/bootstrap.md).
 
 ## Security
 
 This is infrastructure code. Security focus areas:
 
-- **IAM policies**: Managed in `modules/bootstrap/`. Use service-level wildcards with resource restrictions.
+- **IAM policies**: Managed in `modules/bootstrap/`; guidelines in [bootstrap.md](docs/tofu-modules/bootstrap.md#iam-policy-guidelines).
 - **Secrets**: Never hardcode. Use SSM Parameter Store (`bin/ssm-secrets.py`) or Secrets Manager.
 - **AWS profiles**: Scripts auto-select profiles from config.toml. Never use `--profile admin` in deployed code.
 - **IaC scanning**: `make security-checkov` scans the OpenTofu tree with Checkov through `bin/checkov-scan.sh`, which holds the skip list (each with its reason) and the pinned scanner version. deployer-environments runs the same script, so both repos share one list and one pin.
@@ -167,27 +138,12 @@ This is infrastructure code. Security focus areas:
 
 ## Posture: accessibility and i18n
 
-Deployer is a CLI plus OpenTofu modules — no web app, no GUI, no templating
-framework. The entire HTML surface is the CloudFront 503 page built in
-`modules/cloudfront-alb/locals.tf` and uploaded to S3, and it targets **WCAG
-2.1 Level AA**. `make a11y` renders both environment variants and runs pa11y
-against them.
-
-An environment that supplies its own `error_page_content` to the
-`cloudfront-alb` module replaces that page wholesale; its accessibility is the
-supplying environment's responsibility, not this repo's. See
-[docs/internal/DECISIONS.md](docs/internal/DECISIONS.md) "The accessibility
-surface is one static error page".
-
-**UI translation: N/A** — there is no UI to translate, and the CLI output is
-read by the operator running the deploy. **Character-set support: implemented**
-— every text read and write passes `encoding="utf-8"` explicitly rather than
-inheriting the host locale, which ruff's `PLW1514` enforces. The artifacts an
-operator reads back (`emergency` checkpoints, the timing report, the resolved
-config JSON) use `ensure_ascii=False`, so non-ASCII values in a `deploy.toml`
-or a tofu output arrive readable instead of `\uXXXX`-escaped. JSON that is
-hashed or handed to an AWS API keeps the default escaping: those strings are
-compared byte-for-byte, not read.
+**Accessibility: WCAG 2.1 Level AA**, for the one HTML surface — the
+CloudFront 503 page from `modules/cloudfront-alb/locals.tf`, checked by
+`make a11y`. **UI translation: N/A. Character-set support: implemented** —
+text I/O names `encoding="utf-8"` (ruff `PLW1514`). Scope and reasoning for
+both: [docs/internal/DECISIONS.md](docs/internal/DECISIONS.md), the
+2026-09-18 entries.
 
 ## pysmelly
 
@@ -217,13 +173,8 @@ uv run --group dev fileplan list               # someday-maybe/plan items + regi
 `uv run fileplan` gets no dev dependencies and silently falls back to whatever
 `fileplan` is on `PATH` instead of the pinned version.
 
-| Location                                                             | Holds                                                |
-| -------------------------------------------------------------------- | ---------------------------------------------------- |
-| [docs/someday-maybe/](docs/someday-maybe/)                           | Ideas kept, nothing committed to                     |
-| [docs/plan/](docs/plan/)                                             | Active phases, one file each, numbered from 1        |
-| [docs/plan-archive/](docs/plan-archive/)                             | Recent full records of closed phases                 |
-| [PLAN-ARCHIVE.md](docs/plan-archive/PLAN-ARCHIVE.md)                 | The register: `## N. Title` summaries of closed work |
-| [PLAN-ARCHIVE-2026-09.md](docs/plan-archive/PLAN-ARCHIVE-2026-09.md) | Rotated segment: everything closed pre-conversion    |
+Where each state lives, the register and its rotated segment:
+[docs/PLAN-METHOD.md](docs/PLAN-METHOD.md).
 
 Cross-repo arcs queued against deployer keep **claude-meta's** phase
 numbers, cited `fileplan-claude-meta:<number>` so one grep finds every
