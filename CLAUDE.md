@@ -156,7 +156,7 @@ This is infrastructure code. Security focus areas:
 - **IAM policies**: Managed in `modules/bootstrap/`. Use service-level wildcards with resource restrictions.
 - **Secrets**: Never hardcode. Use SSM Parameter Store (`bin/ssm-secrets.py`) or Secrets Manager.
 - **AWS profiles**: Scripts auto-select profiles from config.toml. Never use `--profile admin` in deployed code.
-- **IaC scanning**: `make security-checkov` scans OpenTofu modules with Checkov (via `uvx`). Intentional suppressions are documented in the Makefile.
+- **IaC scanning**: `make security-checkov` scans the OpenTofu tree with Checkov through `bin/checkov-scan.sh`, which holds the skip list (each with its reason) and the pinned scanner version. deployer-environments runs the same script, so both repos share one list and one pin.
 - **Dependency CVEs**: `make security-deps` runs `uv audit`. `make security-report` adds the outdated-package report (quarterly review).
 - **Secrets scanning**: `make security-secrets` runs detect-secrets against `.secrets.baseline`.
 - **Code review**: Review changes manually, especially IAM policy modifications.

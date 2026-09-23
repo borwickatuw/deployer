@@ -2,7 +2,7 @@
 title = "Checkov Deferred Items"
 +++
 
-These Checkov findings are valid but require infrastructure changes. Currently suppressed via `--skip-check` in the Makefile. See [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md) for resolved items.
+These Checkov findings are valid but require infrastructure changes. Currently suppressed in `bin/checkov-scan.sh`. See [PLAN-ARCHIVE-2026-09.md](../plan-archive/PLAN-ARCHIVE-2026-09.md) for resolved items.
 
 ### RDS Enhancements (deferred)
 
