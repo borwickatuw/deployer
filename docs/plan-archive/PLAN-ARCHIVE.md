@@ -72,6 +72,16 @@ behaviour and its alarm consequence are documented for the next apply
 module, and two PRODUCTION.md settings that are not settable. Full record in
 `items/`.
 
+## 6. pysmelly: the remainder the twenty-unit cap left, including the sentinel sweep nobody declared clear
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. The
+sentinel-returned-from-except sweep is done: 63 hits audited, 23 contract
+bugs fixed so a failed AWS or file read is reported as a failure rather
+than as absence, emergency/ clear; the pass-through-params remainder
+adjudicated (one fixed, eleven kept with reasons); the `50` cluster named
+and `is_likely_secret` adjudicated on its own. 46 → 44 findings. New
+register rows await ratification. Full record in `items/`.
+
 ## 7. Characterization tests for the four largely unpinned bin/ CLIs
 
 Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review. The four
