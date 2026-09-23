@@ -308,6 +308,10 @@ Note: Requires environment to be linked via `link-environments.py`, or use `--de
 
 The script will:
 
+1. Validate every service's configuration: sizing, port, target group, every
+   `${...}` placeholder, every secret reference, and whether a live service can
+   take the capacity `interruptible` asks for. Any error stops the deploy here,
+   before images are pushed or migrations run.
 1. Log into ECR
 1. Build and push Docker images
 1. Run database migrations (if configured)
@@ -317,11 +321,17 @@ The script will:
 ### Unchanged services are skipped
 
 A service whose intended state (task definition, deployment configuration,
-service registries) hashes identically to its last stable deploy — and which
+service registries, network configuration, load balancer, and the capacity
+`interruptible` selects) hashes identically to its last stable deploy — and which
 is still healthy and running that exact task-definition revision — is not
 redeployed. The deploy logs `<service> [unchanged, skipping]` and registers
 no new revision. Any out-of-band change (console edit, emergency pin,
 rollback) fails the live-state check and forces a normal redeploy.
+
+**Upgrading past `f5eb40f` redeploys every service once.** That change added
+the network configuration, load balancer and capacity to the hash, so no
+stored hash matches on the first deploy after the upgrade and every service
+rolls once, even if nothing changed. Later deploys skip as usual.
 
 Use `--force-deploy` to roll every service regardless:
 
