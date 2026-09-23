@@ -222,8 +222,10 @@ def _resolve_tofu_placeholders(value: Any, env_path: Path, tofu_outputs: dict[st
         # Check for embedded placeholders
         def replace_placeholder(m: re.Match) -> str:
             resolved = _walk_tofu_output(m.group(1), tofu_outputs, env_path)
-            # Convert to string for embedded placeholders
-            if isinstance(resolved, (dict, list)):
+            # Convert to string for embedded placeholders. Lists, maps and
+            # bools take JSON's spelling, which is tofu's: a tofu `true` is
+            # "true" here, not Python's "True" (Phase 69).
+            if isinstance(resolved, (dict, list, bool)):
                 return json.dumps(resolved)
             return str(resolved)
 

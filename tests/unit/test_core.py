@@ -532,6 +532,17 @@ class TestResolveTofuPlaceholders:
         )
         assert result == "cluster=myapp-staging-cluster count=2"
 
+    def test_an_embedded_bool_is_spelled_the_way_tofu_spells_it(self):
+        """Phase 69 member 8: it used to be spelled Python-style, "True".
+
+        tofu's own string interpolation renders ``true``; a container reading
+        ``"True"`` gets a value no tofu-side reasoning predicted.
+        """
+        result = _resolve_tofu_placeholders(
+            "cognito=${tofu:cognito_enabled}", ENV_PATH, TOFU_OUTPUTS
+        )
+        assert result == "cognito=true"
+
     def test_embedded_list_and_dict_are_json_dumped(self):
         result = _resolve_tofu_placeholders(
             "subnets=${tofu:private_subnet_ids} buckets=${tofu:s3_bucket_names}",

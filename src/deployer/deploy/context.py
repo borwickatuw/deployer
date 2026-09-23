@@ -86,10 +86,16 @@ class InfraConfig:
         so a ``${subnet_ids}`` or ``${scheduler}`` reference is reported as
         unresolved by ``_resolve_legacy_placeholders``.
 
-        ``bool`` takes the numeric arm -- it subclasses ``int`` -- and renders
-        Python-style as ``"True"``/``"False"``.
+        ``bool`` is excluded explicitly: it subclasses ``int`` and used to take
+        the numeric arm, rendering Python-style as ``"True"`` (Phase 69). No
+        field here is a bool, so one is a malformed config.toml value, and a
+        reference to it is reported as unresolved instead.
         """
-        return {k: str(v) for k, v in asdict(self).items() if isinstance(v, (str, int, float))}
+        return {
+            k: str(v)
+            for k, v in asdict(self).items()
+            if isinstance(v, (str, int, float)) and not isinstance(v, bool)
+        }
 
 
 @dataclass(frozen=True)

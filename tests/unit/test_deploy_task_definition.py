@@ -30,9 +30,9 @@ What is pinned here:
   placeholder is a ``ValueError``, and a placeholder is substituted wherever
   it appears in a value. It used to pass all of those through verbatim and
   substitute only a value that was entirely one placeholder.
-* ``InfraConfig.legacy_placeholders`` -- the ``int``/``float``/``bool``
-  ``str()`` arm and the ``None``/list/dict drop, which is the single place
-  those now happen.
+* ``InfraConfig.legacy_placeholders`` -- the ``int``/``float`` ``str()`` arm
+  and the ``None``/list/dict/``bool`` drop, which is the single place those
+  now happen (``bool`` joined the drop in Phase 69).
 * The values ``_build_infra_config`` really produces -- lists, nested dicts and
   ``None`` -- driven end to end, since a typed ``infra_config`` has to keep
   answering for those.
@@ -119,12 +119,12 @@ class TestInfraConfigLegacyPlaceholders:
             "db_port": "1.5"
         }
 
-    def test_a_bool_field_is_stringified_python_style(self):
-        # Pinned, not endorsed: bool is a subclass of int, so it passes the
-        # numeric filter and renders as "True"/"False", not "true"/"false".
-        assert _build_infra_config({"database": {"port": True}}).legacy_placeholders() == {
-            "db_port": "True"
-        }
+    def test_a_bool_field_makes_no_placeholder(self):
+        # Phase 69 member 8: bool subclasses int, so it used to pass the numeric
+        # filter and render Python-style as "True". No InfraConfig field is a
+        # bool, so a bool here is a malformed config.toml value; it now makes no
+        # placeholder, and a reference to it is reported as unresolved.
+        assert _build_infra_config({"database": {"port": True}}).legacy_placeholders() == {}
 
     @pytest.mark.parametrize(
         "infra_config",

@@ -836,7 +836,7 @@ private_subnet_ids = "${tofu:private_subnet_ids}"  # Returns a list
 connection = "host=${tofu:db_host} port=5432"  # String interpolation
 ```
 
-Lists and maps embedded in a string are rendered as JSON.
+Lists, maps and booleans embedded in a string are rendered as JSON — a tofu `true` becomes `true`, as tofu itself would interpolate it.
 
 **Map outputs can be indexed** with dotted keys: `${tofu:NAME.KEY}`, or `${tofu:NAME.KEY.KEY}` for a map of maps. The first segment is the output name; each further segment looks up a key in a map. This reaches a single value inside a map output without adding a per-key `output` block to the root module. For example, the root module's `s3_bucket_names` output maps each entry in `s3_buckets` to its bucket name:
 
