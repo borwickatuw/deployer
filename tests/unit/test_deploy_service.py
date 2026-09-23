@@ -1316,24 +1316,14 @@ class TestDeployServices:
         ]
         assert params["healthCheckGracePeriodSeconds"] == 60
 
-    def test_a_spot_service_made_non_interruptible_goes_back_to_the_launch_type(self, aws):
-        """An empty capacityProviderStrategy is ECS's in-place route back to FARGATE.
-
-        moto cannot report a live strategy, so the live description is handed
-        to ``_update_service`` directly; moto still validates the request.
-        """
-        arn = _make_service(aws)
-        live = {"capacityProviderStrategy": [{"capacityProvider": "FARGATE_SPOT", "weight": 1}]}
-        ctx = _ctx(aws)
-        assert _update_service(ctx, "web", arn, DeploymentConfig(), live) is True
-        assert aws.client.params("update_service")["capacityProviderStrategy"] == []
-
     def test_an_update_that_keeps_its_capacity_sends_no_strategy(self, aws):
+        # The update path never changes capacity: a change is refused earlier,
+        # by validate_services, until it has been verified on staging.
         arn = _make_service(aws)
-        ctx = _ctx(aws, services={"web": {"interruptible": True}})
-        spot = {"capacityProviderStrategy": [{"capacityProvider": "FARGATE_SPOT", "weight": 1}]}
-        _update_service(ctx, "web", arn, DeploymentConfig(), spot)
-        _update_service(_ctx(aws), "web", arn, DeploymentConfig(), {"launchType": "FARGATE"})
+        _update_service(
+            _ctx(aws, services={"web": {"interruptible": True}}), "web", arn, DeploymentConfig()
+        )
+        _update_service(_ctx(aws), "web", arn, DeploymentConfig())
         assert len(aws.client.all_params("update_service")) == 2
         for params in aws.client.all_params("update_service"):
             assert "capacityProviderStrategy" not in params
@@ -1876,24 +1866,30 @@ class TestValidateServices:
     def test_a_capacity_switch_to_spot_on_a_live_service_is_refused(self, aws):
         """Phase 69 member 2: interruptible = true used to do nothing to a live service.
 
-        The FARGATE launch type -> FARGATE_SPOT transition is not one ECS's
-        rolling UpdateService offers, so it is refused with the way out --
-        before anything moves, not mid-loop.
+        A live capacity change is refused before anything moves, in both
+        directions, until it has been verified on staging: AWS's API model and
+        its Developer Guide disagree on which transitions work.
         """
         _make_service(aws)  # launchType FARGATE
         ctx = _ctx(aws, services={"web": {"interruptible": True}})
-        with pytest.raises(ServiceConfigError, match=r"(?s)launch type FARGATE.*interruptible"):
+        with pytest.raises(
+            ServiceConfigError, match=r"(?s)launch type FARGATE.*Fargate Spot.*unverified"
+        ):
             validate_services(ctx)
         assert aws.client.operations == ["describe_services"]
 
-    def test_spot_back_to_the_fargate_launch_type_is_allowed(self):
-        """AWS lists capacity provider -> launch type as a valid in-place update.
+    def test_spot_back_to_the_fargate_launch_type_is_refused_too(self):
+        """The Developer Guide says capacity provider -> launch type is unsupported.
 
-        Passing an empty ``capacityProviderStrategy`` does it (see
-        ``_update_service``), so only the other direction is refused.
+        deployer creates a Spot service with a strategy and no launchType, so an
+        empty strategy has no launch type to revert to. Refused, unverified.
         """
         live = {"capacityProviderStrategy": [{"capacityProvider": "FARGATE_SPOT", "weight": 1}]}
-        assert _capacity_mismatch("web", {}, live) is None
+        message = _capacity_mismatch("web", {}, live)
+        assert message is not None
+        assert "capacity provider strategy" in message
+        assert "unverified" in message
+        assert "recreate" in message
 
     def test_matching_capacity_is_not_a_mismatch(self):
         spot = {"capacityProviderStrategy": [{"capacityProvider": "FARGATE_SPOT", "weight": 1}]}

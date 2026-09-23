@@ -407,30 +407,43 @@ def _capacity_params(service_toml: dict) -> dict:
 
 
 def _capacity_mismatch(service_name: str, service_toml: dict, live_service: dict) -> str | None:
-    """Explain why a live service cannot be moved to Fargate Spot in place.
+    """Refuse a change of capacity on a live service, in either direction.
 
-    ``interruptible = true`` on a service already running on a launch type
-    asks for launch type -> FARGATE_SPOT, which is not a transition AWS lists
-    for UpdateService, so the update path used to leave the service where it
-    was without a word (Phase 69). It is now refused, with the way out.
+    ``interruptible`` selects the capacity a service is created on: the
+    FARGATE launch type, or a FARGATE/FARGATE_SPOT capacity provider strategy
+    with no launch type. The update path used to leave a live service where
+    it was without a word when ``interruptible`` changed (Phase 69).
 
-    The other direction is allowed: AWS lists capacity provider -> launch type
-    as a valid in-place update (an empty ``capacityProviderStrategy``), which
-    ``_update_service`` sends.
+    Whether ECS can make that change in place is **unverified**. The
+    botocore API model lists transitions the Amazon ECS Developer Guide
+    ("Service mutability", in its comparison of capacity providers and launch
+    types) contradicts: the guide says capacity provider -> launch type
+    updates are not supported, and that an empty strategy only reverts to the
+    launch type the service was *created* with -- which deployer's Spot
+    services do not have. Until a staging test settles it, both directions
+    are refused before anything moves, naming the safe path.
 
     Returns:
-        The message, or None when deploy.toml's capacity can be applied.
+        The message, or None when the live capacity matches deploy.toml.
     """
     wants_spot = bool(service_toml.get("interruptible"))
     on_strategy = bool(live_service.get("capacityProviderStrategy"))
-    if not wants_spot or on_strategy:
+    if wants_spot == on_strategy:
         return None
+    if wants_spot:
+        current = f"launch type {live_service.get('launchType')}"
+        wanted = "Fargate Spot (interruptible = true)"
+    else:
+        current = "a capacity provider strategy (Fargate Spot)"
+        wanted = "the FARGATE launch type (interruptible unset or false)"
     return (
-        f"Service '{service_name}' runs on launch type "
-        f"{live_service.get('launchType')}, but deploy.toml sets interruptible = "
-        f"true, which asks for Fargate Spot. ECS cannot move a live service "
-        f"from a launch type to Fargate Spot in place: delete the service and "
-        f"deploy again to recreate it on Spot, or remove interruptible."
+        f"Service '{service_name}' runs on {current}, but deploy.toml asks for "
+        f"{wanted}. Changing a live service's capacity in place is unverified "
+        f"-- the ECS API model and the ECS Developer Guide disagree on which "
+        f"transitions work -- so deployer does not attempt it. Either recreate "
+        f"the service (delete it; the next deploy creates it on the new "
+        f"capacity), make and verify the change by hand, or revert "
+        f"interruptible."
     )
 
 
@@ -570,9 +583,7 @@ def _create_service(
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
 
-def _update_service(
-    ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig, live_service: dict
-) -> bool:
+def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig) -> bool:
     """Force a new deployment of an existing ECS service.
 
     A ClientError is logged and reported as False so the caller keeps deploying
@@ -585,7 +596,6 @@ def _update_service(
         service_name: Name of the service.
         task_def_arn: Task definition ARN to deploy.
         dep_cfg: Deployment configuration extracted from infra_config.
-        live_service: The service as ``describe_services`` reports it.
 
     Returns:
         True if the deployment was started, False if AWS rejected it.
@@ -614,11 +624,8 @@ def _update_service(
         if registries:
             update_params["serviceRegistries"] = registries
 
-        # A Spot service that is no longer interruptible goes back to the
-        # FARGATE launch type: an empty strategy is AWS's in-place route. The
-        # reverse is refused earlier, by validate_services.
-        if live_service.get("capacityProviderStrategy") and not service_toml.get("interruptible"):
-            update_params["capacityProviderStrategy"] = []
+        # No capacity key is ever sent: a change of capacity is refused
+        # earlier, by validate_services, until it is verified on staging.
 
         if ctx.dry_run:
             _print_dry_run_call(
@@ -892,7 +899,7 @@ def _deploy_one_service(
     if dep_cfg.max_percent <= 100:
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
-    if not _update_service(ctx, service_name, task_def_arn, dep_cfg, live_service):
+    if not _update_service(ctx, service_name, task_def_arn, dep_cfg):
         return ServiceDeployOutcome()
     return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
 
@@ -917,7 +924,7 @@ def _dry_run_one_service(
     if live_service is None:
         _create_service(ctx, service_name, task_def_arn)
     else:
-        _update_service(ctx, service_name, task_def_arn, dep_cfg, live_service)
+        _update_service(ctx, service_name, task_def_arn, dep_cfg)
     print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
     return ServiceDeployOutcome(task_def_arn=task_def_arn)
 

@@ -938,6 +938,18 @@ class TestDeployValidatesServicesFirst:
         assert steps.calls == []
         assert "Service configuration:" not in capsys.readouterr().out
 
+    def test_a_valid_config_runs_every_step(self, make_deployer, steps, monkeypatch, aws):
+        """No false positive: the real validate_services passes a valid config."""
+        monkeypatch.setattr(deployer_mod, "validate_services", service_mod.validate_services)
+        aws["ecs"].describe_services = lambda **_kwargs: {
+            "services": [{"serviceName": "web", "status": "ACTIVE", "launchType": "FARGATE"}]
+        }
+        toml = CLEAN_TOML + "\n[migrations]\nenabled = true\n"
+
+        make_deployer(toml=toml).deploy()
+
+        assert steps.names == list(STEP_NAMES)
+
 
 class TestDeployInfrastructureGuard:
     """Characterization pins for the critical-infrastructure branch."""

@@ -356,16 +356,26 @@ migration service, so it has no container health check.
 
 #### Changing `interruptible` on a live service
 
-`interruptible` is applied when a service is created. On a service that
-already exists:
+`interruptible` is applied when a service is created: `false` creates it on
+the FARGATE launch type, `true` on a FARGATE/FARGATE_SPOT capacity provider
+strategy with no launch type. **Changing it on a service that already exists
+is refused, in both directions, before anything moves.**
 
-- **`true` → `false` (Spot → FARGATE) works in place.** The update sends an
-  empty `capacityProviderStrategy`, which AWS lists as the in-place route back
-  to the launch type.
-- **`false` → `true` (FARGATE → Spot) is refused before anything moves.**
-  ECS cannot move a live service from a launch type to Fargate Spot in place.
-  Delete the service and deploy again to recreate it on Spot, or leave
-  `interruptible` unset.
+Whether ECS can make that change in place has not been verified. The ECS API
+model and the Amazon ECS Developer Guide disagree: the guide's "Service
+mutability" section (in its comparison of capacity providers and launch
+types) says capacity provider → launch type updates are not supported, and
+that an empty `capacityProviderStrategy` only reverts a service to the launch
+type it was *created* with, which a service deployer created on Spot does not
+have. Until a staging test settles it, deployer does not attempt either
+direction.
+
+The safe paths:
+
+- **Recreate the service.** Delete it; the next deploy creates it on the
+  capacity deploy.toml now asks for.
+- **Make the change by hand** (console or CLI), verify it, then deploy.
+- **Revert `interruptible`** to match the live service.
 
 ### `[environment]`
 
