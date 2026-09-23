@@ -259,7 +259,7 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 | `min_replicas`            | integer | No       | Replica floor (default 1). Declare `0` only for services safe at zero (pull-based queue workers); required before an environment may scale the service to zero. |
 | `minimum_healthy_percent` | integer | No       | Per-service override of the environment `[deployment]` value (0–100). Unset inherits.                                                                           |
 | `path_pattern`            | string  | No       | ALB path-based routing pattern (e.g., `/api/*`).                                                                                                                |
-| `port`                    | integer | No       | Container port (for load-balanced services).                                                                                                                    |
+| `port`                    | integer | No       | Container port. Required when the environment makes the service `load_balanced`; the one source for the port (tfvars may repeat it, never differ).              |
 
 `minimum_healthy_percent` / `maximum_percent` override the environment's
 `[deployment]` rollout strategy **per key** for one service: a service setting
@@ -917,7 +917,7 @@ Map of service configurations. Each service needs sizing information.
 | `load_balanced`        | bool   | Yes      | Whether to receive traffic from ALB.                                     |
 | `memory`               | number | Yes      | Memory in MB. Must be compatible with CPU.                               |
 | `path_pattern`         | string | No       | ALB path-based routing pattern (auto-creates target group + rule).       |
-| `port`                 | number | No       | Container port. Required if `load_balanced = true`.                      |
+| `port`                 | number | No       | Target group port. If set, must equal deploy.toml `port`.                |
 | `replicas`             | number | Yes      | Desired task count.                                                      |
 | `service_discovery`    | bool   | No       | Register with Cloud Map for service-to-service communication.            |
 

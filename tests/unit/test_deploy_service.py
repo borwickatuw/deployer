@@ -1026,21 +1026,22 @@ class TestCreateService:
         _create_service(ctx, "web", arn)
         assert "loadBalancers" not in aws.client.params("create_service")
 
-    def test_load_balanced_without_a_port_skips_the_block(self, aws):
+    # Phase 69 member 5 flipped the next three pins. Each used to create the
+    # service with the environment's port ignored, or with no load balancer at
+    # all; each is now a ValueError from get_service_sizing, before any call.
+
+    def test_load_balanced_without_a_port_is_an_error(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(
             aws,
             services={"web": {"load_balanced": True}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        _create_service(ctx, "web", arn)
-        assert "loadBalancers" not in aws.client.params("create_service")
+        with pytest.raises(ValueError, match="declares no port"):
+            _create_service(ctx, "web", arn)
+        assert aws.client.operations == []
 
-    def test_port_from_environment_sizing_is_not_seen(self, aws):
-        # `"port" in service_toml` reads the raw [services.web] table while
-        # load_balanced comes from the merged sizing. A port supplied only via
-        # SERVICE_CONFIG therefore produces no load balancer registration --
-        # the service comes up and never joins the target group.
+    def test_port_only_in_environment_sizing_is_an_error(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(
             aws,
@@ -1048,13 +1049,11 @@ class TestCreateService:
             service_config={"web": {"port": 8000}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        _create_service(ctx, "web", arn)
-        assert "loadBalancers" not in aws.client.params("create_service")
+        with pytest.raises(ValueError, match="deploy.toml declares none"):
+            _create_service(ctx, "web", arn)
+        assert aws.client.operations == []
 
-    def test_container_port_ignores_environment_override(self, aws):
-        # containerPort reads service_toml["port"], not the merged value, so an
-        # environment override of `port` is applied to the task definition's
-        # portMappings but *not* to the target group registration.
+    def test_an_environment_port_contradicting_deploy_toml_is_an_error(self, aws):
         arn = _make_service(aws, "seed")
         ctx = _ctx(
             aws,
@@ -1062,8 +1061,9 @@ class TestCreateService:
             service_config={"web": {"port": 9000}},
             infra={"target_group_arn": DEFAULT_TG},
         )
-        _create_service(ctx, "web", arn)
-        assert aws.client.params("create_service")["loadBalancers"][0]["containerPort"] == 8000
+        with pytest.raises(ValueError, match="Make them agree"):
+            _create_service(ctx, "web", arn)
+        assert aws.client.operations == []
 
     # -- must-pin #4: service discovery ----------------------------------
 

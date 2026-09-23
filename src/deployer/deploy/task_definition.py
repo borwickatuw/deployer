@@ -172,10 +172,52 @@ def get_service_sizing(
             f"for the {service_name} service."
         )
 
+    _validate_port_source(service_name, base_config, env_config, merged["load_balanced"])
+
     # Validate Fargate CPU/memory combination
     validate_fargate_sizing(merged["cpu"], merged["memory"], service_name)
 
     return merged
+
+
+def _validate_port_source(
+    service_name: str, base_config: dict, env_config: dict, load_balanced: bool
+) -> None:
+    """Fail fast unless deploy.toml's ``port`` is the one port for the service.
+
+    The port is the application's: it is what the image listens on, and the
+    port mapping and the load-balancer registration both read it from
+    deploy.toml. The environment's ``services`` map carries a ``port`` too (tofu
+    uses it for the target group), so it may repeat deploy.toml's value but not
+    replace or contradict it. Both used to be ignored silently (Phase 69).
+
+    Raises:
+        ValueError: If the environment sets a port deploy.toml does not, the two
+            disagree, or a load-balanced service has no deploy.toml port.
+    """
+    toml_port = base_config.get("port")
+    env_port = env_config.get("port")  # tofu renders an unset optional as null
+
+    if env_port is not None and toml_port is None:
+        raise ValueError(
+            f"Service '{service_name}': the environment's services map sets port "
+            f"{env_port}, but deploy.toml declares none. The container port "
+            f"belongs in deploy.toml: add port = {env_port} to "
+            f"[services.{service_name}]."
+        )
+    if env_port is not None and env_port != toml_port:
+        raise ValueError(
+            f"Service '{service_name}': the environment's services map sets port "
+            f"{env_port}, but deploy.toml's [services.{service_name}] port is "
+            f"{toml_port}. Make them agree."
+        )
+    if load_balanced and toml_port is None:
+        raise ValueError(
+            f"Service '{service_name}' is load_balanced but deploy.toml "
+            f"[services.{service_name}] declares no port, so there is nothing to "
+            f"register with the target group. Add the port the container listens "
+            f"on, or set load_balanced = false."
+        )
 
 
 def get_environment_variables(

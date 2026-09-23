@@ -252,6 +252,46 @@ class TestGetServiceSizing:
         assert sizing["replicas"] == 0
 
 
+class TestServicePortHasOneSource:
+    """Phase 69 member 5: ``port`` is deploy.toml's, and the environment may only agree.
+
+    ``load_balanced`` comes from the merged sizing but ``port`` was read from the
+    raw deploy.toml stanza, so a port supplied only through the environment's
+    ``services`` map never produced a load-balancer registration or a port
+    mapping, and a load-balanced service with no deploy.toml port was created
+    with no load balancer -- all without a word.
+    """
+
+    def test_a_port_only_in_the_environment_is_an_error(self):
+        config = {"services": {"web": {}}}
+        service_config = {"web": {"load_balanced": True, "port": 8000}}
+        with pytest.raises(ValueError, match=r"'web'.*port 8000.*deploy\.toml declares none"):
+            get_service_sizing("web", config, service_config)
+
+    def test_disagreeing_ports_are_an_error(self):
+        config = {"services": {"web": {"port": 8000}}}
+        service_config = {"web": {"load_balanced": True, "port": 9000}}
+        with pytest.raises(ValueError, match=r"'web'.*9000.*8000"):
+            get_service_sizing("web", config, service_config)
+
+    def test_a_load_balanced_service_needs_a_port(self):
+        config = {"services": {"web": {}}}
+        service_config = {"web": {"load_balanced": True}}
+        with pytest.raises(ValueError, match=r"'web' is load_balanced but deploy\.toml"):
+            get_service_sizing("web", config, service_config)
+
+    def test_agreeing_ports_pass(self):
+        config = {"services": {"web": {"port": 8000}}}
+        service_config = {"web": {"load_balanced": True, "port": 8000}}
+        assert get_service_sizing("web", config, service_config)["load_balanced"] is True
+
+    def test_a_null_environment_port_is_absent(self):
+        # tofu renders an unset optional(number) as null.
+        config = {"services": {"web": {"port": 8000}}}
+        service_config = {"web": {"load_balanced": True, "port": None}}
+        assert get_service_sizing("web", config, service_config)["load_balanced"] is True
+
+
 class TestResolveLegacyPlaceholders:
     """Tests for _resolve_legacy_placeholders function (backward compatibility)."""
 
