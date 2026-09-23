@@ -141,7 +141,7 @@ export PARSE_STRUCTURED
 check-structured: ## Re-parse every tracked TOML/JSON file, every fileplan item, and the sample compose fixture
 	@uv run --group dev fileplan list --json >/dev/null
 	@git ls-files -z -- '*.toml' '*.json' .secrets.baseline | uv run python -c "$$PARSE_STRUCTURED"
-	@docker compose -f tests/fixtures/sample_docker_compose.yml config -q
+	@docker compose -f tests/fixtures/sample_docker_compose.yml config -q --no-interpolate
 
 .PHONY: check
 check: check-structured lint test format-docs-check security-secrets ## Run structured-file/lint/test/docs/secrets checks
