@@ -330,9 +330,6 @@ def _deployment_configuration(dep_cfg: DeploymentConfig) -> dict:
 def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_toml: dict) -> dict:
     """Return the load balancer keys for a service, or an empty dict.
 
-    A load-balanced service with no resolvable target group is silently
-    skipped -- it is created without load balancer registration.
-
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         service_name: Name of the service.
@@ -341,6 +338,12 @@ def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_tom
 
     Returns:
         Dict of ECS service params to merge, empty when not applicable.
+
+    Raises:
+        RuntimeError: If the service is load-balanced but neither its own entry
+            in ``service_target_groups`` nor the default ``target_group_arn``
+            resolves. That used to skip the load balancer and the grace period
+            and create an unreachable service with no warning (Phase 69).
     """
     if not (service_cfg.get("load_balanced") and "port" in service_toml):
         return {}
@@ -349,7 +352,13 @@ def _load_balancer_params(ctx, service_name: str, service_cfg: dict, service_tom
     service_target_groups = ctx.infra_config.service_target_groups
     target_group_arn = service_target_groups.get(service_name) or ctx.infra_config.target_group_arn
     if not target_group_arn:
-        return {}
+        raise RuntimeError(
+            f"Service '{service_name}' is load_balanced with port "
+            f"{service_toml['port']}, but no target group resolves for it: "
+            f"config.toml has neither [infrastructure] service_target_groups."
+            f"{service_name} nor target_group_arn. Add the target group to the "
+            f"environment, or set load_balanced = false for this service."
+        )
 
     # Health check grace period gives the container time to start before
     # health checks begin.
@@ -782,6 +791,13 @@ def deploy_services(
 
     services = ctx.config.get("services", {})
     log_debug(f"Services to deploy: {list(services.keys())}")
+
+    # Configuration errors that are knowable up front stop the run before the
+    # first service moves, rather than leaving a partial deploy behind them.
+    for name, svc_config in services.items():
+        _load_balancer_params(
+            ctx, name, get_service_sizing(name, ctx.config, ctx.service_config), svc_config
+        )
 
     deployed = DeployedServices()
     failed: list[str] = []

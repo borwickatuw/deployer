@@ -29,9 +29,9 @@ Eight pins exist specifically to make 53e-5b's extractions verifiable:
    and the update arm of ``deploy_services``. Both mutate the *already-built*
    ``deploymentConfiguration`` sub-dict in place.
 3. **Per-service vs default target group**, including the ``or`` fallthrough on an
-   empty per-service entry, and the health-check grace period -- which lives
-   *inside* the ``if target_group_arn`` block, so no target group means no grace
-   period either.
+   empty per-service entry, and the health-check grace period. A load-balanced
+   service with no target group used to be created with neither; since Phase 69
+   it is a ``RuntimeError``, raised before any service moves.
 4. **Service discovery on and off** -- the ``serviceRegistries`` injection in both
    ``_create_service`` and the update arm of ``deploy_services``. Only
    ``registryArn`` is sent; no ``containerPort``.
@@ -971,16 +971,31 @@ class TestCreateService:
             DEFAULT_TG
         )
 
-    def test_no_target_group_means_no_load_balancer_block(self, aws):
+    def test_no_target_group_for_a_load_balanced_service_is_an_error(self, aws):
+        """Phase 69 member 3: it used to create the service with no load balancer.
+
+        The whole ``loadBalancers`` block and the grace period were skipped, and
+        the service came up unreachable with no warning. Nothing resolving is a
+        configuration error, not a reason to drop the instruction.
+        """
         arn = _make_service(aws, "seed")
         ctx = _ctx(aws, services={"web": {"load_balanced": True, "port": 8000}})
-        _create_service(ctx, "web", arn)
-        params = aws.client.params("create_service")
-        assert "loadBalancers" not in params
-        # The grace period lives inside the `if target_group_arn` block, so it
-        # disappears with the load balancer. A load-balanced service with no
-        # target group is created silently, with no warning.
-        assert "healthCheckGracePeriodSeconds" not in params
+        with pytest.raises(RuntimeError, match=r"'web' is load_balanced.*no target group"):
+            _create_service(ctx, "web", arn)
+        assert "create_service" not in aws.client.operations
+
+    def test_an_unresolvable_target_group_stops_the_deploy_before_any_service_moves(self, aws):
+        """The check runs over every service before the first one is touched.
+
+        Raising mid-loop would leave the services ahead of the bad one deployed
+        and the rest not -- a partial deploy caused by a config error that was
+        knowable up front.
+        """
+        _make_service(aws, "api")
+        ctx = _ctx(aws, services={"api": {}, "web": {"load_balanced": True, "port": 8000}})
+        with pytest.raises(RuntimeError, match=r"'web' is load_balanced.*no target group"):
+            deploy_services(ctx, {"api": IMAGE_URI, "web": IMAGE_URI})
+        assert aws.client.operations == []
 
     def test_grace_period_defaults_to_sixty(self, aws):
         arn = _make_service(aws, "seed")
