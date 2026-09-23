@@ -37,9 +37,11 @@ is the only identifier claude-meta's register guarantees forever. Link at most
 a stable surface (a state *directory*, the register, a rotated segment), never
 an item file, which moves on every transition.
 
-Cross-repo backlog queued against this repo: `fileplan-claude-meta:52`
-(container-level health checks for non-HTTP services), live in claude-meta
-`docs/plan/`. **`fileplan-claude-meta:53` (the pysmelly subphase arc,
+Cross-repo backlog against this repo: `fileplan-claude-meta:52`
+(container-level health checks for non-HTTP services). **The deployer half
+landed 2026-09-23** (`4fba33e`, `[services.X.container_health_check]`);
+52 stays open in claude-meta for a release carrying it and havoc's staging
+proof. **`fileplan-claude-meta:53` (the pysmelly subphase arc,
 53a–53p) closed 2026-08-25** — its record is in claude-meta
 `docs/plan-archive/PLAN-ARCHIVE-2026-09.md`.
 
