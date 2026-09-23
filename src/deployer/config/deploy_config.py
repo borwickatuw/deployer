@@ -132,6 +132,87 @@ class ImageConfig:
         return merge_build_args(self.name, self.build_args, environment)
 
 
+# ECS's valid ranges for a container healthCheck (API_HealthCheck), inclusive.
+# retries is a count; the rest are seconds.
+_HEALTH_CHECK_RANGES = {
+    "interval": (5, 300),
+    "timeout": (2, 60),
+    "retries": (1, 10),
+    "start_period": (0, 300),
+}
+# deploy.toml key -> ECS healthCheck key.
+_HEALTH_CHECK_ECS_KEYS = {
+    "command": "command",
+    "interval": "interval",
+    "timeout": "timeout",
+    "retries": "retries",
+    "start_period": "startPeriod",
+}
+
+
+def container_health_check(service_name: str, block: dict[str, Any]) -> dict[str, Any]:
+    """Validate a ``[services.X.container_health_check]`` block; return ECS's ``healthCheck``.
+
+    ``command`` is required and takes ECS's own list form: ``["CMD", arg, ...]``
+    runs the arguments directly, ``["CMD-SHELL", "one shell string"]`` runs one
+    string in the container's default shell. Every other key is optional and,
+    when omitted, is left to ECS's default (interval 30, timeout 5, retries 3,
+    no start period). Keys are deploy.toml's snake_case; ``start_period``
+    becomes ECS's ``startPeriod``.
+
+    Called at parse time, so a bad block stops the deploy before anything
+    runs, and again when the task definition is built, to render it.
+
+    Args:
+        service_name: The service, for error messages.
+        block: The block as TOML produced it.
+
+    Returns:
+        The ECS ``healthCheck`` dict.
+
+    Raises:
+        ValueError: On an unknown key, a missing or malformed ``command``, or a
+            value that is not a whole number within ECS's range.
+    """
+    where = f"[services.{service_name}.container_health_check]"
+
+    unknown = sorted(set(block) - set(_HEALTH_CHECK_ECS_KEYS))
+    if unknown:
+        raise ValueError(
+            f"{where} has unknown key(s): {', '.join(unknown)}. "
+            f"Allowed: {', '.join(_HEALTH_CHECK_ECS_KEYS)}."
+        )
+
+    if "command" not in block:
+        raise ValueError(f"{where} requires 'command'")
+    command = block["command"]
+    if not isinstance(command, list):
+        raise ValueError(
+            f"{where} command must be a list, e.g. "
+            '["CMD-SHELL", "test -f /tmp/alive"] or ["CMD", "/app/healthcheck"]'
+        )
+    if not command or command[0] not in ("CMD", "CMD-SHELL"):
+        raise ValueError(f"{where} command must start with CMD or CMD-SHELL")
+    args = command[1:]
+    if not all(isinstance(arg, str) and arg for arg in args):
+        raise ValueError(f"{where} command arguments must be non-empty strings")
+    if command[0] == "CMD" and not args:
+        raise ValueError(f"{where} command CMD needs at least one argument")
+    if command[0] == "CMD-SHELL" and len(args) != 1:
+        raise ValueError(f"{where} command CMD-SHELL takes exactly one shell string")
+
+    for key, (low, high) in _HEALTH_CHECK_RANGES.items():
+        if key not in block:
+            continue
+        value = block[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{where} {key} must be a whole number, got {value!r}")
+        if not low <= value <= high:
+            raise ValueError(f"{where} {key} must be between {low} and {high}, got {value}")
+
+    return {_HEALTH_CHECK_ECS_KEYS[key]: value for key, value in block.items()}
+
+
 @dataclass
 class ServiceConfig:
     """Configuration for an ECS service."""
@@ -154,6 +235,8 @@ class ServiceConfig:
     # environment value per key.
     minimum_healthy_percent: int | None = None
     maximum_percent: int | None = None
+    # ECS container healthCheck; see container_health_check() for the shape.
+    container_health_check: dict[str, Any] | None = None
     environment: dict[str, Any] = field(default_factory=dict, repr=False)
 
     _KNOWN_KEYS = {
@@ -169,6 +252,7 @@ class ServiceConfig:
         "interruptible",
         "minimum_healthy_percent",
         "maximum_percent",
+        "container_health_check",
     }
 
     def validate_deployment_override(self) -> None:
@@ -404,6 +488,8 @@ class DeployConfig:
                 svc_dict["minimum_healthy_percent"] = svc.minimum_healthy_percent
             if svc.maximum_percent is not None:
                 svc_dict["maximum_percent"] = svc.maximum_percent
+            if svc.container_health_check is not None:
+                svc_dict["container_health_check"] = svc.container_health_check
             if svc.environment:
                 svc_dict["environment"] = svc.environment
             result["services"][name] = svc_dict
@@ -480,6 +566,9 @@ class DeployConfig:
                     ServiceConfig, {**service_config, "name": service_name}, config=_DACITE_CONFIG
                 )
                 services[service_name].validate_deployment_override()
+                health_check = services[service_name].container_health_check
+                if health_check is not None:
+                    container_health_check(service_name, health_check)
 
         # Parse [migrations] section
         migrations_data = data.get("migrations", {})

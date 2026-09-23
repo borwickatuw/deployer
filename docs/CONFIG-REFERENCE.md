@@ -250,6 +250,7 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 | Field                     | Type    | Required | Description                                                                                                                                                     |
 | ------------------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `command`                 | array   | No       | Container command override.                                                                                                                                     |
+| `container_health_check`  | table   | No       | ECS container health check; see [Container health checks](#container-health-checks).                                                                            |
 | `health_check_path`       | string  | No       | ALB health check endpoint.                                                                                                                                      |
 | `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                                                                                           |
 | `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`.                                                             |
@@ -299,6 +300,42 @@ min_cpu = 512      # Deployment fails if environment sets cpu < 512
 min_memory = 1024  # Deployment fails if environment sets memory < 1024
 min_replicas = 0   # Pull-based queue worker: environments may scale it to zero
 ```
+
+#### Container health checks
+
+`health_check_path` is the **load balancer's** check, so a service with no port
+has none: a worker that is running but wedged looks healthy to ECS. A
+`container_health_check` table gives ECS a command to run inside the container
+(`containerDefinitions[].healthCheck`); a task that fails it is marked
+unhealthy and replaced.
+
+```toml
+[services.transcoder.container_health_check]
+command = ["CMD-SHELL", "test $(( $(date +%s) - $(stat -c %Y /tmp/heartbeat) )) -lt 120"]
+interval = 30      # seconds between checks
+timeout = 5        # seconds before one check counts as failed
+retries = 3        # consecutive failures before the task is unhealthy
+start_period = 60  # seconds of startup during which failures do not count
+```
+
+| Key            | Required | Range | Default (ECS) |
+| -------------- | -------- | ----- | ------------- |
+| `command`      | Yes      | —     | —             |
+| `interval`     | No       | 5–300 | 30            |
+| `timeout`      | No       | 2–60  | 5             |
+| `retries`      | No       | 1–10  | 3             |
+| `start_period` | No       | 0–300 | off           |
+
+`command` takes ECS's own list form: `["CMD", "/app/healthcheck", "--arg"]`
+runs the arguments directly; `["CMD-SHELL", "one shell string"]` runs exactly
+one string in the container's default shell. Exit code 0 is healthy. The other
+keys are whole numbers, and an omitted one is left to ECS's default. An unknown
+key, a malformed command or an out-of-range value fails deploy.toml parsing,
+before anything is built. The command runs inside the image, so any tool it
+calls (`stat`, `curl`, ...) must be installed there.
+
+For a service with no load balancer, `start_period` is its whole startup
+allowance: the environment's `grace_period` is sent only with a load balancer.
 
 ### `[environment]`
 

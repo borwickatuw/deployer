@@ -61,6 +61,7 @@ from deployer.deploy.context import DeploymentContext, InfraConfig
 from deployer.deploy.deployer import _build_infra_config
 from deployer.deploy.task_definition import (
     _resolve_legacy_placeholders,
+    build_task_definition,
     get_environment_variables,
     get_secrets,
 )
@@ -191,6 +192,36 @@ class TestUnresolvedPlaceholderInValueFrom:
         )
         arn = f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/myapp/staging/secret-key"
         assert get_secrets(ctx, "web") == [{"name": "SECRET_KEY", "valueFrom": arn}]
+
+
+class TestContainerHealthCheckInTheTaskDefinition:
+    """``container_health_check`` reaches ``containerDefinitions[].healthCheck``."""
+
+    def test_the_block_is_rendered_in_ecs_shape(self):
+        ctx = _ctx(
+            config={
+                "services": {
+                    "worker": {
+                        "container_health_check": {
+                            "command": ["CMD-SHELL", "test -f /tmp/alive"],
+                            "interval": 30,
+                            "start_period": 60,
+                        }
+                    }
+                }
+            }
+        )
+        container = build_task_definition(ctx, "worker", "image:tag")["containerDefinitions"][0]
+        assert container["healthCheck"] == {
+            "command": ["CMD-SHELL", "test -f /tmp/alive"],
+            "interval": 30,
+            "startPeriod": 60,
+        }
+
+    def test_no_block_means_no_health_check(self):
+        ctx = _ctx(config={"services": {"worker": {}}})
+        container = build_task_definition(ctx, "worker", "image:tag")["containerDefinitions"][0]
+        assert "healthCheck" not in container
 
 
 class TestResolveLegacyPlaceholders:

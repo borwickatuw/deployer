@@ -8,6 +8,7 @@ from .deploy_config import (
     ImageConfig,
     MigrationConfig,
     ServiceConfig,
+    container_health_check,
     merge_build_args,
     parse_deploy_config,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "ImageConfig",
     "MigrationConfig",
     "ServiceConfig",
+    "container_health_check",
     "merge_build_args",
     "parse_deploy_config",
     # Other config utilities

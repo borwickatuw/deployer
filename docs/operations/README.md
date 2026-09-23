@@ -67,6 +67,7 @@ Quick reference for which file to edit based on what you want to change.
 | Add auto-scaling                  | `services.auto.tfvars`                       | `scaling` block                               |
 | Change the Docker command         | `deploy.toml` (app repo)                     | `services.*.command`                          |
 | Change health check path          | `deploy.toml` (app repo)                     | `services.*.health_check_path`                |
+| Add a container health check      | `deploy.toml` (app repo)                     | `services.*.container_health_check`           |
 | Change health check timing        | `services.auto.tfvars`                       | `health_check` block                          |
 | Set minimum resource requirements | `deploy.toml` (app repo)                     | `services.*.min_cpu`, `services.*.min_memory` |
 | Add a new service                 | Both: `deploy.toml` + `services.auto.tfvars` | Define service in both                        |

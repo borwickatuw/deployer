@@ -4,6 +4,7 @@ import pytest
 
 from deployer.config import (
     ImageConfig,
+    container_health_check,
     get_compose_services,
     parse_deploy_config,
     parse_deploy_toml,
@@ -279,6 +280,112 @@ additional_contexts = { shared = "shared" }
         raw = config.get_raw_dict()
 
         assert raw["images"]["web"]["additional_contexts"] == {"shared": "shared"}
+
+
+def _write_health_check(tmp_path, body: str):
+    (tmp_path / "deploy.toml").write_text(
+        f"""
+[application]
+name = "test"
+
+[services.worker]
+image = "worker"
+
+[services.worker.container_health_check]
+{body}
+""",
+        encoding="utf-8",
+    )
+    return tmp_path / "deploy.toml"
+
+
+class TestContainerHealthCheck:
+    """``[services.X.container_health_check]`` -- ECS's container-level healthCheck.
+
+    For a service with no port the ALB health check cannot see, a wedged
+    worker otherwise looks healthy to ECS (claude-meta Phase 52).
+    """
+
+    FULL = (
+        'command = ["CMD-SHELL", "test -f /tmp/alive"]\n'
+        "interval = 30\ntimeout = 5\nretries = 3\nstart_period = 60"
+    )
+
+    def test_a_full_block_parses_and_round_trips_through_the_raw_dict(self, tmp_path):
+        config = parse_deploy_config(_write_health_check(tmp_path, self.FULL))
+        block = config.get_raw_dict()["services"]["worker"]["container_health_check"]
+        assert block == {
+            "command": ["CMD-SHELL", "test -f /tmp/alive"],
+            "interval": 30,
+            "timeout": 5,
+            "retries": 3,
+            "start_period": 60,
+        }
+
+    def test_rendered_in_ecs_shape(self):
+        assert container_health_check(
+            "worker",
+            {
+                "command": ["CMD", "/app/healthcheck", "--max-age", "120"],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "start_period": 60,
+            },
+        ) == {
+            "command": ["CMD", "/app/healthcheck", "--max-age", "120"],
+            "interval": 30,
+            "timeout": 5,
+            "retries": 3,
+            "startPeriod": 60,
+        }
+
+    def test_only_command_is_required(self):
+        assert container_health_check("worker", {"command": ["CMD-SHELL", "true"]}) == {
+            "command": ["CMD-SHELL", "true"]
+        }
+
+    def test_absent_block_is_absent_from_the_raw_dict(self, tmp_path):
+        (tmp_path / "deploy.toml").write_text(
+            '[application]\nname = "test"\n\n[services.web]\nimage = "web"\n', encoding="utf-8"
+        )
+        raw = parse_deploy_config(tmp_path / "deploy.toml").get_raw_dict()
+        assert "container_health_check" not in raw["services"]["web"]
+
+    @pytest.mark.parametrize(
+        ("body", "match"),
+        [
+            ("interval = 30", "requires 'command'"),
+            ('command = "test -f /tmp/alive"', "list"),
+            ('command = ["test -f /tmp/alive"]', "CMD or CMD-SHELL"),
+            ('command = ["CMD"]', "at least one argument"),
+            ('command = ["CMD-SHELL", "a", "b"]', "exactly one shell string"),
+            ('command = ["CMD-SHELL", ""]', "non-empty strings"),
+            ('command = ["CMD", 1]', "non-empty strings"),
+            ('command = ["CMD", "true"]\nintervall = 30', "unknown key.*intervall"),
+            ('command = ["CMD", "true"]\nstartPeriod = 30', "unknown key.*startPeriod"),
+            ('command = ["CMD", "true"]\ninterval = 4', r"interval.*between 5 and 300"),
+            ('command = ["CMD", "true"]\ninterval = 301', r"interval.*between 5 and 300"),
+            ('command = ["CMD", "true"]\ntimeout = 1', r"timeout.*between 2 and 60"),
+            ('command = ["CMD", "true"]\ntimeout = 61', r"timeout.*between 2 and 60"),
+            ('command = ["CMD", "true"]\nretries = 0', r"retries.*between 1 and 10"),
+            ('command = ["CMD", "true"]\nretries = 11', r"retries.*between 1 and 10"),
+            ('command = ["CMD", "true"]\nstart_period = -1', r"start_period.*between 0 and 300"),
+            ('command = ["CMD", "true"]\nstart_period = 301', r"start_period.*between 0 and 300"),
+            ('command = ["CMD", "true"]\ninterval = 30.5', r"interval.*whole number"),
+            ('command = ["CMD", "true"]\nretries = true', r"retries.*whole number"),
+        ],
+    )
+    def test_an_invalid_block_fails_at_parse_time(self, tmp_path, body, match):
+        with pytest.raises(ValueError, match=rf"services\.worker\.container_health_check.*{match}"):
+            parse_deploy_config(_write_health_check(tmp_path, body))
+
+    def test_the_range_edges_are_accepted(self, tmp_path):
+        body = (
+            'command = ["CMD", "true"]\ninterval = 5\ntimeout = 60\nretries = 10\n'
+            "start_period = 0"
+        )
+        parse_deploy_config(_write_health_check(tmp_path, body))
 
 
 class TestDeployConfigImages:

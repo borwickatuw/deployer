@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
+from deployer.config import container_health_check
 from deployer.modules import (
     ModuleContext,
     ModuleOutput,
@@ -527,6 +528,13 @@ def build_task_definition(
     # Add command if specified
     if "command" in service_toml:
         container_def["command"] = service_toml["command"]
+
+    # Container-level health check: the only one ECS has for a service with no
+    # port the load balancer can probe (claude-meta Phase 52).
+    if "container_health_check" in service_toml:
+        container_def["healthCheck"] = container_health_check(
+            service_name, service_toml["container_health_check"]
+        )
 
     # Get execution role and task role ARNs from infra_config
     execution_role_arn = ctx.infra_config.execution_role_arn

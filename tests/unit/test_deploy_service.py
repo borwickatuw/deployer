@@ -1210,6 +1210,17 @@ class TestDeployServices:
         assert _get_live_service(aws.client, CLUSTER, "worker") is not None
         assert _get_live_service(aws.client, CLUSTER, "web") is None
 
+    def test_a_container_health_check_passes_botocore_validation(self, aws):
+        """The rendered healthCheck is accepted by the real ECS request model."""
+        check = {"command": ["CMD-SHELL", "test -f /tmp/alive"], "start_period": 60}
+        ctx = _ctx(aws, services={"worker": {"container_health_check": check}})
+        deploy_services(ctx, {"worker": IMAGE_URI})
+        container = aws.client.params("register_task_definition")["containerDefinitions"][0]
+        assert container["healthCheck"] == {
+            "command": ["CMD-SHELL", "test -f /tmp/alive"],
+            "startPeriod": 60,
+        }
+
     def test_image_alias_is_honoured(self, aws):
         ctx = _ctx(aws, services={"web": {"image": "app"}})
         deploy_services(ctx, {"app": IMAGE_URI})
