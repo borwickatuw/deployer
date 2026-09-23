@@ -122,8 +122,29 @@ a11y: ## Run pa11y (WCAG 2.1 AA) against the rendered CloudFront error page
 	@echo "=== Accessibility (pa11y) ==="
 	@uv run bin/a11y.py
 
+# MAKEFILE.md Practice #15: re-parse every structured file the repo owns, so
+# a corruption fails `check` and names the file, whatever caused it. One
+# parser pass over every tracked TOML and JSON file (the baseline is JSON);
+# exits at the first bad file with its path and the parser's own error.
+define PARSE_STRUCTURED
+import json, sys, tomllib
+for path in filter(None, sys.stdin.read().split("\0")):
+    try:
+        with open(path, "rb") as f:
+            (tomllib.load if path.endswith(".toml") else json.load)(f)
+    except ValueError as e:
+        sys.exit(f"Error: {path} does not parse: {e}")
+endef
+export PARSE_STRUCTURED
+
+.PHONY: check-structured
+check-structured: ## Re-parse every tracked TOML/JSON file, every fileplan item, and the sample compose fixture
+	@uv run --group dev fileplan list --json >/dev/null
+	@git ls-files -z -- '*.toml' '*.json' .secrets.baseline | uv run python -c "$$PARSE_STRUCTURED"
+	@docker compose -f tests/fixtures/sample_docker_compose.yml config -q
+
 .PHONY: check
-check: lint test format-docs-check security-secrets ## Run lint, tests, docs formatting, and the read-only secrets scan
+check: check-structured lint test format-docs-check security-secrets ## Run structured-file/lint/test/docs/secrets checks
 	@echo ""
 	@echo "=== All Checks Passed ==="
 
@@ -132,7 +153,7 @@ check: lint test format-docs-check security-secrets ## Run lint, tests, docs for
 # =============================================================================
 
 .PHONY: security
-security: security-bandit security-deps security-secrets security-checkov ## Run all security checks
+security: security-bandit security-deps security-lockfiles security-secrets security-checkov ## Run all security checks
 	@echo ""
 	@echo "=== Security Checks Complete ==="
 
@@ -154,6 +175,41 @@ security-checkov: ## Run Checkov IaC scanner on all OpenTofu code
 security-deps: ## Check dependency vulnerabilities
 	@echo "=== Dependency Vulnerability Scan (uv audit) ==="
 	@uv audit
+
+# SECURITY.md Practice #6: `uv audit` above reads the root lockfile only.
+# Every lockfile git tracks below the root is declared here, space-separated,
+# and audited; an undeclared one, or a declared one git no longer tracks,
+# fails the gate. A stray is retired, not declared.
+#
+# The two Lambda-bundle requirements.txt files are live: install-deps.sh
+# installs them unpinned into the gitignored Lambda bundle with `pip install
+# -r ... --upgrade`, and nothing else audits them. `uv audit` cannot read a
+# requirements.txt, so each is turned into a fully-pinned, hashed lockfile in
+# memory with `uv pip compile` and handed to pip-audit over stdin --
+# `--require-hashes` is what lets pip-audit skip building a venv.
+# `--python-version 3.12` matches the `runtime = "python3.12"` both
+# db-on-shared-rds/main.tf and db-users/main.tf declare -- keep the three in
+# step.
+NESTED_LOCKFILES := modules/db-on-shared-rds/lambda/requirements.txt modules/db-users/lambda/requirements.txt
+LOCKFILE_PATHSPEC := '*/uv.lock' '*/poetry.lock' '*/Pipfile.lock' '*/requirements*.txt' '*/package-lock.json'
+
+.PHONY: security-lockfiles
+security-lockfiles: ## Fail on an undeclared or vanished nested lockfile; audit each declared one
+	@tracked=" $$(git ls-files -- $(LOCKFILE_PATHSPEC) | tr '\n' ' ') "; status=0; \
+	for f in $$tracked; do case " $(NESTED_LOCKFILES) " in *" $$f "*) ;; \
+		*) echo "Error: $$f is a nested lockfile nothing audits: declare it in NESTED_LOCKFILES, or retire it"; status=1 ;; esac; done; \
+	for f in $(NESTED_LOCKFILES); do case "$$tracked" in *" $$f "*) ;; \
+		*) echo "Error: NESTED_LOCKFILES declares $$f, which git does not track: drop the declaration"; status=1 ;; esac; done; \
+	exit $$status
+	@rc=0; for lock in $(filter %/uv.lock,$(NESTED_LOCKFILES)); do \
+		echo "=== uv audit $$(dirname $$lock) ==="; (cd "$$(dirname $$lock)" && uv audit) || rc=$$?; done; \
+	exit $$rc
+	@rc=0; for req in $(filter %.txt,$(NESTED_LOCKFILES)); do \
+		echo "=== pip-audit $$req ==="; \
+		uv pip compile --quiet --python-version 3.12 --generate-hashes "$$req" \
+			| uvx pip-audit --progress-spinner off --disable-pip --require-hashes -r /dev/stdin \
+			|| rc=$$?; done; \
+	exit $$rc
 
 .PHONY: security-secrets
 security-secrets: ## Check tracked files for secrets not in .secrets.baseline
