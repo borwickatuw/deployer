@@ -407,33 +407,30 @@ def _capacity_params(service_toml: dict) -> dict:
 
 
 def _capacity_mismatch(service_name: str, service_toml: dict, live_service: dict) -> str | None:
-    """Explain why a live service cannot be moved to the capacity deploy.toml asks for.
+    """Explain why a live service cannot be moved to Fargate Spot in place.
 
-    ``interruptible`` is applied at create time. Switching a live service
-    between the FARGATE launch type and a Fargate capacity provider strategy is
-    not a transition the rolling-update ``UpdateService`` offers for Fargate, so
-    the update path used to leave the service where it was without a word
-    (Phase 69). It is now refused, with the way out.
+    ``interruptible = true`` on a service already running on a launch type
+    asks for launch type -> FARGATE_SPOT, which is not a transition AWS lists
+    for UpdateService, so the update path used to leave the service where it
+    was without a word (Phase 69). It is now refused, with the way out.
+
+    The other direction is allowed: AWS lists capacity provider -> launch type
+    as a valid in-place update (an empty ``capacityProviderStrategy``), which
+    ``_update_service`` sends.
 
     Returns:
-        The message, or None when the live service already matches.
+        The message, or None when deploy.toml's capacity can be applied.
     """
     wants_spot = bool(service_toml.get("interruptible"))
-    live_launch_type = live_service.get("launchType")
     on_strategy = bool(live_service.get("capacityProviderStrategy"))
-    if wants_spot and not on_strategy:
-        current = f"launch type {live_launch_type}"
-    elif not wants_spot and on_strategy:
-        current = "a capacity provider strategy"
-    else:
+    if not wants_spot or on_strategy:
         return None
-    wanted = "Fargate Spot" if wants_spot else "the FARGATE launch type"
     return (
-        f"Service '{service_name}' runs on {current}, but deploy.toml "
-        f"(interruptible = {str(wants_spot).lower()}) asks for {wanted}. "
-        f"A rolling update cannot switch a live service's capacity; delete the "
-        f"service and deploy again to recreate it on the new capacity, or "
-        f"revert interruptible."
+        f"Service '{service_name}' runs on launch type "
+        f"{live_service.get('launchType')}, but deploy.toml sets interruptible = "
+        f"true, which asks for Fargate Spot. ECS cannot move a live service "
+        f"from a launch type to Fargate Spot in place: delete the service and "
+        f"deploy again to recreate it on Spot, or remove interruptible."
     )
 
 
@@ -573,7 +570,9 @@ def _create_service(
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
 
-def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig) -> bool:
+def _update_service(
+    ctx, service_name: str, task_def_arn: str, dep_cfg: DeploymentConfig, live_service: dict
+) -> bool:
     """Force a new deployment of an existing ECS service.
 
     A ClientError is logged and reported as False so the caller keeps deploying
@@ -586,6 +585,7 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
         service_name: Name of the service.
         task_def_arn: Task definition ARN to deploy.
         dep_cfg: Deployment configuration extracted from infra_config.
+        live_service: The service as ``describe_services`` reports it.
 
     Returns:
         True if the deployment was started, False if AWS rejected it.
@@ -613,6 +613,12 @@ def _update_service(ctx, service_name: str, task_def_arn: str, dep_cfg: Deployme
         registries = _service_registries(ctx, service_name)
         if registries:
             update_params["serviceRegistries"] = registries
+
+        # A Spot service that is no longer interruptible goes back to the
+        # FARGATE launch type: an empty strategy is AWS's in-place route. The
+        # reverse is refused earlier, by validate_services.
+        if live_service.get("capacityProviderStrategy") and not service_toml.get("interruptible"):
+            update_params["capacityProviderStrategy"] = []
 
         if ctx.dry_run:
             _print_dry_run_call(
@@ -886,7 +892,7 @@ def _deploy_one_service(
     if dep_cfg.max_percent <= 100:
         _ensure_az_rebalancing_disabled(ctx.ecs_client, ctx.cluster_name, service_name)
 
-    if not _update_service(ctx, service_name, task_def_arn, dep_cfg):
+    if not _update_service(ctx, service_name, task_def_arn, dep_cfg, live_service):
         return ServiceDeployOutcome()
     return ServiceDeployOutcome(task_def_arn=task_def_arn, state_hash=state_hash)
 
@@ -911,7 +917,7 @@ def _dry_run_one_service(
     if live_service is None:
         _create_service(ctx, service_name, task_def_arn)
     else:
-        _update_service(ctx, service_name, task_def_arn, dep_cfg)
+        _update_service(ctx, service_name, task_def_arn, dep_cfg, live_service)
     print(f"    cpu={cpu}, memory={mem}, replicas={reps}")
     return ServiceDeployOutcome(task_def_arn=task_def_arn)
 
