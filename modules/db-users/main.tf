@@ -128,6 +128,7 @@ resource "aws_security_group" "lambda" {
   vpc_id      = var.vpc_id
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
