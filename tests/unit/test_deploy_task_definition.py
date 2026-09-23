@@ -25,9 +25,11 @@ does not touch, and these pins are what makes that a checked claim.
 
 What is pinned here:
 
-* ``_resolve_legacy_placeholders`` -- the string arm, the ``services.``
-  passthrough, the unknown-placeholder passthrough, and the whole-value-only
-  matching rule.
+* ``_resolve_legacy_placeholders`` -- the string arm, and since Phase 69 the
+  fail-fast rule: an unknown, unset, non-scalar or unresolved ``services.``
+  placeholder is a ``ValueError``, and a placeholder is substituted wherever
+  it appears in a value. It used to pass all of those through verbatim and
+  substitute only a value that was entirely one placeholder.
 * ``InfraConfig.legacy_placeholders`` -- the ``int``/``float``/``bool``
   ``str()`` arm and the ``None``/list/dict drop, which is the single place
   those now happen.
@@ -50,6 +52,8 @@ module system stays out of it. That is the outermost boundary available --
 53d-2a's recorded rule -- and it means the pins survive any code motion inside
 the package.
 """
+
+import re
 
 import pytest
 
@@ -187,30 +191,39 @@ class TestResolveLegacyPlaceholders:
         )
         assert resolved == {"R": "eu-west-1"}
 
-    def test_an_unknown_placeholder_is_left_alone(self):
-        resolved = _resolve_legacy_placeholders({"X": "${nope}"}, REGION, ENVIRONMENT, {})
-        assert resolved == {"X": "${nope}"}
+    # Phase 69 member 7 flipped the next three pins. Each used to hand the
+    # container a literal ``${...}`` string, with no warning anywhere.
 
-    def test_a_service_url_reference_is_passed_through_untouched(self):
-        # Service URL references are resolved earlier by resolve_service_urls;
-        # this branch exists so an *unresolved* one is not clobbered by an
-        # infra_config key that happens to share its name.
-        resolved = _resolve_legacy_placeholders(
-            {"API": "${services.api.url}"},
-            REGION,
-            ENVIRONMENT,
-            {"services.api.url": "https://shadowed"},
-        )
-        assert resolved == {"API": "${services.api.url}"}
+    def test_an_unknown_placeholder_is_an_error(self):
+        with pytest.raises(ValueError, match=r"(?s)'X'.*\$\{nope\}.*aws_region, environment"):
+            _resolve_legacy_placeholders({"X": "${nope}"}, REGION, ENVIRONMENT, {})
 
-    def test_only_a_whole_value_placeholder_is_substituted(self):
-        # Pinned, not endorsed: this is the *opposite* rule to the one
-        # _get_legacy_secrets uses on the same infra_config a few lines below.
-        # An embedded placeholder survives into the container's environment.
+    def test_an_unresolved_service_url_reference_is_an_error(self):
+        # resolve_service_urls runs first; one it left behind could not be
+        # resolved (no path_pattern, no domain, no service discovery). It is
+        # still never looked up in the table, so an infra key sharing its name
+        # cannot clobber it.
+        with pytest.raises(ValueError, match=r"(?s)'API'.*\$\{services\.api\.url\}.*path_pattern"):
+            _resolve_legacy_placeholders(
+                {"API": "${services.api.url}"},
+                REGION,
+                ENVIRONMENT,
+                {"services.api.url": "https://shadowed"},
+            )
+
+    def test_an_embedded_placeholder_is_substituted(self):
+        # One matching rule, the one ${tofu:...} uses in config.toml: a
+        # placeholder is substituted wherever it appears in the value.
         resolved = _resolve_legacy_placeholders(
             {"URL": "https://${host}/path"}, REGION, ENVIRONMENT, {"host": "example.com"}
         )
-        assert resolved == {"URL": "https://${host}/path"}
+        assert resolved == {"URL": "https://example.com/path"}
+
+    def test_several_placeholders_in_one_value(self):
+        resolved = _resolve_legacy_placeholders(
+            {"X": "${environment}-${aws_region}"}, REGION, ENVIRONMENT, {}
+        )
+        assert resolved == {"X": f"{ENVIRONMENT}-{REGION}"}
 
     def test_a_non_string_env_var_value_is_copied_through_unchanged(self):
         resolved = _resolve_legacy_placeholders(
@@ -261,8 +274,6 @@ class TestGetEnvironmentVariablesLegacyPass:
                 "environment": {
                     "DATABASE_URL": "${database_url}",
                     "DB_PORT": "${db_port}",
-                    "SUBNETS": "${subnet_ids}",
-                    "SCHEDULER": "${scheduler}",
                 }
             },
             infra_config=infra,
@@ -270,9 +281,14 @@ class TestGetEnvironmentVariablesLegacyPass:
         assert get_environment_variables(ctx) == {
             "DATABASE_URL": "postgres://db/app",
             "DB_PORT": "5432",
-            # Pinned, not endorsed: the list- and dict-valued entries
-            # _build_infra_config emits are not placeholder material, so these
-            # two reach the container as literal `${...}` strings.
-            "SUBNETS": "${subnet_ids}",
-            "SCHEDULER": "${scheduler}",
         }
+
+    @pytest.mark.parametrize("placeholder", ["${subnet_ids}", "${scheduler}", "${db_host}"])
+    def test_a_non_scalar_or_unset_field_is_an_error(self, placeholder):
+        # Phase 69 member 7: list- and dict-valued fields, and scalar fields the
+        # environment left unset, make no placeholder. They used to reach the
+        # container as literal `${...}` strings.
+        infra = _build_infra_config({"infrastructure": {"rds_instance_id": "myapp-db"}})
+        ctx = _ctx(config={"environment": {"X": placeholder}}, infra_config=infra)
+        with pytest.raises(ValueError, match=re.escape(placeholder)):
+            get_environment_variables(ctx)

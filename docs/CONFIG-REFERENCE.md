@@ -376,6 +376,13 @@ These placeholders are resolved at deploy time from the environment's `config.to
 
 For service URL references like `${services.api.url}`, see [Resources](resources/README.md#service-url-references).
 
+A placeholder is substituted wherever it appears in a value
+(`"https://${s3_media_bucket}.s3.amazonaws.com"` works). Any `${...}` that does
+not resolve — a misspelled name, a `config.toml` value that is unset or is a
+list or map, or a `${services.X.url}` whose service has no `path_pattern` — fails
+the deploy with the variable named, rather than reaching the container as a
+literal string.
+
 **Example:**
 
 ```toml

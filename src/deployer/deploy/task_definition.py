@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from deployer.modules import (
@@ -10,7 +11,7 @@ from deployer.modules import (
     ModuleRegistry,
     resolve_service_urls,
 )
-from deployer.utils import log_debug
+from deployer.utils import advice_block, log_debug
 
 from .autoscaling import autoscale_namespace
 from .context import DeploymentContext
@@ -54,6 +55,12 @@ def _build_module_context(ctx: DeploymentContext, credential_mode: str) -> Modul
     return ModuleContext(
         region=ctx.region, account_id=ctx.account_id, credential_mode=credential_mode
     )
+
+
+# A ``${name}`` reference in an environment value. ``${tofu:...}`` never gets
+# this far: load_environment_config resolves it in config.toml, and deploy.toml
+# is not a place it is read.
+_PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
 def _secrets_to_ecs_format(secrets) -> list[dict[str, str]]:
@@ -339,8 +346,16 @@ def _resolve_legacy_placeholders(
 ) -> dict[str, str]:
     """Resolve legacy ${placeholder} variables in environment configuration.
 
-    This supports the old-style placeholder syntax for backward compatibility
-    during migration to the new module system.
+    This is the last pass over the environment, so every ``${...}`` still in
+    a value must resolve here or it is an error. A placeholder is substituted
+    wherever it appears in a value -- the rule ``${tofu:...}`` follows in
+    config.toml. Until Phase 69 only a value that was *entirely* one
+    placeholder was substituted, and an unknown, embedded or unresolvable one
+    reached the container as a literal ``${...}`` string with no warning.
+
+    ``${services.*}`` references are resolved earlier by
+    ``resolve_service_urls``; one still here could not be, and is reported
+    rather than looked up in this table.
 
     Args:
         env_vars: Environment variables with potential placeholders.
@@ -351,6 +366,10 @@ def _resolve_legacy_placeholders(
 
     Returns:
         Environment variables with placeholders resolved.
+
+    Raises:
+        ValueError: Naming every variable whose value holds a placeholder that
+            does not resolve.
     """
     placeholders = {
         "aws_region": region,
@@ -358,17 +377,36 @@ def _resolve_legacy_placeholders(
         **infra_placeholders,
     }
 
+    unresolved: list[str] = []
+
+    def substitute(key: str, match: re.Match) -> str:
+        name = match.group(1)
+        if name.startswith("services.") or name not in placeholders:
+            unresolved.append(f"'{key}' -> {match.group(0)}")
+            return match.group(0)
+        return placeholders[name]
+
     resolved = {}
     for key, value in env_vars.items():
-        if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
-            placeholder_name = value[2:-1]
-            # Skip service URL references (handled separately)
-            if not placeholder_name.startswith("services."):
-                resolved[key] = placeholders.get(placeholder_name, value)
-            else:
-                resolved[key] = value
+        if isinstance(value, str):
+            resolved[key] = _PLACEHOLDER_PATTERN.sub(lambda m, k=key: substitute(k, m), value)
         else:
             resolved[key] = value
+
+    if unresolved:
+        raise ValueError(
+            advice_block(
+                "Environment variables hold placeholders that do not resolve:",
+                unresolved,
+                (
+                    "Available placeholders: " + ", ".join(sorted(placeholders)) + ".",
+                    "A list-, map- or unset config.toml value makes no placeholder.",
+                    "${services.X.url} needs a path_pattern on X and a domain_name;",
+                    "${services.X.internal_url} needs a port on X and service discovery.",
+                ),
+                bullet="  - ",
+            )
+        )
 
     return resolved
 

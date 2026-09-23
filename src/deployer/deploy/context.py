@@ -83,8 +83,8 @@ class InfraConfig:
 
         Every scalar field is offered under its own name. The list-, dict- and
         ``None``-valued fields are not placeholder material and are dropped,
-        so a ``${subnet_ids}`` or ``${scheduler}`` reference survives into the
-        container verbatim.
+        so a ``${subnet_ids}`` or ``${scheduler}`` reference is reported as
+        unresolved by ``_resolve_legacy_placeholders``.
 
         ``bool`` takes the numeric arm -- it subclasses ``int`` -- and renders
         Python-style as ``"True"``/``"False"``.

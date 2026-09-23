@@ -317,11 +317,10 @@ class TestResolveLegacyPlaceholders:
         assert resolved["STATIC_VALUE"] == "fixed"
 
     def test_resolve_unknown_placeholder(self):
-        """Test that unknown placeholders remain unchanged."""
+        """An unknown placeholder is an error (Phase 69 member 7); it used to pass through."""
         env_vars = {"UNKNOWN": "${unknown_var}"}
-        resolved = _resolve_legacy_placeholders(env_vars, "us-west-2", "staging", {})
-
-        assert resolved["UNKNOWN"] == "${unknown_var}"
+        with pytest.raises(ValueError, match=r"UNKNOWN.*\$\{unknown_var\}"):
+            _resolve_legacy_placeholders(env_vars, "us-west-2", "staging", {})
 
 
 class TestImageConfigGetBuildArgs:
