@@ -218,7 +218,9 @@ def env(environment, deploy_toml, output_format):
         env_config, environment_type = _load_env_config_or_exit(environment)
         with exit_on(ValueError):
             deployer = Deployer(str(config_path), environment_type, env_config)
-        env_vars = deployer.environment_variables()
+        # An unresolved ${...} placeholder is the operator's config error.
+        with exit_on(ValueError):
+            env_vars = deployer.environment_variables()
         with exit_on(ValueError):
             document = ENV_ENCODERS[output_format](env_vars)
 

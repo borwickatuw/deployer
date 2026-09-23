@@ -189,6 +189,21 @@ class TestEnvCommand:
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["LOG-LEVEL"] == "info"
 
+    def test_an_unresolved_placeholder_exits_1_with_one_error_and_no_traceback(
+        self, deploy_toml, tmp_path
+    ):
+        """Phase 69 member 7's ValueError is an operator error, not a crash."""
+        toml = _write_toml(
+            tmp_path, DEPLOY_TOML.replace('LOG_LEVEL = "debug"', 'LOG_LEVEL = "${nope}"')
+        )
+
+        result = _invoke(toml)
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "${nope}" in result.stderr
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
     def test_a_deployer_config_error_exits_1_with_nothing_on_stdout(self, deploy_toml, monkeypatch):
         monkeypatch.setattr(
             deploy, "load_environment_config", lambda _path: ENV_CONFIG | {"infrastructure": {}}

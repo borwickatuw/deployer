@@ -8,6 +8,7 @@ from deployer.deploy import pipeline
 from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.deploy.preflight import PreflightError, PreflightOptions
+from deployer.deploy.service import ServiceConfigError
 from deployer.timing import DeploymentTimer
 
 ENV_CONFIG = {"infrastructure": {"cluster_name": "myapp-staging-cluster"}}
@@ -119,6 +120,19 @@ class TestPushErrorHandling:
 
         _run(stub_pipeline, ecr_hint=False)
         assert "verify ECR repository access" not in capsys.readouterr().out
+
+    def test_a_service_config_error_returns_1_with_its_message(self, stub_pipeline, capsys):
+        """validate_services' error is an operator error: one message, exit 1."""
+        StubDeployer.error = ServiceConfigError("Service 'web' cannot be deployed:\nbad port")
+        assert _run(stub_pipeline) == 1
+        assert "bad port" in capsys.readouterr().out
+
+    def test_any_other_value_error_still_propagates(self, stub_pipeline):
+        # Only the typed config error is caught: a ValueError from anywhere
+        # else is a bug and keeps its traceback.
+        StubDeployer.error = ValueError("unrelated")
+        with pytest.raises(ValueError, match="unrelated"):
+            _run(stub_pipeline)
 
     def test_other_runtime_errors_propagate(self, stub_pipeline):
         StubDeployer.error = RuntimeError("migration failed")
