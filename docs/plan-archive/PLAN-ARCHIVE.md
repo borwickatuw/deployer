@@ -49,6 +49,17 @@ pointers (`be1443d`); example paths in docstrings and `--help` are generic
 by the fleet sweep (`7d3c042`, `0357299`; fileplan-claude-meta:84 and :85).
 Full record in `items/`.
 
+## 4. OpenTofu provider pinning and the one gate this review never ran
+
+Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review; operator
+answer b16 ("pin and commit only"). The aws `~> 6.0` floor now reaches
+environments through `environments/deployer.tf` and the five templates that
+own their terraform block (`037e649`, `b9b469e`); the root provider lock is
+tracked at aws 6.66.0 (`4a31400`); `make tofu-validate` ran for the first
+time against the real tree and returned 27 successes. Environments holding
+a 5.x lock need `tofu init -upgrade` before their next plan. Full record in
+`items/`.
+
 ## 5. Before the next apply: production RDS protections and the staging scheduler's new failure signal
 
 Closed 2026-09-22. Filed by the 2026-09-18 comprehensive review.
