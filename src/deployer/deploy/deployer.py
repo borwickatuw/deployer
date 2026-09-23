@@ -27,9 +27,9 @@ from deployer.deploy.service import (
     DeployedServices,
     MigrationTask,
     deploy_services,
-    validate_services,
     start_migrations,
     store_service_state_hashes,
+    validate_services,
     wait_for_migrations,
     wait_for_stable,
 )
