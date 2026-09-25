@@ -23,15 +23,16 @@ module "scheduler" {
 
 ## Key Variables
 
-| Variable         | Type        | Description                                       |
-| ---------------- | ----------- | ------------------------------------------------- |
-| environment_name | string      | Staging environment name                          |
-| ecs_cluster_name | string      | ECS cluster name                                  |
-| ecs_services     | map(object) | Map of service names to replica counts            |
-| rds_instance_id  | string      | RDS instance identifier                           |
-| start_schedule   | string      | Cron for starting (default: 7 AM Pacific Mon-Fri) |
-| stop_schedule    | string      | Cron for stopping (default: 7 PM Pacific Mon-Fri) |
-| enabled          | bool        | Enable scheduling (default: true)                 |
+| Variable         | Type        | Description                                          |
+| ---------------- | ----------- | ---------------------------------------------------- |
+| environment_name | string      | Staging environment name                             |
+| ecs_cluster_name | string      | ECS cluster name                                     |
+| ecs_services     | map(object) | Map of service names to replica counts               |
+| rds_instance_id  | string      | RDS instance identifier                              |
+| gpu_instance_id  | string      | GPU container instance to stop/start (default: none) |
+| start_schedule   | string      | Cron for starting (default: 7 AM Pacific Mon-Fri)    |
+| stop_schedule    | string      | Cron for stopping (default: 7 PM Pacific Mon-Fri)    |
+| enabled          | bool        | Enable scheduling (default: true)                    |
 
 ## Outputs
 
@@ -41,6 +42,15 @@ module "scheduler" {
 | stop_schedule        | Stop cron expression           |
 | start_schedule       | Start cron expression          |
 | scheduling_enabled   | Whether scheduling is active   |
+
+## The GPU Container Instance
+
+When the environment has one ([ecs-gpu-capacity](ecs-gpu-capacity.md); the root module passes its id as `gpu_instance_id`), the Lambda stops and starts it with the rest:
+
+- **stop**: scale the services to 0, stop RDS, then wait until the cluster's container instance backed by that EC2 instance runs no tasks (the worker requeues its job on SIGTERM and exits) and stop it. The wait is capped at `GPU_DRAIN_TIMEOUT_SECONDS` (120 s, `handler.py`); a drain that outlasts it is named in the `gpu` outcome and the instance is stopped anyway, so a task that will not stop cannot keep the box billing all night. The Lambda's timeout covers the wait.
+- **start**: start the instance first, so it boots and its ECS agent reconnects while RDS starts, then RDS, then the services.
+
+The results dict gains a `gpu` entry with the same `error: ` convention, and a failed GPU step makes the invocation a 500 like any other.
 
 ## Failure Behavior
 

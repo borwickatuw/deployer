@@ -55,6 +55,44 @@ data "aws_iam_policy_document" "scheduler_policy" {
     resources = ["arn:aws:ecs:*:*:cluster/${var.ecs_cluster_name}"]
   }
 
+  # The GPU container instance: stopped once its tasks have drained, started
+  # before the services scale back up. The drain check reads the cluster's
+  # container instances.
+  dynamic "statement" {
+    for_each = var.gpu_instance_id == null ? [] : [1]
+    content {
+      actions = [
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+      ]
+      resources = ["arn:aws:ec2:*:*:instance/${var.gpu_instance_id}"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.gpu_instance_id == null ? [] : [1]
+    content {
+      actions   = ["ec2:DescribeInstances"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.gpu_instance_id == null ? [] : [1]
+    content {
+      actions   = ["ecs:ListContainerInstances"]
+      resources = ["arn:aws:ecs:*:*:cluster/${var.ecs_cluster_name}"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.gpu_instance_id == null ? [] : [1]
+    content {
+      actions   = ["ecs:DescribeContainerInstances"]
+      resources = ["arn:aws:ecs:*:*:container-instance/${var.ecs_cluster_name}/*"]
+    }
+  }
+
   # RDS permissions
   statement {
     actions = [
@@ -99,13 +137,16 @@ resource "aws_lambda_function" "scheduler" {
   handler          = "handler.handler"
   runtime          = "python3.12"
   source_code_hash = data.archive_file.lambda.output_base64sha256
-  timeout          = 60
+  # A stop waits up to GPU_DRAIN_TIMEOUT_SECONDS (handler.py) for the GPU
+  # instance's tasks before stopping it
+  timeout = 300
 
   environment {
     variables = {
       ECS_CLUSTER_NAME = var.ecs_cluster_name
       ECS_SERVICES     = local.ecs_services_json
       RDS_INSTANCE_ID  = var.rds_instance_id
+      GPU_INSTANCE_ID  = var.gpu_instance_id == null ? "" : var.gpu_instance_id
     }
   }
 

@@ -20,6 +20,12 @@ variable "rds_instance_id" {
   description = "RDS instance identifier"
 }
 
+variable "gpu_instance_id" {
+  type        = string
+  description = "The GPU container instance to stop and start with the environment (null = none)"
+  default     = null
+}
+
 variable "stop_schedule" {
   type        = string
   description = "Cron expression for stopping the environment (UTC). Default: 7 PM Pacific Mon-Fri = 3 AM UTC Tue-Sat"

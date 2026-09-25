@@ -45,16 +45,25 @@ logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 ecs_client = boto3.client("ecs")
 rds_client = boto3.client("rds")
+ec2_client = boto3.client("ec2")
 
 #: Prefix marking a results-dict entry as a failed step. _failures() reads it.
 ERROR_PREFIX = "error: "
 
+#: How long a stop waits for the GPU container instance's tasks to go after
+#: the services scaled to zero (the worker requeues on SIGTERM and exits),
+#: before stopping the instance regardless. The Lambda's timeout covers it.
+GPU_DRAIN_TIMEOUT_SECONDS = 120
+GPU_DRAIN_POLL_SECONDS = 5
 
-def get_env_vars() -> tuple[str, dict, str]:
+
+def get_env_vars() -> tuple[str, dict, str, str | None]:
     """Get and validate environment variables.
 
     Returns:
-        Tuple of (cluster_name, services, rds_instance_id).
+        Tuple of (cluster_name, services, rds_instance_id, gpu_instance_id);
+        the last is None when the environment has no GPU container instance
+        (GPU_INSTANCE_ID unset or empty).
 
     Raises:
         ValueError: If a required variable is missing or ECS_SERVICES is not
@@ -63,6 +72,7 @@ def get_env_vars() -> tuple[str, dict, str]:
     cluster_name = os.environ.get("ECS_CLUSTER_NAME")
     services_json = os.environ.get("ECS_SERVICES")
     rds_instance_id = os.environ.get("RDS_INSTANCE_ID")
+    gpu_instance_id = os.environ.get("GPU_INSTANCE_ID") or None
 
     if not cluster_name:
         raise ValueError("ECS_CLUSTER_NAME environment variable is required")
@@ -76,7 +86,7 @@ def get_env_vars() -> tuple[str, dict, str]:
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid ECS_SERVICES JSON: {e}") from e
 
-    return cluster_name, services, rds_instance_id
+    return cluster_name, services, rds_instance_id, gpu_instance_id
 
 
 def _get_rds_status(instance_id: str) -> str:
@@ -196,38 +206,139 @@ def _scale_services(cluster_name: str, desired: dict[str, int]) -> dict[str, str
     return results
 
 
-def stop_environment(cluster_name: str, services: dict, rds_instance_id: str) -> dict:
-    """Stop the environment by scaling ECS to 0 and stopping RDS.
+def _running_tasks_on_gpu_instance(cluster_name: str, instance_id: str) -> int:
+    """Count the tasks running on the container instance backed by the GPU instance.
 
     Returns:
-        Dict with an "ecs" map of per-service outcomes and an "rds" outcome.
+        The running task count, or 0 when no container instance of the
+        cluster is backed by that EC2 instance (never registered, or
+        deregistered) -- nothing is running there either way.
+
+    Raises:
+        ClientError, BotoCoreError: If the cluster's container instances
+            cannot be read.
+    """
+    arns = ecs_client.list_container_instances(cluster=cluster_name)["containerInstanceArns"]
+    if not arns:
+        return 0
+    details = ecs_client.describe_container_instances(
+        cluster=cluster_name, containerInstances=arns
+    )["containerInstances"]
+    for instance in details:
+        if instance.get("ec2InstanceId") == instance_id:
+            return instance["runningTasksCount"]
+    return 0
+
+
+def _stop_gpu_instance(cluster_name: str, instance_id: str) -> str:
+    """Stop the GPU container instance once its tasks have gone.
+
+    The services are already scaling to zero. A drain that outlasts the
+    budget is named in the outcome and the instance is stopped anyway: a
+    task that will not stop must not keep the box billing all night.
+
+    Returns:
+        The outcome for the results dict. A value starting with ERROR_PREFIX
+        means this step failed.
+    """
+    deadline = time.time() + GPU_DRAIN_TIMEOUT_SECONDS
+    note = ""
+    while True:
+        try:
+            running = _running_tasks_on_gpu_instance(cluster_name, instance_id)
+        except (BotoCoreError, ClientError) as e:
+            logger.error(f"Error reading the GPU instance's tasks: {e}")
+            return f"{ERROR_PREFIX}{e}"
+        if not running:
+            break
+        if time.time() >= deadline:
+            logger.warning(
+                f"GPU instance {instance_id} still runs {running} task(s) after "
+                f"{GPU_DRAIN_TIMEOUT_SECONDS}s; stopping it anyway"
+            )
+            note = f" with {running} task(s) still running (drain timed out)"
+            break
+        logger.info(f"GPU instance {instance_id} still runs {running} task(s); waiting")
+        time.sleep(GPU_DRAIN_POLL_SECONDS)
+
+    try:
+        ec2_client.stop_instances(InstanceIds=[instance_id])
+    except (BotoCoreError, ClientError) as e:
+        logger.error(f"Error stopping GPU instance: {e}")
+        return f"{ERROR_PREFIX}{e}"
+
+    logger.info(f"GPU instance {instance_id} stop initiated")
+    return f"stop initiated{note}"
+
+
+def _start_gpu_instance(instance_id: str) -> str:
+    """Start the GPU container instance; the ECS agent reconnects on its own.
+
+    Returns:
+        The outcome for the results dict. A value starting with ERROR_PREFIX
+        means this step failed.
+    """
+    try:
+        ec2_client.start_instances(InstanceIds=[instance_id])
+    except (BotoCoreError, ClientError) as e:
+        logger.error(f"Error starting GPU instance: {e}")
+        return f"{ERROR_PREFIX}{e}"
+
+    logger.info(f"GPU instance {instance_id} start initiated")
+    return "start initiated"
+
+
+def stop_environment(
+    cluster_name: str, services: dict, rds_instance_id: str, gpu_instance_id: str | None = None
+) -> dict:
+    """Stop the environment: scale ECS to 0, stop RDS, then stop the GPU instance.
+
+    The GPU instance goes last so its tasks have the RDS stop's time to
+    drain.
+
+    Returns:
+        Dict with an "ecs" map of per-service outcomes, an "rds" outcome and,
+        when the environment has a GPU instance, a "gpu" outcome.
     """
     logger.info(f"Scaling ECS services to 0 in cluster {cluster_name}")
     ecs_results = _scale_services(cluster_name, dict.fromkeys(services, 0))
-    return {"ecs": ecs_results, "rds": _stop_rds(rds_instance_id)}
+    results = {"ecs": ecs_results, "rds": _stop_rds(rds_instance_id)}
+    if gpu_instance_id:
+        results["gpu"] = _stop_gpu_instance(cluster_name, gpu_instance_id)
+    return results
 
 
-def start_environment(cluster_name: str, services: dict, rds_instance_id: str) -> dict:
-    """Start the environment by starting RDS and scaling ECS services.
+def start_environment(
+    cluster_name: str, services: dict, rds_instance_id: str, gpu_instance_id: str | None = None
+) -> dict:
+    """Start the environment: the GPU instance, then RDS, then the ECS services.
 
-    RDS goes first: the services come up against a database that is at least
-    already starting.
+    The GPU instance goes first so it boots while the database starts; RDS
+    goes before the services so they come up against a database that is at
+    least already starting.
 
     Returns:
-        Dict with an "ecs" map of per-service outcomes and an "rds" outcome.
+        Dict with an "ecs" map of per-service outcomes, an "rds" outcome and,
+        when the environment has a GPU instance, a "gpu" outcome.
     """
-    rds_result = _start_rds(rds_instance_id)
+    results: dict = {}
+    if gpu_instance_id:
+        results["gpu"] = _start_gpu_instance(gpu_instance_id)
+
+    results["rds"] = _start_rds(rds_instance_id)
 
     logger.info(f"Scaling ECS services in cluster {cluster_name}")
     desired = {name: config.get("replicas", 1) for name, config in services.items()}
-    return {"ecs": _scale_services(cluster_name, desired), "rds": rds_result}
+    results["ecs"] = _scale_services(cluster_name, desired)
+    return results
 
 
 def _failures(results: dict) -> list[str]:
     """Name every step in a results dict that reported an error.
 
     Returns:
-        Step names, e.g. ["ecs:web", "rds"]. Empty when everything succeeded.
+        Step names, e.g. ["ecs:web", "rds", "gpu"]. Empty when everything
+        succeeded.
     """
     failed = [
         f"ecs:{name}"
@@ -236,6 +347,8 @@ def _failures(results: dict) -> list[str]:
     ]
     if results["rds"].startswith(ERROR_PREFIX):
         failed.append("rds")
+    if results.get("gpu", "").startswith(ERROR_PREFIX):
+        failed.append("gpu")
     return failed
 
 
@@ -261,18 +374,20 @@ def handler(event, _context):
         }
 
     try:
-        cluster_name, services, rds_instance_id = get_env_vars()
+        cluster_name, services, rds_instance_id, gpu_instance_id = get_env_vars()
     except ValueError as e:
         logger.error(f"Configuration error: {e}")
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
-    logger.info(f"Environment: cluster={cluster_name}, rds={rds_instance_id}")
+    logger.info(
+        f"Environment: cluster={cluster_name}, rds={rds_instance_id}, gpu={gpu_instance_id}"
+    )
     logger.info(f"Services: {list(services.keys())}")
 
     if action == "stop":
-        results = stop_environment(cluster_name, services, rds_instance_id)
+        results = stop_environment(cluster_name, services, rds_instance_id, gpu_instance_id)
     else:
-        results = start_environment(cluster_name, services, rds_instance_id)
+        results = start_environment(cluster_name, services, rds_instance_id, gpu_instance_id)
 
     logger.info(f"Results: {json.dumps(results)}")
 

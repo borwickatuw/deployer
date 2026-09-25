@@ -40,17 +40,62 @@ def _client_error(operation: str) -> ClientError:
     return ClientError({"Error": {"Code": "AccessDenied", "Message": "not authorized"}}, operation)
 
 
-class FakeEcs:
-    """Record every update_service call; raise for services named in `fails`."""
+GPU = "i-0123456789abcdef0"
 
-    def __init__(self, fails=()):
+
+class FakeEcs:
+    """Record every update_service call; raise for services named in `fails`.
+
+    ``gpu_running`` scripts the GPU container instance's running task count
+    over successive describe calls (the last value repeats); None means no
+    container instance of the cluster is backed by the GPU instance.
+    """
+
+    def __init__(self, fails=(), gpu_running=None, describe_error=None):
         self.calls: list[dict] = []
         self.fails = set(fails)
+        self.gpu_running = None if gpu_running is None else list(gpu_running)
+        self.describe_error = describe_error
+        self.describe_calls = 0
 
     def update_service(self, **kwargs):
         self.calls.append(kwargs)
         if kwargs["service"] in self.fails:
             raise _client_error("UpdateService")
+        return {}
+
+    def list_container_instances(self, **kwargs):
+        if self.describe_error:
+            raise self.describe_error
+        arns = (
+            [] if self.gpu_running is None else ["arn:aws:ecs:us-west-2:1:container-instance/c/1"]
+        )
+        return {"containerInstanceArns": arns}
+
+    def describe_container_instances(self, **kwargs):
+        running = self.gpu_running[min(self.describe_calls, len(self.gpu_running) - 1)]
+        self.describe_calls += 1
+        return {"containerInstances": [{"ec2InstanceId": GPU, "runningTasksCount": running}]}
+
+
+class FakeEc2:
+    """Record start/stop calls; raise `action_error` from both."""
+
+    def __init__(self, action_error=None):
+        self.action_error = action_error
+        self.started: list[list[str]] = []
+        self.stopped: list[list[str]] = []
+
+    def start_instances(self, **kwargs):
+        if self.action_error:
+            raise self.action_error
+        self.started.append(kwargs["InstanceIds"])
+        return {}
+
+    def stop_instances(self, **kwargs):
+        if self.action_error:
+            raise self.action_error
+        self.stopped.append(kwargs["InstanceIds"])
         return {}
 
 
@@ -91,11 +136,13 @@ def aws(monkeypatch):
     """Install fake ECS/RDS clients; return a setter for per-test variants."""
     installed: dict = {}
 
-    def _install(ecs=None, rds=None):
+    def _install(ecs=None, rds=None, ec2=None):
         installed["ecs"] = ecs or FakeEcs()
         installed["rds"] = rds or FakeRds()
+        installed["ec2"] = ec2 or FakeEc2()
         monkeypatch.setattr(scheduler, "ecs_client", installed["ecs"])
         monkeypatch.setattr(scheduler, "rds_client", installed["rds"])
+        monkeypatch.setattr(scheduler, "ec2_client", installed["ec2"])
         monkeypatch.setattr(scheduler.time, "sleep", lambda _s: None)
         return installed
 
@@ -117,11 +164,21 @@ def _body(response: dict) -> dict:
 class TestGetEnvVars:
     """Tests for get_env_vars()."""
 
-    def test_reads_all_three(self, env):
-        cluster, services, rds_id = scheduler.get_env_vars()
+    def test_reads_the_required_three_and_no_gpu(self, env):
+        cluster, services, rds_id, gpu_id = scheduler.get_env_vars()
         assert cluster == "myapp-staging-cluster"
         assert services == {"web": {"replicas": 2}, "worker": {}}
         assert rds_id == "myapp-staging-db"
+        assert gpu_id is None
+
+    def test_an_empty_gpu_instance_id_is_none(self, env, monkeypatch):
+        """tofu passes "" when the environment declares no GPU capacity."""
+        monkeypatch.setenv("GPU_INSTANCE_ID", "")
+        assert scheduler.get_env_vars()[3] is None
+
+    def test_reads_the_gpu_instance_id(self, env, monkeypatch):
+        monkeypatch.setenv("GPU_INSTANCE_ID", GPU)
+        assert scheduler.get_env_vars()[3] == GPU
 
     @pytest.mark.parametrize("missing", ["ECS_CLUSTER_NAME", "ECS_SERVICES", "RDS_INSTANCE_ID"])
     def test_a_missing_variable_is_a_value_error(self, env, monkeypatch, missing):
@@ -228,6 +285,90 @@ class TestStartEnvironment:
         """BotoCoreError, not just ClientError: a timeout is still an AWS failure."""
         aws(rds=FakeRds(describe_error=EndpointConnectionError(endpoint_url="https://rds")))
         assert scheduler.start_environment("c", {}, "db")["rds"].startswith("error: ")
+
+
+class TestGpuInstance:
+    """The GPU container instance stops after its tasks drain, and starts first."""
+
+    def test_stop_waits_for_the_tasks_then_stops_the_instance(self, aws):
+        state = aws(ecs=FakeEcs(gpu_running=[1, 1, 0]), rds=FakeRds(status="available"))
+        results = scheduler.stop_environment("c", {"worker": {}}, "db", GPU)
+
+        assert state["ecs"].describe_calls == 3
+        assert state["ecs"].calls[0]["desiredCount"] == 0
+        assert state["ec2"].stopped == [[GPU]]
+        assert results["gpu"] == "stop initiated"
+        assert results["rds"] == "stop initiated"
+
+    def test_stop_without_a_registered_container_instance_just_stops_it(self, aws):
+        state = aws(ecs=FakeEcs(gpu_running=None))
+        assert scheduler.stop_environment("c", {}, "db", GPU)["gpu"] == "stop initiated"
+        assert state["ec2"].stopped == [[GPU]]
+
+    def test_a_drain_that_outlasts_the_budget_is_named_and_the_instance_still_stops(
+        self, aws, monkeypatch
+    ):
+        monkeypatch.setattr(scheduler, "GPU_DRAIN_TIMEOUT_SECONDS", 0)
+        state = aws(ecs=FakeEcs(gpu_running=[2]))
+        results = scheduler.stop_environment("c", {}, "db", GPU)
+
+        assert results["gpu"] == "stop initiated with 2 task(s) still running (drain timed out)"
+        assert state["ec2"].stopped == [[GPU]]
+        assert scheduler._failures(results) == []
+
+    def test_an_unreadable_container_instance_is_an_error_and_nothing_is_stopped(self, aws):
+        state = aws(ecs=FakeEcs(describe_error=_client_error("ListContainerInstances")))
+        results = scheduler.stop_environment("c", {}, "db", GPU)
+        assert results["gpu"].startswith("error: ")
+        assert state["ec2"].stopped == []
+        assert scheduler._failures(results) == ["gpu"]
+
+    def test_a_refused_stop_is_an_error(self, aws):
+        aws(ecs=FakeEcs(gpu_running=[0]), ec2=FakeEc2(action_error=_client_error("StopInstances")))
+        results = scheduler.stop_environment("c", {}, "db", GPU)
+        assert results["gpu"].startswith("error: ")
+        assert scheduler._failures(results) == ["gpu"]
+
+    def test_start_starts_the_instance_first(self, aws):
+        state = aws(rds=FakeRds(status="stopped"))
+        results = scheduler.start_environment("c", {"worker": {}}, "db", GPU)
+
+        assert state["ec2"].started == [[GPU]]
+        assert list(results) == ["gpu", "rds", "ecs"]
+        assert results["gpu"] == "start initiated"
+
+    def test_a_refused_start_is_an_error_and_the_rest_still_starts(self, aws):
+        state = aws(
+            rds=FakeRds(status="stopped"), ec2=FakeEc2(action_error=_client_error("StartInstances"))
+        )
+        results = scheduler.start_environment("c", {"worker": {}}, "db", GPU)
+        assert results["gpu"].startswith("error: ")
+        assert state["rds"].started == ["db"]
+        assert [c["desiredCount"] for c in state["ecs"].calls] == [1]
+        assert scheduler._failures(results) == ["gpu"]
+
+    def test_no_gpu_instance_means_no_gpu_step(self, aws):
+        state = aws()
+        assert "gpu" not in scheduler.stop_environment("c", {}, "db")
+        assert "gpu" not in scheduler.start_environment("c", {}, "db")
+        assert state["ec2"].stopped == [] and state["ec2"].started == []
+
+    def test_the_handler_passes_the_instance_through(self, aws, env, monkeypatch):
+        monkeypatch.setenv("GPU_INSTANCE_ID", GPU)
+        state = aws(ecs=FakeEcs(gpu_running=[0]), rds=FakeRds(status="available"))
+        response = scheduler.handler({"action": "stop"}, None)
+        assert response["statusCode"] == 200
+        assert _body(response)["results"]["gpu"] == "stop initiated"
+        assert state["ec2"].stopped == [[GPU]]
+
+    def test_a_failed_gpu_step_makes_the_invocation_500(self, aws, env, monkeypatch):
+        monkeypatch.setenv("GPU_INSTANCE_ID", GPU)
+        aws(
+            rds=FakeRds(status="stopped"), ec2=FakeEc2(action_error=_client_error("StartInstances"))
+        )
+        response = scheduler.handler({"action": "start"}, None)
+        assert response["statusCode"] == 500
+        assert _body(response)["failures"] == ["gpu"]
 
 
 class TestUnexpectedErrorsEscape:
