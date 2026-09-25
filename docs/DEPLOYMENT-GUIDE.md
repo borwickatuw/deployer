@@ -345,6 +345,24 @@ only references the name), or to restart services via a deploy.
 (`--force-build` does not help here: image tags are content-addressed, so a
 forced rebuild of unchanged sources produces the same tag and the same hash.)
 
+### Unchanged migrations are skipped
+
+Before any image is built, the deploy hashes the source tree's migration files
+(every tracked `*/migrations/*.py`). That hash is the one the migrate step
+acts on: when it equals the hash stored in SSM
+(`/<app>/<env>/last-migrations-hash`) after the last successful migrate, the
+deploy logs `Migrations unchanged (hash: ...), skipping` and runs no migrate
+task; otherwise it runs migrate and, once that succeeds, stores the pre-build
+hash.
+
+The hash is taken before the build because the images are built from that
+tree. If the tree's migrations change while the deploy runs — a parallel
+commit into a shared checkout during a slow build — the deploy stops at the
+migrate step with `The source tree's migrations changed during the deploy`,
+naming both hashes. Nothing is migrated, nothing is stored and no service is
+updated; re-run the deploy so the images and the migrations hash come from the
+same tree.
+
 ______________________________________________________________________
 
 ## Verification

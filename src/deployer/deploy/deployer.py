@@ -22,6 +22,7 @@ from deployer.deploy.autoscaling import apply_autoscaling, validate_scaling_conf
 from deployer.deploy.context import DeploymentContext, DeployOptions, InfraConfig, StabilityConfig
 from deployer.deploy.extensions import create_database_extensions
 from deployer.deploy.images import build_and_push_images, ecr_login
+from deployer.deploy.migrations import MigrationsSnapshot
 from deployer.deploy.preflight import PreflightOptions
 from deployer.deploy.service import (
     DeployedServices,
@@ -434,16 +435,23 @@ class Deployer:
         )
 
     @_timed_step
-    def _start_migrations(self, image_uris: dict[str, str]) -> MigrationTask | None:
+    def _start_migrations(
+        self, image_uris: dict[str, str], migrations: MigrationsSnapshot
+    ) -> MigrationTask | None:
         """Start the migration task and return without waiting for it.
 
         Args:
             image_uris: Map of image name to ECR URI from _build_and_push_images.
+            migrations: The migrations hash taken before _build_and_push_images.
 
         Returns:
             The running migration task, or None if there is nothing to migrate.
+
+        Raises:
+            MigrationsChangedDuringDeployError: The source tree's migrations
+                changed while the images were being built.
         """
-        return start_migrations(self.ctx, image_uris, source_dir=self.source_dir)
+        return start_migrations(self.ctx, image_uris, migrations=migrations)
 
     @_timed_step
     def _deploy_services(self, image_uris: dict[str, str]) -> DeployedServices:
@@ -544,6 +552,10 @@ class Deployer:
         Every step below is a ``_``-prefixed method whose name is also its
         timing key (see :func:`_timed_step`). The order is load-bearing:
 
+        * the migrations hash is taken before the images are built, because
+          that is the tree they are built from: it decides the migrate skip
+          and is what gets stored, and the deploy is refused at migrate time
+          if the tree's migrations moved in between;
         * migrations start before services deploy, so the schema moves while
           ECS is still pulling images;
         * the per-service state hashes are written only once stability is
@@ -554,8 +566,9 @@ class Deployer:
           policy apply (an IAM gap, say) must not force full service rolls on
           every retry: the retry re-runs autoscaling either way.
 
-        ``store_service_state_hashes`` is the one step that is not timed -- it
-        is milliseconds, and a no-op on dry runs, which compute no hashes.
+        Two steps are not timed, being milliseconds: taking the migrations
+        snapshot (a local ``git`` read) and ``store_service_state_hashes``,
+        which is also a no-op on dry runs, since they compute no hashes.
 
         Returns:
             Tuple of (image_uris dict, health_failures list).
@@ -573,10 +586,11 @@ class Deployer:
 
         self._ecr_login()
         print()
+        migrations = MigrationsSnapshot.take(self.source_dir)
         image_uris = self._build_and_push_images()
         print()
         self._create_extensions()
-        migration_task = self._start_migrations(image_uris)
+        migration_task = self._start_migrations(image_uris, migrations)
         print()
         deployed = self._deploy_services(image_uris)
         print()

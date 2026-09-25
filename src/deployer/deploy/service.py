@@ -7,7 +7,6 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, NamedTuple, NoReturn
 
 import boto3
@@ -18,7 +17,7 @@ from ..aws.cloudwatch import get_task_logs
 from ..timing import get_timer
 from ..utils import Colors, log, log_debug, log_error, log_status, log_success, log_warning
 from .context import DeploymentContext, InfraConfig, StabilityConfig
-from .migrations import should_skip_migrations, store_migrations_hash
+from .migrations import MigrationsSnapshot, should_skip_migrations, store_migrations_hash
 from .task_definition import build_task_definition, get_service_sizing
 
 
@@ -38,7 +37,7 @@ class MigrationTask:
 
     task_arn: str
     cluster_name: str
-    current_hash: str | None
+    migrations_hash: str | None
     app_name: str
     environment: str
 
@@ -1109,7 +1108,7 @@ def _migration_network_config(ctx, migration_service: str) -> dict | None:
 def start_migrations(
     ctx,
     image_uris: dict[str, str],
-    source_dir: Path | None,
+    migrations: MigrationsSnapshot | None,
 ) -> MigrationTask | None:
     """Start database migrations (non-blocking).
 
@@ -1119,18 +1118,22 @@ def start_migrations(
     Args:
         ctx: DeploymentContext with shared deployment parameters.
         image_uris: Dictionary mapping image names to ECR URIs.
-        source_dir: Resolved path to the application source directory (for
-            migration hashing), or None to always run the migration.
+        migrations: The migrations hash taken before the images were built,
+            or None to always run the migration without hashing.
 
     Returns:
         MigrationTask with task ARN and metadata, or None if migrations
         are disabled, skipped, or this is a dry run.
+
+    Raises:
+        MigrationsChangedDuringDeployError: The source tree's migrations
+            changed since the snapshot; nothing is run or stored.
     """
-    migrations = ctx.config.get("migrations", {})
-    if not migrations.get("enabled", False):
+    migrations_config = ctx.config.get("migrations", {})
+    if not migrations_config.get("enabled", False):
         return None
 
-    migration_service = migrations.get("service", "web")
+    migration_service = migrations_config.get("service", "web")
     image_uri = _resolve_migration_image(ctx, migration_service, image_uris)
     if not image_uri:
         return None
@@ -1149,19 +1152,21 @@ def start_migrations(
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} aws ecs run-task (migrate command)")
         return None
 
-    # Check if migrations can be skipped (no changes since last deploy)
-    current_hash = None
-    if source_dir:
-        should_skip, current_hash = should_skip_migrations(
-            source_dir, ctx.app_name, ctx.environment
-        )
-        if should_skip:
+    migrations_hash = None
+    if migrations is not None:
+        # The images were built from the tree the snapshot hashed. If the
+        # tree's migrations have moved since, neither skipping nor running is
+        # sound: the image may not hold them.
+        migrations.verify_unchanged()
+        migrations_hash = migrations.migrations_hash
+        # Check if migrations can be skipped (no changes since last deploy)
+        if should_skip_migrations(migrations_hash, ctx.app_name, ctx.environment):
             # Task definition is registered but we skip running the migration
             return None
 
     log("Starting migrations...")
 
-    command = migrations.get("command", ["python", "manage.py", "migrate"])
+    command = migrations_config.get("command", ["python", "manage.py", "migrate"])
 
     network_config = _migration_network_config(ctx, migration_service)
     if network_config is None:
@@ -1187,7 +1192,7 @@ def start_migrations(
     return MigrationTask(
         task_arn=task_arn,
         cluster_name=ctx.cluster_name,
-        current_hash=current_hash,
+        migrations_hash=migrations_hash,
         app_name=ctx.app_name,
         environment=ctx.environment,
     )
@@ -1236,11 +1241,11 @@ def wait_for_migrations(
     log_success("Migrations complete")
 
     # Store the migrations hash for future skip detection
-    if migration_task.current_hash:
+    if migration_task.migrations_hash:
         store_migrations_hash(
             migration_task.app_name,
             migration_task.environment,
-            migration_task.current_hash,
+            migration_task.migrations_hash,
         )
 
 

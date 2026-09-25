@@ -45,6 +45,7 @@ from botocore.exceptions import ClientError
 from click.testing import CliRunner
 
 from deployer.deploy import deployer as deployer_mod
+from deployer.deploy import migrations as migrations_mod
 from deployer.deploy import service as service_mod
 from deployer.deploy.context import DeployOptions, StabilityConfig
 from deployer.deploy.deployer import (
@@ -53,6 +54,7 @@ from deployer.deploy.deployer import (
     _build_stability_config,
     common_deploy_options,
 )
+from deployer.deploy.migrations import MigrationsSnapshot
 from deployer.deploy.preflight import PreflightOptions
 from deployer.deploy.service import DeployedServices
 from deployer.timing import DeploymentTimer, get_timer, set_timer
@@ -731,6 +733,33 @@ class TestDeploySteps:
 
         assert steps.names == list(STEP_NAMES)
 
+    def test_the_migrations_hash_is_taken_once_before_the_build(
+        self, make_deployer, steps, timer, monkeypatch
+    ):
+        """The images are built from the tree as it stands before the build.
+
+        So that is when the migrations hash is taken, and start_migrations is
+        handed that value: a later hash of the tree could describe migrations
+        the images do not contain.
+        """
+        hashed_after: list[list[str]] = []
+        hashes = iter(["pre-build-hash", "later-hash"])
+
+        def _compute(source_dir):
+            hashed_after.append(list(steps.names))
+            return next(hashes)
+
+        monkeypatch.setattr(migrations_mod, "compute_migrations_hash", _compute)
+        deployer = make_deployer(timer=timer)
+
+        deployer.deploy()
+
+        assert hashed_after == [["ecr_login"]]
+        (start_call,) = [call for call in steps.calls if call[0] == "start_migrations"]
+        assert start_call[2] == {
+            "migrations": MigrationsSnapshot(deployer.source_dir, "pre-build-hash")
+        }
+
     def test_each_step_receives_exactly_these_arguments(self, make_deployer, steps, timer, aws):
         deployer = make_deployer(timer=timer)
 
@@ -771,7 +800,8 @@ class TestDeploySteps:
             (
                 "start_migrations",
                 (deployer.ctx, IMAGE_URIS),
-                {"source_dir": deployer.source_dir},
+                # tmp_path has no migration files: the snapshot's hash is None
+                {"migrations": MigrationsSnapshot(deployer.source_dir, None)},
             ),
             ("deploy_services", (deployer.ctx, IMAGE_URIS), {"force_deploy": False}),
             ("wait_for_migrations", (aws["ecs"], MIGRATION_TASK), {}),

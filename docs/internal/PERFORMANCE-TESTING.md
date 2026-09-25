@@ -217,10 +217,11 @@ When no migration files have changed since the last successful deployment, the m
 
 ### How It Works
 
-1. Before running migrations, compute a hash of all `*/migrations/*.py` files using `git ls-files` and `git hash-object`
-1. Compare with the stored hash in SSM (`/<app>/<env>/last-migrations-hash`)
+1. Before building the images, compute a hash of all `*/migrations/*.py` files using `git ls-files` and `git hash-object` — the tree the images are built from
+1. At the migrate step, hash the tree again; if it differs from the pre-build hash, the tree's migrations changed during the deploy, and the deploy stops without migrating or storing anything (re-run it)
+1. Compare the pre-build hash with the stored hash in SSM (`/<app>/<env>/last-migrations-hash`)
 1. If hashes match, skip migrations
-1. After successful migration, store the new hash
+1. After successful migration, store the pre-build hash
 
 ### Output Examples
 

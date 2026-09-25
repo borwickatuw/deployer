@@ -13,6 +13,7 @@ from pathlib import Path
 from deployer.config import parse_deploy_config
 from deployer.deploy.context import DeployOptions, EnvironmentTarget
 from deployer.deploy.deployer import Deployer, handle_push_error
+from deployer.deploy.migrations import MigrationsChangedDuringDeployError
 from deployer.deploy.preflight import PreflightError, PreflightOptions, run_preflight_checks
 from deployer.deploy.service import ServiceConfigError
 from deployer.timing import DeploymentTimer
@@ -87,6 +88,11 @@ def run_deploy_pipeline(
         # validate_services' typed config error, raised before anything moved:
         # an operator error, reported like a preflight failure. Any other
         # ValueError is a bug and keeps its traceback.
+        log_error(str(e))
+        return 1
+    except MigrationsChangedDuringDeployError as e:
+        # Raised before migrate runs or any service moves; the images are
+        # pushed but nothing is running them. An operator message, not a bug.
         log_error(str(e))
         return 1
     except RuntimeError as e:

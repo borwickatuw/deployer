@@ -6,6 +6,7 @@ import pytest
 
 from deployer.deploy import pipeline
 from deployer.deploy.context import DeployOptions, EnvironmentTarget
+from deployer.deploy.migrations import MigrationsChangedDuringDeployError
 from deployer.deploy.pipeline import run_deploy_pipeline
 from deployer.deploy.preflight import PreflightError, PreflightOptions
 from deployer.deploy.service import ServiceConfigError
@@ -126,6 +127,16 @@ class TestPushErrorHandling:
         StubDeployer.error = ServiceConfigError("Service 'web' cannot be deployed:\nbad port")
         assert _run(stub_pipeline) == 1
         assert "bad port" in capsys.readouterr().out
+
+    def test_migrations_changed_during_the_deploy_returns_1_with_its_message(
+        self, stub_pipeline, capsys
+    ):
+        """The drift refusal is an operator error too: the fix is to re-run."""
+        StubDeployer.error = MigrationsChangedDuringDeployError(
+            "The source tree's migrations changed during the deploy. Re-run the deploy."
+        )
+        assert _run(stub_pipeline) == 1
+        assert "Re-run the deploy." in capsys.readouterr().out
 
     def test_any_other_value_error_still_propagates(self, stub_pipeline):
         # Only the typed config error is caught: a ValueError from anywhere

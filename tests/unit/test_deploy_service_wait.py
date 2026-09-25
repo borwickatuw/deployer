@@ -45,14 +45,16 @@ Nine pins exist specifically to make 53e-5c/5d verifiable:
    ``success=True``** — a non-obvious combination, pinned both at the
    ``_wait_for_service_and_targets`` level and end-to-end through
    ``wait_for_stable`` against a real (empty) moto target group.
-7. **The migration skip-hash paths** (service.py:504-512), against a real git
-   repo and a real moto SSM parameter: the migrate task definition is
-   registered *even when the migration is skipped*, and ``run_task`` is not
-   called (``TestStartMigrationsSkipHash``).
-8. **``source_dir`` accepts both ``str`` and ``Path``.** Production always
-   passes a resolved ``Path`` (``deployer.py`` builds it); the annotation is
-   ``Path | None``. ``compute_migrations_hash`` does ``Path(source_dir).resolve()``
-   so a ``str`` still works, and ``TestSourceDirTypes`` pins that they agree.
+7. **The migration skip-hash paths**, against a real git repo and a real moto
+   SSM parameter: the migrate task definition is registered *even when the
+   migration is skipped*, and ``run_task`` is not called
+   (``TestStartMigrationsSkipHash``).
+8. **OVERTURNED** (2026-09-25): ``start_migrations`` took ``source_dir`` and
+   hashed the tree itself, after the image build, so the hash it stored could
+   describe migrations the image did not hold. It now takes the
+   ``MigrationsSnapshot`` taken before the build, and refuses when the tree
+   has moved since (``TestStartMigrationsTreeDrift``); the ``str``/``Path``
+   pin on ``source_dir`` went with the parameter.
 9. **Both polling loops' sleep behaviour** — ``time.sleep`` is stubbed at the
    stdlib module (the ``sleeps`` fixture), and the recorded interval *and*
    call count are asserted for ``_wait_for_service_stable`` and
@@ -88,8 +90,14 @@ import boto3
 import pytest
 from botocore.exceptions import ClientError
 
+from deployer.deploy import migrations as migrations_mod
 from deployer.deploy.context import DeploymentContext, InfraConfig, StabilityConfig
-from deployer.deploy.migrations import store_migrations_hash
+from deployer.deploy.migrations import (
+    MigrationsChangedDuringDeployError,
+    MigrationsSnapshot,
+    compute_migrations_hash,
+    store_migrations_hash,
+)
 from deployer.deploy.service import (
     FATAL_ERROR_PATTERNS,
     DeploymentError,
@@ -1860,10 +1868,15 @@ class TestStartMigrationsDryRun:
         assert client.calls == []
 
     def test_dry_run_short_circuits_before_the_skip_check(self, migrations_repo):
-        """The hash is never computed on a dry run, so SSM is never read."""
+        """Neither the drift re-check nor the skip check runs, so SSM is never read.
+
+        The tree is changed after the snapshot: a live run would refuse.
+        """
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        _add_migration(migrations_repo)
         client = ScriptedClient()
         ctx = _ctx(client, config=_migration_config(), dry_run=True)
-        assert start_migrations(ctx, {"web": "img:web"}, migrations_repo) is None
+        assert start_migrations(ctx, {"web": "img:web"}, snapshot) is None
 
 
 class TestStartMigrationsTaskDefinition:
@@ -1890,101 +1903,179 @@ class TestStartMigrationsTaskDefinition:
 
 
 class TestStartMigrationsSkipHash:
-    """MUST-PIN 7: the skip-hash paths at service.py:504-512."""
+    """MUST-PIN 7: the skip-hash paths, fed by the snapshot taken before the build."""
 
     @pytest.mark.usefixtures("mocked_aws")
     def test_matching_hash_skips_the_run_but_keeps_the_task_definition(
         self, migrations_repo, capsys
     ):
-        from deployer.deploy.migrations import compute_migrations_hash
-
-        store_migrations_hash(APP_NAME, ENVIRONMENT, compute_migrations_hash(migrations_repo))
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        store_migrations_hash(APP_NAME, ENVIRONMENT, snapshot.migrations_hash)
 
         client = _migration_ecs_client()
         ctx = _ctx(client, config=_migration_config())
-        assert start_migrations(ctx, {"web": "img:web"}, migrations_repo) is None
+        assert start_migrations(ctx, {"web": "img:web"}, snapshot) is None
 
         assert len(client.calls_to("register_task_definition")) == 1
         assert client.calls_to("run_task") == []
         assert "Migrations unchanged" in _plain(capsys.readouterr().out)
 
     @pytest.mark.usefixtures("mocked_aws")
-    def test_no_stored_hash_runs_the_migration_and_carries_the_hash(self, migrations_repo):
-        from deployer.deploy.migrations import compute_migrations_hash
+    def test_no_stored_hash_runs_the_migration_and_carries_the_hash(self, migrations_repo, capsys):
+        snapshot = MigrationsSnapshot.take(migrations_repo)
 
         client = _migration_ecs_client()
         ctx = _ctx(client, config=_migration_config())
-        task = start_migrations(ctx, {"web": "img:web"}, migrations_repo)
+        task = start_migrations(ctx, {"web": "img:web"}, snapshot)
 
         assert task is not None
-        assert task.current_hash == compute_migrations_hash(migrations_repo)
+        assert task.migrations_hash == snapshot.migrations_hash
         assert len(client.calls_to("run_task")) == 1
+        assert "No stored migrations hash found" in _plain(capsys.readouterr().out)
 
     @pytest.mark.usefixtures("mocked_aws")
-    def test_changed_migrations_run(self, migrations_repo):
+    def test_changed_migrations_run(self, migrations_repo, capsys):
         store_migrations_hash(APP_NAME, ENVIRONMENT, "0000000000000000")
+        snapshot = MigrationsSnapshot.take(migrations_repo)
 
         client = _migration_ecs_client()
         ctx = _ctx(client, config=_migration_config())
-        task = start_migrations(ctx, {"web": "img:web"}, migrations_repo)
+        task = start_migrations(ctx, {"web": "img:web"}, snapshot)
 
         assert task is not None
-        assert task.current_hash != "0000000000000000"
+        assert task.migrations_hash == snapshot.migrations_hash
+        assert f"Migrations changed (0000000000000000 -> {snapshot.migrations_hash})" in _plain(
+            capsys.readouterr().out
+        )
 
     @pytest.mark.usefixtures("mocked_aws")
     def test_unhashable_source_dir_runs_with_a_none_hash(self, tmp_path):
         """No migration files anywhere: the hash is None and the migration runs."""
         client = _migration_ecs_client()
         ctx = _ctx(client, config=_migration_config())
-        task = start_migrations(ctx, {"web": "img:web"}, tmp_path)
+        task = start_migrations(ctx, {"web": "img:web"}, MigrationsSnapshot.take(tmp_path))
 
         assert task is not None
-        assert task.current_hash is None
+        assert task.migrations_hash is None
 
-    def test_source_dir_none_skips_the_check_entirely(self):
-        """``if source_dir:`` is falsy, so no hashing and no SSM read happens."""
+    def test_no_snapshot_skips_the_check_entirely(self):
+        """No snapshot: no hashing, no SSM read, the migration runs."""
         client = _migration_ecs_client()
         ctx = _ctx(client, config=_migration_config())
         task = start_migrations(ctx, {"web": "img:web"}, None)
 
         assert task is not None
-        assert task.current_hash is None
+        assert task.migrations_hash is None
 
 
-class TestSourceDirTypes:
-    """MUST-PIN 8: the ``str | None`` annotation vs the ``Path`` production passes.
+def _add_migration(repo: Path) -> None:
+    """Commit a new migration to the repo, as a parallel session would."""
+    (repo / "app" / "migrations" / "0002_more.py").write_text("# more\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)  # noqa: S607
 
-    ``deployer.py:117`` builds ``(config_path.parent / application.source).resolve()``
-    -- a ``Path`` -- and ``should_skip_migrations`` is annotated ``Path``. The
-    ``str | None`` on ``start_migrations`` is simply wrong. It is also harmless:
-    ``compute_migrations_hash`` normalises with ``Path(source_dir).resolve()``.
-    Both are pinned so 53e-5c can correct the annotation without guessing.
+
+class TestStartMigrationsTreeDrift:
+    """The tree's migrations moved between the snapshot and migrate.
+
+    The images were built from the snapshotted tree, so the one hash that may
+    decide the skip and be stored is the snapshot's. A tree that has moved
+    since refuses the deploy: no migrate, nothing stored.
     """
 
     @pytest.mark.usefixtures("mocked_aws")
-    def test_path_and_str_produce_the_same_hash(self, migrations_repo):
-        path_task = start_migrations(
-            _ctx(_migration_ecs_client(), config=_migration_config()),
-            {"web": "img:web"},
-            migrations_repo,
-        )
-        str_task = start_migrations(
-            _ctx(_migration_ecs_client(), config=_migration_config()),
-            {"web": "img:web"},
-            str(migrations_repo),
-        )
-        assert path_task is not None
-        assert str_task is not None
-        assert path_task.current_hash == str_task.current_hash
+    def test_a_changed_tree_raises_naming_both_hashes(self, migrations_repo):
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        _add_migration(migrations_repo)
+        now = compute_migrations_hash(migrations_repo)
+        assert now != snapshot.migrations_hash
+
+        client = _migration_ecs_client()
+        ctx = _ctx(client, config=_migration_config())
+        with pytest.raises(MigrationsChangedDuringDeployError) as exc_info:
+            start_migrations(ctx, {"web": "img:web"}, snapshot)
+
+        message = str(exc_info.value)
+        assert f"hash before the build: {snapshot.migrations_hash}, now: {now}" in message
+        assert "Re-run the deploy." in message
+        assert client.calls_to("run_task") == []
+        with pytest.raises(ClientError):
+            boto3.client("ssm", region_name=REGION).get_parameter(
+                Name=f"/{APP_NAME}/{ENVIRONMENT}/last-migrations-hash"
+            )
 
     @pytest.mark.usefixtures("mocked_aws")
-    def test_empty_string_source_dir_is_falsy_and_skips_the_check(self):
-        """``""`` takes the ``source_dir`` falsy branch, exactly like None."""
-        task = start_migrations(
-            _ctx(_migration_ecs_client(), config=_migration_config()), {"web": "img:web"}, ""
+    def test_a_changed_tree_is_refused_even_when_the_snapshot_would_skip(self, migrations_repo):
+        """The skip path is guarded too: the image may hold the new migration."""
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        store_migrations_hash(APP_NAME, ENVIRONMENT, snapshot.migrations_hash)
+        _add_migration(migrations_repo)
+
+        client = _migration_ecs_client()
+        ctx = _ctx(client, config=_migration_config())
+        with pytest.raises(MigrationsChangedDuringDeployError):
+            start_migrations(ctx, {"web": "img:web"}, snapshot)
+        assert client.calls_to("run_task") == []
+
+    @pytest.mark.usefixtures("mocked_aws")
+    def test_migrations_appearing_after_an_empty_snapshot_are_refused(self, migrations_repo):
+        """None is a hash like any other: None -> a hash is drift."""
+        snapshot = MigrationsSnapshot(migrations_repo, None)
+
+        client = _migration_ecs_client()
+        ctx = _ctx(client, config=_migration_config())
+        with pytest.raises(MigrationsChangedDuringDeployError, match="before the build: None"):
+            start_migrations(ctx, {"web": "img:web"}, snapshot)
+        assert client.calls_to("run_task") == []
+
+    @pytest.mark.usefixtures("mocked_aws")
+    def test_the_pre_build_hash_decides_the_skip_and_is_stored(self, migrations_repo, monkeypatch):
+        """Hashing twice with no drift: the first (pre-build) value is the one used.
+
+        compute_migrations_hash is scripted so the pre-build call and the
+        migrate-time re-check agree; the task carries that value to the store.
+        """
+        hashes = iter(["aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa"])
+        monkeypatch.setattr(migrations_mod, "compute_migrations_hash", lambda _d: next(hashes))
+        store_migrations_hash(APP_NAME, ENVIRONMENT, "1111111111111111")
+
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        client = _migration_ecs_client(describe_tasks=_describe_tasks(0))
+        ctx = _ctx(client, config=_migration_config())
+        task = start_migrations(ctx, {"web": "img:web"}, snapshot)
+        wait_for_migrations(client, task)
+
+        assert len(client.calls_to("run_task")) == 1
+        stored = boto3.client("ssm", region_name=REGION).get_parameter(
+            Name=f"/{APP_NAME}/{ENVIRONMENT}/last-migrations-hash", WithDecryption=True
         )
-        assert task is not None
-        assert task.current_hash is None
+        assert stored["Parameter"]["Value"] == "aaaaaaaaaaaaaaaa"
+
+    @pytest.mark.usefixtures("mocked_aws")
+    def test_the_incident_sequence_is_refused(self, migrations_repo, monkeypatch):
+        """The pre-build hash is the old tree's, the re-check sees a new migration.
+
+        Hashing at migrate time alone would have run migrate with the old
+        image and stored the new tree's hash, so the next deploy -- whose
+        image does hold the migration -- skipped it for good.
+        """
+        hashes = iter(["1111111111111111", "2222222222222222"])
+        monkeypatch.setattr(migrations_mod, "compute_migrations_hash", lambda _d: next(hashes))
+        store_migrations_hash(APP_NAME, ENVIRONMENT, "0000000000000000")
+
+        snapshot = MigrationsSnapshot.take(migrations_repo)
+        client = _migration_ecs_client()
+        ctx = _ctx(client, config=_migration_config())
+        with pytest.raises(
+            MigrationsChangedDuringDeployError,
+            match="before the build: 1111111111111111, now: 2222222222222222",
+        ):
+            start_migrations(ctx, {"web": "img:web"}, snapshot)
+
+        assert client.calls_to("run_task") == []
+        stored = boto3.client("ssm", region_name=REGION).get_parameter(
+            Name=f"/{APP_NAME}/{ENVIRONMENT}/last-migrations-hash", WithDecryption=True
+        )
+        assert stored["Parameter"]["Value"] == "0000000000000000"
 
 
 class TestStartMigrationsNetworkConfig:
@@ -2069,7 +2160,7 @@ class TestStartMigrationsRunTask:
         assert task == MigrationTask(
             task_arn=TASK_ARN,
             cluster_name=CLUSTER,
-            current_hash=None,
+            migrations_hash=None,
             app_name=APP_NAME,
             environment=ENVIRONMENT,
         )
@@ -2090,11 +2181,11 @@ class TestStartMigrationsRunTask:
 # ===========================================================================
 
 
-def _migration_task(current_hash: str | None = None) -> MigrationTask:
+def _migration_task(migrations_hash: str | None = None) -> MigrationTask:
     return MigrationTask(
         task_arn=TASK_ARN,
         cluster_name=CLUSTER,
-        current_hash=current_hash,
+        migrations_hash=migrations_hash,
         app_name=APP_NAME,
         environment=ENVIRONMENT,
     )
@@ -2130,7 +2221,7 @@ class TestWaitForMigrations:
         assert "Migrations complete [done]" in out
 
     def test_no_hash_means_no_ssm_write(self):
-        """``current_hash`` None skips ``store_migrations_hash`` (which would need AWS)."""
+        """``migrations_hash`` None skips ``store_migrations_hash`` (which would need AWS)."""
         client = ScriptedClient(describe_tasks=_describe_tasks(0))
         assert wait_for_migrations(client, _migration_task(None)) is None
 
@@ -2214,7 +2305,7 @@ class TestDisplayMigrationLogs:
         task = MigrationTask(
             task_arn=f"arn:aws:ecs:{REGION}:{ACCOUNT_ID}:task/{CLUSTER}/nested/deadbeef",
             cluster_name=CLUSTER,
-            current_hash=None,
+            migrations_hash=None,
             app_name=APP_NAME,
             environment=ENVIRONMENT,
         )
@@ -2229,7 +2320,7 @@ class TestDisplayMigrationLogs:
         task = MigrationTask(
             task_arn="bare-task-id",
             cluster_name=CLUSTER,
-            current_hash=None,
+            migrations_hash=None,
             app_name=APP_NAME,
             environment=ENVIRONMENT,
         )

@@ -169,6 +169,17 @@ tofu taint 'module.db_users.aws_lambda_invocation.create_users'
 tofu apply
 ```
 
+### Migrations Changed During the Deploy
+
+**Error:** `The source tree's migrations changed during the deploy (hash before the build: ..., now: ...)`
+
+The migration files in the source tree changed after the deploy began
+building images — typically a commit into a shared checkout during a slow
+build. The images may not contain the migrations the tree now holds, so the
+deploy stopped before migrating, stored no migrations hash and updated no
+service. Re-run the deploy; the new run builds from, and hashes, the current
+tree.
+
 ______________________________________________________________________
 
 ## Image Build Failures

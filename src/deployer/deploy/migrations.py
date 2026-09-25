@@ -2,11 +2,21 @@
 
 This module provides functionality to skip migrations when no migration files
 have changed since the last successful deployment.
+
+The migrations hash a deploy acts on is taken once, before any image is built
+(:meth:`MigrationsSnapshot.take`), because that is the tree the images are
+built from. Hashing the tree again at migrate time would describe whatever the
+checkout holds by then -- in a shared checkout, possibly migrations the image
+does not contain -- and storing that hash would record a migrate that never
+happened. The later hash is used only to refuse the deploy when the two differ
+(:meth:`MigrationsSnapshot.verify_unchanged`).
 """
 
 import hashlib
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 from ..aws import ssm
 from ..utils import log, log_success, log_warning
@@ -152,42 +162,90 @@ def store_migrations_hash(app_name: str, environment: str, hash_value: str) -> b
     return success
 
 
+class MigrationsChangedDuringDeployError(RuntimeError):
+    """The source tree's migrations changed between the image build and migrate.
+
+    The images were built from the tree as it stood when the deploy began; a
+    migrate run now would use an image that may not hold the tree's
+    migrations, and the hash it stored would describe a tree that was never
+    migrated. The only safe answer is to stop and deploy again.
+    """
+
+
+@dataclass(frozen=True)
+class MigrationsSnapshot:
+    """The migrations hash of a source tree, taken before the images are built.
+
+    Attributes:
+        source_dir: The application source directory that was hashed.
+        migrations_hash: Its migrations hash, or None when there are no
+            migration files or they could not be read (always migrate).
+    """
+
+    source_dir: Path
+    migrations_hash: str | None
+
+    @classmethod
+    def take(cls, source_dir: Path) -> Self:
+        """Hash the source tree's migrations as they stand now.
+
+        Args:
+            source_dir: Resolved path to the application source directory.
+
+        Returns:
+            The snapshot to carry through the rest of the deploy.
+        """
+        return cls(source_dir, compute_migrations_hash(source_dir))
+
+    def verify_unchanged(self) -> None:
+        """Refuse to go on if the tree's migrations moved since the snapshot.
+
+        Raises:
+            MigrationsChangedDuringDeployError: The tree's migrations hash now
+                differs from the one taken before the build.
+        """
+        current_hash = compute_migrations_hash(self.source_dir)
+        if current_hash != self.migrations_hash:
+            raise MigrationsChangedDuringDeployError(
+                "The source tree's migrations changed during the deploy "
+                f"(hash before the build: {self.migrations_hash}, now: {current_hash}). "
+                "The images may not contain the current migrations, so migrate was "
+                "not run and no migrations hash was stored. Re-run the deploy."
+            )
+
+
 def should_skip_migrations(
-    source_dir: Path,
+    migrations_hash: str | None,
     app_name: str,
     environment: str,
-) -> tuple[bool, str | None]:
+) -> bool:
     """Check if migrations can be skipped.
 
-    Compares the current migrations hash with the stored hash from the
-    last successful deployment. If they match, migrations can be skipped.
+    Compares the migrations hash taken before the build with the stored hash
+    from the last successful migrate. If they match, migrations can be skipped.
 
     Args:
-        source_dir: Path to the application source directory.
+        migrations_hash: The snapshot's hash (``MigrationsSnapshot.migrations_hash``).
         app_name: Application name.
         environment: Environment name.
 
     Returns:
-        Tuple of (should_skip, current_hash).
-        should_skip is True if migrations can be skipped.
-        current_hash is the computed hash (for storing after successful migration).
+        True if migrations can be skipped.
     """
-    current_hash = compute_migrations_hash(source_dir)
-
-    if current_hash is None:
+    if migrations_hash is None:
         # Couldn't compute hash, run migrations to be safe
-        return False, None
+        return False
 
     stored_hash = get_stored_migrations_hash(app_name, environment)
 
     if stored_hash is None:
         # No stored hash, this is the first deploy or hash was never stored
         log("No stored migrations hash found, will run migrations")
-        return False, current_hash
+        return False
 
-    if current_hash == stored_hash:
-        log_success(f"Migrations unchanged (hash: {current_hash}), skipping")
-        return True, current_hash
+    if migrations_hash == stored_hash:
+        log_success(f"Migrations unchanged (hash: {migrations_hash}), skipping")
+        return True
 
-    log(f"Migrations changed ({stored_hash} -> {current_hash}), will run migrations")
-    return False, current_hash
+    log(f"Migrations changed ({stored_hash} -> {migrations_hash}), will run migrations")
+    return False
