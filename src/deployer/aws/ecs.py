@@ -1,6 +1,8 @@
 """AWS ECS service operations."""
 
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -131,6 +133,86 @@ def scale_service(
         return True
     except ClientError:
         return False
+
+
+def running_tasks_on_instance(
+    cluster_name: str, ec2_instance_id: str, ecs_client: Any | None = None
+) -> int | None:
+    """Count the tasks running on the container instance backed by an EC2 instance.
+
+    Args:
+        cluster_name: Name of the ECS cluster.
+        ec2_instance_id: The EC2 instance id (i-...).
+        ecs_client: Optional boto3 ECS client. If None, creates one.
+
+    Returns:
+        The container instance's running task count, or None if no container
+        instance of the cluster is backed by that EC2 instance (it never
+        registered, or it was deregistered).
+
+    Raises:
+        RuntimeError: If the cluster's container instances could not be read.
+    """
+    client: Any = _get_ecs_client() if ecs_client is None else ecs_client
+
+    try:
+        arns = client.list_container_instances(cluster=cluster_name)["containerInstanceArns"]
+        if not arns:
+            return None
+        details = client.describe_container_instances(
+            cluster=cluster_name, containerInstances=arns
+        )["containerInstances"]
+    except ClientError as e:
+        raise RuntimeError(
+            f"Could not read container instances of cluster '{cluster_name}': {e}"
+        ) from e
+
+    for instance in details:
+        if instance.get("ec2InstanceId") == ec2_instance_id:
+            return instance["runningTasksCount"]
+    return None
+
+
+# The budget for a container instance to lose its tasks after the services
+# scaled to zero: the worker requeues on SIGTERM and exits within ECS's stop
+# grace, so a drain that takes longer is a task that is not stopping.
+DRAIN_TIMEOUT_SECONDS = 120
+DRAIN_POLL_INTERVAL_SECONDS = 5
+
+
+def wait_for_instance_drained(
+    cluster_name: str,
+    ec2_instance_id: str,
+    status_callback: Callable[[int], None] | None,
+    timeout: int = DRAIN_TIMEOUT_SECONDS,
+    poll_interval: int = DRAIN_POLL_INTERVAL_SECONDS,
+    ecs_client: Any | None = None,
+) -> bool:
+    """Wait until no task runs on the container instance backed by an EC2 instance.
+
+    Args:
+        cluster_name: Name of the ECS cluster.
+        ec2_instance_id: The EC2 instance id.
+        status_callback: Optional callback(running_count) called on each poll
+            that still finds tasks.
+        timeout: Maximum seconds to wait.
+        poll_interval: Seconds between polls.
+        ecs_client: Optional boto3 ECS client. If None, creates one.
+
+    Returns:
+        True once no task runs there (or no container instance is backed by
+        it), False on timeout.
+    """
+    start_time = time.time()
+    while True:
+        running = running_tasks_on_instance(cluster_name, ec2_instance_id, ecs_client=ecs_client)
+        if not running:
+            return True
+        if status_callback:
+            status_callback(running)
+        if time.time() - start_time >= timeout:
+            return False
+        time.sleep(poll_interval)
 
 
 def _format_container_definitions(containers: list[dict]) -> list[dict]:

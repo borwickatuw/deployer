@@ -87,7 +87,10 @@ REFUSED = (False, "An error occurred (InvalidDBInstanceState)")
 
 
 def _config(
-    cluster: str | None = CLUSTER, rds_id: str | None = RDS_ID, replicas: dict | None = None
+    cluster: str | None = CLUSTER,
+    rds_id: str | None = RDS_ID,
+    replicas: dict | None = None,
+    gpu_instance_id: str | None = None,
 ) -> dict:
     """A resolved config shaped the way load_environment_config() returns one."""
     infrastructure: dict = {}
@@ -95,6 +98,8 @@ def _config(
         infrastructure["cluster_name"] = cluster
     if rds_id is not None:
         infrastructure["rds_instance_id"] = rds_id
+    if gpu_instance_id is not None:
+        infrastructure["gpu_instance_id"] = gpu_instance_id
     config: dict = {"infrastructure": infrastructure}
     if replicas is not None:
         config["services"] = {"config": {name: {"replicas": n} for name, n in replicas.items()}}
@@ -607,3 +612,141 @@ class TestCli:
             result = CliRunner().invoke(environment.cli, [command])
             assert result.exit_code == 2
             assert "Missing argument 'ENVIRONMENT'" in result.output
+
+
+# =============================================================================
+# the GPU container instance
+# =============================================================================
+
+
+@pytest.fixture
+def gpu_instance(mocked_aws):
+    """A moto EC2 instance; returns a callable that creates one in a state."""
+    client = boto3.client("ec2", region_name=REGION)
+
+    def _create(state: str = "running") -> str:
+        instance_id = client.run_instances(
+            ImageId="ami-0123456789abcdef0", MinCount=1, MaxCount=1, InstanceType="g5.2xlarge"
+        )["Instances"][0]["InstanceId"]
+        if state == "stopped":
+            client.stop_instances(InstanceIds=[instance_id])
+        return instance_id
+
+    return _create
+
+
+def instance_state(instance_id: str) -> str:
+    client = boto3.client("ec2", region_name=REGION)
+    reservations = client.describe_instances(InstanceIds=[instance_id])["Reservations"]
+    return reservations[0]["Instances"][0]["State"]["Name"]
+
+
+class TestGpuInstance:
+    """stop drains and stops the instance last; start starts it first."""
+
+    @pytest.fixture
+    def drain(self, monkeypatch):
+        """Script the running-task counts the drain wait sees, last repeating."""
+        clock = FakeClock()
+        monkeypatch.setattr(ecs_module, "time", clock)
+
+        def _script(*counts: int | None) -> None:
+            answers = list(counts)
+
+            def _running(cluster_name, ec2_instance_id, ecs_client=None):
+                return answers.pop(0) if len(answers) > 1 else answers[0]
+
+            monkeypatch.setattr(ecs_module, "running_tasks_on_instance", _running)
+
+        return _script
+
+    def test_status_shows_the_instance_state(
+        self, environments, cluster, gpu_instance, aws_cli, capsys
+    ):
+        gpu = gpu_instance("stopped")
+        environments(ENV, _config(gpu_instance_id=gpu))
+        aws_cli.replies((True, describe("stopped")))
+
+        assert environment.cmd_status(ENV) == 0
+
+        out = capsys.readouterr().out
+        assert f"  GPU Instance: {gpu}" in out
+        assert "    State: stopped" in out
+
+    def test_status_reports_a_missing_instance_in_place(
+        self, environments, cluster, aws_cli, capsys
+    ):
+        environments(ENV, _config(gpu_instance_id="i-0000000000000000d"))
+        aws_cli.replies((True, describe("stopped")))
+        assert environment.cmd_status(ENV) == 0
+        assert "    State: No such instance" in capsys.readouterr().out
+
+    def test_stop_drains_then_stops_the_instance_after_rds(
+        self, environments, cluster, gpu_instance, aws_cli, drain, capsys
+    ):
+        gpu = gpu_instance("running")
+        environments(ENV, _config(gpu_instance_id=gpu))
+        cluster("worker", 1)
+        aws_cli.replies((True, describe("available")), OK)
+        drain(1, 1, 0)
+
+        assert environment.cmd_stop(ENV) == 0
+
+        assert desired_counts() == {"worker": 0}
+        assert instance_state(gpu) == "stopped"
+        out = capsys.readouterr().out
+        assert out.index("2. Stopping RDS instance") < out.index("3. Stopping GPU instance")
+        assert out.count("   1 task(s) still running on the GPU instance...") == 2
+        assert "   GPU instance stop initiated" in out
+
+    def test_a_drain_timeout_warns_and_still_stops_the_instance(
+        self, environments, cluster, gpu_instance, aws_cli, drain, capsys
+    ):
+        gpu = gpu_instance("running")
+        environments(ENV, _config(gpu_instance_id=gpu))
+        aws_cli.replies((True, describe("available")), OK)
+        drain(2)
+
+        assert environment.cmd_stop(ENV) == 0
+
+        assert instance_state(gpu) == "stopped"
+        captured = capsys.readouterr()
+        assert "GPU instance stopped with tasks still running" in captured.err
+        assert "   GPU instance stop initiated" in captured.out
+
+    def test_start_starts_the_instance_before_rds_and_renumbers_the_steps(
+        self, environments, cluster, gpu_instance, aws_cli, capsys
+    ):
+        gpu = gpu_instance("stopped")
+        environments(ENV, _config(gpu_instance_id=gpu))
+        cluster("worker", 0)
+        aws_cli.replies((True, describe("available")))
+
+        assert environment.cmd_start(ENV) == 0
+
+        assert instance_state(gpu) in ("pending", "running")
+        assert desired_counts() == {"worker": 1}
+        out = capsys.readouterr().out
+        assert (
+            out.index("1. Starting GPU instance")
+            < out.index("2. Starting RDS instance")
+            < out.index("3. Scaling ECS services")
+        )
+        assert "   GPU instance start initiated" in out
+
+    def test_start_leaves_a_running_instance_alone(
+        self, environments, cluster, gpu_instance, aws_cli, capsys
+    ):
+        gpu = gpu_instance("running")
+        environments(ENV, _config(gpu_instance_id=gpu))
+        aws_cli.replies((True, describe("available")))
+        assert environment.cmd_start(ENV) == 0
+        assert "   GPU instance already running" in capsys.readouterr().out
+
+    def test_no_gpu_instance_means_no_gpu_step(self, environments, cluster, aws_cli, capsys):
+        environments(ENV, _config())
+        aws_cli.replies((True, describe("available")))
+        assert environment.cmd_start(ENV) == 0
+        out = capsys.readouterr().out
+        assert "GPU" not in out
+        assert "1. Starting RDS instance" in out

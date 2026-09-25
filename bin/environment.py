@@ -2,8 +2,9 @@
 """
 Manage environment start/stop for cost savings.
 
-Stops ECS services and RDS instances during off-hours while preserving all data.
-ElastiCache and ALB continue running (cannot be stopped without deletion).
+Stops ECS services, the GPU container instance (when the environment has one)
+and RDS instances during off-hours while preserving all data. ElastiCache and
+ALB continue running (cannot be stopped without deletion).
 
 Usage:
     # Show current state of all environments
@@ -12,10 +13,10 @@ Usage:
     # Show status of a specific environment
     python bin/environment.py status myapp-staging
 
-    # Stop an environment (scale ECS to 0, stop RDS)
+    # Stop an environment (scale ECS to 0, stop RDS, stop the GPU instance)
     python bin/environment.py stop myapp-staging
 
-    # Start an environment (waits for RDS, then scales ECS)
+    # Start an environment (starts the GPU instance, waits for RDS, then scales ECS)
     python bin/environment.py start myapp-staging
 """
 
@@ -23,7 +24,7 @@ import sys
 
 import click
 
-from deployer.aws import ecs, rds
+from deployer.aws import ec2, ecs, rds
 from deployer.core.config import (
     get_service_replicas_from_config,
     load_environment_config,
@@ -39,14 +40,15 @@ from deployer.utils import (
 )
 
 
-def _load_environment_context(environment: str) -> tuple[dict, str, str]:
-    """Load config and extract cluster_name and rds_id.
+def _load_environment_context(environment: str) -> tuple[dict, str, str, str | None]:
+    """Load config and extract cluster_name, rds_id and the GPU instance id.
 
     Validates that the environment is deployed and both ECS cluster
     and RDS instance are configured. Exits on failure.
 
     Returns:
-        Tuple of (config, cluster_name, rds_id).
+        Tuple of (config, cluster_name, rds_id, gpu_instance_id); the last is
+        None when the environment has no GPU container instance.
     """
     _, error = validate_environment_deployed(environment)
     if error:
@@ -54,7 +56,12 @@ def _load_environment_context(environment: str) -> tuple[dict, str, str]:
         raise SystemExit(1)
 
     infra = load_environment_infrastructure(environment, require_cluster=True, require_rds=True)
-    return infra.config, infra.require_cluster_name(), infra.require_rds_id()
+    return (
+        infra.config,
+        infra.require_cluster_name(),
+        infra.require_rds_id(),
+        infra.gpu_instance_id,
+    )
 
 
 # =============================================================================
@@ -120,12 +127,72 @@ def cmd_status(environment: str | None) -> int:
         else:
             print("\n  RDS: Not configured or unable to determine instance ID")
 
+        # GPU container instance (most environments have none)
+        gpu_instance_id = config.get("infrastructure", {}).get("gpu_instance_id")
+        if gpu_instance_id:
+            print(f"\n  GPU Instance: {gpu_instance_id}")
+            try:
+                state = ec2.get_instance_state(gpu_instance_id)
+            except RuntimeError as e:
+                print(f"    State: Unable to retrieve ({e})")
+            else:
+                print(f"    State: {state}" if state else "    State: No such instance")
+
     return 0
+
+
+def _stop_gpu_instance(cluster_name: str, gpu_instance_id: str) -> None:
+    """Stop the GPU container instance once its tasks have gone.
+
+    The services have already been scaled to zero; the worker requeues its
+    job on SIGTERM and exits, and only then is the box stopped. A drain that
+    outlasts the budget is reported, and the box is stopped anyway: a task
+    that will not stop must not keep the instance billing all night.
+    """
+
+    def status_callback(running: int) -> None:
+        print(f"   {running} task(s) still running on the GPU instance...")
+
+    try:
+        drained = ecs.wait_for_instance_drained(
+            cluster_name, gpu_instance_id, status_callback=status_callback
+        )
+    except RuntimeError as e:
+        print(f"   Warning: Could not read the GPU instance's tasks ({e})", file=sys.stderr)
+        drained = False
+    if not drained:
+        print("   Warning: GPU instance stopped with tasks still running", file=sys.stderr)
+
+    if ec2.stop_instance(gpu_instance_id):
+        print("   GPU instance stop initiated")
+    else:
+        print("   Warning: Failed to stop the GPU instance", file=sys.stderr)
+
+
+def _start_gpu_instance(gpu_instance_id: str) -> None:
+    """Start the GPU container instance; the ECS agent reconnects on its own."""
+    try:
+        state = ec2.get_instance_state(gpu_instance_id)
+    except RuntimeError as e:
+        print(f"   Warning: Could not read the GPU instance's state ({e})", file=sys.stderr)
+        return
+
+    if state is None:
+        print("   Warning: no such GPU instance", file=sys.stderr)
+    elif state == "running":
+        print("   GPU instance already running")
+    elif state == "stopped":
+        if ec2.start_instance(gpu_instance_id):
+            print("   GPU instance start initiated")
+        else:
+            print("   Warning: Failed to start the GPU instance", file=sys.stderr)
+    else:
+        print(f"   GPU instance in state: {state}")
 
 
 def cmd_stop(environment: str) -> int:
     """Stop an environment."""
-    _config, cluster_name, rds_id = _load_environment_context(environment)
+    _config, cluster_name, rds_id, gpu_instance_id = _load_environment_context(environment)
     print(f"Stopping environment: {environment}")
 
     # Step 1: Scale ECS services to 0
@@ -158,6 +225,11 @@ def cmd_stop(environment: str) -> int:
             print(f"   RDS in unexpected state: {rds_status.status}")
     else:
         print("   Warning: Unable to get RDS status", file=sys.stderr)
+
+    # Step 3: Stop the GPU container instance, after its tasks have drained
+    if gpu_instance_id:
+        print("\n3. Stopping GPU instance...")
+        _stop_gpu_instance(cluster_name, gpu_instance_id)
 
     print(f"\nEnvironment {environment} stop initiated.")
     print("Note: ElastiCache and ALB continue running (cannot be stopped).")
@@ -207,18 +279,27 @@ def _ensure_rds_available(rds_id: str) -> None:
 
 def cmd_start(environment: str) -> int:
     """Start an environment."""
-    config, cluster_name, rds_id = _load_environment_context(environment)
+    config, cluster_name, rds_id, gpu_instance_id = _load_environment_context(environment)
     print(f"Starting environment: {environment}")
 
     # Get configured replica counts from config
     configured_replicas = get_service_replicas_from_config(config)
 
-    # Step 1: Start RDS instance and wait for it to be available
-    print("\n1. Starting RDS instance...")
-    _ensure_rds_available(rds_id)
+    step = 1
+    # Start the GPU container instance first: it boots and reconnects its
+    # ECS agent while the database comes up
+    if gpu_instance_id:
+        print(f"\n{step}. Starting GPU instance...")
+        _start_gpu_instance(gpu_instance_id)
+        step += 1
 
-    # Step 2: Scale ECS services back up
-    print("\n2. Scaling ECS services...")
+    # Start RDS instance and wait for it to be available
+    print(f"\n{step}. Starting RDS instance...")
+    _ensure_rds_available(rds_id)
+    step += 1
+
+    # Scale ECS services back up
+    print(f"\n{step}. Scaling ECS services...")
     # Not "no services to scale": the environment must not report itself started.
     with exit_on(RuntimeError, prefix="Cannot list ECS services, start incomplete: "):
         services = ecs.get_services(cluster_name)

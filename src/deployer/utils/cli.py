@@ -39,12 +39,14 @@ class EnvironmentInfrastructure:
     can be called without requiring either. A caller that passed
     ``require_cluster=True`` / ``require_rds=True`` reads the value back
     through the matching ``require_*`` accessor, which turns the loader's
-    guarantee into a checked one rather than a comment.
+    guarantee into a checked one rather than a comment. The GPU container
+    instance is optional for good: most environments have none.
     """
 
     config: dict
     cluster_name: str | None
     rds_id: str | None
+    gpu_instance_id: str | None = None
 
     def require_cluster_name(self) -> str:
         """Return the ECS cluster name.
@@ -350,7 +352,8 @@ def load_environment_infrastructure(
         require_rds: Exit if no RDS instance ID is configured.
 
     Returns:
-        The resolved config, cluster name and RDS instance ID.
+        The resolved config, cluster name, RDS instance ID and GPU container
+        instance id (None when the environment has none).
 
     Raises:
         SystemExit: With code 1 if the config cannot be loaded or a required
@@ -377,7 +380,12 @@ def load_environment_infrastructure(
         log_error("RDS instance not configured for this environment")
         raise SystemExit(1)
 
-    return EnvironmentInfrastructure(config=config, cluster_name=cluster_name, rds_id=rds_id)
+    return EnvironmentInfrastructure(
+        config=config,
+        cluster_name=cluster_name,
+        rds_id=rds_id,
+        gpu_instance_id=infrastructure.get("gpu_instance_id") or None,
+    )
 
 
 def resolve_environments_or_exit(environment: str | None) -> list[str]:

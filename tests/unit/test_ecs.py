@@ -533,3 +533,90 @@ class TestGetLogsLocationFromContainers:
         result = ecs.get_logs_location_from_containers(containers, "web")
 
         assert result is None
+
+
+class TestRunningTasksOnInstance:
+    """running_tasks_on_instance(): the GPU container instance's drain signal."""
+
+    GPU = "i-0123456789abcdef0"
+
+    def _client(self, instances: list[dict] | None):
+        client = MagicMock()
+        client.list_container_instances.return_value = {
+            "containerInstanceArns": [] if instances is None else ["arn:ci/1"]
+        }
+        client.describe_container_instances.return_value = {"containerInstances": instances or []}
+        return client
+
+    def test_returns_the_count_for_the_matching_instance(self):
+        client = self._client(
+            [
+                {"ec2InstanceId": "i-other", "runningTasksCount": 5},
+                {"ec2InstanceId": self.GPU, "runningTasksCount": 2},
+            ]
+        )
+        assert ecs.running_tasks_on_instance("c", self.GPU, ecs_client=client) == 2
+
+    def test_no_container_instances_is_none(self):
+        client = self._client(None)
+        assert ecs.running_tasks_on_instance("c", self.GPU, ecs_client=client) is None
+        client.describe_container_instances.assert_not_called()
+
+    def test_no_matching_instance_is_none(self):
+        client = self._client([{"ec2InstanceId": "i-other", "runningTasksCount": 1}])
+        assert ecs.running_tasks_on_instance("c", self.GPU, ecs_client=client) is None
+
+    def test_an_unreadable_cluster_raises(self):
+        client = MagicMock()
+        client.list_container_instances.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "no"}},
+            "ListContainerInstances",
+        )
+        with pytest.raises(RuntimeError, match="container instances of cluster 'c'"):
+            ecs.running_tasks_on_instance("c", self.GPU, ecs_client=client)
+
+
+class TestWaitForInstanceDrained:
+    GPU = "i-0123456789abcdef0"
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        self.clock = 0.0
+
+        def _time():
+            return self.clock
+
+        def _sleep(seconds):
+            self.clock += seconds
+
+        monkeypatch.setattr(ecs.time, "time", _time)
+        monkeypatch.setattr(ecs.time, "sleep", _sleep)
+
+    def _client(self, counts: list[int | None]):
+        client = MagicMock()
+        answers = iter(counts)
+
+        def _describe(**kwargs):
+            running = next(answers)
+            return {
+                "containerInstances": [{"ec2InstanceId": self.GPU, "runningTasksCount": running}]
+            }
+
+        client.list_container_instances.return_value = {"containerInstanceArns": ["arn:ci/1"]}
+        client.describe_container_instances.side_effect = _describe
+        return client
+
+    def test_returns_true_once_nothing_runs_and_reports_each_wait(self):
+        seen: list[int] = []
+        client = self._client([2, 1, 0])
+        assert ecs.wait_for_instance_drained(
+            "c", self.GPU, status_callback=seen.append, ecs_client=client
+        )
+        assert seen == [2, 1]
+
+    def test_returns_false_on_timeout(self):
+        client = self._client([1] * 100)
+        assert not ecs.wait_for_instance_drained(
+            "c", self.GPU, status_callback=None, timeout=10, poll_interval=5, ecs_client=client
+        )
+        assert self.clock >= 10

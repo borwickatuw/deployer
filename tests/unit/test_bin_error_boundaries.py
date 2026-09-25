@@ -276,7 +276,7 @@ class TestRdsAndLinksBoundaries:
         monkeypatch.setattr(
             environment,
             "_load_environment_context",
-            lambda _env: ({}, "cluster", "myapp-staging-db"),
+            lambda _env: ({}, "cluster", "myapp-staging-db", None),
         )
         monkeypatch.setattr(environment.ecs, "get_services", lambda _cluster: [])
 
@@ -297,7 +297,7 @@ class TestRdsAndLinksBoundaries:
         monkeypatch.setattr(
             environment,
             "_load_environment_context",
-            lambda _env: ({}, "cluster", "myapp-staging-db"),
+            lambda _env: ({}, "cluster", "myapp-staging-db", None),
         )
         scaled: list[str] = []
         monkeypatch.setattr(environment.ecs, "scale_service", lambda *a: scaled.append(a) or True)
@@ -329,7 +329,7 @@ class TestUnlistableClusterBoundaries:
         monkeypatch.setattr(
             environment,
             "_load_environment_context",
-            lambda _env: ({}, "cluster", "myapp-staging-db"),
+            lambda _env: ({}, "cluster", "myapp-staging-db", None),
         )
         monkeypatch.setattr(environment.ecs, "get_services", self._unlistable)
         rds_calls: list[str] = []
@@ -348,7 +348,7 @@ class TestUnlistableClusterBoundaries:
         monkeypatch.setattr(
             environment,
             "_load_environment_context",
-            lambda _env: ({}, "cluster", "myapp-staging-db"),
+            lambda _env: ({}, "cluster", "myapp-staging-db", None),
         )
         monkeypatch.setattr(environment, "_ensure_rds_available", lambda _id: None)
         monkeypatch.setattr(environment.ecs, "get_services", self._unlistable)
