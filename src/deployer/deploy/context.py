@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -39,6 +40,9 @@ class DeployOptions:
     force_deploy: bool = False
 
 
+_INSTANCE_ID = re.compile(r"i-[0-9a-f]+")
+
+
 @dataclass(frozen=True)
 class InfraConfig:
     """The ECS infrastructure settings a deploy runs against.
@@ -47,7 +51,7 @@ class InfraConfig:
     environment ``config.toml`` and read by the task-definition and service
     layers.
 
-    Ten fields are read by name. The other eight -- ``database_url``,
+    Twelve fields are read by name. The other eight -- ``database_url``,
     ``db_host``, ``db_port``, ``db_name``, ``db_password_secret_arn``,
     ``db_username_secret_arn``, ``redis_url`` and ``s3_media_bucket`` -- are
     never read by name anywhere. They exist because their **names** are a
@@ -74,14 +78,27 @@ class InfraConfig:
     redis_url: str | None = None
     s3_media_bucket: str | None = None
     rds_instance_id: str | None = None
-    # GPU capacity (config.toml [infrastructure], from the tofu outputs of the
-    # same names): the ECS capacity provider gpu services are created on, and
-    # the Auto Scaling group whose instance is the build host.
-    gpu_capacity_provider: str | None = None
-    gpu_asg_name: str | None = None
+    # The environment's GPU instance (config.toml [infrastructure], from the
+    # tofu output of the same name): the EC2 container instance gpu services
+    # are placed on and the build host of build_on_gpu_host images.
+    gpu_instance_id: str | None = None
     scheduler: dict = field(default_factory=dict)
     deployment_config: dict = field(default_factory=dict)
     health_check_config: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Fail fast on a gpu_instance_id that is not an EC2 instance id.
+
+        Raises:
+            ValueError: If ``gpu_instance_id`` is set and is not ``i-<hex>``
+                (an unresolved or mistyped config.toml value).
+        """
+        if self.gpu_instance_id is not None and not _INSTANCE_ID.fullmatch(self.gpu_instance_id):
+            raise ValueError(
+                f"config.toml [infrastructure] gpu_instance_id = "
+                f"{self.gpu_instance_id!r} is not an EC2 instance id (i-<hex>); "
+                f'set it to "${{tofu:gpu_instance_id}}".'
+            )
 
     def legacy_placeholders(self) -> dict[str, str]:
         """Return the ``${name}`` substitution table for legacy placeholders.

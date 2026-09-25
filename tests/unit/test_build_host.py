@@ -1,7 +1,7 @@
 """Tests for deployer.deploy.build_host: finding the GPU build host and the
 SSM tunnel to its Docker daemon.
 
-Stubbing is at the outermost boundary: a fake boto3 Auto Scaling client,
+Stubbing is at the outermost boundary: a fake boto3 EC2 client,
 and ``subprocess.run``/``subprocess.Popen``/``shutil.which`` at the stdlib.
 """
 
@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 import pytest
+from botocore.exceptions import ClientError
 
 from deployer.deploy import build_host
 from deployer.deploy.build_host import (
@@ -17,47 +18,67 @@ from deployer.deploy.build_host import (
     remote_docker,
 )
 
+INSTANCE = "i-0123456789abcdef0"
 
-class _FakeAsg:
-    def __init__(self, groups):
-        self._groups = groups
+
+class _FakeEc2:
+    """``describe_instances`` for one instance id, in a given state or absent."""
+
+    def __init__(self, state: str | None):
+        self._state = state
         self.calls = []
 
-    def describe_auto_scaling_groups(self, **kwargs):
+    def describe_instances(self, **kwargs):
         self.calls.append(kwargs)
-        return {"AutoScalingGroups": self._groups}
-
-
-def _group(*instances):
-    return {"AutoScalingGroupName": "app-staging-gpu", "Instances": list(instances)}
-
-
-def _instance(instance_id, state="InService", health="Healthy"):
-    return {"InstanceId": instance_id, "LifecycleState": state, "HealthStatus": health}
+        if self._state is None:
+            raise ClientError(
+                {"Error": {"Code": "InvalidInstanceID.NotFound", "Message": "gone"}},
+                "DescribeInstances",
+            )
+        return {
+            "Reservations": [
+                {"Instances": [{"InstanceId": INSTANCE, "State": {"Name": self._state}}]}
+            ]
+        }
 
 
 class TestFindBuildInstance:
-    def test_returns_the_in_service_healthy_instance(self):
-        asg = _FakeAsg([_group(_instance("i-warm", state="Warmed:Stopped"), _instance("i-live"))])
-        assert find_build_instance(asg, "app-staging-gpu") == "i-live"
-        assert asg.calls == [{"AutoScalingGroupNames": ["app-staging-gpu"]}]
+    def test_a_running_instance_is_the_build_host(self):
+        ec2 = _FakeEc2("running")
+        assert find_build_instance(ec2, INSTANCE) == INSTANCE
+        assert ec2.calls == [{"InstanceIds": [INSTANCE]}]
 
-    def test_a_missing_group_is_reported(self):
-        with pytest.raises(BuildHostUnavailableError, match="not found"):
-            find_build_instance(_FakeAsg([]), "app-staging-gpu")
+    def test_a_pending_instance_is_reported_as_starting(self):
+        with pytest.raises(BuildHostUnavailableError, match="is starting.*deploy again"):
+            find_build_instance(_FakeEc2("pending"), INSTANCE)
 
-    def test_a_stopped_box_is_reported_never_started(self):
-        """A warm-pooled (stopped) instance is not a build host; the message
-        names the start command rather than starting anything."""
-        asg = _FakeAsg([_group(_instance("i-warm", state="Warmed:Stopped"))])
-        with pytest.raises(BuildHostUnavailableError, match="environment.py start"):
-            find_build_instance(asg, "app-staging-gpu")
-        assert len(asg.calls) == 1
+    @pytest.mark.parametrize("state", ["stopped", "stopping"])
+    def test_a_stopped_box_is_reported_never_started(self, state):
+        """The message names the start command rather than starting anything:
+        the fake has no start_instances to call."""
+        ec2 = _FakeEc2(state)
+        with pytest.raises(
+            BuildHostUnavailableError,
+            match=rf"is {state} \(off-schedule\).*bin/environment.py start <env>",
+        ):
+            find_build_instance(ec2, INSTANCE)
+        assert len(ec2.calls) == 1
 
-    def test_an_unhealthy_instance_does_not_count(self):
-        asg = _FakeAsg([_group(_instance("i-sick", health="Unhealthy"))])
-        with pytest.raises(BuildHostUnavailableError):
-            find_build_instance(asg, "app-staging-gpu")
+    @pytest.mark.parametrize("state", [None, "terminated"])
+    def test_a_missing_instance_names_the_config_key_and_tofu(self, state):
+        with pytest.raises(BuildHostUnavailableError, match=r"(?s)gpu_instance_id.*tofu"):
+            find_build_instance(_FakeEc2(state), INSTANCE)
+
+    def test_other_client_errors_propagate(self):
+        class _Denied:
+            def describe_instances(self, **_kwargs):
+                raise ClientError(
+                    {"Error": {"Code": "UnauthorizedOperation", "Message": "no"}},
+                    "DescribeInstances",
+                )
+
+        with pytest.raises(ClientError, match="UnauthorizedOperation"):
+            find_build_instance(_Denied(), INSTANCE)
 
 
 class _FakeSession:

@@ -94,7 +94,7 @@ class ImageConfig:
     # Build on the environment's GPU container instance (its own Docker
     # daemon, over an SSM tunnel) rather than the operator's machine: for an
     # image FROM a base too large to pull to a laptop. Requires push, and a
-    # gpu_asg_name in the environment's [infrastructure].
+    # gpu_instance_id in the environment's [infrastructure].
     build_on_gpu_host: bool = False
 
     _KNOWN_KEYS = {
@@ -264,8 +264,8 @@ class ServiceConfig:
     min_replicas: int | None = None
     interruptible: bool = False
     # GPUs the task needs (an ECS resourceRequirement). A gpu service runs on
-    # the environment's GPU capacity provider (EC2), not Fargate: the sizing
-    # is not Fargate-validated, and the service is created on that provider.
+    # the environment's GPU instance (the EC2 launch type), not Fargate: the
+    # sizing is not Fargate-validated.
     gpu: int | None = None
     # Per-service override of the environment's [deployment] rollout strategy.
     # Same key names as config.toml's [deployment] section; None inherits the
@@ -309,7 +309,7 @@ class ServiceConfig:
         if self.interruptible:
             raise ValueError(
                 f"[services.{self.name}] gpu and interruptible are exclusive: a GPU "
-                f"service runs on the environment's GPU capacity provider, never Fargate Spot"
+                f"service runs on the environment's GPU instance, never Fargate Spot"
             )
 
     def validate_deployment_override(self) -> None:

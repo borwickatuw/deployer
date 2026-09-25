@@ -780,9 +780,10 @@ class TestDeploySteps:
                     "dry_run": False,
                     "ecr_client": aws["ecr"],
                     "force_build": False,
-                    # No GPU capacity in this environment: no build host, no client
-                    "gpu_asg_name": None,
-                    "asg_client": None,
+                    # No GPU instance and no build_on_gpu_host image: no client
+                    # (the aws fixture has no "ec2" fake, so creating one raises)
+                    "gpu_instance_id": None,
+                    "ec2_client": None,
                 },
             ),
             (
@@ -913,6 +914,61 @@ class TestDeploySteps:
         assert deploy_call[2]["force_deploy"] is True
         image_call = next(call for call in steps.calls if call[0] == "build_and_push_images")
         assert image_call[2]["force_build"] is False
+
+
+GPU_INSTANCE = "i-0123456789abcdef0"
+
+GPU_BUILD_TOML = """
+[application]
+name = "testapp"
+source = "."
+
+[images.blocks]
+context = "."
+build_on_gpu_host = true
+
+[services.blocks]
+image = "blocks"
+gpu = 1
+maximum_percent = 100
+minimum_healthy_percent = 0
+"""
+
+
+class TestGpuBuildHostWiring:
+    """The ec2 client that finds the GPU build host exists only for a deploy
+    with a build_on_gpu_host image, and travels with config.toml's
+    gpu_instance_id into build_and_push_images."""
+
+    def _build_kwargs(self, steps) -> dict:
+        [(_name, _args, kwargs)] = [c for c in steps.calls if c[0] == "build_and_push_images"]
+        return kwargs
+
+    def test_a_gpu_build_image_gets_the_instance_and_an_ec2_client(self, make_deployer, steps, aws):
+        aws["ec2"] = SimpleNamespace(name="ec2")
+        deployer = make_deployer(
+            toml=GPU_BUILD_TOML,
+            env_config=_env_config(infrastructure={"gpu_instance_id": GPU_INSTANCE}),
+        )
+
+        deployer.deploy()
+
+        kwargs = self._build_kwargs(steps)
+        assert kwargs["gpu_instance_id"] == GPU_INSTANCE
+        assert kwargs["ec2_client"] is aws["ec2"]
+
+    def test_an_environment_gpu_instance_alone_creates_no_client(self, make_deployer, steps):
+        """No build_on_gpu_host image: the aws fixture has no "ec2" fake, so
+        creating a client would raise."""
+        deployer = make_deployer(
+            env_config=_env_config(infrastructure={"gpu_instance_id": GPU_INSTANCE})
+        )
+
+        deployer.deploy()
+
+        kwargs = self._build_kwargs(steps)
+        assert kwargs["gpu_instance_id"] == GPU_INSTANCE
+        assert kwargs["ec2_client"] is None
 
 
 class TestDeployValidatesServicesFirst:

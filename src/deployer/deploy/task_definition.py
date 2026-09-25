@@ -539,8 +539,8 @@ def build_task_definition(
         )
 
     # A GPU service asks ECS for the card and can only be placed on EC2
-    # capacity (the environment's GPU capacity provider); awsvpc, the task
-    # cpu/memory and everything else stay as for Fargate.
+    # capacity (the environment's GPU instance); awsvpc, the task cpu/memory
+    # and everything else stay as for Fargate.
     gpu = service_toml.get("gpu")
     if gpu:
         container_def["resourceRequirements"] = [{"type": "GPU", "value": str(gpu)}]

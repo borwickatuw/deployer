@@ -410,10 +410,10 @@ class TestCheckForFatalErrors:
 
         assert str(exc_info.value) == (
             "web: No container instances available for this service's capacity. On "
-            "Fargate, check the subnet and security group configuration; on a capacity "
-            "provider (a gpu service), check that its Auto Scaling group can launch an "
-            "instance — the environment may be stopped (bin/environment.py start) or "
-            "the instance type unavailable in the region."
+            "Fargate, check the subnet and security group configuration; for a gpu "
+            "service (the EC2 launch type), the environment's GPU instance is stopped "
+            "or not registered in the cluster — start the environment "
+            "(bin/environment.py start <env>) and deploy again."
         )
 
     def test_empty_events_is_a_no_op(self):

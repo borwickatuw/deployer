@@ -83,8 +83,7 @@ def _build_infra_config(env_config: dict) -> InfraConfig:
         redis_url=env_config.get("cache", {}).get("url"),
         s3_media_bucket=env_config.get("storage", {}).get("media_bucket"),
         rds_instance_id=infra.get("rds_instance_id"),
-        gpu_capacity_provider=infra.get("gpu_capacity_provider") or None,
-        gpu_asg_name=infra.get("gpu_asg_name") or None,
+        gpu_instance_id=infra.get("gpu_instance_id") or None,
         scheduler={
             "enabled": scheduler.get("enabled", False),
             "description": scheduler.get("description"),
@@ -411,11 +410,15 @@ class Deployer:
             dry_run=self.options.dry_run,
             ecr_client=self.ecr,
             force_build=self.options.force_build,
-            gpu_asg_name=self.infra_config.gpu_asg_name,
-            # EC2 Auto Scaling (not Application Auto Scaling): where the GPU
-            # build host is looked up. Only environments with GPU capacity
-            # need the client, so only they create it.
-            asg_client=(boto3.client("autoscaling") if self.infra_config.gpu_asg_name else None),
+            gpu_instance_id=self.infra_config.gpu_instance_id,
+            # Where the GPU build host's state is looked up. Only a deploy
+            # with a build_on_gpu_host image needs the client, so only it
+            # creates one.
+            ec2_client=(
+                boto3.client("ec2")
+                if any(image.build_on_gpu_host for image in self.deploy_config.images.values())
+                else None
+            ),
         )
 
     @_timed_step

@@ -23,6 +23,8 @@ import subprocess
 import time
 from collections.abc import Iterator
 
+from botocore.exceptions import ClientError
+
 from ..utils import log, log_success
 
 # The Docker API port the instance's loopback proxy listens on
@@ -34,42 +36,51 @@ class BuildHostUnavailableError(RuntimeError):
     """The GPU build host is not running."""
 
 
-def find_build_instance(asg_client, asg_name: str) -> str:
-    """The InService, Healthy instance of the GPU Auto Scaling group.
+def find_build_instance(ec2_client, instance_id: str) -> str:
+    """Check that the environment's GPU instance is running.
 
     Args:
-        asg_client: boto3 ``autoscaling`` (EC2 Auto Scaling) client.
-        asg_name: The group's name (config.toml ``gpu_asg_name``).
+        ec2_client: boto3 ``ec2`` client.
+        instance_id: The instance (config.toml ``gpu_instance_id``).
 
     Returns:
-        The instance id.
+        The instance id, once its state is ``running``.
 
     Raises:
-        BuildHostUnavailableError: No such instance — the environment is stopped
-            (the instance is in the warm pool or gone), or the group does
-            not exist. Never auto-starts anything.
+        BuildHostUnavailableError: The instance is starting, stopped
+            (off-schedule), or does not exist. Never starts anything.
     """
-    response = asg_client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_name])
-    groups = response.get("AutoScalingGroups", [])
-    if not groups:
-        raise BuildHostUnavailableError(
-            f"Auto Scaling group '{asg_name}' not found: the environment's GPU "
-            f"capacity is not applied (tofu) or config.toml's gpu_asg_name is wrong."
-        )
+    try:
+        response = ec2_client.describe_instances(InstanceIds=[instance_id])
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") != "InvalidInstanceID.NotFound":
+            raise
+        response = {}
     instances = [
         instance
-        for instance in groups[0].get("Instances", [])
-        if instance.get("LifecycleState") == "InService"
-        and instance.get("HealthStatus") == "Healthy"
+        for reservation in response.get("Reservations", [])
+        for instance in reservation.get("Instances", [])
     ]
-    if not instances:
+    state = instances[0]["State"]["Name"] if instances else None
+    if state == "running":
+        return instance_id
+    if state == "pending":
         raise BuildHostUnavailableError(
-            f"No running instance in Auto Scaling group '{asg_name}': the GPU build "
-            f"host is stopped (off-schedule) or still launching. Start the "
-            f"environment (bin/environment.py start <env>), wait for the instance "
-            f"to be InService, and deploy again."
+            f"The GPU build host {instance_id} is starting: wait for it to reach "
+            f"running and deploy again."
         )
-    return instances[0]["InstanceId"]
+    if state in ("stopped", "stopping"):
+        raise BuildHostUnavailableError(
+            f"The GPU build host {instance_id} is {state} (off-schedule): start the "
+            f"environment (bin/environment.py start <env>) and deploy again."
+        )
+    raise BuildHostUnavailableError(
+        f"The GPU build host {instance_id} "
+        f"{'is ' + state if state else 'does not exist'}: config.toml's "
+        f"gpu_instance_id does not name the environment's GPU instance — re-apply "
+        f"the environment with tofu and check that gpu_instance_id is "
+        f'"${{tofu:gpu_instance_id}}".'
+    )
 
 
 def _free_local_port() -> int:

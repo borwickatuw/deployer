@@ -192,8 +192,8 @@ def _plan_task_launch(
         print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
         return None
 
-    # A gpu service's task definition is EC2-only (a GPU resourceRequirement
-    # on the environment's capacity provider); this command launches on
+    # A gpu service's task definition is EC2-only (a GPU resourceRequirement,
+    # placed on the environment's GPU instance); this command launches on
     # Fargate, so borrowing that definition can only fail at ECS. Refuse
     # here, naming the way through.
     if _is_ec2_only(service_task_def, ecs_client):

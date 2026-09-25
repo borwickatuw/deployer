@@ -2091,34 +2091,48 @@ class TestHealthCheckConfigSource:
 
 
 class TestGpuCapacity:
-    """A gpu service runs on the environment's GPU capacity provider (Phase 69)."""
+    """A gpu service runs on the environment's GPU instance (Phase 69)."""
 
-    PROVIDER = f"{CLUSTER}-gpu"
+    INSTANCE = "i-0123456789abcdef0"
 
-    def test_gpu_selects_the_capacity_provider(self, aws):
+    def test_gpu_selects_the_ec2_launch_type(self):
         from deployer.deploy.service import _capacity_params
 
-        ctx = _ctx(
-            aws,
-            services={"blocks": {"gpu": 1}},
-            infra={"gpu_capacity_provider": self.PROVIDER},
-        )
-        assert _capacity_params(ctx, {"gpu": 1}) == {
-            "capacityProviderStrategy": [
-                {"capacityProvider": self.PROVIDER, "base": 0, "weight": 1}
-            ]
-        }
-        assert _capacity_params(ctx, {"interruptible": True})["capacityProviderStrategy"][1] == {
+        assert _capacity_params({"gpu": 1}) == {"launchType": "EC2"}
+        assert _capacity_params({"interruptible": True})["capacityProviderStrategy"][1] == {
             "capacityProvider": "FARGATE_SPOT",
             "weight": 1,
         }
-        assert _capacity_params(ctx, {}) == {"launchType": "FARGATE"}
+        assert _capacity_params({}) == {"launchType": "FARGATE"}
+
+    def test_a_gpu_service_is_created_on_the_ec2_launch_type(self, aws):
+        ctx = _ctx(
+            aws,
+            services={"blocks": {"gpu": 1}},
+            infra={"gpu_instance_id": self.INSTANCE},
+        )
+        _create_service(ctx, "blocks", _make_service(aws, "seed"))
+        params = aws.client.params("create_service")
+        assert params["launchType"] == "EC2"
+        assert "capacityProviderStrategy" not in params
+
+    def test_gpu_instance_id_is_read_from_infrastructure(self):
+        infra = _build_infra_config({"infrastructure": {"gpu_instance_id": self.INSTANCE}})
+        assert infra.gpu_instance_id == self.INSTANCE
+        assert _build_infra_config({"infrastructure": {}}).gpu_instance_id is None
+
+    @pytest.mark.parametrize(
+        "value", ["${tofu:gpu_instance_id}", "app-staging-gpu", "i-", "i-0ABC", " i-0abc"]
+    )
+    def test_a_gpu_instance_id_that_is_not_an_instance_id_fails_fast(self, value):
+        with pytest.raises(ValueError, match="not an EC2 instance id"):
+            _build_infra_config({"infrastructure": {"gpu_instance_id": value}})
 
     def test_the_state_hash_changes_with_gpu(self, aws):
         ctx_gpu = _ctx(
             aws,
             services={"blocks": {"gpu": 1}},
-            infra={"gpu_capacity_provider": self.PROVIDER},
+            infra={"gpu_instance_id": self.INSTANCE},
         )
         ctx_plain = _ctx(aws, services={"blocks": {}})
         dep_cfg = _get_deployment_config(ctx_gpu.infra_config, {})
@@ -2126,9 +2140,9 @@ class TestGpuCapacity:
             ctx_gpu, "blocks", IMAGE_URI, dep_cfg
         ) != _compute_service_state_hash(ctx_plain, "blocks", IMAGE_URI, dep_cfg)
 
-    def test_a_gpu_service_without_capacity_is_refused_before_anything_moves(self, aws):
+    def test_a_gpu_service_without_an_instance_is_refused_before_anything_moves(self, aws):
         ctx = _ctx(aws, services={"blocks": {"gpu": 1}})
-        with pytest.raises(ServiceConfigError, match="no GPU capacity"):
+        with pytest.raises(ServiceConfigError, match=r"no GPU instance.*gpu_instance_id"):
             validate_services(ctx)
 
     def test_a_gpu_service_needs_a_stop_first_rollout(self, aws):
@@ -2137,7 +2151,7 @@ class TestGpuCapacity:
             aws,
             services={"blocks": {"gpu": 1}},
             infra={
-                "gpu_capacity_provider": self.PROVIDER,
+                "gpu_instance_id": self.INSTANCE,
                 "deployment_config": {"maximum_percent": 200, "minimum_healthy_percent": 100},
             },
         )
@@ -2147,12 +2161,12 @@ class TestGpuCapacity:
         ok = _ctx(
             aws,
             services={"blocks": {"gpu": 1, "maximum_percent": 100, "minimum_healthy_percent": 0}},
-            infra={"gpu_capacity_provider": self.PROVIDER},
+            infra={"gpu_instance_id": self.INSTANCE},
         )
         validate_services(ok)
 
     def test_capacity_mismatch_is_three_way(self):
-        gpu_live = {"capacityProviderStrategy": [{"capacityProvider": self.PROVIDER}]}
+        gpu_live = {"launchType": "EC2"}
         spot_live = {
             "capacityProviderStrategy": [
                 {"capacityProvider": "FARGATE"},
@@ -2161,10 +2175,22 @@ class TestGpuCapacity:
         }
         fargate_live = {"launchType": "FARGATE"}
 
-        assert _capacity_mismatch("b", {"gpu": 1}, gpu_live, self.PROVIDER) is None
-        assert _capacity_mismatch("b", {"interruptible": True}, spot_live, self.PROVIDER) is None
-        assert _capacity_mismatch("b", {}, fargate_live, self.PROVIDER) is None
+        assert _capacity_mismatch("b", {"gpu": 1}, gpu_live) is None
+        assert _capacity_mismatch("b", {"interruptible": True}, spot_live) is None
+        assert _capacity_mismatch("b", {}, fargate_live) is None
 
-        assert "GPU capacity provider" in _capacity_mismatch("b", {}, gpu_live, self.PROVIDER)
-        assert "gpu set" in _capacity_mismatch("b", {"gpu": 1}, fargate_live, self.PROVIDER)
-        assert "Fargate Spot" in _capacity_mismatch("b", {"gpu": 1}, spot_live, self.PROVIDER)
+        assert "launch type EC2" in _capacity_mismatch("b", {}, gpu_live)
+        assert "Fargate Spot" in _capacity_mismatch("b", {"interruptible": True}, gpu_live)
+        assert "gpu set" in _capacity_mismatch("b", {"gpu": 1}, fargate_live)
+        assert "gpu set" in _capacity_mismatch("b", {"gpu": 1}, spot_live)
+
+    def test_a_gpu_service_on_a_capacity_provider_strategy_must_be_recreated(self):
+        """A live service on a capacity provider strategy is not on the EC2
+        launch type deploy.toml's gpu asks for: refused, naming the recreate
+        path."""
+        live = {"capacityProviderStrategy": [{"capacityProvider": "app-staging-ec2"}]}
+        message = _capacity_mismatch("blocks", {"gpu": 1}, live)
+        assert message is not None
+        assert "a capacity provider strategy (app-staging-ec2)" in message
+        assert "the EC2 launch type on the GPU instance (gpu set)" in message
+        assert "recreate the service" in message

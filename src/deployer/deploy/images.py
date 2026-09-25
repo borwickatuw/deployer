@@ -600,8 +600,8 @@ def build_and_push_images(
     ecr_client,
     dry_run: bool = False,
     force_build: bool = False,
-    gpu_asg_name: str | None = None,
-    asg_client=None,
+    gpu_instance_id: str | None = None,
+    ec2_client=None,
 ) -> dict[str, str]:
     """Build and push all images, returning a map of image name to ECR URI.
 
@@ -629,16 +629,17 @@ def build_and_push_images(
         dry_run: If True, only print what would be done.
         ecr_client: boto3 ECR client for checking existing images.
         force_build: If True, skip cache check and always build.
-        gpu_asg_name: The GPU build host's Auto Scaling group (config.toml
-            ``gpu_asg_name``), or None when the environment has none.
-        asg_client: boto3 ``autoscaling`` client, for finding the host.
+        gpu_instance_id: The GPU build host (config.toml
+            ``gpu_instance_id``), or None when the environment has none.
+        ec2_client: boto3 ``ec2`` client, for checking the host is running;
+            needed only when a ``build_on_gpu_host`` image misses the cache.
 
     Returns:
         Dictionary mapping image names to their ECR URIs.
 
     Raises:
         RuntimeError: A ``build_on_gpu_host`` image in an environment with no
-            ``gpu_asg_name``, or a build host that is not running
+            ``gpu_instance_id``, or a build host that is not running
             (``BuildHostUnavailableError``).
     """
     log("Building and pushing images...")
@@ -689,7 +690,7 @@ def build_and_push_images(
                 if not dry_run:
                     if remote_env is None:
                         remote_env = stack.enter_context(
-                            _gpu_build_host(image_name, gpu_asg_name, asg_client, region)
+                            _gpu_build_host(image_name, gpu_instance_id, ec2_client, region)
                         )
                     env = remote_env
                 else:
@@ -709,16 +710,15 @@ def build_and_push_images(
     return image_uris
 
 
-def _gpu_build_host(image_name: str, gpu_asg_name: str | None, asg_client, region: str):
+def _gpu_build_host(image_name: str, gpu_instance_id: str | None, ec2_client, region: str):
     """The tunnel to the GPU build host, as a context manager yielding its env."""
-    if not gpu_asg_name or asg_client is None:
+    if not gpu_instance_id:
         raise RuntimeError(
             f"Image '{image_name}' builds on the GPU host (build_on_gpu_host), but this "
-            f"environment has no gpu_asg_name in config.toml's [infrastructure] — "
+            f"environment has no gpu_instance_id in config.toml's [infrastructure] — "
             f"the environment declares no GPU capacity."
         )
-    instance_id = find_build_instance(asg_client, gpu_asg_name)
-    return remote_docker(instance_id, region)
+    return remote_docker(find_build_instance(ec2_client, gpu_instance_id), region)
 
 
 def validate_ecr_repositories(
