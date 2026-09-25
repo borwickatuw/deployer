@@ -142,7 +142,9 @@ data "aws_iam_policy_document" "infra_admin_capacity" {
       "ec2:StopInstances",
       "ec2:TerminateInstances",
       "ec2:ModifyInstanceAttribute",
-      "ec2:ModifyInstanceMetadataOptions"
+      "ec2:ModifyInstanceMetadataOptions",
+      "ec2:MonitorInstances",
+      "ec2:UnmonitorInstances"
     ]
     resources = ["arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"]
     condition {
