@@ -24,6 +24,13 @@ DEFAULT_IGNORE_SERVICES = {
 }
 
 
+def _is_gpu_service(service_config: Any) -> bool:
+    """Whether a deploy.toml service (ServiceConfig or raw dict) declares gpu."""
+    if isinstance(service_config, dict):
+        return bool(service_config.get("gpu"))
+    return bool(getattr(service_config, "gpu", None))
+
+
 def audit_services(
     compose_services: dict[str, dict],
     deploy_services: dict[str, Any],
@@ -69,8 +76,12 @@ def audit_services(
             if name != mapped_name:
                 issues[-1] += f" (checked as '{mapped_name}')"
 
-    # Check for services in deploy.toml that don't exist in docker-compose
+    # Check for services in deploy.toml that don't exist in docker-compose.
+    # A gpu service is exempt: it runs where a card is, which local
+    # development has no stand-in for, so compose deliberately omits it.
     for name in deploy_service_names:
+        if _is_gpu_service(deploy_services[name]):
+            continue
         original_name = reverse_mapping.get(name, name)
         if original_name not in compose_services and name not in compose_services:
             issues.append(f"Service '{name}' in deploy.toml not found in docker-compose")

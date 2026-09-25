@@ -99,8 +99,25 @@ module "vpc" {
 module "ecs_cluster" {
   source = "./modules/ecs-cluster"
 
-  name_prefix = local.name_prefix
-  vpc_id      = module.vpc.vpc_id
+  name_prefix                   = local.name_prefix
+  vpc_id                        = module.vpc.vpc_id
+  additional_capacity_providers = var.gpu_capacity == null ? [] : [module.ecs_gpu_capacity[0].capacity_provider_name]
+}
+
+# GPU capacity (optional): one EC2 GPU instance behind a capacity
+# provider, for services that declare `gpu = 1` in deploy.toml
+module "ecs_gpu_capacity" {
+  source = "./modules/ecs-gpu-capacity"
+  count  = var.gpu_capacity == null ? 0 : 1
+
+  name_prefix          = local.name_prefix
+  cluster_name         = "${local.name_prefix}-cluster"
+  vpc_id               = module.vpc.vpc_id
+  private_subnet_ids   = module.vpc.private_subnet_ids
+  instance_type        = var.gpu_capacity.instance_type
+  volume_gb            = var.gpu_capacity.volume_gb
+  volume_throughput    = var.gpu_capacity.volume_throughput
+  permissions_boundary = var.iam_instance_permissions_boundary
 }
 
 # CloudWatch Log Group for ECS tasks

@@ -91,6 +91,11 @@ class ImageConfig:
     target: str | dict[str, str] | None = field(default=None, repr=False)
     build_args: dict[str, Any] = field(default_factory=dict, repr=False)
     additional_contexts: dict[str, str] = field(default_factory=dict, repr=False)
+    # Build on the environment's GPU container instance (its own Docker
+    # daemon, over an SSM tunnel) rather than the operator's machine: for an
+    # image FROM a base too large to pull to a laptop. Requires push, and a
+    # gpu_asg_name in the environment's [infrastructure].
+    build_on_gpu_host: bool = False
 
     _KNOWN_KEYS = {
         "context",
@@ -100,7 +105,35 @@ class ImageConfig:
         "depends_on",
         "build_args",
         "additional_contexts",
+        "build_on_gpu_host",
     }
+
+    def validate_build_host(self, images: dict[str, "ImageConfig"]) -> None:
+        """Fail fast on a build_on_gpu_host image that cannot work.
+
+        A build on the remote daemon must push: a local-only tag on the GPU
+        box is invisible to the operator's Docker and to ECS alike. And it
+        cannot depend on a local-only image, which would be a FROM the
+        remote daemon has never seen.
+
+        Raises:
+            ValueError: Naming the image and the rule.
+        """
+        if not self.build_on_gpu_host:
+            return
+        if not self.push:
+            raise ValueError(
+                f"[images.{self.name}] build_on_gpu_host requires push = true: "
+                f"an image built on the GPU host only reaches ECS through ECR"
+            )
+        for dependency in self.depends_on:
+            dep = images.get(dependency)
+            if dep is not None and not dep.push:
+                raise ValueError(
+                    f"[images.{self.name}] build_on_gpu_host cannot depend on the "
+                    f"local-only image '{dependency}': the GPU host's Docker daemon "
+                    f"never sees a push = false image"
+                )
 
     def get_target(self, environment: str) -> str | None:
         """Get the Docker build target for this image.
@@ -230,6 +263,10 @@ class ServiceConfig:
     # the service to nothing.
     min_replicas: int | None = None
     interruptible: bool = False
+    # GPUs the task needs (an ECS resourceRequirement). A gpu service runs on
+    # the environment's GPU capacity provider (EC2), not Fargate: the sizing
+    # is not Fargate-validated, and the service is created on that provider.
+    gpu: int | None = None
     # Per-service override of the environment's [deployment] rollout strategy.
     # Same key names as config.toml's [deployment] section; None inherits the
     # environment value per key.
@@ -250,10 +287,30 @@ class ServiceConfig:
         "min_memory",
         "min_replicas",
         "interruptible",
+        "gpu",
         "minimum_healthy_percent",
         "maximum_percent",
         "container_health_check",
     }
+
+    def validate_gpu(self) -> None:
+        """Fail fast on a gpu declaration ECS or the capacity could not honour.
+
+        Raises:
+            ValueError: If gpu is not a positive count, or the service is also
+                interruptible (Fargate Spot has no GPUs).
+        """
+        if self.gpu is None:
+            return
+        if isinstance(self.gpu, bool) or self.gpu < 1:
+            raise ValueError(
+                f"[services.{self.name}] gpu must be a positive integer, got {self.gpu!r}"
+            )
+        if self.interruptible:
+            raise ValueError(
+                f"[services.{self.name}] gpu and interruptible are exclusive: a GPU "
+                f"service runs on the environment's GPU capacity provider, never Fargate Spot"
+            )
 
     def validate_deployment_override(self) -> None:
         """Fail fast on a rollout override ECS would only reject mid-deploy.
@@ -460,6 +517,8 @@ class DeployConfig:
                 img_dict["build_args"] = img.build_args
             if img.additional_contexts:
                 img_dict["additional_contexts"] = img.additional_contexts
+            if img.build_on_gpu_host:
+                img_dict["build_on_gpu_host"] = True
             result["images"][name] = img_dict
 
         for name, svc in self.services.items():
@@ -482,6 +541,8 @@ class DeployConfig:
                 svc_dict["min_replicas"] = svc.min_replicas
             if svc.interruptible:
                 svc_dict["interruptible"] = svc.interruptible
+            if svc.gpu is not None:
+                svc_dict["gpu"] = svc.gpu
             # service.py reads these off the raw dict, not ServiceConfig; a
             # field dropped here silently never reaches ECS.
             if svc.minimum_healthy_percent is not None:
@@ -552,6 +613,8 @@ class DeployConfig:
                 images[image_name] = dacite.from_dict(
                     ImageConfig, {**image_config, "name": image_name}, config=_DACITE_CONFIG
                 )
+        for image in images.values():
+            image.validate_build_host(images)
 
         # Parse [services] section
         services: dict[str, ServiceConfig] = {}
@@ -566,6 +629,7 @@ class DeployConfig:
                     ServiceConfig, {**service_config, "name": service_name}, config=_DACITE_CONFIG
                 )
                 services[service_name].validate_deployment_override()
+                services[service_name].validate_gpu()
                 health_check = services[service_name].container_health_check
                 if health_check is not None:
                     container_health_check(service_name, health_check)

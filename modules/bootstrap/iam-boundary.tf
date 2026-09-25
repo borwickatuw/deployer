@@ -199,3 +199,80 @@ resource "aws_iam_policy" "scheduler_role_boundary" {
     ]
   })
 }
+
+# ------------------------------------------------------------------------------
+# ECS Container Instance Role Permissions Boundary
+#
+# An EC2 container instance (the GPU capacity the ecs-gpu-capacity module
+# provides) runs the ECS agent and the SSM agent, neither of which is a
+# task: the task boundary above has no ecs:RegisterContainerInstance, no
+# ssm:UpdateInstanceInformation, and would silently deny both, so the
+# instance never joins the cluster and never answers a session. This
+# boundary sets the MAXIMUM permissions an instance role can have — the
+# two AWS-managed policies the module attaches (the ECS-for-EC2 role and
+# SSM managed-instance core) are wider, and this is the ceiling on them.
+# No task-runtime actions: a task's own role, not the instance's, is what
+# a container acts as (ECS_AWSVPC_BLOCK_IMDS keeps it that way).
+# ------------------------------------------------------------------------------
+
+resource "aws_iam_policy" "ecs_instance_role_boundary" {
+  name = "deployer-ecs-instance-role-boundary"
+  # Note: description omitted to allow in-place updates (changing description forces replacement)
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowECSAgent"
+        Effect = "Allow"
+        Action = [
+          "ecs:RegisterContainerInstance",
+          "ecs:DeregisterContainerInstance",
+          "ecs:DiscoverPollEndpoint",
+          "ecs:Poll",
+          "ecs:StartTelemetrySession",
+          "ecs:Submit*",
+          "ecs:UpdateContainerInstancesState",
+          "ecs:TagResource",
+          "ec2:DescribeTags"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowImagePullAndLogs"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowSSMAgent"
+        Effect = "Allow"
+        Action = [
+          "ssm:UpdateInstanceInformation",
+          "ssm:ListAssociations",
+          "ssm:ListInstanceAssociations",
+          "ssm:GetDocument",
+          "ssm:DescribeDocument",
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel",
+          "ec2messages:AcknowledgeMessage",
+          "ec2messages:DeleteMessage",
+          "ec2messages:FailMessage",
+          "ec2messages:GetEndpoint",
+          "ec2messages:GetMessages",
+          "ec2messages:SendReply"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

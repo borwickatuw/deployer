@@ -138,6 +138,16 @@ class _TaskLaunchPlan:
     network_config: dict
 
 
+def _is_ec2_only(task_definition: str, ecs_client) -> bool:
+    """Whether a task definition can only be placed on EC2 capacity."""
+    try:
+        described = ecs_client.describe_task_definition(taskDefinition=task_definition)
+    except Exception:  # noqa: BLE001 — a describe failure is not an EC2 verdict
+        return False
+    compatibilities = described.get("taskDefinition", {}).get("requiresCompatibilities", [])
+    return "EC2" in compatibilities and "FARGATE" not in compatibilities
+
+
 def _plan_task_launch(
     cluster_name: str,
     service_name: str,
@@ -180,6 +190,19 @@ def _plan_task_launch(
 
     if not service_task_def:
         print(f"Error: Could not get task definition for service '{service_name}'", file=sys.stderr)
+        return None
+
+    # A gpu service's task definition is EC2-only (a GPU resourceRequirement
+    # on the environment's capacity provider); this command launches on
+    # Fargate, so borrowing that definition can only fail at ECS. Refuse
+    # here, naming the way through.
+    if _is_ec2_only(service_task_def, ecs_client):
+        print(
+            f"Error: service '{service_name}' runs on GPU (EC2) capacity; one-off tasks "
+            f"launch on Fargate. Run the command against a Fargate service instead "
+            f"(--service web).",
+            file=sys.stderr,
+        )
         return None
 
     if use_migrate_credentials:

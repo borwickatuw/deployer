@@ -2088,3 +2088,83 @@ class TestHealthCheckConfigSource:
         )
         _create_service(ctx, "web", arn)
         assert aws.client.params("create_service")["healthCheckGracePeriodSeconds"] == 60
+
+
+class TestGpuCapacity:
+    """A gpu service runs on the environment's GPU capacity provider (Phase 69)."""
+
+    PROVIDER = f"{CLUSTER}-gpu"
+
+    def test_gpu_selects_the_capacity_provider(self, aws):
+        from deployer.deploy.service import _capacity_params
+
+        ctx = _ctx(
+            aws,
+            services={"blocks": {"gpu": 1}},
+            infra={"gpu_capacity_provider": self.PROVIDER},
+        )
+        assert _capacity_params(ctx, {"gpu": 1}) == {
+            "capacityProviderStrategy": [
+                {"capacityProvider": self.PROVIDER, "base": 0, "weight": 1}
+            ]
+        }
+        assert _capacity_params(ctx, {"interruptible": True})["capacityProviderStrategy"][1] == {
+            "capacityProvider": "FARGATE_SPOT",
+            "weight": 1,
+        }
+        assert _capacity_params(ctx, {}) == {"launchType": "FARGATE"}
+
+    def test_the_state_hash_changes_with_gpu(self, aws):
+        ctx_gpu = _ctx(
+            aws,
+            services={"blocks": {"gpu": 1}},
+            infra={"gpu_capacity_provider": self.PROVIDER},
+        )
+        ctx_plain = _ctx(aws, services={"blocks": {}})
+        dep_cfg = _get_deployment_config(ctx_gpu.infra_config, {})
+        assert _compute_service_state_hash(
+            ctx_gpu, "blocks", IMAGE_URI, dep_cfg
+        ) != _compute_service_state_hash(ctx_plain, "blocks", IMAGE_URI, dep_cfg)
+
+    def test_a_gpu_service_without_capacity_is_refused_before_anything_moves(self, aws):
+        ctx = _ctx(aws, services={"blocks": {"gpu": 1}})
+        with pytest.raises(ServiceConfigError, match="no GPU capacity"):
+            validate_services(ctx)
+
+    def test_a_gpu_service_needs_a_stop_first_rollout(self, aws):
+        """One GPU cannot host the old and the new task at once."""
+        ctx = _ctx(
+            aws,
+            services={"blocks": {"gpu": 1}},
+            infra={
+                "gpu_capacity_provider": self.PROVIDER,
+                "deployment_config": {"maximum_percent": 200, "minimum_healthy_percent": 100},
+            },
+        )
+        with pytest.raises(ServiceConfigError, match="maximum_percent = 100"):
+            validate_services(ctx)
+
+        ok = _ctx(
+            aws,
+            services={"blocks": {"gpu": 1, "maximum_percent": 100, "minimum_healthy_percent": 0}},
+            infra={"gpu_capacity_provider": self.PROVIDER},
+        )
+        validate_services(ok)
+
+    def test_capacity_mismatch_is_three_way(self):
+        gpu_live = {"capacityProviderStrategy": [{"capacityProvider": self.PROVIDER}]}
+        spot_live = {
+            "capacityProviderStrategy": [
+                {"capacityProvider": "FARGATE"},
+                {"capacityProvider": "FARGATE_SPOT"},
+            ]
+        }
+        fargate_live = {"launchType": "FARGATE"}
+
+        assert _capacity_mismatch("b", {"gpu": 1}, gpu_live, self.PROVIDER) is None
+        assert _capacity_mismatch("b", {"interruptible": True}, spot_live, self.PROVIDER) is None
+        assert _capacity_mismatch("b", {}, fargate_live, self.PROVIDER) is None
+
+        assert "GPU capacity provider" in _capacity_mismatch("b", {}, gpu_live, self.PROVIDER)
+        assert "gpu set" in _capacity_mismatch("b", {"gpu": 1}, fargate_live, self.PROVIDER)
+        assert "Fargate Spot" in _capacity_mismatch("b", {"gpu": 1}, spot_live, self.PROVIDER)

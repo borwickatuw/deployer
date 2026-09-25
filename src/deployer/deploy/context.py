@@ -74,6 +74,11 @@ class InfraConfig:
     redis_url: str | None = None
     s3_media_bucket: str | None = None
     rds_instance_id: str | None = None
+    # GPU capacity (config.toml [infrastructure], from the tofu outputs of the
+    # same names): the ECS capacity provider gpu services are created on, and
+    # the Auto Scaling group whose instance is the build host.
+    gpu_capacity_provider: str | None = None
+    gpu_asg_name: str | None = None
     scheduler: dict = field(default_factory=dict)
     deployment_config: dict = field(default_factory=dict)
     health_check_config: dict = field(default_factory=dict)

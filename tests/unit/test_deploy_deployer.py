@@ -751,6 +751,9 @@ class TestDeploySteps:
                     "dry_run": False,
                     "ecr_client": aws["ecr"],
                     "force_build": False,
+                    # No GPU capacity in this environment: no build host, no client
+                    "gpu_asg_name": None,
+                    "asg_client": None,
                 },
             ),
             (

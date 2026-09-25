@@ -1,6 +1,7 @@
 """Docker image building and ECR operations."""
 
 import base64
+import contextlib
 import fnmatch
 import hashlib
 import subprocess
@@ -14,15 +15,31 @@ from ..config import DeployConfig, ImageConfig, merge_build_args
 from ..core.deploy import topological_sort
 from ..timing import get_timer
 from ..utils import Colors, log, log_error, log_status, log_success
+from .build_host import find_build_instance, remote_docker
 
 
-def _run_timed_subprocess(cmd: list[str], step_name: str) -> subprocess.CompletedProcess:
-    """Run a subprocess with optional timer integration."""
+def _run_timed_subprocess(
+    cmd: list[str], step_name: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
+    """Run a subprocess with optional timer integration.
+
+    ``env`` replaces the process environment when given (a ``DOCKER_HOST``
+    pointing at the GPU build host); None inherits it, as before.
+    """
+
+    def _run() -> subprocess.CompletedProcess:
+        # env is passed only when given, so the local arm's call is
+        # byte-for-byte what it always was (the characterization pins
+        # compare the kwargs)
+        if env is None:
+            return subprocess.run(cmd, capture_output=True, text=True, check=False)
+        return subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+
     timer = get_timer()
     if timer and timer.in_step:
         with timer.sub_step(step_name):
-            return subprocess.run(cmd, capture_output=True, text=True, check=False)
-    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+            return _run()
+    return _run()
 
 
 def _check_subprocess_result(
@@ -263,6 +280,9 @@ class ImageBuildSpec(NamedTuple):
     build_args: dict
     target: str | None
     additional_contexts: dict[str, Path] = {}
+    # Build on the environment's GPU container instance over an SSM tunnel
+    # (deploy/build_host.py) rather than the operator's Docker
+    build_on_gpu_host: bool = False
 
 
 def _resolve_context(image_name: str, source_dir: Path, context: str) -> Path:
@@ -355,6 +375,7 @@ def _resolve_image_spec(
             additional_contexts=_resolve_additional_contexts(
                 image_name, source_dir, image_config.additional_contexts
             ),
+            build_on_gpu_host=image_config.build_on_gpu_host,
         )
 
     # Legacy dict support - inline the logic
@@ -368,6 +389,7 @@ def _resolve_image_spec(
         additional_contexts=_resolve_additional_contexts(
             image_name, source_dir, image_config.get("additional_contexts", {})
         ),
+        build_on_gpu_host=bool(image_config.get("build_on_gpu_host", False)),
     )
 
 
@@ -479,7 +501,13 @@ def _docker_build_cmd(
     return build_cmd
 
 
-def _run_docker(cmd: list[str], image_name: str, operation: str, dry_run: bool) -> None:
+def _run_docker(
+    cmd: list[str],
+    image_name: str,
+    operation: str,
+    dry_run: bool,
+    env: dict[str, str] | None = None,
+) -> None:
     """Run one docker command for an image, honouring dry-run.
 
     Args:
@@ -488,6 +516,8 @@ def _run_docker(cmd: list[str], image_name: str, operation: str, dry_run: bool) 
             name and in failure messages.
         operation: Short verb ("build", "push") naming the step.
         dry_run: If True, print the command instead of running it.
+        env: Process environment for the command (the GPU build host's
+            ``DOCKER_HOST``), or None for the inherited one.
 
     Raises:
         RuntimeError: If the command exits non-zero. Both captured streams
@@ -497,11 +527,17 @@ def _run_docker(cmd: list[str], image_name: str, operation: str, dry_run: bool) 
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(cmd)}")
         return
 
-    result = _run_timed_subprocess(cmd, f"{image_name}_{operation}")
+    result = _run_timed_subprocess(cmd, f"{image_name}_{operation}", env=env)
     _check_subprocess_result(result, image_name, operation)
 
 
-def _tag_and_push(local_tag: str, ecr_uri: str, image_name: str, dry_run: bool) -> None:
+def _tag_and_push(
+    local_tag: str,
+    ecr_uri: str,
+    image_name: str,
+    dry_run: bool,
+    env: dict[str, str] | None = None,
+) -> None:
     """Tag a locally built image for ECR and push it.
 
     The ``docker tag`` call deliberately does *not* go through
@@ -515,16 +551,21 @@ def _tag_and_push(local_tag: str, ecr_uri: str, image_name: str, dry_run: bool) 
         ecr_uri: The fully qualified ECR URI to tag and push.
         image_name: Image name, used in messages.
         dry_run: If True, print the commands instead of running them.
+        env: Process environment for both commands (the GPU build host's
+            ``DOCKER_HOST``, where the image was built), or None.
     """
     # Tag for ECR
     tag_cmd = ["docker", "tag", local_tag, ecr_uri]
     if dry_run:
         print(f"  {Colors.YELLOW}[dry-run]{Colors.NC} {' '.join(tag_cmd)}")
     else:
-        subprocess.run(tag_cmd, check=True)
+        if env is None:
+            subprocess.run(tag_cmd, check=True)
+        else:
+            subprocess.run(tag_cmd, check=True, env=env)
 
     # Push to ECR
-    _run_docker(["docker", "push", ecr_uri], image_name, "push", dry_run)
+    _run_docker(["docker", "push", ecr_uri], image_name, "push", dry_run, env=env)
     log_success(f"{image_name} (push)")
 
 
@@ -559,6 +600,8 @@ def build_and_push_images(
     ecr_client,
     dry_run: bool = False,
     force_build: bool = False,
+    gpu_asg_name: str | None = None,
+    asg_client=None,
 ) -> dict[str, str]:
     """Build and push all images, returning a map of image name to ECR URI.
 
@@ -570,6 +613,12 @@ def build_and_push_images(
     (respecting .dockerignore). If an image with the same hash tag exists in ECR,
     the build and push are skipped.
 
+    An image with ``build_on_gpu_host`` is built and pushed on the
+    environment's GPU container instance's Docker daemon, reached over an
+    SSM tunnel that is opened lazily — only when such an image actually
+    misses the ECR cache — and closed when every image is done. Those
+    builds use the box's own layer cache, not the registry build cache.
+
     Args:
         config: The deployment configuration dictionary.
         source_dir: Path to the source code directory.
@@ -580,9 +629,17 @@ def build_and_push_images(
         dry_run: If True, only print what would be done.
         ecr_client: boto3 ECR client for checking existing images.
         force_build: If True, skip cache check and always build.
+        gpu_asg_name: The GPU build host's Auto Scaling group (config.toml
+            ``gpu_asg_name``), or None when the environment has none.
+        asg_client: boto3 ``autoscaling`` client, for finding the host.
 
     Returns:
         Dictionary mapping image names to their ECR URIs.
+
+    Raises:
+        RuntimeError: A ``build_on_gpu_host`` image in an environment with no
+            ``gpu_asg_name``, or a build host that is not running
+            (``BuildHostUnavailableError``).
     """
     log("Building and pushing images...")
 
@@ -597,42 +654,71 @@ def build_and_push_images(
         log_error(str(e))
         raise
 
-    for image_name in build_order:
-        spec = _resolve_image_spec(image_name, images[image_name], source_dir, environment)
-        tag = _cache_tag(spec)
+    with contextlib.ExitStack() as stack:
+        remote_env: dict[str, str] | None = None
+        for image_name in build_order:
+            spec = _resolve_image_spec(image_name, images[image_name], source_dir, environment)
+            tag = _cache_tag(spec)
 
-        # Local-only images are tagged with just their name (for FROM references)
-        # Pushed images get the ecr_prefix
-        # ecr_uri is the destination this image gets pushed to; it exists
-        # exactly when the image is pushed, which is what the push below tests.
-        cache_ref = None
-        ecr_uri = None
-        if spec.should_push:
-            repo_name = f"{ecr_prefix}-{image_name}"
-            local_tag = f"{repo_name}:{tag}"
-            ecr_repo = f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
-            ecr_uri = f"{ecr_repo}:{tag}"
-            cache_ref = f"{ecr_repo}:buildcache"
+            # Local-only images are tagged with just their name (for FROM references)
+            # Pushed images get the ecr_prefix
+            # ecr_uri is the destination this image gets pushed to; it exists
+            # exactly when the image is pushed, which is what the push below tests.
+            cache_ref = None
+            ecr_uri = None
+            if spec.should_push:
+                repo_name = f"{ecr_prefix}-{image_name}"
+                local_tag = f"{repo_name}:{tag}"
+                ecr_repo = f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repo_name}"
+                ecr_uri = f"{ecr_repo}:{tag}"
+                cache_ref = f"{ecr_repo}:buildcache"
 
-            # Check if image already exists in ECR (skip if no client or dry_run)
-            if ecr_client and not dry_run and not force_build:  # noqa: SIM102
-                if image_exists_in_ecr(ecr_client, repo_name, tag):
-                    log_status(f"{image_name}", f"cached ({tag[:8]})")
-                    image_uris[image_name] = ecr_uri
-                    continue
-        else:
-            local_tag = f"{image_name}:{tag}"
+                # Check if image already exists in ECR (skip if no client or dry_run)
+                if ecr_client and not dry_run and not force_build:  # noqa: SIM102
+                    if image_exists_in_ecr(ecr_client, repo_name, tag):
+                        log_status(f"{image_name}", f"cached ({tag[:8]})")
+                        image_uris[image_name] = ecr_uri
+                        continue
+            else:
+                local_tag = f"{image_name}:{tag}"
 
-        _run_docker(_docker_build_cmd(spec, local_tag, cache_ref), image_name, "build", dry_run)
-        log_success(f"{image_name} (build {tag[:8]})")
+            env = None
+            if spec.build_on_gpu_host:
+                # The box's own layer cache stands in for the registry cache
+                cache_ref = None
+                if not dry_run:
+                    if remote_env is None:
+                        remote_env = stack.enter_context(
+                            _gpu_build_host(image_name, gpu_asg_name, asg_client, region)
+                        )
+                    env = remote_env
+                else:
+                    log_status(image_name, "would build on the GPU host")
 
-        if ecr_uri is not None:
-            _tag_and_push(local_tag, ecr_uri, image_name, dry_run)
-            image_uris[image_name] = ecr_uri
-        else:
-            log_status(f"{image_name}", "local only")
+            _run_docker(
+                _docker_build_cmd(spec, local_tag, cache_ref), image_name, "build", dry_run, env=env
+            )
+            log_success(f"{image_name} (build {tag[:8]})")
+
+            if ecr_uri is not None:
+                _tag_and_push(local_tag, ecr_uri, image_name, dry_run, env=env)
+                image_uris[image_name] = ecr_uri
+            else:
+                log_status(f"{image_name}", "local only")
 
     return image_uris
+
+
+def _gpu_build_host(image_name: str, gpu_asg_name: str | None, asg_client, region: str):
+    """The tunnel to the GPU build host, as a context manager yielding its env."""
+    if not gpu_asg_name or asg_client is None:
+        raise RuntimeError(
+            f"Image '{image_name}' builds on the GPU host (build_on_gpu_host), but this "
+            f"environment has no gpu_asg_name in config.toml's [infrastructure] — "
+            f"the environment declares no GPU capacity."
+        )
+    instance_id = find_build_instance(asg_client, gpu_asg_name)
+    return remote_docker(instance_id, region)
 
 
 def validate_ecr_repositories(

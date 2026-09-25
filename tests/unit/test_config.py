@@ -784,3 +784,58 @@ class TestImageConfig:
 
         prod_args = img.get_build_args("production")
         assert prod_args == {"PYTHON_VERSION": "3.12", "DEBUG": "0"}
+
+
+class TestGpuServices:
+    """``gpu`` on a service and ``build_on_gpu_host`` on an image (Phase 69)."""
+
+    def _parse(self, tmp_path, body: str):
+        (tmp_path / "deploy.toml").write_text(
+            f'[application]\nname = "test"\n\n{body}', encoding="utf-8"
+        )
+        return parse_deploy_config(tmp_path / "deploy.toml")
+
+    def test_gpu_parses_and_round_trips(self, tmp_path):
+        config = self._parse(tmp_path, '[services.worker]\nimage = "worker"\ngpu = 1\n')
+        assert config.services["worker"].gpu == 1
+        assert config.get_raw_dict()["services"]["worker"]["gpu"] == 1
+        assert "gpu" not in config.get_raw_dict()["services"].get("web", {})
+
+    def test_gpu_is_a_known_key(self, tmp_path):
+        config = self._parse(tmp_path, '[services.worker]\nimage = "worker"\ngpu = 1\n')
+        assert not [w for w in config.get_warnings() if "gpu" in w]
+
+    def test_gpu_must_be_positive(self, tmp_path):
+        with pytest.raises(ValueError, match="positive integer"):
+            self._parse(tmp_path, '[services.worker]\nimage = "worker"\ngpu = 0\n')
+
+    def test_gpu_and_interruptible_are_exclusive(self, tmp_path):
+        with pytest.raises(ValueError, match="exclusive"):
+            self._parse(
+                tmp_path, '[services.worker]\nimage = "worker"\ngpu = 1\ninterruptible = true\n'
+            )
+
+    def test_build_on_gpu_host_parses_and_round_trips(self, tmp_path):
+        config = self._parse(
+            tmp_path, '[images.worker]\ncontext = "worker"\nbuild_on_gpu_host = true\n'
+        )
+        assert config.images["worker"].build_on_gpu_host is True
+        assert config.get_raw_dict()["images"]["worker"]["build_on_gpu_host"] is True
+        plain = self._parse(tmp_path, '[images.web]\ncontext = "web"\n')
+        assert "build_on_gpu_host" not in plain.get_raw_dict()["images"]["web"]
+
+    def test_build_on_gpu_host_requires_push(self, tmp_path):
+        with pytest.raises(ValueError, match="requires push"):
+            self._parse(
+                tmp_path,
+                '[images.worker]\ncontext = "worker"\nbuild_on_gpu_host = true\npush = false\n',
+            )
+
+    def test_build_on_gpu_host_cannot_depend_on_a_local_only_image(self, tmp_path):
+        with pytest.raises(ValueError, match="local-only image 'base'"):
+            self._parse(
+                tmp_path,
+                '[images.base]\ncontext = "base"\npush = false\n\n'
+                '[images.worker]\ncontext = "worker"\nbuild_on_gpu_host = true\n'
+                'depends_on = ["base"]\n',
+            )

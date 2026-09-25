@@ -1057,3 +1057,27 @@ class TestAuditServicesMappingBranches:
         )
 
         assert issues == []
+
+
+class TestGpuServicesInTheAudit:
+    """A gpu service has no compose counterpart by design (Phase 69)."""
+
+    def test_a_gpu_service_missing_from_compose_is_not_an_issue(self):
+        from deployer.core.audit import audit_services
+
+        compose = {"web": {"has_build": True, "profiles": [], "environment": {}}}
+        issues = audit_services(
+            compose,
+            {"web": {"image": "web"}, "blocks-worker": {"image": "blocks-worker", "gpu": 1}},
+            AuditConfig(),
+        )
+        assert issues == []
+
+    def test_a_fargate_service_missing_from_compose_still_is(self):
+        from deployer.core.audit import audit_services
+
+        compose = {"web": {"has_build": True, "profiles": [], "environment": {}}}
+        issues = audit_services(
+            compose, {"web": {"image": "web"}, "worker": {"image": "worker"}}, AuditConfig()
+        )
+        assert issues == ["Service 'worker' in deploy.toml not found in docker-compose"]

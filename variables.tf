@@ -24,6 +24,29 @@ variable "iam_permissions_boundary" {
   default     = null
 }
 
+variable "iam_instance_permissions_boundary" {
+  description = "ARN of the permissions boundary for EC2 container instance roles (required when gpu_capacity is set)"
+  type        = string
+  default     = null
+}
+
+# GPU capacity: one EC2 GPU instance behind an ECS capacity provider
+# (modules/ecs-gpu-capacity). null means no GPU capacity in this environment.
+variable "gpu_capacity" {
+  description = "GPU container-instance capacity: instance type and root volume"
+  type = object({
+    instance_type     = string
+    volume_gb         = optional(number, 300)
+    volume_throughput = optional(number, 250)
+  })
+  default = null
+
+  validation {
+    condition     = var.gpu_capacity == null || can(regex("^(g|p)[0-9]", var.gpu_capacity.instance_type))
+    error_message = "gpu_capacity.instance_type must be a GPU instance type (g* or p* family)."
+  }
+}
+
 # VPC configuration
 
 variable "vpc_cidr" {

@@ -345,7 +345,7 @@ class TestCheckForFatalErrors:
                 "service web was unable to place a task because "
                 "No Container Instances were found in your cluster",
                 "no_capacity",
-                "No container instances available.",
+                "No container instances available for this service's capacity.",
             ),
             (
                 "ECS was unable to assume the role 'arn:aws:iam::1:role/x'",
@@ -401,8 +401,11 @@ class TestCheckForFatalErrors:
             _check_for_fatal_errors(_events("No Container Instances were found"), "web")
 
         assert str(exc_info.value) == (
-            "web: No container instances available. "
-            "For Fargate, check subnet/security group configuration."
+            "web: No container instances available for this service's capacity. On "
+            "Fargate, check the subnet and security group configuration; on a capacity "
+            "provider (a gpu service), check that its Auto Scaling group can launch an "
+            "instance — the environment may be stopped (bin/environment.py start) or "
+            "the instance type unavailable in the region."
         )
 
     def test_empty_events_is_a_no_op(self):

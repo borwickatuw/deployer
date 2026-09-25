@@ -90,11 +90,15 @@ def _count_ecs_oom(services, cluster_name: str, ecs_client, days: int) -> int:
     for service in services:
         cutoff = _deployment_cutoff(service.last_deployment_at)
 
+        fargate = True
         try:
             response = ecs_client.describe_task_definition(taskDefinition=service.task_definition)
             task_def = response["taskDefinition"]
             cpu_allocated = int(task_def.get("cpu", 256))
             memory_allocated = int(task_def.get("memory", 512))
+            # A gpu service runs on EC2 capacity: its memory is the box's, not
+            # a Fargate size, so no Fargate recommendation applies
+            fargate = "FARGATE" in task_def.get("requiresCompatibilities", ["FARGATE"])
         # Broad by design (BLE001 is per-file-ignored for bin/): a missing task
         # definition only costs the recommendation, not the report.
         except Exception:
@@ -122,7 +126,7 @@ def _count_ecs_oom(services, cluster_name: str, ecs_client, days: int) -> int:
             continue
 
         total_oom += len(oom_events)
-        rec = _recommend_memory(cpu_allocated, memory_allocated)
+        rec = _recommend_memory(cpu_allocated, memory_allocated) if fargate else None
         rec_str = f" (recommend >= {rec}MB)" if rec else ""
         print(
             f"  {Colors.RED}{service.name}: {len(oom_events)} OOM kill(s) "

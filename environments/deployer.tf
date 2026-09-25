@@ -231,6 +231,19 @@ variable "health_check" {
 }
 
 
+# GPU capacity (optional): one EC2 GPU instance behind an ECS capacity
+# provider (modules/ecs-gpu-capacity), for services that declare `gpu = 1`
+# in deploy.toml. The scheduler starts and stops it with the rest.
+variable "gpu_capacity" {
+  type = object({
+    instance_type     = string
+    volume_gb         = optional(number, 300)
+    volume_throughput = optional(number, 250)
+  })
+  default     = null
+  description = "GPU container-instance capacity: instance type and root volume (null = none)"
+}
+
 # ECR repositories to create
 variable "ecr_repository_names" {
   type        = list(string)
@@ -446,6 +459,10 @@ module "infrastructure" {
 
   # IAM permissions boundary (required for role creation)
   iam_permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary"
+
+  # GPU capacity, with the container-instance boundary the bootstrap holds
+  gpu_capacity                      = var.gpu_capacity
+  iam_instance_permissions_boundary = var.gpu_capacity == null ? null : data.terraform_remote_state.bootstrap[0].outputs.ecs_instance_role_boundary_arn
 }
 
 # ------------------------------------------------------------------------------
@@ -598,6 +615,18 @@ output "s3_cache_bucket" {
 # ECS
 output "ecs_cluster_name" {
   value = module.infrastructure.ecs_cluster_name
+}
+
+# GPU capacity (null when the environment declares none); config.toml's
+# [infrastructure] gpu_capacity_provider / gpu_asg_name read these
+output "gpu_capacity_provider_name" {
+  value       = module.infrastructure.gpu_capacity_provider_name
+  description = "ECS capacity provider for gpu services, or null"
+}
+
+output "gpu_asg_name" {
+  value       = module.infrastructure.gpu_asg_name
+  description = "Auto Scaling group of the GPU build host, or null"
 }
 
 output "alb_dns_name" {

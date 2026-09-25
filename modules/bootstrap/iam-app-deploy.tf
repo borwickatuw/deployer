@@ -141,6 +141,70 @@ data "aws_iam_policy_document" "app_deploy" {
     ])
   }
 
+  # ECR - Pull from the unprefixed repositories the account holds for
+  # another project's published base images (ecr_pull_repositories). The
+  # build that needs them runs on a GPU container instance's Docker daemon
+  # over an SSM tunnel, with this role's Docker login (see below).
+  dynamic "statement" {
+    for_each = length(var.ecr_pull_repositories) > 0 ? [1] : []
+    content {
+      sid    = "ECRPullSharedBaseImages"
+      effect = "Allow"
+      actions = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories",
+        "ecr:GetDownloadUrlForLayer"
+      ]
+      resources = [
+        for name in var.ecr_pull_repositories :
+        "arn:aws:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/${name}"
+      ]
+    }
+  }
+
+  # EC2 Auto Scaling - find the GPU build host (the ecs-gpu-capacity ASG's
+  # InService instance). Describe supports no resource-level scoping.
+  statement {
+    sid       = "AutoScalingGroupsRead"
+    effect    = "Allow"
+    actions   = ["autoscaling:DescribeAutoScalingGroups"]
+    resources = ["*"]
+  }
+
+  # SSM Session Manager - a port-forwarding session to the GPU build
+  # host's Docker daemon (loopback-only on the instance), and nothing else:
+  # only instances tagged deployer-build-host = <project>-*, and only the
+  # port-forwarding document, so this cannot become a shell.
+  statement {
+    sid     = "SSMBuildHostPortForward"
+    effect  = "Allow"
+    actions = ["ssm:StartSession"]
+    resources = [
+      "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"
+    ]
+    condition {
+      test     = "StringLike"
+      variable = "ssm:resourceTag/deployer-build-host"
+      values   = [for prefix in var.project_prefixes : "${prefix}-*"]
+    }
+  }
+
+  statement {
+    sid       = "SSMBuildHostPortForwardDocument"
+    effect    = "Allow"
+    actions   = ["ssm:StartSession"]
+    resources = ["arn:aws:ssm:${var.region}::document/AWS-StartPortForwardingSession"]
+  }
+
+  statement {
+    sid       = "SSMTerminateOwnSessions"
+    effect    = "Allow"
+    actions   = ["ssm:TerminateSession"]
+    resources = ["arn:aws:ssm:*:*:session/$${aws:userid}-*"]
+  }
+
   # ELB - Read access for health checks
   statement {
     sid       = "ELBHealthCheck"

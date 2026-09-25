@@ -363,3 +363,38 @@ class TestGetEnvironmentVariablesLegacyPass:
         ctx = _ctx(config={"environment": {"X": placeholder}}, infra_config=infra)
         with pytest.raises(ValueError, match=re.escape(placeholder)):
             get_environment_variables(ctx)
+
+
+class TestGpuTaskDefinition:
+    """A gpu service asks ECS for the card and is EC2-only (Phase 69)."""
+
+    def test_a_gpu_service_requires_ec2_and_declares_the_resource(self):
+        ctx = _ctx(config={"services": {"blocks": {"gpu": 1}}})
+        task_def = build_task_definition(ctx, "blocks", "image:tag")
+        assert task_def["requiresCompatibilities"] == ["EC2"]
+        assert task_def["networkMode"] == "awsvpc"
+        container = task_def["containerDefinitions"][0]
+        assert container["resourceRequirements"] == [{"type": "GPU", "value": "1"}]
+
+    def test_a_fargate_service_is_unchanged(self):
+        ctx = _ctx(config={"services": {"web": {}}})
+        task_def = build_task_definition(ctx, "web", "image:tag")
+        assert task_def["requiresCompatibilities"] == ["FARGATE"]
+        assert "resourceRequirements" not in task_def["containerDefinitions"][0]
+
+    def test_gpu_sizing_is_not_fargate_validated(self):
+        """8 vCPU / 28 GiB is no Fargate size; on a g5.2xlarge it is the box."""
+        from deployer.deploy.task_definition import get_service_sizing
+
+        config = {"services": {"blocks": {"gpu": 1}}}
+        sizing = get_service_sizing("blocks", config, {"blocks": {"cpu": 8192, "memory": 28672}})
+        assert sizing["cpu"] == 8192
+        assert sizing["memory"] == 28672
+
+    def test_fargate_sizing_is_still_validated_without_gpu(self):
+        from deployer.deploy.task_definition import get_service_sizing
+
+        with pytest.raises(ValueError, match="invalid CPU/memory combination"):
+            get_service_sizing(
+                "web", {"services": {"web": {}}}, {"web": {"cpu": 256, "memory": 28672}}
+            )

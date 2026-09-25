@@ -182,8 +182,10 @@ def get_service_sizing(
 
     _validate_port_source(service_name, base_config, env_config, merged["load_balanced"])
 
-    # Validate Fargate CPU/memory combination
-    validate_fargate_sizing(merged["cpu"], merged["memory"], service_name)
+    # Validate Fargate CPU/memory combination. A gpu service runs on EC2
+    # capacity, where any cpu/memory the instance can hold is valid.
+    if not base_config.get("gpu"):
+        validate_fargate_sizing(merged["cpu"], merged["memory"], service_name)
 
     return merged
 
@@ -536,6 +538,13 @@ def build_task_definition(
             service_name, service_toml["container_health_check"]
         )
 
+    # A GPU service asks ECS for the card and can only be placed on EC2
+    # capacity (the environment's GPU capacity provider); awsvpc, the task
+    # cpu/memory and everything else stay as for Fargate.
+    gpu = service_toml.get("gpu")
+    if gpu:
+        container_def["resourceRequirements"] = [{"type": "GPU", "value": str(gpu)}]
+
     # Get execution role and task role ARNs from infra_config
     execution_role_arn = ctx.infra_config.execution_role_arn
     task_role_arn = ctx.infra_config.task_role_arn
@@ -543,7 +552,7 @@ def build_task_definition(
     task_def = {
         "family": task_family,
         "networkMode": "awsvpc",
-        "requiresCompatibilities": ["FARGATE"],
+        "requiresCompatibilities": ["EC2"] if gpu else ["FARGATE"],
         "cpu": str(service_cfg["cpu"]),
         "memory": str(service_cfg["memory"]),
         "containerDefinitions": [container_def],

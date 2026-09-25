@@ -84,6 +84,7 @@ These should work with the [generic framework guide](../scenarios/generic.md):
 | Service     | Purpose                         | Module                                                | Required |
 | ----------- | ------------------------------- | ----------------------------------------------------- | -------- |
 | ECS Fargate | Container orchestration         | `modules/ecs-cluster` (services created by deploy.py) | Yes      |
+| ECS on EC2 (GPU) | GPU services (`gpu = 1`), one warm-pooled instance on the environment's schedule | `modules/ecs-gpu-capacity` (capacity provider; the instance doubles as the image's build host) | No |
 | ALB         | Load balancing, SSL termination | `modules/alb`                                         | Yes      |
 | VPC         | Networking                      | `modules/vpc`                                         | Yes      |
 | ECR         | Container registry              | `modules/ecr`                                         | Yes      |

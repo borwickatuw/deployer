@@ -1747,3 +1747,134 @@ class TestValidateEcrRepositoriesImageConfigArm:
     def test_a_deploy_config_with_no_images_checks_nothing(self, ecr):
         assert validate_ecr_repositories(ecr, _deploy_config(), "myapp") == []
         assert ecr.describe_repositories_calls == []
+
+
+class _FakeAsg:
+    def __init__(self, instance_id="i-gpu"):
+        self.instance_id = instance_id
+        self.calls = 0
+
+    def describe_auto_scaling_groups(self, **kwargs):
+        self.calls += 1
+        return {
+            "AutoScalingGroups": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": self.instance_id,
+                            "LifecycleState": "InService",
+                            "HealthStatus": "Healthy",
+                        }
+                    ]
+                }
+            ]
+        }
+
+
+class _FakeSession:
+    def __init__(self, recorder):
+        self._recorder = recorder
+
+    def terminate(self):
+        self._recorder.terminated += 1
+
+    def wait(self, timeout=None):
+        pass
+
+
+class _SessionRecorder:
+    def __init__(self):
+        self.calls = []
+        self.terminated = 0
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(list(cmd))
+        return _FakeSession(self)
+
+
+class TestBuildOnGpuHost:
+    """An image with build_on_gpu_host builds and pushes on the GPU box's
+    Docker daemon over an SSM tunnel, opened lazily (Phase 69)."""
+
+    @pytest.fixture
+    def tunnel(self, monkeypatch):
+        import shutil
+
+        recorder = _SessionRecorder()
+        monkeypatch.setattr(subprocess, "Popen", recorder)
+        monkeypatch.setattr(shutil, "which", lambda name: f"/usr/local/bin/{name}")
+        return recorder
+
+    def test_builds_and_pushes_through_the_tunnel_without_the_registry_cache(
+        self, source_dir, run, ecr, tunnel
+    ):
+        config = _dict_config(web={"context": "web", "build_on_gpu_host": True})
+        asg = _FakeAsg()
+
+        uris = _build(config, source_dir, ecr_client=ecr, gpu_asg_name="app-gpu", asg_client=asg)
+
+        assert set(uris) == {"web"}
+        assert run.verbs == ["version", "build", "tag", "push"]
+        build_cmd, build_kwargs = run.calls[1]
+        assert "--cache-from" not in build_cmd
+        assert build_kwargs["env"]["DOCKER_HOST"].startswith("tcp://127.0.0.1:")
+        _tag_cmd, tag_kwargs = run.calls[2]
+        assert tag_kwargs["env"]["DOCKER_HOST"] == build_kwargs["env"]["DOCKER_HOST"]
+        _push_cmd, push_kwargs = run.calls[3]
+        assert push_kwargs["env"]["DOCKER_HOST"] == build_kwargs["env"]["DOCKER_HOST"]
+        assert tunnel.calls[0][:3] == ["aws", "ssm", "start-session"]
+        assert "i-gpu" in tunnel.calls[0]
+        assert tunnel.terminated == 1
+        assert asg.calls == 1
+
+    def test_a_cached_image_opens_no_tunnel(self, source_dir, run, ecr, tunnel):
+        tag = _expected_tag(source_dir / "web")
+        ecr.existing.add((f"{ECR_PREFIX}-web", tag))
+        config = _dict_config(web={"context": "web", "build_on_gpu_host": True})
+
+        _build(config, source_dir, ecr_client=ecr, gpu_asg_name="app-gpu", asg_client=_FakeAsg())
+
+        assert run.calls == []
+        assert tunnel.calls == []
+
+    def test_a_dry_run_opens_no_tunnel(self, source_dir, run, ecr, tunnel, capsys):
+        config = _dict_config(web={"context": "web", "build_on_gpu_host": True})
+
+        _build(config, source_dir, ecr_client=ecr, dry_run=True, gpu_asg_name="app-gpu")
+
+        assert tunnel.calls == []
+        assert run.calls == []
+        assert any(
+            "would build on the GPU host" in line for line in _lines(capsys.readouterr().out)
+        )
+
+    def test_an_environment_without_gpu_capacity_is_refused(self, source_dir, run, ecr, tunnel):
+        config = _dict_config(web={"context": "web", "build_on_gpu_host": True})
+
+        with pytest.raises(RuntimeError, match="no gpu_asg_name"):
+            _build(config, source_dir, ecr_client=ecr)
+
+        assert run.calls == []
+
+    def test_a_local_image_still_builds_locally(self, source_dir, run, ecr, tunnel):
+        config = _dict_config(web={"context": "web"})
+
+        _build(config, source_dir, ecr_client=ecr, gpu_asg_name="app-gpu", asg_client=_FakeAsg())
+
+        assert run.verbs == ["build", "tag", "push"]
+        assert all("env" not in kwargs for kwargs in run.kwargs)
+        assert tunnel.calls == []
+
+    def test_the_stopped_box_is_reported_not_started(self, source_dir, run, ecr, tunnel):
+        from deployer.deploy.build_host import BuildHostUnavailableError
+
+        class _EmptyAsg:
+            def describe_auto_scaling_groups(self, **kwargs):
+                return {"AutoScalingGroups": [{"Instances": []}]}
+
+        config = _dict_config(web={"context": "web", "build_on_gpu_host": True})
+        with pytest.raises(BuildHostUnavailableError, match="environment.py start"):
+            _build(
+                config, source_dir, ecr_client=ecr, gpu_asg_name="app-gpu", asg_client=_EmptyAsg()
+            )
+        assert tunnel.calls == []

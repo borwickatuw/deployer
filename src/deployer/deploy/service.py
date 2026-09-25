@@ -147,12 +147,41 @@ def validate_services(ctx) -> None:
             raise ServiceConfigError(f"The migrate task definition cannot be built:\n{e}") from e
 
     for name, service_toml in services.items():
+        if service_toml.get("gpu"):
+            _validate_gpu_service(ctx, name, service_toml)
+
+    for name, service_toml in services.items():
         live_service = _get_live_service(ctx.ecs_client, ctx.cluster_name, name)
         if live_service is None:
             continue
-        mismatch = _capacity_mismatch(name, service_toml, live_service)
+        mismatch = _capacity_mismatch(
+            name, service_toml, live_service, ctx.infra_config.gpu_capacity_provider
+        )
         if mismatch:
             raise ServiceConfigError(mismatch)
+
+
+def _validate_gpu_service(ctx, name: str, service_toml: dict) -> None:
+    """A gpu service needs somewhere to run and a rollout one box can host.
+
+    Raises:
+        ServiceConfigError: No GPU capacity provider in the environment, or a
+            rollout that would need two GPU tasks at once.
+    """
+    if not ctx.infra_config.gpu_capacity_provider:
+        raise ServiceConfigError(
+            f"Service '{name}' declares gpu = {service_toml['gpu']}, but the environment "
+            f"has no GPU capacity: set gpu_capacity in its tfvars and "
+            f"gpu_capacity_provider / gpu_asg_name in config.toml's [infrastructure]."
+        )
+    dep_cfg = _get_deployment_config(ctx.infra_config, service_toml)
+    if dep_cfg.max_percent > 100:
+        raise ServiceConfigError(
+            f"Service '{name}' is a gpu service with maximum_percent = "
+            f"{dep_cfg.max_percent}: one GPU instance cannot host the old and the "
+            f"new task at once, so set maximum_percent = 100 (and "
+            f"minimum_healthy_percent = 0) on the service for a stop-first rollout."
+        )
 
 
 class DeploymentError(Exception):
@@ -196,7 +225,11 @@ FATAL_ERROR_PATTERNS = [
     (
         r"No Container Instances were found",
         "no_capacity",
-        "No container instances available. For Fargate, check subnet/security group configuration.",
+        "No container instances available for this service's capacity. On Fargate, "
+        "check the subnet and security group configuration; on a capacity provider "
+        "(a gpu service), check that its Auto Scaling group can launch an instance "
+        "— the environment may be stopped (bin/environment.py start) or the "
+        "instance type unavailable in the region.",
     ),
     (
         r"ECS was unable to assume the role",
@@ -390,13 +423,34 @@ def _network_configuration(ctx) -> dict:
     }
 
 
-def _capacity_params(service_toml: dict) -> dict:
+def _wanted_capacity(service_toml: dict) -> str:
+    """Which of the three capacities deploy.toml asks for: gpu, spot or fargate."""
+    if service_toml.get("gpu"):
+        return "gpu"
+    if service_toml.get("interruptible"):
+        return "spot"
+    return "fargate"
+
+
+def _capacity_params(ctx, service_toml: dict) -> dict:
     """The launch type or capacity provider strategy a service should run on.
 
-    Interruptible services use Fargate Spot with one on-demand base task;
-    everything else uses the FARGATE launch type.
+    A gpu service runs on the environment's GPU capacity provider (validated
+    present by ``validate_services``); interruptible services use Fargate Spot
+    with one on-demand base task; everything else uses the FARGATE launch type.
     """
-    if service_toml.get("interruptible"):
+    wanted = _wanted_capacity(service_toml)
+    if wanted == "gpu":
+        return {
+            "capacityProviderStrategy": [
+                {
+                    "capacityProvider": ctx.infra_config.gpu_capacity_provider,
+                    "base": 0,
+                    "weight": 1,
+                }
+            ]
+        }
+    if wanted == "spot":
         return {
             "capacityProviderStrategy": [
                 {"capacityProvider": "FARGATE", "base": 1, "weight": 0},
@@ -406,13 +460,29 @@ def _capacity_params(service_toml: dict) -> dict:
     return {"launchType": "FARGATE"}
 
 
-def _capacity_mismatch(service_name: str, service_toml: dict, live_service: dict) -> str | None:
-    """Refuse a change of capacity on a live service, in either direction.
+def _live_capacity(live_service: dict, gpu_provider: str | None) -> tuple[str, str]:
+    """Classify a live service's capacity as (kind, description)."""
+    strategy = live_service.get("capacityProviderStrategy") or []
+    if not strategy:
+        return "fargate", f"launch type {live_service.get('launchType')}"
+    providers = [entry.get("capacityProvider") for entry in strategy]
+    if gpu_provider and gpu_provider in providers:
+        return "gpu", f"the GPU capacity provider ({gpu_provider})"
+    if set(providers) <= {"FARGATE", "FARGATE_SPOT"}:
+        return "spot", "a capacity provider strategy (Fargate Spot)"
+    return "other", f"a capacity provider strategy ({', '.join(map(str, providers))})"
 
-    ``interruptible`` selects the capacity a service is created on: the
-    FARGATE launch type, or a FARGATE/FARGATE_SPOT capacity provider strategy
-    with no launch type. The update path used to leave a live service where
-    it was without a word when ``interruptible`` changed (Phase 69).
+
+def _capacity_mismatch(
+    service_name: str, service_toml: dict, live_service: dict, gpu_provider: str | None = None
+) -> str | None:
+    """Refuse a change of capacity on a live service, in any direction.
+
+    ``gpu`` and ``interruptible`` select the capacity a service is created
+    on: the environment's GPU capacity provider, a FARGATE/FARGATE_SPOT
+    strategy, or the FARGATE launch type. The update path used to leave a
+    live service where it was without a word when ``interruptible`` changed
+    (Phase 69).
 
     Whether ECS can make that change in place is **unverified**. The
     botocore API model lists transitions the Amazon ECS Developer Guide
@@ -420,30 +490,29 @@ def _capacity_mismatch(service_name: str, service_toml: dict, live_service: dict
     types) contradicts: the guide says capacity provider -> launch type
     updates are not supported, and that an empty strategy only reverts to the
     launch type the service was *created* with -- which deployer's Spot
-    services do not have. Until a staging test settles it, both directions
-    are refused before anything moves, naming the safe path.
+    services do not have. Until a staging test settles it, every direction
+    is refused before anything moves, naming the safe path.
 
     Returns:
         The message, or None when the live capacity matches deploy.toml.
     """
-    wants_spot = bool(service_toml.get("interruptible"))
-    on_strategy = bool(live_service.get("capacityProviderStrategy"))
-    if wants_spot == on_strategy:
+    wanted = _wanted_capacity(service_toml)
+    current_kind, current = _live_capacity(live_service, gpu_provider)
+    if wanted == current_kind:
         return None
-    if wants_spot:
-        current = f"launch type {live_service.get('launchType')}"
-        wanted = "Fargate Spot (interruptible = true)"
-    else:
-        current = "a capacity provider strategy (Fargate Spot)"
-        wanted = "the FARGATE launch type (interruptible unset or false)"
+    wanted_text = {
+        "gpu": "the GPU capacity provider (gpu set)",
+        "spot": "Fargate Spot (interruptible = true)",
+        "fargate": "the FARGATE launch type (gpu and interruptible unset)",
+    }[wanted]
     return (
         f"Service '{service_name}' runs on {current}, but deploy.toml asks for "
-        f"{wanted}. Changing a live service's capacity in place is unverified "
+        f"{wanted_text}. Changing a live service's capacity in place is unverified "
         f"-- the ECS API model and the ECS Developer Guide disagree on which "
         f"transitions work -- so deployer does not attempt it. Either recreate "
         f"the service (delete it; the next deploy creates it on the new "
         f"capacity), make and verify the change by hand, or revert "
-        f"interruptible."
+        f"gpu / interruptible."
     )
 
 
@@ -561,7 +630,7 @@ def _create_service(
         "desiredCount": service_cfg["replicas"],
         "networkConfiguration": network_configuration,
         "deploymentConfiguration": _deployment_configuration(dep_cfg),
-        **_capacity_params(service_toml),
+        **_capacity_params(ctx, service_toml),
     }
 
     create_params.update(_load_balancer_params(ctx, service_name, service_cfg, service_toml))
@@ -712,7 +781,7 @@ def _compute_service_state_hash(ctx, service_name: str, image_uri: str, dep_cfg)
         "service_registries": _service_registries(ctx, service_name),
         "network_configuration": _network_configuration(ctx),
         "load_balancer": _load_balancer_params(ctx, service_name, service_cfg, service_toml),
-        "capacity": _capacity_params(service_toml),
+        "capacity": _capacity_params(ctx, service_toml),
     }
     return hashlib.sha256(json.dumps(intended, sort_keys=True).encode()).hexdigest()
 

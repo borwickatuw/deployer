@@ -122,6 +122,7 @@ Each image is defined as a subsection: `[images.web]`, `[images.worker]`, etc.
 | Field                 | Type    | Required | Default      | Description                                                        |
 | --------------------- | ------- | -------- | ------------ | ------------------------------------------------------------------ |
 | `additional_contexts` | table   | No       | `{}`         | Named build contexts (`{name = "path"}`) for `COPY --from=name`.   |
+| `build_on_gpu_host`   | boolean | No       | `false`      | Build and push on the environment's GPU container instance (its Docker daemon, over an SSM tunnel) instead of the operator's machine — for an image FROM a base too large to pull to a laptop. Requires `push = true`, no `depends_on` a `push = false` image, and a `gpu_asg_name` in the environment. The tunnel opens only when the image misses the ECR cache. |
 | `context`             | string  | Yes      | -            | Build context path relative to `source`.                           |
 | `depends_on`          | array   | No       | `[]`         | List of image names that must be built before this one.            |
 | `dockerfile`          | string  | No       | `Dockerfile` | Dockerfile path relative to `context`.                             |
@@ -253,6 +254,7 @@ Each service is defined as a subsection: `[services.web]`, `[services.celery]`, 
 | `container_health_check`  | table   | No       | ECS container health check; see [Container health checks](#container-health-checks).                                                                                                             |
 | `health_check_path`       | string  | No       | ALB health check endpoint.                                                                                                                                                                       |
 | `image`                   | string  | Yes      | Image name (references `[images.*]`).                                                                                                                                                            |
+| `gpu`                     | integer | No       | GPUs the task needs (≥ 1). The service runs on the environment's GPU capacity provider (EC2), not Fargate: sizing is not Fargate-validated, the task definition is EC2-only with a GPU `resourceRequirement`, and the environment must set `gpu_capacity_provider`. Exclusive with `interruptible`; needs `maximum_percent = 100` (stop-first: one box cannot host old and new). Like `interruptible`, applied at service creation. |
 | `interruptible`           | boolean | No       | Service tolerates interruption. Enables Fargate Spot when infrastructure uses it. Default: `false`. See [Changing `interruptible` on a live service](#changing-interruptible-on-a-live-service). |
 | `maximum_percent`         | integer | No       | Per-service override of the environment `[deployment]` value (≥ 100). Unset inherits.                                                                                                            |
 | `min_cpu`                 | integer | No       | Minimum CPU units required. Deploy fails if environment sets less.                                                                                                                               |
@@ -795,6 +797,8 @@ Core ECS infrastructure references.
 | `cluster_name`                 | `ecs_cluster_name`                 | ECS cluster name                                           |
 | `ecr_prefix`                   | `ecr_prefix`                       | ECR repository prefix for image naming                     |
 | `execution_role_arn`           | `ecs_execution_role_arn`           | ECS task execution role ARN                                |
+| `gpu_asg_name`                 | `gpu_asg_name`                     | Auto Scaling group of the GPU build host (optional; environments with `gpu_capacity`) |
+| `gpu_capacity_provider`        | `gpu_capacity_provider_name`       | ECS capacity provider for `gpu` services (optional; environments with `gpu_capacity`) |
 | `private_subnet_ids`           | `private_subnet_ids`               | List of private subnet IDs                                 |
 | `rds_instance_id`              | `rds_instance_id`                  | RDS instance ID for start/stop (staging only)              |
 | `security_group_id`            | `ecs_security_group_id`            | Security group for ECS tasks                               |

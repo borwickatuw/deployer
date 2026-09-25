@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # deployer-infra-admin Role
 # Used by: OpenTofu (tofu.sh)
-# Split into 4 managed policies due to AWS size limits
+# Split into 5 managed policies due to AWS size limits
 # ------------------------------------------------------------------------------
 
 # Compute policy: VPC, ECS, ELB, Lambda, EventBridge
@@ -103,6 +103,94 @@ data "aws_iam_policy_document" "infra_admin_compute" {
     effect    = "Allow"
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
+  }
+}
+
+# Capacity policy: the EC2 side of an ECS capacity provider (ecs-gpu-capacity
+# module) — launch templates, the Auto Scaling group, the instances it runs,
+# and the instance profile its role rides on. Everything project-scoped
+# where the API allows it; the Describe and RunInstances calls do not.
+data "aws_iam_policy_document" "infra_admin_capacity" {
+  count = var.create_iam_roles ? 1 : 0
+
+  statement {
+    sid    = "LaunchTemplates"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateLaunchTemplate",
+      "ec2:CreateLaunchTemplateVersion",
+      "ec2:ModifyLaunchTemplate",
+      "ec2:DeleteLaunchTemplate",
+      "ec2:DeleteLaunchTemplateVersions",
+      "ec2:DescribeLaunchTemplates",
+      "ec2:DescribeLaunchTemplateVersions",
+      "ec2:GetLaunchTemplateData"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "Instances"
+    effect = "Allow"
+    actions = [
+      "ec2:RunInstances",
+      "ec2:CreateTags",
+      "ec2:DescribeImages",
+      "ec2:DescribeInstances",
+      "ec2:DescribeInstanceAttribute",
+      "ec2:DescribeInstanceStatus",
+      "ec2:DescribeInstanceTypes",
+      "ec2:DescribeInstanceTypeOfferings",
+      "ec2:DescribeKeyPairs",
+      "ec2:DescribeVolumes"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "AutoScalingGroups"
+    effect  = "Allow"
+    actions = ["autoscaling:*"]
+    resources = flatten([
+      for prefix in var.project_prefixes : [
+        "arn:aws:autoscaling:${var.region}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*:autoScalingGroupName/${prefix}-*"
+      ]
+    ])
+  }
+
+  statement {
+    sid       = "AutoScalingRead"
+    effect    = "Allow"
+    actions   = ["autoscaling:Describe*"]
+    resources = ["*"]
+  }
+
+  # The ECS-optimized AMI parameters the launch template resolves at apply
+  statement {
+    sid       = "ECSOptimizedAMIParameters"
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:${var.region}::parameter/aws/service/ecs/*"]
+  }
+
+  statement {
+    sid    = "InstanceProfiles"
+    effect = "Allow"
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+      "iam:ListInstanceProfileTags"
+    ]
+    resources = flatten([
+      for prefix in var.project_prefixes : [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${prefix}-*"
+      ]
+    ])
   }
 }
 
@@ -286,6 +374,7 @@ data "aws_iam_policy_document" "infra_admin_iam" {
       values = [
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-role-boundary",
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-scheduler-role-boundary",
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/deployer-ecs-instance-role-boundary",
       ]
     }
   }
@@ -352,7 +441,8 @@ data "aws_iam_policy_document" "infra_admin_iam" {
         "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
         "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole",
         "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess",
-        "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+        "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
       ]
     }
   }
@@ -372,6 +462,7 @@ data "aws_iam_policy_document" "infra_admin_iam" {
       variable = "iam:PassedToService"
       values = [
         "ecs-tasks.amazonaws.com",
+        "ec2.amazonaws.com",
         "lambda.amazonaws.com",
         "events.amazonaws.com",
         "rds.amazonaws.com",
@@ -393,6 +484,7 @@ data "aws_iam_policy_document" "infra_admin_iam" {
       values = [
         "ecs.amazonaws.com",
         "ecs.application-autoscaling.amazonaws.com",
+        "autoscaling.amazonaws.com",
         "elasticloadbalancing.amazonaws.com",
         "rds.amazonaws.com",
         "elasticache.amazonaws.com"
@@ -477,6 +569,14 @@ resource "aws_iam_policy" "infra_admin_waf" {
   policy      = data.aws_iam_policy_document.infra_admin_waf[0].json
 }
 
+resource "aws_iam_policy" "infra_admin_capacity" {
+  count = var.create_iam_roles ? 1 : 0
+
+  name        = "deployer-infra-admin-capacity"
+  description = "OpenTofu: EC2 capacity for ECS (launch templates, ASGs, instance profiles)"
+  policy      = data.aws_iam_policy_document.infra_admin_capacity[0].json
+}
+
 resource "aws_iam_role_policy_attachment" "infra_admin_compute" {
   count = var.create_iam_roles ? 1 : 0
 
@@ -503,4 +603,11 @@ resource "aws_iam_role_policy_attachment" "infra_admin_waf" {
 
   role       = aws_iam_role.infra_admin[0].name
   policy_arn = aws_iam_policy.infra_admin_waf[0].arn
+}
+
+resource "aws_iam_role_policy_attachment" "infra_admin_capacity" {
+  count = var.create_iam_roles ? 1 : 0
+
+  role       = aws_iam_role.infra_admin[0].name
+  policy_arn = aws_iam_policy.infra_admin_capacity[0].arn
 }

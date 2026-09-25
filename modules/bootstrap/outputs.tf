@@ -46,3 +46,9 @@ output "cognito_admin_role_arn" {
   value       = var.create_iam_roles ? aws_iam_role.cognito_admin[0].arn : null
   description = "ARN of the deployer-cognito-admin IAM role"
 }
+
+# Container instance permissions boundary (EC2 capacity, not a task role)
+output "ecs_instance_role_boundary_arn" {
+  value       = aws_iam_policy.ecs_instance_role_boundary.arn
+  description = "ARN of the ECS container instance role permissions boundary policy"
+}

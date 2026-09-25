@@ -23,3 +23,15 @@ variable "create_iam_roles" {
   type        = bool
   default     = true
 }
+
+variable "ecr_pull_repositories" {
+  description = <<-EOT
+    ECR repository names (unprefixed, in this account) the deploy role may
+    pull from in addition to the project-prefixed ones. For a base image an
+    application builds FROM that is published by another project into this
+    account — havoc's blocks worker builds FROM blocker's `blocker`
+    repository — the deploy role's Docker session pulls it during the build.
+  EOT
+  type        = list(string)
+  default     = []
+}
