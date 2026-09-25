@@ -106,28 +106,13 @@ data "aws_iam_policy_document" "infra_admin_compute" {
   }
 }
 
-# Capacity policy: the EC2 side of an ECS capacity provider (ecs-gpu-capacity
-# module) — launch templates, the Auto Scaling group, the instances it runs,
-# and the instance profile its role rides on. Everything project-scoped
-# where the API allows it; the Describe and RunInstances calls do not.
+# Capacity policy: the EC2 side of a GPU container instance (ecs-gpu-capacity
+# module) — the instance itself, its lifecycle, and the instance profile its
+# role rides on. Project-scoped where the API allows it: the lifecycle
+# actions by the deployer-build-host tag the module sets; the Describe and
+# RunInstances calls do not.
 data "aws_iam_policy_document" "infra_admin_capacity" {
   count = var.create_iam_roles ? 1 : 0
-
-  statement {
-    sid    = "LaunchTemplates"
-    effect = "Allow"
-    actions = [
-      "ec2:CreateLaunchTemplate",
-      "ec2:CreateLaunchTemplateVersion",
-      "ec2:ModifyLaunchTemplate",
-      "ec2:DeleteLaunchTemplate",
-      "ec2:DeleteLaunchTemplateVersions",
-      "ec2:DescribeLaunchTemplates",
-      "ec2:DescribeLaunchTemplateVersions",
-      "ec2:GetLaunchTemplateData"
-    ]
-    resources = ["*"]
-  }
 
   statement {
     sid    = "Instances"
@@ -141,31 +126,33 @@ data "aws_iam_policy_document" "infra_admin_capacity" {
       "ec2:DescribeInstanceStatus",
       "ec2:DescribeInstanceTypes",
       "ec2:DescribeInstanceTypeOfferings",
+      "ec2:DescribeInstanceCreditSpecifications",
       "ec2:DescribeKeyPairs",
       "ec2:DescribeVolumes"
     ]
     resources = ["*"]
   }
 
+  # Replacing, stopping and reconfiguring the instance tofu created
   statement {
-    sid     = "AutoScalingGroups"
-    effect  = "Allow"
-    actions = ["autoscaling:*"]
-    resources = flatten([
-      for prefix in var.project_prefixes : [
-        "arn:aws:autoscaling:${var.region}:${data.aws_caller_identity.current.account_id}:autoScalingGroup:*:autoScalingGroupName/${prefix}-*"
-      ]
-    ])
+    sid    = "InstanceLifecycle"
+    effect = "Allow"
+    actions = [
+      "ec2:StartInstances",
+      "ec2:StopInstances",
+      "ec2:TerminateInstances",
+      "ec2:ModifyInstanceAttribute",
+      "ec2:ModifyInstanceMetadataOptions"
+    ]
+    resources = ["arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"]
+    condition {
+      test     = "StringLike"
+      variable = "aws:ResourceTag/deployer-build-host"
+      values   = [for prefix in var.project_prefixes : "${prefix}-*"]
+    }
   }
 
-  statement {
-    sid       = "AutoScalingRead"
-    effect    = "Allow"
-    actions   = ["autoscaling:Describe*"]
-    resources = ["*"]
-  }
-
-  # The ECS-optimized AMI parameters the launch template resolves at apply
+  # The ECS-optimized AMI parameter the instance's image is resolved from
   statement {
     sid       = "ECSOptimizedAMIParameters"
     effect    = "Allow"
@@ -484,7 +471,6 @@ data "aws_iam_policy_document" "infra_admin_iam" {
       values = [
         "ecs.amazonaws.com",
         "ecs.application-autoscaling.amazonaws.com",
-        "autoscaling.amazonaws.com",
         "elasticloadbalancing.amazonaws.com",
         "rds.amazonaws.com",
         "elasticache.amazonaws.com"
@@ -573,7 +559,7 @@ resource "aws_iam_policy" "infra_admin_capacity" {
   count = var.create_iam_roles ? 1 : 0
 
   name        = "deployer-infra-admin-capacity"
-  description = "OpenTofu: EC2 capacity for ECS (launch templates, ASGs, instance profiles)"
+  description = "OpenTofu: EC2 capacity for ECS (GPU container instances, instance profiles)"
   policy      = data.aws_iam_policy_document.infra_admin_capacity[0].json
 }
 

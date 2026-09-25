@@ -6,18 +6,18 @@ For setup instructions, see [GETTING-STARTED.md](../GETTING-STARTED.md).
 
 ## File Organization
 
-| File                   | Purpose                                              |
-| ---------------------- | ---------------------------------------------------- |
-| `main.tf`              | Provider configuration and data sources              |
-| `s3.tf`                | Terraform state S3 bucket                            |
+| File                   | Purpose                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `main.tf`              | Provider configuration and data sources                                               |
+| `s3.tf`                | Terraform state S3 bucket                                                             |
 | `iam-boundary.tf`      | Permissions boundaries: ECS task roles, the scheduler Lambda, EC2 container instances |
-| `iam-trust.tf`         | Shared trust policy for deployer roles               |
-| `iam-app-deploy.tf`    | `deployer-app-deploy` role for deploy.py             |
-| `iam-infra-admin.tf`   | `deployer-infra-admin` role for tofu.sh              |
-| `iam-cognito-admin.tf` | `deployer-cognito-admin` role for Cognito management |
-| `iam-user-policy.tf`   | Assume-role policy attached to trusted IAM users     |
-| `variables.tf`         | Input variables                                      |
-| `outputs.tf`           | Module outputs                                       |
+| `iam-trust.tf`         | Shared trust policy for deployer roles                                                |
+| `iam-app-deploy.tf`    | `deployer-app-deploy` role for deploy.py                                              |
+| `iam-infra-admin.tf`   | `deployer-infra-admin` role for tofu.sh                                               |
+| `iam-cognito-admin.tf` | `deployer-cognito-admin` role for Cognito management                                  |
+| `iam-user-policy.tf`   | Assume-role policy attached to trusted IAM users                                      |
+| `variables.tf`         | Input variables                                                                       |
+| `outputs.tf`           | Module outputs                                                                        |
 
 ## Usage
 
@@ -32,7 +32,7 @@ module "bootstrap" {
 
 ## Container instances and the GPU build host
 
-`iam-boundary.tf` also holds `deployer-ecs-instance-role-boundary`, the ceiling for an EC2 container instance role ([ecs-gpu-capacity](ecs-gpu-capacity.md)): the ECS agent and SSM agent actions the task boundary deliberately lacks, and nothing a task does. `iam-infra-admin.tf`'s fifth policy, `deployer-infra-admin-capacity`, lets tofu manage launch templates, project-prefixed Auto Scaling groups and instance profiles. `iam-app-deploy.tf` lets the deploy role find the GPU build host (`autoscaling:DescribeAutoScalingGroups`) and open an SSM port-forwarding session to it — only to instances tagged `deployer-build-host = <project>-*`, only the port-forwarding document — and, when `ecr_pull_repositories` names them, pull unprefixed repositories in this account that hold another project's published base image.
+`iam-boundary.tf` also holds `deployer-ecs-instance-role-boundary`, the ceiling for an EC2 container instance role ([ecs-gpu-capacity](ecs-gpu-capacity.md)): the ECS agent and SSM agent actions the task boundary deliberately lacks, and nothing a task does. `iam-infra-admin.tf`'s fifth policy, `deployer-infra-admin-capacity`, lets tofu run the instance, manage its lifecycle (start, stop, terminate, reconfigure — only instances tagged `deployer-build-host = <project>-*`), read the ECS-optimized AMI parameters, and manage project-prefixed instance profiles. `iam-app-deploy.tf` lets the deploy role read the GPU build host's state (`ec2:DescribeInstances`), stop and start it with the environment (`bin/environment.py`; the same tag condition), and open an SSM port-forwarding session to it — only to instances tagged `deployer-build-host = <project>-*`, only the port-forwarding document — and, when `ecr_pull_repositories` names them, pull unprefixed repositories in this account that hold another project's published base image.
 
 ```hcl
 module "bootstrap" {

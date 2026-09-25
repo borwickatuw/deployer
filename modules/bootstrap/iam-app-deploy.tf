@@ -164,13 +164,28 @@ data "aws_iam_policy_document" "app_deploy" {
     }
   }
 
-  # EC2 Auto Scaling - find the GPU build host (the ecs-gpu-capacity ASG's
-  # InService instance). Describe supports no resource-level scoping.
+  # EC2 - the GPU build host's state before a build (deploy/build_host.py).
+  # Describe supports no resource-level scoping.
   statement {
-    sid       = "AutoScalingGroupsRead"
+    sid       = "EC2InstancesRead"
     effect    = "Allow"
-    actions   = ["autoscaling:DescribeAutoScalingGroups"]
+    actions   = ["ec2:DescribeInstances"]
     resources = ["*"]
+  }
+
+  # EC2 - stop and start the GPU container instance with the rest of the
+  # environment (bin/environment.py stop/start): only instances tagged
+  # deployer-build-host = <project>-*.
+  statement {
+    sid       = "EC2BuildHostStopStart"
+    effect    = "Allow"
+    actions   = ["ec2:StartInstances", "ec2:StopInstances"]
+    resources = ["arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"]
+    condition {
+      test     = "StringLike"
+      variable = "aws:ResourceTag/deployer-build-host"
+      values   = [for prefix in var.project_prefixes : "${prefix}-*"]
+    }
   }
 
   # SSM Session Manager - a port-forwarding session to the GPU build
