@@ -305,12 +305,7 @@ output "service_discovery_registries" {
   value       = { for k, v in aws_service_discovery_service.services : k => v.arn }
 }
 
-output "gpu_capacity_provider_name" {
-  description = "ECS capacity provider name for GPU services, or null when gpu_capacity is unset"
-  value       = var.gpu_capacity == null ? null : module.ecs_gpu_capacity[0].capacity_provider_name
-}
-
-output "gpu_asg_name" {
-  description = "Auto Scaling group name of the GPU capacity (the build host), or null"
-  value       = var.gpu_capacity == null ? null : module.ecs_gpu_capacity[0].asg_name
+output "gpu_instance_id" {
+  description = "The GPU container instance (also the build host), or null when gpu_capacity is unset"
+  value       = var.gpu_capacity == null ? null : module.ecs_gpu_capacity[0].instance_id
 }

@@ -7,12 +7,6 @@ variable "vpc_id" {
   description = "VPC ID where ECS tasks will run"
 }
 
-variable "additional_capacity_providers" {
-  type        = list(string)
-  description = "Capacity provider names to associate beside FARGATE and FARGATE_SPOT (e.g., an ecs-gpu-capacity provider)"
-  default     = []
-}
-
 resource "aws_ecs_cluster" "main" {
   name = "${var.name_prefix}-cluster"
 
@@ -29,7 +23,7 @@ resource "aws_ecs_cluster" "main" {
 resource "aws_ecs_cluster_capacity_providers" "main" {
   cluster_name = aws_ecs_cluster.main.name
 
-  capacity_providers = concat(["FARGATE", "FARGATE_SPOT"], var.additional_capacity_providers)
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 
   default_capacity_provider_strategy {
     capacity_provider = "FARGATE"

@@ -231,9 +231,9 @@ variable "health_check" {
 }
 
 
-# GPU capacity (optional): one EC2 GPU instance behind an ECS capacity
-# provider (modules/ecs-gpu-capacity), for services that declare `gpu = 1`
-# in deploy.toml. The scheduler starts and stops it with the rest.
+# GPU capacity (optional): one fixed EC2 GPU instance registered in the
+# cluster (modules/ecs-gpu-capacity), for services that declare `gpu = 1`
+# in deploy.toml. The scheduler stops and starts it with the rest.
 variable "gpu_capacity" {
   type = object({
     instance_type     = string
@@ -497,6 +497,7 @@ module "scheduler" {
     }
   }
   rds_instance_id = module.infrastructure.rds_instance_id
+  gpu_instance_id = module.infrastructure.gpu_instance_id
 
   # Schedule (all times in UTC)
   stop_schedule  = var.stop_schedule
@@ -618,15 +619,10 @@ output "ecs_cluster_name" {
 }
 
 # GPU capacity (null when the environment declares none); config.toml's
-# [infrastructure] gpu_capacity_provider / gpu_asg_name read these
-output "gpu_capacity_provider_name" {
-  value       = module.infrastructure.gpu_capacity_provider_name
-  description = "ECS capacity provider for gpu services, or null"
-}
-
-output "gpu_asg_name" {
-  value       = module.infrastructure.gpu_asg_name
-  description = "Auto Scaling group of the GPU build host, or null"
+# [infrastructure] gpu_instance_id = "${tofu:gpu_instance_id}" reads this
+output "gpu_instance_id" {
+  value       = module.infrastructure.gpu_instance_id
+  description = "The GPU container instance (also the build host), or null"
 }
 
 output "alb_dns_name" {

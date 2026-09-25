@@ -19,7 +19,6 @@ module "ecs_cluster" {
 | ----------- | ------ | ------------------------------- |
 | name_prefix | string | Prefix for resource names       |
 | vpc_id      | string | VPC ID where ECS tasks will run |
-| additional_capacity_providers | list(string) | Provider names to associate beside FARGATE and FARGATE_SPOT (an [ecs-gpu-capacity](ecs-gpu-capacity.md) provider); default `[]` |
 
 ## Outputs
 

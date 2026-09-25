@@ -99,13 +99,13 @@ module "vpc" {
 module "ecs_cluster" {
   source = "./modules/ecs-cluster"
 
-  name_prefix                   = local.name_prefix
-  vpc_id                        = module.vpc.vpc_id
-  additional_capacity_providers = var.gpu_capacity == null ? [] : [module.ecs_gpu_capacity[0].capacity_provider_name]
+  name_prefix = local.name_prefix
+  vpc_id      = module.vpc.vpc_id
 }
 
-# GPU capacity (optional): one EC2 GPU instance behind a capacity
-# provider, for services that declare `gpu = 1` in deploy.toml
+# GPU capacity (optional): one fixed EC2 GPU instance registered in the
+# cluster, for services that declare `gpu = 1` in deploy.toml. The
+# environment's schedule stops and starts it.
 module "ecs_gpu_capacity" {
   source = "./modules/ecs-gpu-capacity"
   count  = var.gpu_capacity == null ? 0 : 1
