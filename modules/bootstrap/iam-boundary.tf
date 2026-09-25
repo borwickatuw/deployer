@@ -173,14 +173,40 @@ resource "aws_iam_policy" "scheduler_role_boundary" {
         Action = [
           "ecs:UpdateService",
           "ecs:DescribeServices",
-          "ecs:ListServices"
+          "ecs:ListServices",
+          # The GPU container instance's drain check before it is stopped
+          "ecs:ListContainerInstances",
+          "ecs:DescribeContainerInstances"
         ]
         Resource = flatten([
           for prefix in var.project_prefixes : [
             "arn:aws:ecs:us-west-2:${data.aws_caller_identity.current.account_id}:service/${prefix}-*/*",
-            "arn:aws:ecs:us-west-2:${data.aws_caller_identity.current.account_id}:cluster/${prefix}-*"
+            "arn:aws:ecs:us-west-2:${data.aws_caller_identity.current.account_id}:cluster/${prefix}-*",
+            "arn:aws:ecs:us-west-2:${data.aws_caller_identity.current.account_id}:container-instance/${prefix}-*/*"
           ]
         ])
+      },
+      {
+        # The GPU container instance (ecs-gpu-capacity) goes down and up
+        # with the environment; only instances the module tagged
+        Sid    = "AllowGPUInstanceStopStart"
+        Effect = "Allow"
+        Action = [
+          "ec2:StartInstances",
+          "ec2:StopInstances"
+        ]
+        Resource = "arn:aws:ec2:us-west-2:${data.aws_caller_identity.current.account_id}:instance/*"
+        Condition = {
+          StringLike = {
+            "aws:ResourceTag/deployer-build-host" = [for prefix in var.project_prefixes : "${prefix}-*"]
+          }
+        }
+      },
+      {
+        Sid      = "AllowGPUInstanceRead"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstances"]
+        Resource = "*"
       },
       {
         Sid    = "AllowRDSStartStop"
