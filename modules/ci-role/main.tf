@@ -276,6 +276,17 @@ data "aws_iam_policy_document" "permissions" {
       values   = ["ecs-tasks.amazonaws.com"]
     }
   }
+
+  # IAM - Simulate a task role's policy: deploy preflight asks whether the
+  # task role (its boundary included) can reach every declared bucket
+  statement {
+    sid     = "SimulateECSTaskRole"
+    effect  = "Allow"
+    actions = ["iam:SimulatePrincipalPolicy"]
+    resources = [
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_prefix}-*-ecs-*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "ci_deploy" {

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import ClientError
 
 from deployer.config import DeployConfig
 from deployer.core.audit import run_audit
@@ -278,6 +279,102 @@ def check_modules(deploy_config: DeployConfig, env_config: dict) -> None:
     print()
 
 
+# What the task role's S3 policy grants on every declared bucket, less
+# s3:HeadObject, which IAM authorizes as s3:GetObject
+_BUCKET_ACTIONS = ("s3:ListBucket",)
+_OBJECT_ACTIONS = ("s3:GetObject", "s3:PutObject", "s3:DeleteObject")
+
+
+def _denied_bucket_actions(iam_client, role_arn: str, bucket: str) -> list[str]:
+    """Simulate the role's policy, boundary included, on one bucket.
+
+    Returns:
+        One line per action the simulation did not allow, naming the action
+        and whether the permissions boundary is what denied it.
+    """
+    bucket_arn = f"arn:aws:s3:::{bucket}"
+    denied = []
+    for actions, resource in (
+        (_BUCKET_ACTIONS, bucket_arn),
+        (_OBJECT_ACTIONS, f"{bucket_arn}/*"),
+    ):
+        paginator = iam_client.get_paginator("simulate_principal_policy")
+        for page in paginator.paginate(
+            PolicySourceArn=role_arn,
+            ActionNames=list(actions),
+            ResourceArns=[resource],
+        ):
+            for result in page["EvaluationResults"]:
+                if result["EvalDecision"] == "allowed":
+                    continue
+                boundary = result.get("PermissionsBoundaryDecisionDetail", {})
+                by = (
+                    "the permissions boundary"
+                    if boundary.get("AllowedByPermissionsBoundary") is False
+                    else "the role's policy"
+                )
+                denied.append(
+                    f"{bucket}: {result['EvalActionName']} "
+                    f"({result['EvalDecision']}, denied by {by})"
+                )
+    return denied
+
+
+def check_storage_access(deploy_config: DeployConfig, env_config: dict) -> None:
+    """Verify the task role can reach every bucket deploy.toml declares.
+
+    A declared bucket reaches the container as S3_{NAME}_BUCKET whether or
+    not the task role may use it, and the role's own policy is only half of
+    the answer: the permissions boundary above it can deny what the policy
+    grants. IAM's policy simulator evaluates both, so a gap fails here, by
+    name, rather than as a 403 in a task that ECS then rolls back.
+
+    Raises:
+        PreflightError: If any declared bucket action is not allowed, or the
+            deploying principal may not run the simulation.
+    """
+    storage = deploy_config.get_raw_dict().get("storage", {})
+    if not storage.get("type"):
+        return
+
+    log("Checking task role access to storage...")
+    role_arn = env_config["infrastructure"]["task_role_arn"]
+    buckets = [env_config["storage"][f"{name}_bucket"] for name in storage["buckets"]]
+    iam_client = boto3.client("iam")
+
+    denied = []
+    try:
+        for bucket in buckets:
+            denied += _denied_bucket_actions(iam_client, role_arn, bucket)
+    except ClientError as e:
+        raise PreflightError(
+            advice_block(
+                f"Could not simulate the task role's S3 access: {e}",
+                advice=(
+                    "The deploying principal needs iam:SimulatePrincipalPolicy on the",
+                    "task role (the deploy and CI roles' SimulateECSTaskRole statement).",
+                    "Apply the bootstrap, or the environment for a CI role.",
+                ),
+            )
+        ) from e
+
+    if denied:
+        raise PreflightError(
+            advice_block(
+                f"Task role {role_arn} cannot use a declared bucket:",
+                denied,
+                (
+                    "Denied by the permissions boundary: add the bucket kind to",
+                    "data_bucket_kinds in modules/bootstrap/iam-boundary.tf and apply",
+                    "the bootstrap. Denied by the role's policy: apply the environment",
+                    "so the role's S3 policy covers the bucket.",
+                ),
+            )
+        )
+    log_success(f"Task role can use all {len(buckets)} declared bucket(s)")
+    print()
+
+
 def check_ecs_cluster(env_config: dict) -> None:
     """Verify the ECS cluster exists and is active.
 
@@ -329,6 +426,9 @@ def run_preflight_checks(
 
     # Resource modules (database, cache, storage, secrets)
     check_modules(deploy_config, target.config)
+
+    # ...and the task role may use every declared bucket
+    check_storage_access(deploy_config, target.config)
 
     # Audit (deploy.toml vs docker-compose.yml)
     if not options.skip_audit:

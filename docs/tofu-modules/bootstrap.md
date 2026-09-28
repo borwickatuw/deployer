@@ -52,7 +52,10 @@ The roles and policies this module creates follow three rules:
 - **Use service-level wildcards** (e.g., `ecs:*`, `rds:*`) rather than listing
   individual actions.
 - **Apply resource restrictions where they matter**: S3, SSM, ECR and IAM are
-  scoped to `project_prefixes`.
+  scoped to `project_prefixes`. S3 is also scoped by bucket kind: the ECS
+  boundary admits `{prefix}-*-{kind}-*` for each kind in `data_bucket_kinds`,
+  so a project's state and log buckets stay out of task roles' reach. See
+  [storage](../resources/storage.md#access).
 - **Keep IAM role management granular**, because it is the sensitive part.
 
 Review IAM policy changes by hand. For multi-account setups, see

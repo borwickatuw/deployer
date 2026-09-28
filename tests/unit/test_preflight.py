@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from deployer.config import parse_deploy_config
 from deployer.core.ssm_secrets import check_secrets_drift
@@ -17,6 +18,7 @@ from deployer.deploy.preflight import (
     check_modules,
     check_secrets_style,
     check_ssm_secrets,
+    check_storage_access,
     run_preflight_checks,
 )
 
@@ -636,3 +638,135 @@ class TestCheckSecretsDrift:
         assert "Could not check for unreferenced SSM secrets:" in out
         assert "AccessDenied" in out
         assert "not referenced in deploy.toml" not in out
+
+
+class _FakeIam:
+    """An IAM client whose policy simulator denies a fixed set of actions.
+
+    ``denials`` maps (action, resource) to (decision, allowed_by_boundary).
+    Everything else is allowed. Every simulate call is recorded.
+    """
+
+    def __init__(self, denials=None, error=None):
+        self.denials = denials or {}
+        self.error = error
+        self.calls = []
+
+    def get_paginator(self, name):
+        assert name == "simulate_principal_policy"
+        return self
+
+    def paginate(self, **kwargs):
+        if self.error:
+            raise self.error
+        actions, resources = kwargs["ActionNames"], kwargs["ResourceArns"]
+        self.calls.append((kwargs["PolicySourceArn"], tuple(actions), tuple(resources)))
+        results = []
+        for action in actions:
+            decision, by_boundary = self.denials.get((action, resources[0]), ("allowed", True))
+            results.append(
+                {
+                    "EvalActionName": action,
+                    "EvalDecision": decision,
+                    "PermissionsBoundaryDecisionDetail": {
+                        "AllowedByPermissionsBoundary": by_boundary
+                    },
+                }
+            )
+        return [{"EvaluationResults": results}]
+
+
+class TestCheckStorageAccess:
+    """check_storage_access simulates the task role on each declared bucket."""
+
+    def _config(self, tmp_path, storage):
+        deploy_toml = tmp_path / "deploy.toml"
+        deploy_toml.write_text(
+            '[application]\nname = "test"\nsource = "."\n' + storage, encoding="utf-8"
+        )
+        return parse_deploy_config(deploy_toml)
+
+    def _env(self):
+        return make_env_config(
+            storage={
+                "media_bucket": "myapp-staging-media-123456789012",
+                "evidence_bucket": "myapp-staging-evidence-123456789012",
+            }
+        )
+
+    def _run(
+        self, tmp_path, iam, storage='[storage]\ntype = "s3"\nbuckets = ["media", "evidence"]\n'
+    ):
+        with patch("deployer.deploy.preflight.boto3") as mock_boto3:
+            mock_boto3.client.return_value = iam
+            check_storage_access(self._config(tmp_path, storage), self._env())
+
+    def test_no_storage_declared_makes_no_call(self, tmp_path):
+        iam = _FakeIam()
+        self._run(tmp_path, iam, storage="")
+        assert iam.calls == []
+
+    def test_every_declared_bucket_is_simulated(self, tmp_path):
+        iam = _FakeIam()
+        self._run(tmp_path, iam)
+        resources = {call[2][0] for call in iam.calls}
+        assert resources == {
+            "arn:aws:s3:::myapp-staging-media-123456789012",
+            "arn:aws:s3:::myapp-staging-media-123456789012/*",
+            "arn:aws:s3:::myapp-staging-evidence-123456789012",
+            "arn:aws:s3:::myapp-staging-evidence-123456789012/*",
+        }
+        assert {call[0] for call in iam.calls} == {"arn:aws:iam::123:role/task"}
+
+    def test_a_boundary_denial_names_bucket_action_and_boundary(self, tmp_path):
+        iam = _FakeIam(
+            denials={
+                (
+                    "s3:ListBucket",
+                    "arn:aws:s3:::myapp-staging-evidence-123456789012",
+                ): ("implicitDeny", False)
+            }
+        )
+        with pytest.raises(PreflightError) as exc:
+            self._run(tmp_path, iam)
+        message = str(exc.value)
+        assert "myapp-staging-evidence-123456789012: s3:ListBucket" in message
+        assert "denied by the permissions boundary" in message
+        assert "data_bucket_kinds" in message
+        assert "myapp-staging-media" not in message
+
+    def test_a_role_policy_denial_says_so(self, tmp_path):
+        iam = _FakeIam(
+            denials={
+                (
+                    "s3:PutObject",
+                    "arn:aws:s3:::myapp-staging-media-123456789012/*",
+                ): ("implicitDeny", True)
+            }
+        )
+        with pytest.raises(PreflightError, match="s3:PutObject .*denied by the role's policy"):
+            self._run(tmp_path, iam)
+
+    def test_a_simulator_access_denied_names_the_missing_permission(self, tmp_path):
+        error = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "not authorized"}},
+            "SimulatePrincipalPolicy",
+        )
+        with pytest.raises(PreflightError, match="iam:SimulatePrincipalPolicy"):
+            self._run(tmp_path, _FakeIam(error=error))
+
+    def test_it_runs_on_the_always_run_path(self, tmp_path):
+        """No option skips it: a denied bucket is a task that cannot start."""
+        with patch("deployer.deploy.preflight.check_storage_access") as mock_check:
+            run_preflight_checks(
+                deploy_config=self._config(tmp_path, ""),
+                target=make_target(),
+                project_dir=tmp_path,
+                options=PreflightOptions(
+                    skip_ecr_check=True,
+                    skip_secrets_check=True,
+                    skip_cluster_check=True,
+                    skip_audit=True,
+                ),
+            )
+        mock_check.assert_called_once()

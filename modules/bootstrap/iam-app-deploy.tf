@@ -313,6 +313,19 @@ data "aws_iam_policy_document" "app_deploy" {
     }
   }
 
+  # IAM - Simulate a task role's policy: deploy preflight asks whether the
+  # task role (its boundary included) can reach every declared bucket
+  statement {
+    sid     = "SimulateECSTaskRole"
+    effect  = "Allow"
+    actions = ["iam:SimulatePrincipalPolicy"]
+    resources = flatten([
+      for prefix in var.project_prefixes : [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${prefix}-*-ecs-*"
+      ]
+    ])
+  }
+
   # S3 - Read terraform state
   statement {
     sid    = "S3TerraformStateRead"
