@@ -1,9 +1,9 @@
-"""Queue-depth auto-scaling for ECS services (Application Auto Scaling).
+"""Queue-driven auto-scaling for ECS services (Application Auto Scaling).
 
 The privilege split (DESIGN.md "ECS Services and Task Definitions"):
 
 - **The app signals, never scales.** A scheduled task in the application
-  publishes its queue depth to CloudWatch. Its IAM role allows
+  publishes its queue metrics to CloudWatch. Its IAM role allows
   ``cloudwatch:PutMetricData`` and nothing else scaling-related.
 - **AWS decides, within bounds.** Application Auto Scaling step policies
   react to the metric. They cannot exceed the registered ``max``.
@@ -13,15 +13,30 @@ The privilege split (DESIGN.md "ECS Services and Task Definitions"):
 
 Everything except those three knobs is convention, fixed here:
 
-- Metric ``queue_depth`` in namespace ``{app}-{environment}``, dimension
-  ``Service={service}``, published every 60s by the application.
-- One exact-capacity step policy + alarm per scale-out step. When several
-  alarms are in ALARM at once, Application Auto Scaling applies the policy
-  that provides the largest capacity, so overlapping steps resolve to the
-  highest matching worker count.
+- Two metrics in namespace ``{app}-{environment}``, dimension
+  ``Service={service}``, published every 60s by the application:
+  ``queue_depth`` (jobs waiting) and ``oldest_job_age_seconds`` (seconds the
+  job at the head of the queue has waited). The age datum is omitted while
+  the queue is empty.
+- One exact-capacity step policy + ``queue_depth >= depth`` alarm per
+  scale-out step. A step that also sets ``age_seconds`` gets a second alarm,
+  ``oldest_job_age_seconds >= age_seconds``, on the same policy: either
+  signal runs that step's worker count, so a head job stuck behind a busy
+  worker gets help before the queue grows deep. When several alarms are in
+  ALARM at once, Application Auto Scaling applies the policy that provides
+  the largest capacity, so overlapping steps resolve to the highest matching
+  worker count.
 - One scale-in policy + alarm: depth 0 sustained for 15 minutes scales to
   ``min``. Workers holding a job set ECS task scale-in protection, so a
   scale-in waits for the busy task to go idle instead of wasting its job.
+  Scale-in watches depth only. The zero alarm and an age alarm are never
+  in ALARM together: an age datum exists only while a job is queued, when
+  depth is at least 1.
+- When an age alarm clears, a lower step whose depth alarm is still in
+  ALARM sets desired count back to its own worker count. Scale-in
+  protection keeps busy tasks, so the extra worker lasts until it goes idle
+  (it helps drain the backlog, then is released). If the head job waits
+  ``age_seconds`` again, the age alarm fires again.
 - ``TreatMissingData=notBreaching`` on every alarm: a stopped environment
   (staging scheduler) publishes no metric, and missing data must never
   scale a stopped service back up.
@@ -31,7 +46,8 @@ from __future__ import annotations
 
 from ..utils import Colors, log, log_success
 
-METRIC_NAME = "queue_depth"
+DEPTH_METRIC_NAME = "queue_depth"
+AGE_METRIC_NAME = "oldest_job_age_seconds"
 METRIC_DIMENSION = "Service"
 # The application publishes every 60s (beat schedule); alarm periods match.
 METRIC_PERIOD_SECONDS = 60
@@ -56,14 +72,19 @@ def validate_scaling_config(config: dict, scaling_config: dict) -> None:
     Args:
         config: The deployment TOML configuration.
         scaling_config: The environment's ``scaling`` map
-            (``{service: {min, max, steps: [{depth, workers}]}}``).
+            (``{service: {min, max, steps: [{depth, workers, age_seconds?}]}}``).
+            An unset ``age_seconds`` arrives as None (tofu emits null for an
+            unset ``optional()`` attribute) and means the step has no age
+            trigger.
 
     Raises:
         ValueError: On an unknown service, a min below the deploy.toml
             ``min_replicas`` floor (default 1 — a service must declare
             ``min_replicas = 0`` before an environment may scale it to
-            zero), inverted bounds, or steps that are empty, out of order,
-            or outside the capacity bounds.
+            zero), inverted bounds, steps that are empty, out of order,
+            or outside the capacity bounds, or an ``age_seconds`` that is
+            not a positive integer, sits on a depth-1 step, or does not
+            strictly increase across the steps that set it.
     """
     services = config.get("services", {})
     for service_name, cfg in scaling_config.items():
@@ -114,6 +135,46 @@ def validate_scaling_config(config: dict, scaling_config: dict) -> None:
                     f"Service '{service_name}' scaling steps must strictly "
                     f"increase in both depth and workers"
                 )
+        _validate_step_ages(service_name, steps)
+
+
+def _validate_step_ages(service_name: str, steps: list[dict]) -> None:
+    """Fail fast on an ``age_seconds`` trigger that is malformed or dead.
+
+    Dead triggers are rejected rather than tolerated, because each would
+    read as working config while never changing the worker count:
+
+    - On a depth-1 step: the age datum exists only while a job is queued,
+      and then ``queue_depth >= 1`` is already breaching.
+    - Not strictly increasing across the steps that set it (steps are
+      already ordered by worker count): once the head job's age passes a
+      higher-worker step's threshold, a lower-worker step with an equal or
+      larger threshold can never be the largest capacity in ALARM. Equal
+      thresholds would also share one alarm name.
+    """
+    previous_age: int | None = None
+    for step in steps:
+        age = step.get("age_seconds")
+        if age is None:
+            continue
+        if isinstance(age, bool) or not isinstance(age, int) or age < 1:
+            raise ValueError(
+                f"Service '{service_name}' scaling step age_seconds must be a "
+                f"positive integer, got {age!r}"
+            )
+        if step["depth"] == 1:
+            raise ValueError(
+                f"Service '{service_name}' scaling step age_seconds on the "
+                f"depth-1 step can never scale: any queued job already "
+                f"breaches depth >= 1"
+            )
+        if previous_age is not None and age <= previous_age:
+            raise ValueError(
+                f"Service '{service_name}' scaling step age_seconds must "
+                f"strictly increase across the steps that set it "
+                f"({previous_age} then {age})"
+            )
+        previous_age = age
 
 
 def _resource_id(cluster_name: str, service_name: str) -> str:
@@ -133,15 +194,23 @@ def _scale_out_alarm_name(prefix: str, depth: int) -> str:
     return f"{prefix}ge-{depth}"
 
 
+def _age_alarm_name(prefix: str, age_seconds: int) -> str:
+    # "age-ge-" cannot be mistaken for a depth alarm's "ge-" or the
+    # scale-in "zero"; validation keeps each threshold unique per service.
+    return f"{prefix}age-ge-{age_seconds}"
+
+
 def _scale_in_alarm_name(prefix: str) -> str:
     return f"{prefix}zero"
 
 
-def _metric_alarm_common(app_name: str, environment: str, service_name: str) -> dict:
-    """Alarm parameters shared by scale-out and scale-in alarms."""
+def _metric_alarm_common(
+    app_name: str, environment: str, service_name: str, metric_name: str
+) -> dict:
+    """Alarm parameters shared by every alarm, depth or age."""
     return {
         "Namespace": autoscale_namespace(app_name, environment),
-        "MetricName": METRIC_NAME,
+        "MetricName": metric_name,
         "Dimensions": [{"Name": METRIC_DIMENSION, "Value": service_name}],
         "Statistic": "Maximum",
         "Period": METRIC_PERIOD_SECONDS,
@@ -216,7 +285,14 @@ def _apply_service_scaling(
     resource_id = _resource_id(ctx.cluster_name, service_name)
     prefix = _alarm_prefix(ctx.app_name, ctx.environment, service_name)
     min_capacity, max_capacity = int(cfg["min"]), int(cfg["max"])
-    steps = [(int(s["depth"]), int(s["workers"])) for s in cfg["steps"]]
+    steps = [
+        (
+            int(s["depth"]),
+            int(s["workers"]),
+            None if s.get("age_seconds") is None else int(s["age_seconds"]),
+        )
+        for s in cfg["steps"]
+    ]
 
     autoscaling_client.register_scalable_target(
         ServiceNamespace="ecs",
@@ -226,14 +302,18 @@ def _apply_service_scaling(
         MaxCapacity=max_capacity,
     )
 
-    common = _metric_alarm_common(ctx.app_name, ctx.environment, service_name)
+    depth_common = _metric_alarm_common(
+        ctx.app_name, ctx.environment, service_name, DEPTH_METRIC_NAME
+    )
+    age_common = _metric_alarm_common(ctx.app_name, ctx.environment, service_name, AGE_METRIC_NAME)
     keep: set[str] = set()
 
-    # One policy + alarm per scale-out step. Overlapping ALARM states
+    # One policy + alarm per scale-out step, plus an age alarm on the same
+    # policy when the step sets age_seconds. Overlapping ALARM states
     # resolve to the largest capacity (Application Auto Scaling's
     # multiple-policies rule), so depth 30 with steps at 1 and 25 runs the
     # depth-25 worker count.
-    for depth, workers in steps:
+    for depth, workers, age_seconds in steps:
         policy_name = f"queue-depth-ge-{depth}"
         policy_arn = _put_exact_capacity_policy(
             autoscaling_client, resource_id, policy_name, workers, SCALE_OUT_COOLDOWN_SECONDS
@@ -246,9 +326,25 @@ def _apply_service_scaling(
             Threshold=depth,
             EvaluationPeriods=SCALE_OUT_EVALUATION_PERIODS,
             AlarmActions=[policy_arn],
-            **common,
+            **depth_common,
         )
         keep.update({policy_name, alarm_name})
+
+        if age_seconds is not None:
+            age_alarm = _age_alarm_name(prefix, age_seconds)
+            cloudwatch_client.put_metric_alarm(
+                AlarmName=age_alarm,
+                AlarmDescription=(
+                    f"{service_name} oldest queued job waited >= {age_seconds}s: "
+                    f"run {workers} worker(s)"
+                ),
+                ComparisonOperator="GreaterThanOrEqualToThreshold",
+                Threshold=age_seconds,
+                EvaluationPeriods=SCALE_OUT_EVALUATION_PERIODS,
+                AlarmActions=[policy_arn],
+                **age_common,
+            )
+            keep.add(age_alarm)
 
     # Scale in to min only when the queue has been empty for the sustained
     # window. Busy workers survive via ECS task scale-in protection.
@@ -267,13 +363,16 @@ def _apply_service_scaling(
         Threshold=0,
         EvaluationPeriods=SCALE_IN_SUSTAINED_PERIODS,
         AlarmActions=[policy_arn],
-        **common,
+        **depth_common,
     )
     keep.update({scale_in_policy, scale_in_alarm})
 
     _delete_unmanaged(autoscaling_client, cloudwatch_client, resource_id, prefix, keep)
 
-    steps_desc = ", ".join(f"depth>={d} -> {w}" for d, w in steps)
+    steps_desc = ", ".join(
+        f"depth>={depth}" + ("" if age is None else f" or age>={age}s") + f" -> {workers}"
+        for depth, workers, age in steps
+    )
     log_success(
         f"{service_name} autoscaling applied (min={min_capacity}, "
         f"max={max_capacity}, {steps_desc})"

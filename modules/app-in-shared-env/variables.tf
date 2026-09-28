@@ -190,13 +190,14 @@ variable "services" {
 }
 
 variable "scaling" {
-  description = "Queue-depth auto-scaling per service, passed through for deploy.py"
+  description = "Queue auto-scaling per service, passed through for deploy.py"
   type = map(object({
     min = number
     max = number
     steps = list(object({
-      depth   = number
-      workers = number
+      depth       = number
+      workers     = number
+      age_seconds = optional(number)
     }))
   }))
   default = {}

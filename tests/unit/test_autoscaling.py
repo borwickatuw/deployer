@@ -26,6 +26,22 @@ SCALING = {
     }
 }
 
+# The fast-lane shape: one worker while anything is queued; a second when the
+# queue is deep OR its head job has waited ten minutes. Step dicts arrive from
+# tofu output, which emits null for an unset optional age_seconds.
+SCALING_WITH_AGE = {
+    "transcoder": {
+        "min": 0,
+        "max": 2,
+        "steps": [
+            {"depth": 1, "workers": 1, "age_seconds": None},
+            {"depth": 25, "workers": 2, "age_seconds": 600},
+        ],
+    }
+}
+
+AGE_ALARM = "havoc-staging-transcoder-queue-depth-age-ge-600"
+
 
 def _ctx(**overrides) -> DeploymentContext:
     defaults = {
@@ -121,6 +137,54 @@ class TestValidateScalingConfig:
         scaling = {"transcoder": {"min": 0, "max": 2, "steps": [{"depth": 0, "workers": 1}]}}
         with pytest.raises(ValueError, match="depth must be >= 1"):
             validate_scaling_config(CONFIG, scaling)
+
+
+def _with_steps(steps: list[dict], max_capacity: int = 3) -> dict:
+    return {"transcoder": {"min": 0, "max": max_capacity, "steps": steps}}
+
+
+class TestValidateStepAges:
+    def test_age_on_a_later_step_passes(self):
+        validate_scaling_config(CONFIG, SCALING_WITH_AGE)
+
+    def test_null_age_everywhere_passes(self):
+        steps = [
+            {"depth": 1, "workers": 1, "age_seconds": None},
+            {"depth": 25, "workers": 2, "age_seconds": None},
+        ]
+        validate_scaling_config(CONFIG, _with_steps(steps))
+
+    def test_increasing_ages_on_non_adjacent_steps_pass(self):
+        steps = [
+            {"depth": 1, "workers": 1},
+            {"depth": 10, "workers": 2, "age_seconds": 300},
+            {"depth": 25, "workers": 3},
+            {"depth": 50, "workers": 4, "age_seconds": 900},
+        ]
+        validate_scaling_config(CONFIG, _with_steps(steps, max_capacity=4))
+
+    @pytest.mark.parametrize("age", [0, -60, 600.5, "600", True])
+    def test_non_positive_integer_age_rejected(self, age):
+        steps = [{"depth": 1, "workers": 1}, {"depth": 25, "workers": 2, "age_seconds": age}]
+        with pytest.raises(ValueError, match="age_seconds must be a positive integer"):
+            validate_scaling_config(CONFIG, _with_steps(steps))
+
+    def test_age_on_depth_one_step_rejected(self):
+        # An age datum exists only while a job is queued, when depth >= 1
+        # already breaches: the trigger could never change anything.
+        steps = [{"depth": 1, "workers": 1, "age_seconds": 600}]
+        with pytest.raises(ValueError, match="depth-1 step can never scale"):
+            validate_scaling_config(CONFIG, _with_steps(steps))
+
+    @pytest.mark.parametrize("second_age", [600, 900])
+    def test_non_increasing_ages_rejected(self, second_age):
+        steps = [
+            {"depth": 1, "workers": 1},
+            {"depth": 10, "workers": 2, "age_seconds": 900},
+            {"depth": 25, "workers": 3, "age_seconds": second_age},
+        ]
+        with pytest.raises(ValueError, match="age_seconds must strictly increase"):
+            validate_scaling_config(CONFIG, _with_steps(steps))
 
 
 class TestApplyAutoscaling:
@@ -282,3 +346,100 @@ class TestAutoscaleEnvironmentInjection:
 
         assert env["AUTOSCALE_NAMESPACE"] == ""
         assert env["AUTOSCALE_SERVICES"] == ""
+
+
+class TestAgeTrigger:
+    """A step's age_seconds adds a second alarm on the step's own policy."""
+
+    @staticmethod
+    def _clients_with_distinct_policy_arns():
+        autoscaling, cloudwatch = _clients()
+        autoscaling.put_scaling_policy.side_effect = lambda **kw: {
+            "PolicyARN": f"arn:policy/{kw['PolicyName']}"
+        }
+        return autoscaling, cloudwatch
+
+    def test_null_age_leaves_every_call_unchanged(self):
+        without_key = _clients()
+        with_null = _clients()
+        null_scaling = {
+            "transcoder": {
+                **SCALING["transcoder"],
+                "steps": [{**step, "age_seconds": None} for step in SCALING["transcoder"]["steps"]],
+            }
+        }
+
+        apply_autoscaling(_ctx(), SCALING, *without_key)
+        apply_autoscaling(_ctx(scaling_config=null_scaling), null_scaling, *with_null)
+
+        for before, after in zip(without_key, with_null, strict=True):
+            assert before.mock_calls == after.mock_calls
+
+    def test_age_alarm_triggers_the_steps_policy(self):
+        autoscaling, cloudwatch = self._clients_with_distinct_policy_arns()
+        apply_autoscaling(
+            _ctx(scaling_config=SCALING_WITH_AGE), SCALING_WITH_AGE, autoscaling, cloudwatch
+        )
+
+        policies = [
+            call.kwargs["PolicyName"] for call in autoscaling.put_scaling_policy.call_args_list
+        ]
+        assert sorted(policies) == ["queue-depth-ge-1", "queue-depth-ge-25", "queue-depth-scale-in"]
+
+        alarms = {
+            call.kwargs["AlarmName"]: call.kwargs
+            for call in cloudwatch.put_metric_alarm.call_args_list
+        }
+        assert set(alarms) == {
+            "havoc-staging-transcoder-queue-depth-ge-1",
+            "havoc-staging-transcoder-queue-depth-ge-25",
+            AGE_ALARM,
+            "havoc-staging-transcoder-queue-depth-zero",
+        }
+        age = alarms[AGE_ALARM]
+        assert age["AlarmActions"] == ["arn:policy/queue-depth-ge-25"]
+        assert age["MetricName"] == "oldest_job_age_seconds"
+        assert age["Namespace"] == "havoc-staging"
+        assert age["Dimensions"] == [{"Name": "Service", "Value": "transcoder"}]
+        assert age["ComparisonOperator"] == "GreaterThanOrEqualToThreshold"
+        assert age["Threshold"] == 600
+        assert age["EvaluationPeriods"] == 1
+        # The datum is omitted while the queue is empty: missing data must
+        # read as "no scale", never as a breach.
+        assert age["TreatMissingData"] == "notBreaching"
+
+    def test_depth_and_scale_in_alarms_stay_on_queue_depth(self):
+        autoscaling, cloudwatch = self._clients_with_distinct_policy_arns()
+        apply_autoscaling(
+            _ctx(scaling_config=SCALING_WITH_AGE), SCALING_WITH_AGE, autoscaling, cloudwatch
+        )
+
+        for call in cloudwatch.put_metric_alarm.call_args_list:
+            if call.kwargs["AlarmName"] != AGE_ALARM:
+                assert call.kwargs["MetricName"] == "queue_depth"
+
+    @staticmethod
+    def _live_alarm(cloudwatch, name: str) -> None:
+        def describe_alarms(AlarmNamePrefix):  # noqa: N803 — boto3 kwarg name
+            matches = name.startswith(AlarmNamePrefix)
+            return {"MetricAlarms": [{"AlarmName": name}] if matches else []}
+
+        cloudwatch.describe_alarms.side_effect = describe_alarms
+
+    def test_configured_age_alarm_survives_drift_correction(self):
+        autoscaling, cloudwatch = _clients()
+        self._live_alarm(cloudwatch, AGE_ALARM)
+
+        apply_autoscaling(
+            _ctx(scaling_config=SCALING_WITH_AGE), SCALING_WITH_AGE, autoscaling, cloudwatch
+        )
+
+        cloudwatch.delete_alarms.assert_not_called()
+
+    def test_age_alarm_is_deleted_once_dropped_from_config(self):
+        autoscaling, cloudwatch = _clients()
+        self._live_alarm(cloudwatch, AGE_ALARM)
+
+        apply_autoscaling(_ctx(), SCALING, autoscaling, cloudwatch)
+
+        cloudwatch.delete_alarms.assert_called_once_with(AlarmNames=[AGE_ALARM])

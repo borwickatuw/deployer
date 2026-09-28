@@ -95,12 +95,13 @@ variable "scaling" {
     min = number
     max = number
     steps = list(object({
-      depth   = number
-      workers = number
+      depth       = number
+      workers     = number
+      age_seconds = optional(number)
     }))
   }))
   default     = {}
-  description = "Queue-depth auto-scaling per service (min/max capacity, scale-out steps)"
+  description = "Queue auto-scaling per service (min/max capacity, scale-out steps)"
 }
 
 variable "health_check" {

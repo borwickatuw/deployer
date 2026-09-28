@@ -34,7 +34,7 @@ OpenTofu holds **sizing and capacity** that varies by environment:
 
 - CPU and memory allocation
 - Replica counts
-- Queue-depth auto-scaling bounds (min/max capacity, scale-out steps)
+- Queue auto-scaling bounds (min/max capacity, scale-out steps)
 - Health check timing (intervals, thresholds)
 - Load balancer configuration
 - Infrastructure sizing (RDS instance class, Redis node type)
@@ -175,7 +175,7 @@ owns resources whose lifecycle tracks the application's deploy cadence
 (task definitions, services, scaling policies).
 
 **Tuneables are declared in tfvars and enacted by whichever side owns the
-resource.** Service sizing (`services` variable) and queue-depth scaling
+resource.** Service sizing (`services` variable) and queue scaling
 (`scaling` variable) are environment config: they pass through a tofu output
 into `config.toml`, and deploy.py enacts them on the resources it owns. That
 keeps one reviewable home for capacity and cost bounds without giving tofu a

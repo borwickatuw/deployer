@@ -426,7 +426,7 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
-# Queue-depth autoscaling signals: the app publishes its queue depth and
+# Queue autoscaling signals: the app publishes its queue metrics and
 # protects busy workers from scale-in. It can signal, never scale — the
 # scaling decisions live in Application Auto Scaling policies applied by
 # deploy.py, bounded by the environment's tfvars.

@@ -58,7 +58,7 @@ services = {
 # Auto-Scaling (enabled for production)
 # ------------------------------------------------------------------------------
 
-# Queue-depth auto-scaling: the app's beat task publishes queue_depth to
+# Queue auto-scaling: the app's beat task publishes queue_depth to
 # CloudWatch; deploy.py turns this block into step scaling policies.
 # steps maps queue depth to worker count. Cost ceiling = max x task size.
 scaling = {

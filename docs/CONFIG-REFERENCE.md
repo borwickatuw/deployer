@@ -811,11 +811,11 @@ Core ECS infrastructure references.
 
 Service configuration from OpenTofu.
 
-| Field          | Tofu Output           | Description                                            |
-| -------------- | --------------------- | ------------------------------------------------------ |
-| `config`       | `service_config`      | JSON map of service sizing (cpu, memory, replicas)     |
-| `health_check` | `health_check_config` | JSON health check defaults                             |
-| `scaling`      | `scaling_config`      | JSON map of queue-depth auto-scaling (min, max, steps) |
+| Field          | Tofu Output           | Description                                        |
+| -------------- | --------------------- | -------------------------------------------------- |
+| `config`       | `service_config`      | JSON map of service sizing (cpu, memory, replicas) |
+| `health_check` | `health_check_config` | JSON health check defaults                         |
+| `scaling`      | `scaling_config`      | JSON map of queue auto-scaling (min, max, steps)   |
 
 #### `[database]`
 
@@ -1064,27 +1064,52 @@ services = {
 
 ### `scaling` Variable
 
-Map of queue-depth auto-scaling configurations. Only define for services
+Map of queue auto-scaling configurations. Only define for services
 that should auto-scale (queue-consuming workers).
 
-| Field   | Type   | Required | Description                                                                                                            |
-| ------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `min`   | number | Yes      | Minimum task count. Must be ≥ the service's deploy.toml `min_replicas`.                                                |
-| `max`   | number | Yes      | Maximum task count — the cost ceiling (`max` × task size).                                                             |
-| `steps` | list   | Yes      | Scale-out steps `{depth, workers}`: at queue depth ≥ `depth`, run `workers` tasks. Strictly increasing in both fields. |
+| Field   | Type   | Required | Description                                                                                                                                                                     |
+| ------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `min`   | number | Yes      | Minimum task count. Must be ≥ the service's deploy.toml `min_replicas`.                                                                                                         |
+| `max`   | number | Yes      | Maximum task count — the cost ceiling (`max` × task size).                                                                                                                      |
+| `steps` | list   | Yes      | Scale-out steps `{depth, workers, age_seconds?}`: at queue depth ≥ `depth`, run `workers` tasks. Strictly increasing in `depth` and `workers`. See the step fields table below. |
+
+Each step:
+
+| Field         | Type   | Required | Description                                                                                                                                                                                                                                                                     |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `depth`       | number | Yes      | Queue depth at or above which this step's worker count runs. ≥ 1.                                                                                                                                                                                                               |
+| `workers`     | number | Yes      | Task count this step sets. Within `min`..`max`.                                                                                                                                                                                                                                 |
+| `age_seconds` | number | No       | Also run `workers` tasks once the oldest queued job has waited this many seconds, whatever the depth. Positive integer; not allowed on a `depth = 1` step (any queued job already breaches it); strictly increasing across the steps that set it (a lower one could never win). |
 
 How it works (all convention, enacted by deploy.py — see
 `src/deployer/deploy/autoscaling.py`):
 
-- The application's scheduled task publishes a `queue_depth` metric every
-  60s to CloudWatch namespace `{app}-{environment}`, dimension
-  `Service={service}`. deploy.py injects `AUTOSCALE_NAMESPACE` and
+- The application's scheduled task publishes two metrics every 60s to
+  CloudWatch namespace `{app}-{environment}`, dimension `Service={service}`:
+  `queue_depth` (jobs waiting) and, if any step sets `age_seconds`,
+  `oldest_job_age_seconds` (unit Seconds: now minus the enqueue time of the
+  oldest still-queued job). The age datum must be omitted, not published as
+  0, while the queue is empty. deploy.py injects `AUTOSCALE_NAMESPACE` and
   `AUTOSCALE_SERVICES` into every task definition whenever this variable is
   non-empty — the scaling block is the single switch.
 - deploy.py registers an Application Auto Scaling target bounded by
   `min`/`max` and creates one exact-capacity step policy + alarm per step,
   plus a scale-in-to-`min` alarm that fires after the queue has been empty
-  for 15 minutes.
+  for 15 minutes. A step with `age_seconds` gets a second alarm
+  (`{app}-{environment}-{service}-queue-depth-age-ge-{age_seconds}`) on the
+  same policy, so either signal runs that step's worker count. When several
+  alarms fire at once, the largest worker count wins.
+- Scale-in watches depth only. The zero alarm and an age alarm are never
+  in ALARM together: the age datum exists only while a job is queued, and
+  then depth is at least 1. When an age alarm clears, the lower step's depth
+  alarm sets desired count back to its worker count. Scale-in protection
+  keeps busy tasks, so the extra worker stays until it is idle, then is
+  released. The age trigger can fire again every `age_seconds`.
+- An environment that carries its own copy of the `scaling` variable type
+  (a shared-app `main.tf` copied from the template) must declare
+  `age_seconds = optional(number)` in the step object. tofu silently drops
+  object attributes the type does not declare, so without it there is no
+  age alarm and no warning.
 - Alarms treat missing data as not-breaching, so a stopped environment
   (staging scheduler) never scales itself back up.
 - Workers holding a job set ECS task scale-in protection, so scaling in
@@ -1103,6 +1128,20 @@ scaling = {
     min   = 0
     max   = 2
     steps = [{ depth = 1, workers = 1 }, { depth = 25, workers = 2 }]
+  }
+}
+
+# A lane of mostly short jobs: the second worker also starts when the head
+# job has waited 10 minutes (one worker is stuck on a long job), without
+# waiting for the queue to reach 25.
+scaling = {
+  worker = {
+    min = 0
+    max = 2
+    steps = [
+      { depth = 1, workers = 1 },
+      { depth = 25, workers = 2, age_seconds = 600 },
+    ]
   }
 }
 ```

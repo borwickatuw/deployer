@@ -97,7 +97,7 @@ services = {
 # Auto-Scaling (enabled for production)
 # ------------------------------------------------------------------------------
 
-# Queue-depth auto-scaling: steps maps queue depth to worker count.
+# Queue auto-scaling: steps maps queue depth to worker count.
 # Cost ceiling = max x task size. See docs/CONFIG-REFERENCE.md.
 scaling = {
   worker = {

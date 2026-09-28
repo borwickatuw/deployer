@@ -197,21 +197,23 @@ variable "services" {
   description = "Service sizing configuration (cpu, memory, replicas)"
 }
 
-# Queue-depth auto-scaling bounds per service, enacted by deploy.py as
+# Queue auto-scaling bounds per service, enacted by deploy.py as
 # Application Auto Scaling step policies. steps maps queue depth to worker
-# count, e.g. [{depth = 1, workers = 1}, {depth = 25, workers = 2}].
+# count, e.g. [{depth = 1, workers = 1}, {depth = 25, workers = 2}]; a step
+# with age_seconds also fires when the oldest queued job has waited that long.
 # Cost ceiling = max x the service's task size.
 variable "scaling" {
   type = map(object({
     min = number
     max = number
     steps = list(object({
-      depth   = number
-      workers = number
+      depth       = number
+      workers     = number
+      age_seconds = optional(number)
     }))
   }))
   default     = {}
-  description = "Queue-depth auto-scaling per service (min/max capacity, scale-out steps)"
+  description = "Queue auto-scaling per service (min/max capacity, scale-out steps)"
 }
 
 # Health check settings — staging-optimized defaults, override in tfvars for production

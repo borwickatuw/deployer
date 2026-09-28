@@ -545,15 +545,21 @@ def _describe_live_scaling(cluster_name: str, service_name: str) -> str:
     return f"live: min={target['MinCapacity']}, max={target['MaxCapacity']}"
 
 
+def _describe_scaling_step(step: dict) -> str:
+    """One scale-out step as its trigger(s) and worker count."""
+    trigger = f"depth>={step.get('depth', '?')}"
+    if step.get("age_seconds") is not None:
+        trigger += f" or age>={step['age_seconds']}s"
+    return f"{trigger} -> {step.get('workers', '?')}"
+
+
 def _print_scaling_config(scaling_config: dict, cluster_name: str | None) -> None:
-    """Print each service's queue-depth scaling bounds, steps, and live state."""
-    print(f"{Colors.BLUE}Auto-Scaling Configuration (queue depth):{Colors.NC}")
+    """Print each service's queue scaling bounds, steps, and live state."""
+    print(f"{Colors.BLUE}Auto-Scaling Configuration (queue):{Colors.NC}")
     for name, cfg in scaling_config.items():
         min_r = cfg.get("min", "?")
         max_r = cfg.get("max", "?")
-        steps = ", ".join(
-            f"depth>={s.get('depth', '?')} -> {s.get('workers', '?')}" for s in cfg.get("steps", [])
-        )
+        steps = ", ".join(_describe_scaling_step(s) for s in cfg.get("steps", []))
         print(f"  {name}: min={min_r}, max={max_r} ({steps or 'no steps'})")
         if cluster_name:
             print(f"    {_describe_live_scaling(cluster_name, name)}")

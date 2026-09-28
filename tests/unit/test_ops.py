@@ -261,9 +261,32 @@ class TestCmdStatus:
             "Recent Task Definitions:",
             f"RDS Instance: {RDS_ID}",
             "Recent Snapshots:",
-            "Auto-Scaling Configuration (queue depth):",
+            "Auto-Scaling Configuration (queue):",
         ]
         assert [out.index(h) for h in headings] == sorted(out.index(h) for h in headings)
+
+    def test_age_trigger_renders_beside_depth(self, status_env, capsys):
+        # tofu emits null for an unset optional age_seconds.
+        status_env["config"] = {
+            "services": {
+                "scaling": {
+                    "web": {
+                        "min": 0,
+                        "max": 2,
+                        "steps": [
+                            {"depth": 1, "workers": 1, "age_seconds": None},
+                            {"depth": 25, "workers": 2, "age_seconds": 600},
+                        ],
+                    }
+                }
+            }
+        }
+
+        assert ops.cmd_status(ENV) == 0
+        assert (
+            "  web: min=0, max=2 (depth>=1 -> 1, depth>=25 or age>=600s -> 2)"
+            in capsys.readouterr().out
+        )
 
     def test_missing_scaling_values_render_as_question_marks(self, status_env, capsys):
         status_env["config"] = {"services": {"scaling": {"web": {}}}}
@@ -289,7 +312,7 @@ class TestCmdStatus:
 
     def test_absent_scaling_config_prints_no_section(self, status_env, capsys):
         assert ops.cmd_status(ENV) == 0
-        assert "Auto-Scaling Configuration:" not in capsys.readouterr().out
+        assert "Auto-Scaling Configuration" not in capsys.readouterr().out
 
     def test_an_unknown_cluster_skips_both_ecs_sections(self, status_env, capsys):
         status_env["cluster_name"] = None

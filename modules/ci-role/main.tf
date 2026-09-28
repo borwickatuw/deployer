@@ -125,7 +125,7 @@ data "aws_iam_policy_document" "permissions" {
     ]
   }
 
-  # Application Auto Scaling - queue-depth scaling policies (no resource-level
+  # Application Auto Scaling - queue scaling policies (no resource-level
   # permissions supported for these actions)
   statement {
     sid    = "ApplicationAutoScaling"

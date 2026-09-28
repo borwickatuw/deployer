@@ -1078,6 +1078,45 @@ everywhere, and the lint rule keeps it that way.
 
 ______________________________________________________________________
 
+## 2026-09-28: A Scale-Out Step May Also Fire on the Head Job's Age
+
+**Decision:** A `scaling` step may set `age_seconds`. deploy.py then adds a
+second alarm, `oldest_job_age_seconds >= age_seconds`, pointed at that step's
+existing exact-capacity policy, so either queue depth or head-of-queue wait
+runs the step's worker count. The metric name is a convention owned here
+(`AGE_METRIC_NAME` in `deploy/autoscaling.py`, beside `DEPTH_METRIC_NAME`),
+published by the app in the same namespace and dimension as `queue_depth`,
+and **omitted while the queue is empty**. Scale-in stays depth-only.
+
+**Alternatives considered:**
+
+- A separate age-only step list with its own policies: two ladders whose
+  overlaps need their own ordering rules, for no capacity the shared policy
+  cannot express.
+- Target tracking on age: fights the exact-capacity steps and has no notion
+  of "stuck head, idle queue".
+
+**Reasoning:** Depth alone misses the case of one worker busy on a long job
+with a short job stuck behind it — depth stays at 1 and the second worker
+never starts. Pointing the age alarm at the step's own policy adds no new
+policy and inherits Application Auto Scaling's largest-capacity-wins rule.
+The alarm uses the depth alarms' settings (60s period, one evaluation
+period, `notBreaching`): an age is already an accumulated wait, so one
+datapoint is enough, and an omitted datum reads as "no scale". The age
+alarm and the scale-in (zero) alarm are never in ALARM together, because an
+age datum exists only while a job is queued, and then depth is at least 1.
+When the age alarm clears, a lower step's exact-capacity policy (its depth
+alarm still in ALARM at depth >= 1) sets desired count back to that step's
+worker count. ECS task scale-in protection keeps busy tasks, so the extra
+worker stays until it is idle: it helps drain the backlog, then is released.
+If the head job waits `age_seconds` again, the age trigger fires again, at
+most about once every `age_seconds`. Validation rejects triggers that could never
+change the worker count — on a depth-1 step, or not strictly increasing
+across the steps that set them — rather than leave config that reads as
+working.
+
+______________________________________________________________________
+
 ## Template for New Decisions
 
 ```markdown

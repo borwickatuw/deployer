@@ -58,7 +58,7 @@ data "aws_iam_policy_document" "app_deploy" {
     ])
   }
 
-  # Application Auto Scaling - queue-depth scaling policies. These actions
+  # Application Auto Scaling - queue scaling policies. These actions
   # support no resource-level permissions; the blast radius is bounded by the
   # alarm scoping below and the scalable targets' own min/max.
   statement {
