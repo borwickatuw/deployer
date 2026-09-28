@@ -6,6 +6,15 @@
 # iam_permissions_boundary variable.
 # ------------------------------------------------------------------------------
 
+locals {
+  # Every bucket kind an application may declare in deploy.toml's [storage]
+  # buckets. Buckets are named {prefix}-{env}-{kind}-{account}; admitting
+  # only these kinds keeps a project's other buckets (its tofu state, its
+  # logs) out of a task role's reach. A kind missing here is denied to the
+  # task role whatever the role's own policy grants.
+  data_bucket_kinds = ["media", "originals", "cache", "evidence"]
+}
+
 resource "aws_iam_policy" "ecs_role_boundary" {
   name = "deployer-ecs-role-boundary"
   # Note: description omitted to allow in-place updates (changing description forces replacement)
@@ -69,12 +78,10 @@ resource "aws_iam_policy" "ecs_role_boundary" {
         ]
         Resource = flatten([
           for prefix in var.project_prefixes : [
-            "arn:aws:s3:::${prefix}-*-media-*",
-            "arn:aws:s3:::${prefix}-*-media-*/*",
-            "arn:aws:s3:::${prefix}-*-originals-*",
-            "arn:aws:s3:::${prefix}-*-originals-*/*",
-            "arn:aws:s3:::${prefix}-*-cache-*",
-            "arn:aws:s3:::${prefix}-*-cache-*/*"
+            for kind in local.data_bucket_kinds : [
+              "arn:aws:s3:::${prefix}-*-${kind}-*",
+              "arn:aws:s3:::${prefix}-*-${kind}-*/*"
+            ]
           ]
         ])
       },
